@@ -35,7 +35,7 @@ jobs:
           pip install -e .
 
       - name: Run backend tests
-        run: pytest -q
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
 
       - name: Install frontend dependencies
         working-directory: frontend
