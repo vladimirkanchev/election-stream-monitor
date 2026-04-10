@@ -1,0 +1,96 @@
+{
+  "schema_version": "api_stream_expectations_v1",
+  "notes": "Current local api_stream validation set. These cases are intended for repeatable pre-real-stream checks through the local HTTP fixture server helper and session snapshot comparison.",
+  "cases": [
+    {
+      "id": "api_stream_clean_baseline_long_metrics_only",
+      "fixture_path": "video_segments/clean_baseline_long",
+      "selected_detectors": ["video_metrics"],
+      "expected_chunk_count": 10,
+      "expected_alert_count": 0,
+      "expected_final_status": "completed",
+      "source": "checked_in_fixture",
+      "expected_log_snippets": [
+        "Using direct api_stream media playlist",
+        "Refreshed api_stream playlist"
+      ],
+      "expected_cleanup_checks": [
+        "session snapshot exists",
+        "session temp dir removed or empty",
+        "no leftover chunk temp files"
+      ]
+    },
+    {
+      "id": "api_stream_black_trigger_dual_detectors",
+      "fixture_path": "video_segments/black_trigger",
+      "selected_detectors": ["video_metrics", "video_blur"],
+      "expected_chunk_count": 8,
+      "expected_alert_count": 1,
+      "expected_final_status": "completed",
+      "source": "ground_truth",
+      "expected_log_snippets": [
+        "Using direct api_stream media playlist",
+        "Refreshed api_stream playlist"
+      ],
+      "expected_cleanup_checks": [
+        "session snapshot exists",
+        "session temp dir removed or empty",
+        "no leftover chunk temp files"
+      ]
+    },
+    {
+      "id": "api_stream_blur_trigger_dual_detectors",
+      "fixture_path": "video_segments/blur_trigger",
+      "selected_detectors": ["video_metrics", "video_blur"],
+      "expected_chunk_count": 6,
+      "expected_alert_count": 1,
+      "expected_final_status": "completed",
+      "source": "ground_truth",
+      "expected_log_snippets": [
+        "Using direct api_stream media playlist",
+        "Refreshed api_stream playlist"
+      ],
+      "expected_cleanup_checks": [
+        "session snapshot exists",
+        "session temp dir removed or empty",
+        "no leftover chunk temp files"
+      ]
+    },
+    {
+      "id": "api_stream_black_trigger_three_alerts_dual_detectors",
+      "fixture_path": "video_segments/black_trigger_3_alerts",
+      "selected_detectors": ["video_metrics", "video_blur"],
+      "expected_chunk_count": 6,
+      "expected_alert_count": 2,
+      "expected_final_status": "completed",
+      "source": "ground_truth",
+      "expected_log_snippets": [
+        "Using direct api_stream media playlist",
+        "Refreshed api_stream playlist"
+      ],
+      "expected_cleanup_checks": [
+        "session snapshot exists",
+        "session temp dir removed or empty",
+        "no leftover chunk temp files"
+      ]
+    },
+    {
+      "id": "api_stream_missing_segment_long_metrics",
+      "fixture_path": "video_segments/missing_segment_long",
+      "selected_detectors": ["video_metrics"],
+      "expected_chunk_count": 4,
+      "expected_alert_count": 0,
+      "expected_final_status": "failed",
+      "source": "checked_in_fixture",
+      "expected_log_snippets": [
+        "Using direct api_stream media playlist",
+        "api_stream upstream returned HTTP 404"
+      ],
+      "expected_cleanup_checks": [
+        "session snapshot exists",
+        "session temp dir removed or empty",
+        "no leftover chunk temp files"
+      ]
+    }
+  ]
+}

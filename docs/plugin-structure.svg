@@ -1,0 +1,100 @@
+<svg width="1400" height="780" viewBox="0 0 1400 780" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="700" y1="0" x2="700" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F2E9"/>
+      <stop offset="1" stop-color="#EEE3D6"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12V0Z" fill="#8A715B"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="780" rx="28" fill="url(#bg)"/>
+
+  <text x="72" y="66" fill="#214237" font-family="Georgia, serif" font-size="32" font-weight="700">
+    Core and Plugin Structure
+  </text>
+  <text x="72" y="98" fill="#68736C" font-family="Georgia, serif" font-size="16">
+    Static view of the current plugin-like design: the core stays large and stable, detectors and alert rules stay small and replaceable.
+  </text>
+
+  <rect x="92" y="148" width="860" height="540" rx="30" fill="#FFFDF9" stroke="#D8CCBE" stroke-width="2"/>
+  <text x="126" y="192" fill="#214237" font-family="Georgia, serif" font-size="30" font-weight="700">Core</text>
+  <text x="126" y="222" fill="#6C756F" font-family="Georgia, serif" font-size="15">
+    Stable parts of the app that define contracts, route work, and expose the system to the frontend.
+  </text>
+
+  <rect x="126" y="260" width="236" height="120" rx="20" fill="#F7F1E8" stroke="#D9CDBE"/>
+  <text x="156" y="300" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">Analyzer Contract</text>
+  <text x="156" y="326" fill="#617068" font-family="Georgia, serif" font-size="14">Shared detector shape</text>
+  <text x="156" y="348" fill="#617068" font-family="Georgia, serif" font-size="14">Registration metadata</text>
+
+  <rect x="404" y="260" width="236" height="120" rx="20" fill="#F7F1E8" stroke="#D9CDBE"/>
+  <text x="448" y="300" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">Analyzer Registry</text>
+  <text x="448" y="326" fill="#617068" font-family="Georgia, serif" font-size="14">Which detectors exist</text>
+  <text x="448" y="348" fill="#617068" font-family="Georgia, serif" font-size="14">What modes they support</text>
+
+  <rect x="682" y="260" width="236" height="120" rx="20" fill="#F7F1E8" stroke="#D9CDBE"/>
+  <text x="750" y="300" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">Processor</text>
+  <text x="730" y="326" fill="#617068" font-family="Georgia, serif" font-size="14">Runs detectors and rules</text>
+  <text x="730" y="348" fill="#617068" font-family="Georgia, serif" font-size="14">Routes outputs to persistence</text>
+
+  <rect x="126" y="432" width="300" height="124" rx="20" fill="#F7F1E8" stroke="#D9CDBE"/>
+  <text x="156" y="472" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">Stores and Session Files</text>
+  <text x="156" y="498" fill="#617068" font-family="Georgia, serif" font-size="14">CSV metric stores</text>
+  <text x="156" y="520" fill="#617068" font-family="Georgia, serif" font-size="14">results.jsonl, alerts.jsonl, progress.json</text>
+
+  <rect x="468" y="432" width="450" height="124" rx="20" fill="#F7F1E8" stroke="#D9CDBE"/>
+  <text x="498" y="472" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">Frontend-Facing Functionality</text>
+  <text x="498" y="498" fill="#617068" font-family="Georgia, serif" font-size="14">Detector catalog for the UI</text>
+  <text x="498" y="520" fill="#617068" font-family="Georgia, serif" font-size="14">Structured results and alerts for playback, session state, and alert feed</text>
+
+  <line x1="362" y1="320" x2="404" y2="320" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="640" y1="320" x2="682" y2="320" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="800" y1="380" x2="800" y2="432" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="682" y1="494" x2="426" y2="494" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <text x="126" y="614" fill="#7B6E62" font-family="Georgia, serif" font-size="15">
+    The core should stay larger, calmer, and more stable than the detector and alert plugin areas around it.
+  </text>
+
+  <rect x="1004" y="184" width="304" height="198" rx="24" fill="#FFFDF9" stroke="#D8CCBE" stroke-width="2"/>
+  <text x="1036" y="224" fill="#214237" font-family="Georgia, serif" font-size="28" font-weight="700">Detector Plugins</text>
+  <text x="1036" y="252" fill="#68736C" font-family="Georgia, serif" font-size="15">
+    Small extension area
+  </text>
+
+  <rect x="1036" y="280" width="240" height="42" rx="12" fill="#FCF7EF" stroke="#DCCFC0"/>
+  <text x="1062" y="306" fill="#214237" font-family="Georgia, serif" font-size="18" font-weight="700">Black Screen (video_metrics)</text>
+
+  <rect x="1036" y="334" width="240" height="42" rx="12" fill="#FCF7EF" stroke="#DCCFC0"/>
+  <text x="1080" y="360" fill="#214237" font-family="Georgia, serif" font-size="18" font-weight="700">Blur (video_blur)</text>
+
+  <rect x="1036" y="388" width="240" height="42" rx="12" fill="#FCF7EF" stroke="#DCCFC0"/>
+  <text x="1098" y="414" fill="#214237" font-family="Georgia, serif" font-size="18" font-weight="700">Blur Check</text>
+
+  <line x1="1004" y1="320" x2="918" y2="320" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="924" y="304" fill="#7B6E62" font-family="Georgia, serif" font-size="13">registered in core</text>
+
+  <rect x="1004" y="458" width="304" height="176" rx="24" fill="#FFFDF9" stroke="#D8CCBE" stroke-width="2"/>
+  <text x="1036" y="498" fill="#214237" font-family="Georgia, serif" font-size="28" font-weight="700">Alert Plugins</text>
+  <text x="1036" y="526" fill="#68736C" font-family="Georgia, serif" font-size="15">
+    Small extension area
+  </text>
+
+  <rect x="1036" y="554" width="240" height="42" rx="12" fill="#F3F7F3" stroke="#CCD8CF"/>
+  <text x="1068" y="580" fill="#214237" font-family="Georgia, serif" font-size="18" font-weight="700">Immediate black rule</text>
+
+  <rect x="1036" y="608" width="240" height="42" rx="12" fill="#F3F7F3" stroke="#CCD8CF"/>
+  <text x="1072" y="634" fill="#214237" font-family="Georgia, serif" font-size="18" font-weight="700">Rolling black rule</text>
+
+  <rect x="1036" y="662" width="240" height="42" rx="12" fill="#F3F7F3" stroke="#CCD8CF"/>
+  <text x="1104" y="688" fill="#214237" font-family="Georgia, serif" font-size="18" font-weight="700">Blur rule</text>
+
+  <line x1="1004" y1="546" x2="918" y2="546" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="924" y="530" fill="#7B6E62" font-family="Georgia, serif" font-size="13">called by processor</text>
+
+  <text x="72" y="734" fill="#6B756E" font-family="Georgia, serif" font-size="14">
+    Extension path: detector logic → registry → alert rule → tests. The core stays stable; plugin areas stay small and replaceable.
+  </text>
+</svg>

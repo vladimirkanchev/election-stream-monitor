@@ -1,0 +1,199 @@
+{
+  "schema_version": "fixture_catalog_v1",
+  "defaults": {
+    "duration_sec": 9.8,
+    "segment_count": 10,
+    "segment_time_sec": 1.0,
+    "size": "320x180",
+    "description": "Fixtures are intentionally 50-80% longer than the original short fixtures. The mp4 cases are extracted from different positions in data/streams/local/polling_station_233900044.mp4, and the HLS cases are built from different 10-segment windows in data/streams/segments so the content is not recycled from the old trigger fixtures."
+  },
+  "video_files": [
+    {
+      "id": "clean_baseline_long",
+      "path": "video_files/clean_baseline_long.mp4",
+      "source_position_sec": 120,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [],
+        "blur_ranges_sec": [],
+        "partial_tail_expected": true
+      },
+      "purpose": "Baseline clip for detector comparisons. Should not contain intentionally inserted black or blur episodes."
+    },
+    {
+      "id": "black_tail_long",
+      "path": "video_files/black_tail_long.mp4",
+      "source_position_sec": 360,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [[7.0, 9.8]],
+        "blur_ranges_sec": [],
+        "partial_tail_expected": true
+      },
+      "purpose": "Sustained black tail for black-screen detection and fixed-rule alert checks."
+    },
+    {
+      "id": "blur_middle_long",
+      "path": "video_files/blur_middle_long.mp4",
+      "source_position_sec": 660,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [],
+        "blur_ranges_sec": [[3.0, 6.0]],
+        "partial_tail_expected": true
+      },
+      "purpose": "Single blur episode in the middle of the clip."
+    },
+    {
+      "id": "mixed_black_blur_long",
+      "path": "video_files/mixed_black_blur_long.mp4",
+      "source_position_sec": 960,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [[6.0, 9.8]],
+        "blur_ranges_sec": [[3.0, 6.0]],
+        "partial_tail_expected": true
+      },
+      "purpose": "Mixed-case clip with a blur episode followed by a black tail."
+    },
+    {
+      "id": "black_recovery_realert_long",
+      "path": "video_files/black_recovery_realert_long.mp4",
+      "source_position_sec": 1260,
+      "validity": "valid",
+      "case_type": "edge",
+      "intended_truth": {
+        "black_ranges_sec": [[2.0, 3.2], [6.2, 7.4]],
+        "blur_ranges_sec": [],
+        "partial_tail_expected": true
+      },
+      "purpose": "Two separated black episodes with recovery between them for re-entry and hysteresis testing."
+    },
+    {
+      "id": "blur_recovery_realert_long",
+      "path": "video_files/blur_recovery_realert_long.mp4",
+      "source_position_sec": 1500,
+      "validity": "valid",
+      "case_type": "edge",
+      "intended_truth": {
+        "black_ranges_sec": [],
+        "blur_ranges_sec": [[2.0, 3.3], [6.2, 7.5]],
+        "partial_tail_expected": true
+      },
+      "purpose": "Two separated blur episodes with recovery between them for blur-rule re-alert testing."
+    },
+    {
+      "id": "truncated_long",
+      "path": "video_files/truncated_long.mp4",
+      "source_position_sec": 120,
+      "validity": "malformed",
+      "case_type": "future_malformed",
+      "intended_truth": {
+        "malformed_kind": "truncated_mp4"
+      },
+      "purpose": "Near-future malformed input fixture for probe/decoder failure handling."
+    }
+  ],
+  "video_segments": [
+    {
+      "id": "clean_baseline_long",
+      "path": "video_segments/clean_baseline_long",
+      "source_segment_start": 454,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [],
+        "blur_ranges_sec": [],
+        "playlist_kind": "vod",
+        "partial_tail_expected": true
+      },
+      "purpose": "Baseline HLS fixture with no intentional black or blur episodes."
+    },
+    {
+      "id": "black_tail_long",
+      "path": "video_segments/black_tail_long",
+      "source_segment_start": 704,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [[7.0, 10.0]],
+        "blur_ranges_sec": [],
+        "playlist_kind": "vod",
+        "partial_tail_expected": false
+      },
+      "purpose": "HLS counterpart of the black-tail clip."
+    },
+    {
+      "id": "blur_middle_long",
+      "path": "video_segments/blur_middle_long",
+      "source_segment_start": 904,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [],
+        "blur_ranges_sec": [[3.0, 6.0]],
+        "playlist_kind": "vod",
+        "partial_tail_expected": false
+      },
+      "purpose": "HLS counterpart of the middle-blur clip."
+    },
+    {
+      "id": "mixed_black_blur_long",
+      "path": "video_segments/mixed_black_blur_long",
+      "source_segment_start": 1104,
+      "validity": "valid",
+      "case_type": "basic",
+      "intended_truth": {
+        "black_ranges_sec": [[8.0, 10.0]],
+        "blur_ranges_sec": [[3.0, 6.0]],
+        "playlist_kind": "vod",
+        "partial_tail_expected": false
+      },
+      "purpose": "HLS mixed-case fixture with blur followed by a black tail."
+    },
+    {
+      "id": "black_recovery_realert_long",
+      "path": "video_segments/black_recovery_realert_long",
+      "source_segment_start": 1304,
+      "validity": "valid",
+      "case_type": "edge",
+      "intended_truth": {
+        "black_ranges_sec": [[2.0, 4.0], [6.0, 8.0]],
+        "blur_ranges_sec": [],
+        "playlist_kind": "vod",
+        "partial_tail_expected": false
+      },
+      "purpose": "HLS fixture with two black episodes separated by recovery."
+    },
+    {
+      "id": "blur_recovery_realert_long",
+      "path": "video_segments/blur_recovery_realert_long",
+      "source_segment_start": 1454,
+      "validity": "valid",
+      "case_type": "edge",
+      "intended_truth": {
+        "black_ranges_sec": [],
+        "blur_ranges_sec": [[2.0, 4.0], [6.0, 8.0]],
+        "playlist_kind": "vod",
+        "partial_tail_expected": false
+      },
+      "purpose": "HLS fixture with two blur episodes separated by recovery."
+    },
+    {
+      "id": "missing_segment_long",
+      "path": "video_segments/missing_segment_long",
+      "source_segment_start": 1544,
+      "validity": "malformed",
+      "case_type": "future_malformed",
+      "intended_truth": {
+        "malformed_kind": "playlist_references_missing_segment",
+        "playlist_kind": "vod"
+      },
+      "purpose": "Near-future malformed HLS fixture where the playlist points at a deleted segment."
+    }
+  ]
+}

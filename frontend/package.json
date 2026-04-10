@@ -1,0 +1,37 @@
+{
+  "name": "election-stream-monitor-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync:detectors": "python3 ../src/export_detector_catalog.py --output public/detectors.json",
+    "dev:web": "npm run sync:detectors && vite",
+    "dev:electron": "wait-on tcp:127.0.0.1:5173 && env ELECTRON_ENABLE_LOGGING=1 ELECTRON_OZONE_PLATFORM_HINT=x11 XDG_SESSION_TYPE=x11 ./node_modules/electron/dist/electron --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --in-process-gpu --disable-features=UseOzonePlatform --ozone-platform=x11 electron/main.mjs",
+    "dev": "concurrently -k \"npm:dev:web\" \"npm:dev:electron\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:web": "npm run sync:detectors && tsc -b --incremental false && vite build",
+    "build": "npm run build:web",
+    "start:electron": "env ELECTRON_ENABLE_LOGGING=1 ELECTRON_OZONE_PLATFORM_HINT=x11 XDG_SESSION_TYPE=x11 ./node_modules/electron/dist/electron --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --in-process-gpu --disable-features=UseOzonePlatform --ozone-platform=x11 electron/main.mjs",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "hls.js": "^1.6.15",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.1",
+    "electron": "^41.1.0",
+    "jsdom": "^29.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4",
+    "wait-on": "^9.0.4"
+  }
+}

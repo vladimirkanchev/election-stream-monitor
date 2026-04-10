@@ -1,0 +1,4 @@
+tests/fixtures/media/video_segments/**/*.ts filter=lfs diff=lfs merge=lfs -text
+docs/assets/*.png filter=lfs diff=lfs merge=lfs -text
+docs/assets/*.pdf~ filter=lfs diff=lfs merge=lfs -text
+docs/assets/*.svg filter=lfs diff=lfs merge=lfs -text

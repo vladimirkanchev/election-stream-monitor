@@ -1,0 +1,49 @@
+<svg width="1400" height="540" viewBox="0 0 1400 540" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="700" y1="0" x2="700" y2="540" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F2E9"/>
+      <stop offset="1" stop-color="#EEE3D6"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12V0Z" fill="#8A715B"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="540" rx="28" fill="url(#bg)"/>
+  <text x="72" y="64" fill="#214237" font-family="Georgia, serif" font-size="32" font-weight="700">Detector and Alert Extension Flow</text>
+  <text x="72" y="96" fill="#6B756E" font-family="Georgia, serif" font-size="16">Recommended order for contributors and agents when adding new backend functionality.</text>
+
+  <rect x="70" y="178" width="180" height="110" rx="20" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="106" y="222" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">1. Detector</text>
+  <text x="106" y="248" fill="#617068" font-family="Georgia, serif" font-size="14">Add result logic</text>
+
+  <rect x="286" y="178" width="180" height="110" rx="20" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="318" y="222" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">2. Schema</text>
+  <text x="318" y="248" fill="#617068" font-family="Georgia, serif" font-size="14">Update config/store if needed</text>
+
+  <rect x="502" y="178" width="180" height="110" rx="20" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="528" y="222" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">3. Registry</text>
+  <text x="528" y="248" fill="#617068" font-family="Georgia, serif" font-size="14">Expose detector metadata</text>
+
+  <rect x="718" y="178" width="180" height="110" rx="20" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="748" y="222" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">4. Rule</text>
+  <text x="748" y="248" fill="#617068" font-family="Georgia, serif" font-size="14">Turn facts into alerts</text>
+
+  <rect x="934" y="178" width="180" height="110" rx="20" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="968" y="222" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">5. Tests</text>
+  <text x="968" y="248" fill="#617068" font-family="Georgia, serif" font-size="14">Detector, rule, routing</text>
+
+  <rect x="1150" y="178" width="180" height="110" rx="20" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="1172" y="222" fill="#214237" font-family="Georgia, serif" font-size="22" font-weight="700">6. Frontend</text>
+  <text x="1172" y="248" fill="#617068" font-family="Georgia, serif" font-size="14">Only if UI needs it</text>
+
+  <line x1="250" y1="232" x2="286" y2="232" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="466" y1="232" x2="502" y2="232" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="682" y1="232" x2="718" y2="232" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="898" y1="232" x2="934" y2="232" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="1114" y1="232" x2="1150" y2="232" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="246" y="366" width="912" height="104" rx="22" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="278" y="406" fill="#214237" font-family="Georgia, serif" font-size="24" font-weight="700">Why this order works well here</text>
+  <text x="278" y="434" fill="#617068" font-family="Georgia, serif" font-size="15">It keeps backend facts, registration, alert behavior, and frontend visibility separate. That makes both human contributors and coding agents less likely to edit the wrong layer.</text>
+</svg>

@@ -1,0 +1,42 @@
+<svg width="1400" height="620" viewBox="0 0 1400 620" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="700" y1="0" x2="700" y2="620" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F2E9"/>
+      <stop offset="1" stop-color="#EEE3D6"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12V0Z" fill="#8A715B"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="620" rx="28" fill="url(#bg)"/>
+  <text x="72" y="64" fill="#214237" font-family="Georgia, serif" font-size="32" font-weight="700">Frontend State Flow</text>
+  <text x="72" y="96" fill="#6B756E" font-family="Georgia, serif" font-size="16">Setup, session, and playback are related, but they are not the same state.</text>
+
+  <rect x="104" y="170" width="320" height="198" rx="24" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="136" y="212" fill="#214237" font-family="Georgia, serif" font-size="28" font-weight="700">Setup State</text>
+  <text x="136" y="244" fill="#617068" font-family="Georgia, serif" font-size="15">Mode, path, selected detectors</text>
+  <text x="136" y="272" fill="#617068" font-family="Georgia, serif" font-size="15">Owned by useSetupState()</text>
+  <text x="136" y="316" fill="#7A6E62" font-family="Georgia, serif" font-size="14">Changes before monitoring starts</text>
+
+  <rect x="540" y="170" width="320" height="198" rx="24" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="572" y="212" fill="#214237" font-family="Georgia, serif" font-size="28" font-weight="700">Session State</text>
+  <text x="572" y="244" fill="#617068" font-family="Georgia, serif" font-size="15">Start, stop, polling, progress</text>
+  <text x="572" y="272" fill="#617068" font-family="Georgia, serif" font-size="15">Owned by useMonitoringSession()</text>
+  <text x="572" y="316" fill="#7A6E62" font-family="Georgia, serif" font-size="14">Backend-facing lifecycle state</text>
+
+  <rect x="976" y="170" width="320" height="198" rx="24" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="1008" y="212" fill="#214237" font-family="Georgia, serif" font-size="28" font-weight="700">Playback State</text>
+  <text x="1008" y="244" fill="#617068" font-family="Georgia, serif" font-size="15">Media source, playback status, time</text>
+  <text x="1008" y="272" fill="#617068" font-family="Georgia, serif" font-size="15">Owned by usePlaybackSource()</text>
+  <text x="1008" y="316" fill="#7A6E62" font-family="Georgia, serif" font-size="14">Renderer/media-facing state</text>
+
+  <line x1="424" y1="268" x2="540" y2="268" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+  <line x1="860" y1="268" x2="976" y2="268" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="382" y="444" width="636" height="104" rx="22" fill="#FFFDF9" stroke="#D8CCBE"/>
+  <text x="414" y="484" fill="#214237" font-family="Georgia, serif" font-size="24" font-weight="700">App.tsx and small view models compose these states</text>
+  <text x="414" y="512" fill="#617068" font-family="Georgia, serif" font-size="15">The goal is to keep UI composition thin and avoid mixing setup, session, and playback responsibilities again.</text>
+
+  <line x1="700" y1="368" x2="700" y2="444" stroke="#8A715B" stroke-width="3" marker-end="url(#arrow)"/>
+</svg>

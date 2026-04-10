@@ -1,0 +1,76 @@
+<svg width="1440" height="900" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="720" y1="24" x2="720" y2="876" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F6F1E8"/>
+      <stop offset="1" stop-color="#EFE5D8"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1440" height="900" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#5D513D" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="900" rx="28" fill="url(#bg)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="72" y="72" width="430" height="748" rx="30" fill="#FFFDF9" stroke="#DDD3C5"/>
+    <rect x="538" y="72" width="830" height="470" rx="30" fill="#FFFDF9" stroke="#DDD3C5"/>
+    <rect x="538" y="570" width="830" height="250" rx="30" fill="#FFFDF9" stroke="#DDD3C5"/>
+  </g>
+
+  <text x="108" y="138" fill="#224438" font-family="Georgia, serif" font-size="28" font-weight="700">Election Monitor</text>
+  <text x="108" y="168" fill="#6A756E" font-family="Georgia, serif" font-size="16">Select a local source, choose detectors, and start monitoring.</text>
+
+  <text x="108" y="228" fill="#224438" font-family="Georgia, serif" font-size="16" font-weight="700">Source mode</text>
+  <rect x="108" y="244" width="358" height="46" rx="14" fill="#FFFDF9" stroke="#D6CCBD"/>
+  <text x="126" y="273" fill="#8B857A" font-family="Georgia, serif" font-size="15">Video segments (.ts)</text>
+
+  <text x="108" y="334" fill="#224438" font-family="Georgia, serif" font-size="16" font-weight="700">File or folder path</text>
+  <rect x="108" y="350" width="358" height="46" rx="14" fill="#FFFDF9" stroke="#D6CCBD"/>
+  <text x="126" y="379" fill="#8B857A" font-family="Georgia, serif" font-size="15">/data/streams/segments</text>
+  <text x="108" y="422" fill="#7A857F" font-family="Georgia, serif" font-size="13">Use a folder with .ts segments and an index.m3u8 playlist.</text>
+
+  <text x="108" y="488" fill="#224438" font-family="Georgia, serif" font-size="26" font-weight="700">Detectors</text>
+  <text x="425" y="488" fill="#8C776A" font-family="Georgia, serif" font-size="15">2 selected</text>
+
+  <rect x="108" y="514" width="358" height="74" rx="18" fill="#FCF7EF" stroke="#2F7D5A"/>
+  <text x="126" y="548" fill="#224438" font-family="Georgia, serif" font-size="18" font-weight="700">Black Screen</text>
+  <rect x="126" y="560" width="18" height="18" rx="4" fill="#2F7D5A"/>
+  <text x="156" y="575" fill="#224438" font-family="Georgia, serif" font-size="15" font-weight="700">Select</text>
+
+  <rect x="108" y="604" width="358" height="74" rx="18" fill="#FCF7EF" stroke="#E2D8CA"/>
+  <text x="126" y="638" fill="#224438" font-family="Georgia, serif" font-size="18" font-weight="700">Blur Check</text>
+  <rect x="126" y="650" width="18" height="18" rx="4" fill="#FFFFFF" stroke="#B9AA97"/>
+  <text x="156" y="665" fill="#224438" font-family="Georgia, serif" font-size="15" font-weight="700">Select</text>
+
+  <rect x="108" y="710" width="358" height="50" rx="18" fill="#D0673B"/>
+  <text x="223" y="742" fill="#FFF8EE" font-family="Georgia, serif" font-size="18" font-weight="700">Start Monitoring</text>
+
+  <rect x="108" y="776" width="358" height="50" rx="18" fill="#B85A34"/>
+  <text x="231" y="808" fill="#FFF8EE" font-family="Georgia, serif" font-size="18" font-weight="700">End Monitoring</text>
+
+  <text x="574" y="132" fill="#224438" font-family="Georgia, serif" font-size="28" font-weight="700">Live View</text>
+  <text x="1240" y="132" fill="#8C776A" font-family="Georgia, serif" font-size="15">Video segments</text>
+
+  <rect x="574" y="160" width="758" height="316" rx="28" fill="#090B0D"/>
+  <text x="862" y="302" fill="#D9D2C6" font-family="Georgia, serif" font-size="26" font-weight="700">Preparing playback</text>
+  <text x="766" y="338" fill="#D9D2C6" font-family="Georgia, serif" font-size="16">The player is loading the local playlist.</text>
+
+  <text x="574" y="510" fill="#5E6D66" font-family="Georgia, serif" font-size="15">Loaded from: /data/streams/segments</text>
+  <text x="922" y="510" fill="#5E6D66" font-family="Georgia, serif" font-size="15">Playback time: 00:00</text>
+  <text x="574" y="536" fill="#7A857F" font-family="Georgia, serif" font-size="14">Playback is using the local HLS playlist.</text>
+
+  <text x="574" y="618" fill="#224438" font-family="Georgia, serif" font-size="28" font-weight="700">Alerts</text>
+  <text x="1274" y="618" fill="#8C776A" font-family="Georgia, serif" font-size="15">1 raised</text>
+
+  <rect x="574" y="650" width="758" height="68" rx="18" fill="#FFF3E8" stroke="#E5BB9A"/>
+  <text x="600" y="680" fill="#224438" font-family="Georgia, serif" font-size="18" font-weight="700">Black Screen</text>
+  <text x="600" y="704" fill="#5E6D66" font-family="Georgia, serif" font-size="14">segment_0431.ts contains a continuous black interval.</text>
+  <text x="1190" y="680" fill="#8C776A" font-family="Georgia, serif" font-size="14">segment_0431.ts</text>
+  <text x="1248" y="704" fill="#8C776A" font-family="Georgia, serif" font-size="14">20:14:31</text>
+
+  <rect x="574" y="734" width="758" height="68" rx="18" fill="#F3F7F3" stroke="#C8D8CB"/>
+  <text x="600" y="764" fill="#224438" font-family="Georgia, serif" font-size="18" font-weight="700">Blur Check</text>
+  <text x="600" y="788" fill="#5E6D66" font-family="Georgia, serif" font-size="14">Normalized blur score 0.82 exceeded the threshold.</text>
+  <text x="1216" y="764" fill="#8C776A" font-family="Georgia, serif" font-size="14">segment_0432.ts</text>
+  <text x="1248" y="788" fill="#8C776A" font-family="Georgia, serif" font-size="14">20:14:32</text>
+</svg>
