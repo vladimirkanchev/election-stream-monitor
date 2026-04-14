@@ -16,12 +16,11 @@ detector rules.
 Supported sources are local `.mp4` video files, local `.ts` segment folders
 with `index.m3u8`, and direct remote `.m3u8` / `.mp4` `api_stream` inputs.
 
-The design tries to stay readable and easy to grow. It is meant to work well
-for human contributors and for people using AI-assisted coding and development
-tools to extend detectors, frontend features, or backend rules without getting
-lost in a giant code maze. Over time, I’d like to grow it into an MVP with a
-FastAPI-backed service layer and a cloud deployment path, but that is still a
-later step rather than the current stage of the project.
+I’m trying to keep the project small enough to understand and structured
+enough to extend. The goal is to make detector, frontend, and rule changes
+feel manageable instead of messy. Over time, I’d like to grow it into an MVP
+with a FastAPI-backed service layer and a cloud deployment path, but that is
+still a later step rather than the current stage of the project.
 
 ## Why this project exists
 
@@ -96,10 +95,8 @@ file is
 
 ### Session Model
 
-This is the part that keeps the backend and frontend in sync while a run is
-active. It starts the session, keeps progress moving, saves alerts and results,
-and
-lets the UI read the latest state without needing a full web service.
+This layer creates the session, updates progress, stores alerts and results,
+and gives the UI something stable to poll.
 
 Right now it works in a simple local-first way:
 
@@ -127,11 +124,10 @@ The project currently supports these input modes:
 
 ## Architecture At A Glance
 
-Right now the project is a local-first modular monolith. The main pieces are
-split cleanly, but they still run together in one practical desktop workflow.
-The detector and alert parts are also being shaped with explicit extension
-points, so the analysis layer is gradually moving toward a more plugin-friendly
-design.
+It is still one project and one local workflow, not a distributed platform,
+but the internal boundaries are deliberate. The detector and alert parts are
+also being shaped with explicit extension points, so the analysis layer is
+gradually moving toward a more plugin-friendly design.
 
 From your point of view, the flow is pretty simple:
 
@@ -153,11 +149,9 @@ From your point of view, the flow is pretty simple:
    the Electron/Python bridge so you can see progress, status, and alerts in
    near real time instead of guessing whether the run is stuck.
 
-The diagram below shows the same flow in one view: shared source input,
-playback source resolution, the Electron bridge boundary, backend monitoring,
-local session-state persistence, and bridge-mediated snapshot polling back into
-the UI. Next to the frontend screenshot above, it helps connect the visible app
-with the runtime flow behind it. The editable file is
+The diagram below shows the runtime flow behind the app: source input,
+playback source resolution, the Electron/Python boundary, backend monitoring,
+and session-state polling back into the UI. The editable file is
 [diagram_final.svg](./docs/assets/diagram_final.svg), and the PDF version is
 [diagram_final.pdf](./docs/assets/diagram_final.pdf).
 
@@ -330,7 +324,7 @@ Important repo-safe references:
 - [data/README.md](./data/README.md)
 - [tests/fixtures/](./tests/fixtures)
 
-Current persistence is intentionally simple:
+For now, persistence is file-based rather than database-backed.
 
 - detector result metrics are stored as CSV files in `data/metrics/`
 - per-session results, progress, and alerts are stored as local session data in
@@ -359,7 +353,7 @@ database or service complexity too early.
 
 ## Known Roadmap Areas
 
-The next steps that make the most sense are:
+The areas I would work on next are:
 
 - grow the detector set with rules for noise, stillness or frozen-feed
   detection, and other stream artifacts
@@ -407,8 +401,8 @@ For the current trust model and future service-boundary guidance, start with:
 
 ## Easy To Work On
 
-This repo is intentionally shaped to stay approachable for both people and
-AI-assisted coding tools. That is why the design leans toward:
+This repo is intentionally structured to stay easy to read and extend. That is
+why the design leans toward:
 
 - explicit detector registration
 - readable rule definitions
