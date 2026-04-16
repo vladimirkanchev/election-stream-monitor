@@ -84,8 +84,38 @@ def run_local_session(
     Detector output and alerts are persisted incrementally so the frontend can
     poll a stable session snapshot while the run is still active.
     """
-    validated_input_path = validate_source_input(mode, input_path)
     resolved_session_id = session_id or create_session_id()
+    metadata = SessionMetadata(
+        session_id=resolved_session_id,
+        mode=mode,
+        input_path=str(input_path),
+        selected_detectors=selected_detectors,
+        status="pending",
+    )
+    reset_session_rule_state(resolved_session_id)
+    initialize_session(metadata)
+    progress = SessionProgress.initial(
+        session_id=resolved_session_id,
+        total_count=0,
+    )
+    write_session_progress(progress)
+    try:
+        validated_input_path = validate_source_input(mode, input_path)
+    except (OSError, ValueError) as error:
+        _finalize_session_outcome(
+            metadata=metadata,
+            progress=progress,
+            status="failed",
+            source_kind=mode,
+            flush_stores=False,
+            log_level="error",
+            log_message="Session %s failed: %s [%s]",
+            error=error,
+            extra_fields={"session_end_reason": "validation_failed"},
+        )
+        reset_session_rule_state(resolved_session_id)
+        raise
+
     metadata = SessionMetadata(
         session_id=resolved_session_id,
         mode=mode,
@@ -93,14 +123,8 @@ def run_local_session(
         selected_detectors=selected_detectors,
         status="pending",
     )
-    reset_session_rule_state(resolved_session_id)
+    initialize_session(metadata)
     if mode == "api_stream":
-        initialize_session(metadata)
-        progress = SessionProgress.initial(
-            session_id=resolved_session_id,
-            total_count=0,
-        )
-        write_session_progress(progress)
         try:
             metadata = update_session_status(metadata, "running")
             progress = _build_progress_update(progress, status=metadata.status)
@@ -117,12 +141,27 @@ def run_local_session(
             reset_session_rule_state(resolved_session_id)
             cleanup_api_stream_temp_session_dir(resolved_session_id)
 
-    input_slices = discover_input_slices(
-        mode,
-        validated_input_path,
-        session_id=resolved_session_id,
-    )
-    initialize_session(metadata)
+    try:
+        input_slices = discover_input_slices(
+            mode,
+            validated_input_path,
+            session_id=resolved_session_id,
+        )
+    except (OSError, ValueError) as error:
+        _finalize_session_outcome(
+            metadata=metadata,
+            progress=progress,
+            status="failed",
+            source_kind=mode,
+            flush_stores=False,
+            log_level="error",
+            log_message="Session %s failed: %s [%s]",
+            error=error,
+            extra_fields={"session_end_reason": "validation_failed"},
+        )
+        reset_session_rule_state(resolved_session_id)
+        raise
+
     progress = SessionProgress.initial(
         session_id=resolved_session_id,
         total_count=len(input_slices),
@@ -553,7 +592,7 @@ def _build_progress_update(
         alert_count=current.alert_count,
         last_updated_utc=strftime("%Y-%m-%d %H:%M:%S", gmtime()),
         latest_result_detectors=current.latest_result_detectors,
-        status_reason=status_reason,
+        status_reason=status_reason or _default_progress_status_reason(status),
         status_detail=status_detail,
     )
 
@@ -585,7 +624,7 @@ def _build_slice_progress(
         alert_count=current.alert_count + len(bundle["alerts"]),
         last_updated_utc=strftime("%Y-%m-%d %H:%M:%S", gmtime()),
         latest_result_detectors=latest_result_detectors,
-        status_reason=None,
+        status_reason=_default_progress_status_reason(status),
         status_detail=None,
     )
 
@@ -640,11 +679,17 @@ def _finalize_session_outcome(
         _flush_metric_stores()
 
     updated_metadata = update_session_status(metadata, status)
+    terminal_status_reason, terminal_status_detail = _build_terminal_progress_status(
+        status=status,
+        source_kind=source_kind,
+        error=error,
+        extra_fields=extra_fields,
+    )
     updated_progress = _build_progress_update(
         progress,
         status=updated_metadata.status,
-        status_reason=extra_fields.get("session_end_reason") if extra_fields else None,
-        status_detail=extra_fields.get("terminal_failure_reason") if extra_fields else None,
+        status_reason=terminal_status_reason,
+        status_detail=terminal_status_detail,
     )
     write_session_progress(updated_progress)
 
@@ -720,3 +765,80 @@ def _build_api_stream_session_log_fields(
         "temp_cleanup_success_count": cleanup_success_count,
         "temp_cleanup_failure_count": cleanup_failure_count,
     }
+
+
+def _default_progress_status_reason(status: SessionStatus) -> str:
+    """Return the default stable reason label for non-terminal progress updates."""
+    if status == "cancelled":
+        return "cancel_requested"
+    if status == "failed":
+        return "session_runtime_error"
+    return status
+
+
+def _build_terminal_progress_status(
+    *,
+    status: SessionStatus,
+    source_kind: InputMode,
+    error: Exception | None,
+    extra_fields: dict[str, object] | None,
+) -> tuple[str, str | None]:
+    """Return stable terminal progress reason/detail values for persisted snapshots."""
+    session_end_reason = _coerce_optional_string(
+        extra_fields.get("session_end_reason") if extra_fields else None
+    )
+
+    if status == "cancelled":
+        if session_end_reason == "cancel_requested_during_processing":
+            return "cancel_requested", "Cancellation requested during slice processing"
+        if session_end_reason == "cancel_requested_after_iteration":
+            return "cancel_requested", "Cancellation requested after iteration"
+        return "cancel_requested", "Cancellation requested by client"
+
+    if status == "completed":
+        if session_end_reason and session_end_reason != "completed":
+            return "completed", _humanize_session_end_reason(session_end_reason)
+        return "completed", None
+
+    if status == "failed":
+        terminal_failure_reason = _coerce_optional_string(
+            extra_fields.get("terminal_failure_reason") if extra_fields else None
+        )
+        if session_end_reason == "validation_failed":
+            if error is not None:
+                return "validation_failed", str(error)
+            if terminal_failure_reason:
+                return "validation_failed", terminal_failure_reason
+            return "validation_failed", "Session input validation failed"
+        if source_kind == "api_stream":
+            if terminal_failure_reason:
+                return "source_unreachable", terminal_failure_reason
+            if error is not None:
+                return "source_unreachable", str(error)
+            return "source_unreachable", "Live source became unavailable during session"
+        if terminal_failure_reason:
+            return session_end_reason or "session_runtime_error", terminal_failure_reason
+        if error is not None:
+            return session_end_reason or "session_runtime_error", str(error)
+        return (
+            session_end_reason or "session_runtime_error",
+            "Session failed during execution",
+        )
+
+    return _default_progress_status_reason(status), None
+
+
+def _humanize_session_end_reason(reason: str) -> str:
+    """Return a readable snapshot detail for a transport-specific end reason."""
+    words = reason.replace("_", " ").strip()
+    if not words:
+        return "Session ended"
+    return words[0].upper() + words[1:]
+
+
+def _coerce_optional_string(value: object) -> str | None:
+    """Return a string when the value is meaningfully populated."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

@@ -129,7 +129,7 @@ class SessionProgress:
             alert_count=0,
             last_updated_utc=strftime("%Y-%m-%d %H:%M:%S", gmtime()),
             latest_result_detectors=[],
-            status_reason=None,
+            status_reason="pending",
             status_detail=None,
         )
 

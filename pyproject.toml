@@ -5,6 +5,8 @@ description = "Local-first AI video monitoring system for election-related media
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.116.0",
+    "uvicorn>=0.35.0",
     "black>=26.3.1",
     "dotenv>=0.9.9",
     "pandas>=3.0.1",
@@ -18,6 +20,8 @@ dependencies = [
     "bandit>=1.9.4",
     "mypy>=1.19.1",
     "pyright>=1.1.408",
+    "pydantic>=2.13.1",
+    "httpx>=0.28.1",
 ]
 
 [tool.pylint.main]
