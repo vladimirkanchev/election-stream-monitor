@@ -90,6 +90,8 @@ def test_run_local_session_writes_incremental_files(
     assert metadata.status == "completed"
     assert progress["processed_count"] == 2
     assert progress["status"] == "completed"
+    assert progress["status_reason"] == "completed"
+    assert progress["status_detail"] is None
     assert len(results_lines) == 2
 
 
@@ -150,8 +152,75 @@ def test_run_local_session_stops_when_cancel_is_requested(
 
     assert metadata.status == "cancelled"
     assert progress["status"] == "cancelled"
+    assert progress["status_reason"] == "cancel_requested"
+    assert progress["status_detail"] == "Cancellation requested by client"
     assert progress["processed_count"] == 1
     assert len(results_lines) == 1
+
+
+def test_run_local_session_persists_runtime_failure_progress_details(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A detector/runtime failure should persist failed progress diagnostics."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+
+    input_dir = tmp_path / "segments"
+    input_dir.mkdir()
+    (input_dir / "segment_0001.ts").write_bytes(b"aa")
+
+    def fake_run_enabled_analyzers_bundle(
+        file_path: Path,
+        prefix: str,
+        mode: str,
+        session_id: str,
+        selected_analyzers: set[str] | None = None,
+        persist_to_store: bool = True,
+    ) -> dict[str, list[dict[str, object]]]:
+        _ = (file_path, prefix, mode, session_id, selected_analyzers, persist_to_store)
+        raise ValueError("simulated analyzer failure")
+
+    monkeypatch.setattr(
+        "session_runner.run_enabled_analyzers_bundle",
+        fake_run_enabled_analyzers_bundle,
+    )
+
+    with pytest.raises(ValueError, match="simulated analyzer failure"):
+        run_local_session(
+            mode="video_segments",
+            input_path=input_dir,
+            selected_detectors=["video_metrics"],
+            session_id="session-runtime-failure",
+        )
+
+    snapshot = read_session_snapshot("session-runtime-failure")
+
+    assert snapshot["session"]["status"] == "failed"
+    assert snapshot["progress"]["status"] == "failed"
+    assert snapshot["progress"]["status_reason"] == "session_runtime_error"
+    assert snapshot["progress"]["status_detail"] == "simulated analyzer failure"
+
+
+def test_run_local_session_persists_validation_failure_progress_details(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A source validation failure should still persist failed session progress."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    missing_input = tmp_path / "missing-segments"
+
+    with pytest.raises(OSError, match="Input path does not exist"):
+        run_local_session(
+            mode="video_segments",
+            input_path=missing_input,
+            selected_detectors=["video_metrics"],
+            session_id="session-validation-failure",
+        )
+
+    snapshot = read_session_snapshot("session-validation-failure")
+
+    assert snapshot["session"]["status"] == "failed"
+    assert snapshot["progress"]["status"] == "failed"
+    assert snapshot["progress"]["status_reason"] == "validation_failed"
+    assert "Input path does not exist" in str(snapshot["progress"]["status_detail"])
 
 
 def test_run_local_session_with_no_selected_detectors_runs_none(
@@ -1338,8 +1407,8 @@ def test_run_local_session_http_hls_api_stream_cancels_end_to_end(
     assert snapshot["progress"]["status"] == "cancelled"
     assert snapshot["progress"]["processed_count"] == 1
     assert len(snapshot["results"]) == 1
-    assert snapshot["progress"]["status_reason"] == "cancel_requested_after_iteration"
-    assert snapshot["progress"]["status_detail"] is None
+    assert snapshot["progress"]["status_reason"] == "cancel_requested"
+    assert snapshot["progress"]["status_detail"] == "Cancellation requested after iteration"
 
 
 def test_run_local_session_http_hls_api_stream_persists_failed_snapshot_on_loader_budget_exhaustion(
@@ -1377,7 +1446,7 @@ def test_run_local_session_http_hls_api_stream_persists_failed_snapshot_on_loade
     assert snapshot["progress"]["processed_count"] == 0
     assert snapshot["results"] == []
     assert snapshot["alerts"] == []
-    assert snapshot["progress"]["status_reason"] == "terminal_failure"
+    assert snapshot["progress"]["status_reason"] == "source_unreachable"
     assert "reconnect_budget_exhausted" in str(snapshot["progress"]["status_detail"])
 
 
@@ -1519,8 +1588,8 @@ def test_run_local_session_http_hls_api_stream_stops_cleanly_after_idle_poll_bud
     assert snapshot["progress"]["processed_count"] == 2
     assert snapshot["progress"]["current_item"] == "segment_001.ts"
     assert len(snapshot["results"]) == 2
-    assert snapshot["progress"]["status_reason"] == "idle_poll_budget_exhausted"
-    assert snapshot["progress"]["status_detail"] is None
+    assert snapshot["progress"]["status_reason"] == "completed"
+    assert snapshot["progress"]["status_detail"] == "Idle poll budget exhausted"
 
 
 @contextmanager
