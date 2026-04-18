@@ -171,7 +171,7 @@ describe("bridge contract normalization", () => {
           latest_result_detectors: ["video_blur"],
           alert_count: 0,
           last_updated_utc: "2026-04-06 10:00:00",
-          status_reason: "terminal_failure",
+          status_reason: "source_unreachable",
           status_detail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
         },
         alerts: [],
@@ -179,8 +179,118 @@ describe("bridge contract normalization", () => {
         latest_result: null,
       }).progress,
     ).toMatchObject({
-      status_reason: "terminal_failure",
+      status_reason: "source_unreachable",
       status_detail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
+    });
+  });
+
+  it("normalizes a real FastAPI-style session snapshot payload without losing fields", () => {
+    expect(
+      normalizeSessionSnapshot({
+        session: {
+          session_id: "session-1",
+          mode: "api_stream",
+          input_path: "https://example.com/live/index.m3u8",
+          selected_detectors: ["video_metrics", "video_blur"],
+          status: "running",
+        },
+        progress: {
+          session_id: "session-1",
+          status: "running",
+          processed_count: 3,
+          total_count: 8,
+          current_item: "live-window-003.ts",
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_metrics", "video_blur"],
+          alert_count: 1,
+          last_updated_utc: "2026-04-18 10:00:00",
+          status_reason: "running",
+          status_detail: null,
+        },
+        alerts: [
+          {
+            session_id: "session-1",
+            timestamp_utc: "2026-04-18 10:00:00",
+            detector_id: "video_metrics",
+            title: "Black screen detected",
+            message: "Long black segment exceeded threshold.",
+            severity: "warning",
+            source_name: "live-window-003.ts",
+            window_index: 3,
+            window_start_sec: 6.0,
+          },
+        ],
+        results: [
+          {
+            session_id: "session-1",
+            detector_id: "video_metrics",
+            payload: {
+              black_ratio: 0.8,
+              longest_black_sec: 2.4,
+            },
+          },
+        ],
+        latest_result: {
+          session_id: "session-1",
+          detector_id: "video_metrics",
+          payload: {
+            black_ratio: 0.8,
+            longest_black_sec: 2.4,
+          },
+        },
+      }),
+    ).toEqual({
+      session: {
+        session_id: "session-1",
+        mode: "api_stream",
+        input_path: "https://example.com/live/index.m3u8",
+        selected_detectors: ["video_metrics", "video_blur"],
+        status: "running",
+      },
+      progress: {
+        session_id: "session-1",
+        status: "running",
+        processed_count: 3,
+        total_count: 8,
+        current_item: "live-window-003.ts",
+        latest_result_detector: "video_metrics",
+        latest_result_detectors: ["video_metrics", "video_blur"],
+        alert_count: 1,
+        last_updated_utc: "2026-04-18 10:00:00",
+        status_reason: "running",
+        status_detail: null,
+      },
+      alerts: [
+        {
+          session_id: "session-1",
+          timestamp_utc: "2026-04-18 10:00:00",
+          detector_id: "video_metrics",
+          title: "Black screen detected",
+          message: "Long black segment exceeded threshold.",
+          severity: "warning",
+          source_name: "live-window-003.ts",
+          window_index: 3,
+          window_start_sec: 6.0,
+        },
+      ],
+      results: [
+        {
+          session_id: "session-1",
+          detector_id: "video_metrics",
+          payload: {
+            black_ratio: 0.8,
+            longest_black_sec: 2.4,
+          },
+        },
+      ],
+      latest_result: {
+        session_id: "session-1",
+        detector_id: "video_metrics",
+        payload: {
+          black_ratio: 0.8,
+          longest_black_sec: 2.4,
+        },
+      },
     });
   });
 
@@ -231,6 +341,44 @@ describe("bridge contract normalization", () => {
       code: "PLAYBACK_SOURCE_RESOLUTION_FAILED",
       message: "Playback source resolution failed",
       details: "remote source unreachable",
+    });
+  });
+
+  it("keeps optional backend error metadata on typed bridge failures", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn(),
+      cancelSession: vi.fn(),
+      resolvePlaybackSource: vi.fn().mockResolvedValue(
+        fail(
+          "PLAYBACK_SOURCE_RESOLUTION_FAILED",
+          "Playback source resolution failed",
+          "backend reported a structured error",
+          {
+            backend_error_code: "playback_unavailable",
+            status_reason: "playback_unavailable",
+            status_detail: "Renderer-safe playback source could not be prepared",
+          },
+        ),
+      ),
+    });
+
+    await expect(
+      bridge.resolvePlaybackSource({
+        source: {
+          kind: "api_stream",
+          path: "https://example.com/live/playlist.m3u8",
+          access: "api_stream",
+        },
+        currentItem: null,
+      }),
+    ).rejects.toMatchObject({
+      name: "BridgeTransportError",
+      code: "PLAYBACK_SOURCE_RESOLUTION_FAILED",
+      backendErrorCode: "playback_unavailable",
+      statusReason: "playback_unavailable",
+      statusDetail: "Renderer-safe playback source could not be prepared",
     });
   });
 });

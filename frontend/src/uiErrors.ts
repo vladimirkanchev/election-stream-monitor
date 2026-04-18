@@ -148,12 +148,21 @@ function getApiStreamSessionStartErrorMessage(error?: unknown): string {
     return "Monitoring could not be started. Check the selected live stream and try again.";
   }
 
-  const normalizedDetails = `${error.message} ${error.details ?? ""}`.toLowerCase();
+  const normalizedDetails = [
+    error.backendErrorCode,
+    error.statusReason,
+    error.statusDetail,
+    error.message,
+    error.details,
+  ]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
   if (normalizedDetails.includes("reconnecting") || normalizedDetails.includes("retryable")) {
     return getApiStreamOperatorMessage("reconnecting");
   }
   return getApiStreamOperatorMessage(
-    classifyApiStreamOperatorReason(normalizedDetails),
+    classifyApiStreamOperatorReason(normalizedDetails, error.statusReason),
   );
 }
 
@@ -198,7 +207,12 @@ function classifyApiStreamOperatorReason(
     return "unsupportedSource";
   }
   if (
-    normalizedDetails.includes("unavailable")
+    statusReason === "source_unreachable"
+    || statusReason === "playback_unavailable"
+    || statusReason === "validation_failed"
+    || statusReason === "terminal_failure"
+    || normalizedDetails.includes("validation_failed")
+    || normalizedDetails.includes("unavailable")
     || normalizedDetails.includes("unreachable")
     || normalizedDetails.includes("timeout")
     || normalizedDetails.includes("timed out")
@@ -206,7 +220,6 @@ function classifyApiStreamOperatorReason(
     || normalizedDetails.includes("refused")
     || normalizedDetails.includes("dns")
     || normalizedDetails.includes("upstream returned http")
-    || statusReason === "terminal_failure"
   ) {
     return "streamUnavailable";
   }

@@ -17,6 +17,7 @@ from analyzer_contract import InputMode
 from path_utils import resolve_app_input_path
 
 API_STREAM_DIRECT_MEDIA_SUFFIXES = (".m3u8", ".mp4")
+VALID_INPUT_MODES: tuple[str, ...] = ("video_segments", "video_files", "api_stream")
 
 
 class InvalidSourceInputError(ValueError):
@@ -37,6 +38,9 @@ def validate_source_input(mode: InputMode, input_path: str | Path) -> str:
     normalized = normalize_source_input(input_path)
     if not normalized:
         raise InvalidSourceInputError("Source input cannot be blank.")
+
+    if mode not in VALID_INPUT_MODES:
+        raise InvalidSourceInputError(f"Unsupported input mode: {mode}")
 
     if mode == "api_stream":
         return validate_api_stream_url(normalized)

@@ -33,6 +33,21 @@ describe("ui error messages", () => {
     );
   });
 
+  it("uses backend error metadata when api_stream start failures carry structured FastAPI context", () => {
+    const error = new BridgeTransportError({
+      code: "SESSION_START_FAILED",
+      message: "Session start request failed",
+      details: "Request validation failed",
+      backend_error_code: "validation_failed",
+      status_reason: "validation_failed",
+      status_detail: "api_stream requires a direct .m3u8 or .mp4 URL, not a webpage URL.",
+    });
+
+    expect(getSessionStartErrorMessage(error, "api_stream")).toBe(
+      "This looks like a webpage URL, not a direct media stream. Paste a direct .m3u8 or .mp4 URL instead.",
+    );
+  });
+
   it("keeps frontend-safe operator wording aligned with current backend api_stream failure text", () => {
     const cases = [
       {
@@ -130,7 +145,7 @@ describe("ui error messages", () => {
     expect(
       getApiStreamSessionStateMessage({
         status: "failed",
-        statusReason: "terminal_failure",
+        statusReason: "source_unreachable",
         statusDetail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
       }),
     ).toBe(
@@ -140,7 +155,7 @@ describe("ui error messages", () => {
     expect(
       getApiStreamSessionStateMessage({
         status: "failed",
-        statusReason: "terminal_failure",
+        statusReason: "source_unreachable",
         statusDetail: "api_stream session runtime exceeded max duration",
       }),
     ).toBe("The live stream monitoring run stopped after hitting a runtime safety limit.");
