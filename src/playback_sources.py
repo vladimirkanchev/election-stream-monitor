@@ -6,6 +6,7 @@ from pathlib import Path
 
 from analyzer_contract import InputMode
 from source_validation import (
+    InvalidSourceInputError,
     ensure_path_within_root,
     resolve_validated_local_input_path,
     validate_api_stream_url,
@@ -44,7 +45,7 @@ def resolve_playback_source(
         segment_path = _resolve_local_item(base_path, current_item)
         return str(segment_path.resolve()) if segment_path and segment_path.exists() else None
 
-    return None
+    raise InvalidSourceInputError(f"Unsupported playback mode: {mode}")
 
 
 def _resolve_local_item(base_path: Path, current_item: str | None) -> Path | None:

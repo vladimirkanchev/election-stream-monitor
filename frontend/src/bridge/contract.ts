@@ -21,6 +21,9 @@ export interface BridgeErrorPayload {
   code: BridgeErrorCode;
   message: string;
   details?: string | null;
+  backend_error_code?: string | null;
+  status_reason?: string | null;
+  status_detail?: string | null;
 }
 
 export type BridgeSuccess<T> = {
@@ -55,12 +58,18 @@ export interface BridgeTransport {
 export class BridgeTransportError extends Error {
   readonly code: BridgeErrorCode;
   readonly details: string | null;
+  readonly backendErrorCode: string | null;
+  readonly statusReason: string | null;
+  readonly statusDetail: string | null;
 
   constructor(error: BridgeErrorPayload) {
     super(error.message);
     this.name = "BridgeTransportError";
     this.code = error.code;
     this.details = error.details ?? null;
+    this.backendErrorCode = error.backend_error_code ?? null;
+    this.statusReason = error.status_reason ?? null;
+    this.statusDetail = error.status_detail ?? null;
   }
 }
 
@@ -151,6 +160,11 @@ export function fail(
   code: BridgeErrorCode,
   message: string,
   details?: string | null,
+  metadata?: {
+    backend_error_code?: string | null;
+    status_reason?: string | null;
+    status_detail?: string | null;
+  },
 ): BridgeFailure {
   return {
     ok: false,
@@ -158,6 +172,9 @@ export function fail(
       code,
       message,
       details: details ?? null,
+      backend_error_code: metadata?.backend_error_code ?? null,
+      status_reason: metadata?.status_reason ?? null,
+      status_detail: metadata?.status_detail ?? null,
     },
   };
 }
