@@ -7,6 +7,12 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Readable } from "node:stream";
 import {
+  ApiHttpError,
+  createFastApiReadinessState,
+  withFastApiFallback,
+  resolvePlaybackSourceWithFallback,
+} from "./fastApiFallback.mjs";
+import {
   createRemotePlaybackRequestHeaders,
   createRemoteHlsProxyRegistry,
   isRemoteHlsUrl,
@@ -37,6 +43,10 @@ const repoRoot = path.resolve(frontendRoot, "..");
 const sessionCliPath = path.join(repoRoot, "src", "session_cli.py");
 const preloadPath = path.join(__dirname, "preload.mjs");
 const remoteHlsProxyRegistry = createRemoteHlsProxyRegistry();
+const FASTAPI_BASE_URL = process.env.ELECTION_API_BASE_URL ?? "http://127.0.0.1:8000";
+const FASTAPI_READINESS_TTL_MS = 1500;
+
+let fastApiReadiness = createFastApiReadinessState();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -84,6 +94,91 @@ async function runJsonCommand(args) {
     },
   );
   return JSON.parse(stdout);
+}
+
+async function callApi(path, options = {}) {
+  const response = await fetch(`${FASTAPI_BASE_URL}${path}`, {
+    headers: {
+      Accept: "application/json",
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers ?? {}),
+    },
+    ...options,
+  });
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const isJson = contentType.includes("application/json");
+
+  let payload = null;
+  if (isJson) {
+    payload = await response.json();
+  } else {
+    const text = await response.text();
+    payload = text.length > 0 ? text : null;
+  }
+
+  if (!response.ok) {
+    const message = isApiErrorPayload(payload)
+      ? payload.detail
+      : `FastAPI request failed: ${response.status}`;
+    throw new ApiHttpError(message, {
+      status: response.status,
+      apiPayload: isApiErrorPayload(payload) ? payload : null,
+    });
+  }
+
+  if (!isJson) {
+    throw new ApiHttpError("FastAPI returned a non-JSON response", {
+      status: response.status,
+    });
+  }
+
+  return payload;
+}
+
+async function apiGetHealth() {
+  return callApi("/health");
+}
+
+async function apiListDetectors(mode) {
+  const params = new URLSearchParams();
+  if (mode) {
+    params.set("mode", mode);
+  }
+  const query = params.toString();
+  return callApi(`/detectors${query ? `?${query}` : ""}`);
+}
+
+async function apiReadSession(sessionId) {
+  return callApi(`/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+async function apiResolvePlaybackSource(input) {
+  return callApi("/playback/resolve", {
+    method: "POST",
+    body: JSON.stringify({
+      mode: input.source.kind,
+      input_path: input.source.path,
+      current_item: input.currentItem,
+    }),
+  });
+}
+
+async function apiStartSession(input) {
+  return callApi("/sessions", {
+    method: "POST",
+    body: JSON.stringify({
+      mode: input.source.kind,
+      input_path: input.source.path,
+      selected_detectors: input.selectedDetectors ?? [],
+    }),
+  });
+}
+
+async function apiCancelSession(sessionId) {
+  return callApi(`/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+    method: "POST",
+  });
 }
 
 function success(data) {
@@ -207,13 +302,20 @@ ipcMain.handle("bridge:list-detectors", async (_event, mode) => {
   return handleBridgeOperation(
     "DETECTOR_CATALOG_FAILED",
     "Detector catalog request failed",
-    async () => {
-      const args = ["list-detectors"];
-      if (mode) {
-        args.push("--mode", mode);
-      }
-      return runJsonCommand(args);
-    },
+    async () => withFastApiFallback({
+      state: fastApiReadiness,
+      apiGetHealth,
+      operationName: "bridge:list-detectors",
+      apiOperation: () => apiListDetectors(mode),
+      cliOperation: async () => {
+        const args = ["list-detectors"];
+        if (mode) {
+          args.push("--mode", mode);
+        }
+        return runJsonCommand(args);
+      },
+      ttlMs: FASTAPI_READINESS_TTL_MS,
+    }),
   );
 });
 
@@ -241,7 +343,14 @@ ipcMain.handle("bridge:read-session", async (_event, sessionId) => {
   return handleBridgeOperation(
     "SESSION_READ_FAILED",
     "Session read request failed",
-    async () => runJsonCommand(["read-session", "--session-id", sessionId]),
+    async () => withFastApiFallback({
+      state: fastApiReadiness,
+      apiGetHealth,
+      operationName: "bridge:read-session",
+      apiOperation: () => apiReadSession(sessionId),
+      cliOperation: () => runJsonCommand(["read-session", "--session-id", sessionId]),
+      ttlMs: FASTAPI_READINESS_TTL_MS,
+    }),
   );
 });
 
@@ -257,20 +366,27 @@ ipcMain.handle("bridge:resolve-playback-source", async (_event, input) => {
   return handleBridgeOperation(
     "PLAYBACK_SOURCE_RESOLUTION_FAILED",
     "Playback source resolution failed",
-    async () => {
-      const args = [
-        "resolve-playback-source",
-        "--mode",
-        input.source.kind,
-        "--input-path",
-        input.source.path,
-      ];
-      if (input.currentItem) {
-        args.push("--current-item", input.currentItem);
-      }
-      const result = await runJsonCommand(args);
-      return toRendererMediaUrl(result.source);
-    },
+    async () => resolvePlaybackSourceWithFallback({
+      state: fastApiReadiness,
+      apiGetHealth,
+      apiResolvePlaybackSource,
+      cliResolvePlaybackSource: async (cliInput) => {
+        const args = [
+          "resolve-playback-source",
+          "--mode",
+          cliInput.source.kind,
+          "--input-path",
+          cliInput.source.path,
+        ];
+        if (cliInput.currentItem) {
+          args.push("--current-item", cliInput.currentItem);
+        }
+        return runJsonCommand(args);
+      },
+      input,
+      toRendererMediaUrl,
+      ttlMs: FASTAPI_READINESS_TTL_MS,
+    }),
   );
 });
 
