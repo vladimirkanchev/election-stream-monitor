@@ -64,6 +64,12 @@ Frontend contract checks:
 - `frontend/src/uiErrors.test.ts`
   - operator-facing error wording
   - `api_stream` status/error interpretation
+- `frontend/electron/fastApiFallback.test.mjs`
+  - FastAPI readiness cache and fallback policy
+  - no-fallback behavior for structured API business errors
+- `frontend/electron/bridgeResponses.test.mjs`
+  - Electron bridge success/error envelope mapping
+  - structured bridge payload expectations for lifecycle operations
 
 Use these focused checks when changing:
 
@@ -71,6 +77,7 @@ Use these focused checks when changing:
 - session snapshot fields
 - bridge error payloads
 - frontend normalization logic
+- Electron transport fallback or bridge-envelope behavior
 
 Useful focused commands:
 
@@ -81,6 +88,21 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p n
 ```bash
 cd frontend
 npm run test -- src/bridge/contract.test.ts src/uiErrors.test.ts
+```
+
+Frontend migration checkpoint:
+
+```bash
+cd frontend
+npm run test:frontend-checkpoint
+```
+
+For narrower diagnosis:
+
+```bash
+cd frontend
+npm run test:electron-bridge
+npm run test:session-flow
 ```
 
 If one side of the contract changes, do not rely on only backend tests or only
