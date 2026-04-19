@@ -99,6 +99,42 @@ describe("bridge contract normalization", () => {
     ).rejects.toThrow("invalid bridge startSession response");
   });
 
+  it("accepts a FastAPI-style startSession success payload", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn().mockResolvedValue({
+        ok: true,
+        data: {
+          session_id: "session-api-1",
+          mode: "api_stream",
+          input_path: "https://example.com/live/index.m3u8",
+          selected_detectors: ["video_metrics", "video_blur"],
+          status: "pending",
+        },
+      }),
+      readSession: vi.fn(),
+      cancelSession: vi.fn(),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(
+      bridge.startSession({
+        source: {
+          kind: "api_stream",
+          path: "https://example.com/live/index.m3u8",
+          access: "api_stream",
+        },
+        selectedDetectors: ["video_metrics", "video_blur"],
+      }),
+    ).resolves.toEqual({
+      session_id: "session-api-1",
+      mode: "api_stream",
+      input_path: "https://example.com/live/index.m3u8",
+      selected_detectors: ["video_metrics", "video_blur"],
+      status: "pending",
+    });
+  });
+
   it("raises a typed bridge error when the transport returns an explicit start failure", async () => {
     const bridge = createNormalizedBridge({
       listDetectors: vi.fn(),

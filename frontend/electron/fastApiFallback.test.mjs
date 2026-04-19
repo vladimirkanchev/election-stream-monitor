@@ -75,6 +75,111 @@ describe("FastAPI readiness and fallback helpers", () => {
     );
   });
 
+  it("does not fall back to CLI on structured FastAPI validation errors for start-session", async () => {
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
+    const apiOperation = vi.fn().mockRejectedValue(
+      new ApiHttpError("Request validation failed", {
+        status: 422,
+        apiPayload: {
+          detail: "Request validation failed",
+          error_code: "validation_failed",
+          status_reason: "validation_failed",
+          status_detail: "body.input_path: Field required",
+        },
+      }),
+    );
+    const cliOperation = vi.fn();
+
+    await expect(
+      withFastApiFallback({
+        state,
+        apiGetHealth,
+        operationName: "bridge:start-session",
+        apiOperation,
+        cliOperation,
+        warn: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      name: "ApiHttpError",
+      status: 422,
+      apiPayload: {
+        error_code: "validation_failed",
+        status_reason: "validation_failed",
+      },
+    });
+
+    expect(cliOperation).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to CLI on structured FastAPI start-session errors", async () => {
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
+    const apiOperation = vi.fn().mockRejectedValue(
+      new ApiHttpError("Session start failed", {
+        status: 500,
+        apiPayload: {
+          detail: "Session start failed",
+          error_code: "session_start_failed",
+          status_reason: "session_start_failed",
+          status_detail: "Failed to spawn detached monitoring process.",
+        },
+      }),
+    );
+    const cliOperation = vi.fn();
+
+    await expect(
+      withFastApiFallback({
+        state,
+        apiGetHealth,
+        operationName: "bridge:start-session",
+        apiOperation,
+        cliOperation,
+        warn: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      name: "ApiHttpError",
+      status: 500,
+      apiPayload: {
+        error_code: "session_start_failed",
+      },
+    });
+
+    expect(cliOperation).not.toHaveBeenCalled();
+  });
+
+  it("falls back to CLI on FastAPI unavailability for start-session", async () => {
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    const apiOperation = vi.fn();
+    const cliOperation = vi.fn().mockResolvedValue({
+      session_id: "session-123",
+      mode: "video_files",
+      input_path: "/tmp/input.mp4",
+      selected_detectors: ["video_metrics"],
+      status: "pending",
+    });
+
+    const result = await withFastApiFallback({
+      state,
+      apiGetHealth,
+      operationName: "bridge:start-session",
+      apiOperation,
+      cliOperation,
+      warn: vi.fn(),
+    });
+
+    expect(result).toEqual({
+      session_id: "session-123",
+      mode: "video_files",
+      input_path: "/tmp/input.mp4",
+      selected_detectors: ["video_metrics"],
+      status: "pending",
+    });
+    expect(apiOperation).not.toHaveBeenCalled();
+    expect(cliOperation).toHaveBeenCalledTimes(1);
+  });
+
   it("reuses readiness within TTL and marks state unavailable after transport failure", async () => {
     let currentTime = 10_000;
     const now = () => currentTime;

@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+
+import { ApiHttpError } from "./fastApiFallback.mjs";
+import { handleBridgeOperation } from "./bridgeResponses.mjs";
+
+describe("Electron bridge response mapping", () => {
+  it("wraps start-session success with the expected bridge payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_START_FAILED",
+      "Session start request failed",
+      async () => ({
+        session_id: "session-1",
+        mode: "video_files",
+        input_path: "/tmp/input.mp4",
+        selected_detectors: ["video_metrics"],
+        status: "pending",
+      }),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        session_id: "session-1",
+        mode: "video_files",
+        input_path: "/tmp/input.mp4",
+        selected_detectors: ["video_metrics"],
+        status: "pending",
+      },
+    });
+  });
+
+  it("maps start-session validation failures into the bridge error payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_START_FAILED",
+      "Session start request failed",
+      async () => {
+        throw new ApiHttpError("Request validation failed", {
+          status: 422,
+          apiPayload: {
+            detail: "Request validation failed",
+            error_code: "validation_failed",
+            status_reason: "validation_failed",
+            status_detail: "body.input_path: Field required",
+          },
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_START_FAILED",
+        message: "Session start request failed",
+        details: "body.input_path: Field required",
+        backend_error_code: "validation_failed",
+        status_reason: "validation_failed",
+        status_detail: "body.input_path: Field required",
+      },
+    });
+  });
+
+  it("maps start-session backend failures into the bridge error payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_START_FAILED",
+      "Session start request failed",
+      async () => {
+        throw new ApiHttpError("Session start failed", {
+          status: 500,
+          apiPayload: {
+            detail: "Session start failed",
+            error_code: "session_start_failed",
+            status_reason: "session_start_failed",
+            status_detail: "Failed to spawn detached monitoring process.",
+          },
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_START_FAILED",
+        message: "Session start request failed",
+        details: "Failed to spawn detached monitoring process.",
+        backend_error_code: "session_start_failed",
+        status_reason: "session_start_failed",
+        status_detail: "Failed to spawn detached monitoring process.",
+      },
+    });
+  });
+
+  it("maps transport unavailability into a generic bridge failure payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_START_FAILED",
+      "Session start request failed",
+      async () => {
+        throw new TypeError("fetch failed");
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_START_FAILED",
+        message: "Session start request failed",
+        details: "fetch failed",
+        backend_error_code: null,
+        status_reason: null,
+        status_detail: null,
+      },
+    });
+  });
+});

@@ -12,6 +12,7 @@ import {
   withFastApiFallback,
   resolvePlaybackSourceWithFallback,
 } from "./fastApiFallback.mjs";
+import { handleBridgeOperation, isApiErrorPayload } from "./bridgeResponses.mjs";
 import {
   createRemotePlaybackRequestHeaders,
   createRemoteHlsProxyRegistry,
@@ -26,7 +27,8 @@ import {
  *
  * Responsibilities here are intentionally narrow:
  *
- * - translate IPC requests into Python CLI calls
+ * - translate IPC requests into FastAPI-backed backend calls, with temporary
+ *   CLI fallback for operations still in migration
  * - expose a privileged ``local-media://`` protocol for local files
  * - proxy remote HLS assets through that local scheme when renderer playback
  *   would otherwise fail because of CORS
@@ -181,74 +183,6 @@ async function apiCancelSession(sessionId) {
   });
 }
 
-function success(data) {
-  return { ok: true, data };
-}
-
-function failure(code, message, details = null) {
-  return failureWithMetadata(code, message, details);
-}
-
-function failureWithMetadata(code, message, details = null, metadata = {}) {
-  return {
-    ok: false,
-    error: {
-      code,
-      message,
-      details,
-      backend_error_code: metadata.backend_error_code ?? null,
-      status_reason: metadata.status_reason ?? null,
-      status_detail: metadata.status_detail ?? null,
-    },
-  };
-}
-
-async function handleBridgeOperation(code, message, operation) {
-  // IPC handlers share one response envelope so the renderer can map failures
-  // consistently without caring which CLI command produced them.
-  try {
-    const data = await operation();
-    return success(data);
-  } catch (error) {
-    return mapApiErrorToBridgeFailure(
-      code,
-      message,
-      error,
-    );
-  }
-}
-
-function isApiErrorPayload(value) {
-  return Boolean(
-    value
-    && typeof value === "object"
-    && typeof value.error_code === "string"
-    && typeof value.detail === "string",
-  );
-}
-
-function mapApiErrorToBridgeFailure(code, fallbackMessage, error) {
-  const apiPayload = error?.apiPayload;
-  if (!isApiErrorPayload(apiPayload)) {
-    return failure(
-      code,
-      fallbackMessage,
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-
-  return failureWithMetadata(
-    code,
-    fallbackMessage,
-    apiPayload.status_detail ?? apiPayload.detail,
-    {
-      backend_error_code: apiPayload.error_code,
-      status_reason: apiPayload.status_reason ?? null,
-      status_detail: apiPayload.status_detail ?? null,
-    },
-  );
-}
-
 function isAllowedRemotePlaybackSource(source) {
   return source.startsWith("http://") || source.startsWith("https://");
 }
@@ -323,19 +257,28 @@ ipcMain.handle("bridge:start-session", async (_event, input) => {
   return handleBridgeOperation(
     "SESSION_START_FAILED",
     "Session start request failed",
-    async () => {
-      const args = [
-        "start-session",
-        "--mode",
-        input.source.kind,
-        "--input-path",
-        input.source.path,
-      ];
-      for (const detectorId of input.selectedDetectors ?? []) {
-        args.push("--detector", detectorId);
-      }
-      return runJsonCommand(args);
-    },
+    async () => withFastApiFallback({
+      state: fastApiReadiness,
+      apiGetHealth,
+      operationName: "bridge:start-session",
+      apiOperation: () => apiStartSession(input),
+      // Session start still keeps a temporary CLI fallback while FastAPI
+      // startup/readiness ownership remains part of the migration work.
+      cliOperation: async () => {
+        const args = [
+          "start-session",
+          "--mode",
+          input.source.kind,
+          "--input-path",
+          input.source.path,
+        ];
+        for (const detectorId of input.selectedDetectors ?? []) {
+          args.push("--detector", detectorId);
+        }
+        return runJsonCommand(args);
+      },
+      ttlMs: FASTAPI_READINESS_TTL_MS,
+    }),
   );
 });
 
