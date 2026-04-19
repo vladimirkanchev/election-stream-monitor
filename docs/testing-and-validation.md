@@ -41,6 +41,52 @@ Common local command:
 npm --prefix frontend run test
 ```
 
+## FastAPI And Bridge Contract Checks
+
+These tests are especially important for the current project stage because they
+protect the boundary between backend contracts and frontend normalization.
+
+Backend/API contract checks:
+
+- `tests/test_api_boundary.py`
+  - FastAPI request validation
+  - structured API error payloads
+  - session start/read/cancel behavior
+  - playback-resolution behavior
+  - populated session snapshot response shape
+
+Frontend contract checks:
+
+- `frontend/src/bridge/contract.test.ts`
+  - bridge normalization
+  - typed bridge failures
+  - session snapshot compatibility
+- `frontend/src/uiErrors.test.ts`
+  - operator-facing error wording
+  - `api_stream` status/error interpretation
+
+Use these focused checks when changing:
+
+- FastAPI request/response schemas
+- session snapshot fields
+- bridge error payloads
+- frontend normalization logic
+
+Useful focused commands:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_api_boundary.py -q
+```
+
+```bash
+cd frontend
+npm run test -- src/bridge/contract.test.ts src/uiErrors.test.ts
+```
+
+If one side of the contract changes, do not rely on only backend tests or only
+frontend tests. Run at least one focused backend contract check and one focused
+frontend normalization check together.
+
 ### Build Validation
 
 Common local build command:

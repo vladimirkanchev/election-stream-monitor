@@ -177,3 +177,28 @@ If you are adding a new alert:
 3. add or update built-in rule metadata if the rule should appear in future catalogs
 4. test rule
 5. only then adjust frontend wording if needed
+
+## Safe Edit Checklist
+
+When changing an alert rule, review these together:
+
+- the detector result fields the rule depends on
+- alert event payload shape
+- session snapshot and alert-feed expectations
+- rule registration and catalog visibility
+- tests for both emit and recover behavior
+
+In practice, this usually means:
+
+1. verify the detector result fields are stable and well named
+2. keep rule thresholds and rule-state transitions explicit
+3. confirm alert event fields still match frontend expectations
+4. test both alert emission and recovery or clear paths
+5. update docs if the meaning of the rule changes
+
+This helps keep detector facts, rule interpretation, and frontend presentation
+aligned.
+
+Do not treat detector output and alert semantics as the same thing. The detector
+measures facts; the alert rule decides when those facts should become an
+operator-facing warning.

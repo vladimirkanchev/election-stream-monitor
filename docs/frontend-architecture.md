@@ -129,6 +129,16 @@ The bridge currently handles:
 
 This is the layer that keeps the React frontend from needing to know Python process details directly.
 
+The bridge error payload can now preserve backend-native metadata when
+available:
+
+- `backend_error_code`
+- `status_reason`
+- `status_detail`
+
+UI code may still present a simplified operator-facing message, but the bridge
+contract now has room to preserve backend meaning during the FastAPI migration.
+
 ## Current design goals
 
 The frontend is optimized for:

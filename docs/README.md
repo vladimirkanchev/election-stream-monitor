@@ -14,6 +14,35 @@ If you are new to the repo, read these in order:
 4. [session-model.md](./session-model.md)
 5. then the task-specific doc for the subsystem you want to change
 
+## Best Entry Points For Coding Agents
+
+Use this shortcut map before editing code:
+
+- changing session snapshot or polling behavior:
+  - [session-model.md](./session-model.md)
+  - [contracts.md](./contracts.md)
+- changing frontend bridge normalization or UI transport handling:
+  - [frontend-architecture.md](./frontend-architecture.md)
+  - [contracts.md](./contracts.md)
+- changing FastAPI endpoints or response semantics:
+  - [fastapi-boundary.md](./fastapi-boundary.md)
+  - [architecture-decision-fastapi.md](./architecture-decision-fastapi.md)
+  - [contracts.md](./contracts.md)
+- adding a detector:
+  - [adding-an-analyzer.md](./adding-an-analyzer.md)
+- adding an alert rule:
+  - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+
+## Current Stable Contracts
+
+At the current stage, treat these as stable unless you deliberately intend a
+coordinated contract change:
+
+- session snapshot shape
+- frontend bridge normalization shape
+- FastAPI structured error payload shape
+- detector catalog shape
+
 ## Document Ownership
 
 Use each doc for one main question:
@@ -88,6 +117,7 @@ If you are working on:
 - review / onboarding
   - [reviewer-guide.md](./reviewer-guide.md)
   - [architecture.md](./architecture.md)
+  - [contracts.md](./contracts.md)
 
 ## Update Rules
 

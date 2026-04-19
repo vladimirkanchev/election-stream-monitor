@@ -1,78 +1,166 @@
 # FastAPI Boundary
 
-This document describes the recommended boundary if the current local-first
-runtime later gains a FastAPI layer.
+This document explains the current FastAPI layer in the project: what it does,
+how to run it locally, what contract it exposes, and what is still incomplete.
 
-It is written for contributors and coding agents who need a pragmatic split
-between stable monitoring contracts and desktop/runtime-specific concerns.
+Right now, FastAPI is a thin HTTP boundary over the existing local-first
+session/domain code. It does not replace the whole Electron bridge yet.
 
-## Short version
+## Current Status
 
-FastAPI should own the stable monitoring API surface.
+The FastAPI layer currently provides:
 
-It should not absorb every Electron or local-runtime implementation detail.
-
-## FastAPI should own
-
-- `POST /sessions`
-  - start a monitoring session
-- `POST /sessions/{session_id}/cancel`
-  - request session cancellation
-- `GET /sessions/{session_id}`
-  - read the current session snapshot
+- `GET /health`
 - `GET /detectors`
-  - expose the detector catalog
+- `POST /sessions`
+- `GET /sessions/{session_id}`
+- `POST /sessions/{session_id}/cancel`
 - `POST /playback/resolve`
-  - resolve the current playback source from validated monitoring inputs
 
-These operations already exist conceptually in the CLI/bridge flow today, so
-they are the cleanest candidates to become HTTP endpoints later.
+These endpoints already use:
 
-## Should remain local/runtime-specific
+- explicit request/response schemas
+- structured error payloads
+- cleaned session snapshot semantics
+
+What is still partial:
+
+- Electron is not fully migrated to use FastAPI for all bridge operations
+- the CLI bridge is still part of the current runtime path
+- playback proxying and renderer-specific media handling still live in Electron
+
+## Run Locally
+
+From the repository root:
+
+```bash
+. .venv/bin/activate
+uvicorn api.app:app --app-dir src --reload
+```
+
+Open the interactive docs at:
+
+- `http://127.0.0.1:8000/docs`
+
+## What The API Owns
+
+The FastAPI layer currently wraps stable backend/session behavior:
+
+- detector catalog reads
+- monitoring session start
+- monitoring session snapshot read
+- cancellation request
+- validated playback-source resolution
+
+It does not currently own:
 
 - Electron `local-media://` serving
-- Electron remote HLS proxying for renderer playback
-- local file trust and path validation for desktop use
-- FFmpeg / FFprobe subprocess invocation
-- session temp-file materialization and cleanup
-- detached child-process spawn details used by the current CLI bridge
+- Electron remote HLS proxying
+- desktop/runtime-specific process management
+- the full frontend transport path
 
-These concerns are real, but they are not part of the stable monitoring API
-contract. They belong to the current runtime environment, not to FastAPI as a
-service abstraction.
+## Endpoints
 
-## Why this split is useful
+### `GET /health`
 
-- keeps FastAPI focused on session/domain behavior instead of desktop plumbing
-- preserves the current local-first runtime while still preparing a service path
-- makes testing cleaner because API tests can target stable session semantics
-- avoids coupling HTTP design to Electron-specific playback transport details
+Simple local backend health check.
 
-## Failure-policy implications
+### `GET /detectors`
 
-If FastAPI is added later, the API layer should surface:
+Returns the detector catalog for the current runtime. Optional `mode` filtering
+is supported for:
 
-- stable session status
-- `progress.status_reason`
-- `progress.status_detail` when appropriate
+- `video_segments`
+- `video_files`
+- `api_stream`
 
-That is enough for clients to distinguish:
+### `POST /sessions`
 
-- retry-like transient reads
-- graceful stops
-- terminal failures
-- explicit cancels
+Starts a monitoring session and returns the pending session metadata.
 
-without forcing clients to parse raw loader logs.
+### `GET /sessions/{session_id}`
 
-## Migration guidance
+Returns the current persisted session snapshot.
 
-The recommended order is:
+### `POST /sessions/{session_id}/cancel`
 
-1. keep Python session/domain code as the source of truth
-2. wrap existing session start/read/cancel flows in FastAPI
-3. keep Electron using the same session snapshot semantics
-4. move only the stable bridge surface first
-5. reconsider playback proxy ownership separately later
+Requests cancellation for an existing monitoring session.
 
-The key idea is to migrate the contract first, not every runtime detail at once.
+### `POST /playback/resolve`
+
+Validates monitoring input and returns a playback source contract for the
+frontend/Electron layer.
+
+## Structured Error Payloads
+
+Route-level failures use one consistent JSON shape:
+
+```json
+{
+  "detail": "Session not found",
+  "error_code": "session_not_found",
+  "status_reason": "session_not_found",
+  "status_detail": "No persisted session snapshot found for session_id=abc123"
+}
+```
+
+Typical cases include:
+
+- `validation_failed`
+- `session_not_found`
+- `playback_unavailable`
+- `session_start_failed`
+- `internal_error`
+
+The API also normalizes request validation failures into the same structured
+shape instead of using the default FastAPI validation response.
+
+## Session Snapshot Meaning
+
+`GET /sessions/{session_id}` returns a snapshot with these top-level fields:
+
+- `session`
+- `progress`
+- `alerts`
+- `results`
+- `latest_result`
+
+Important `progress` fields:
+
+- `status`
+- `status_reason`
+- `status_detail`
+
+Use them like this:
+
+- route-level request failure:
+  returned as a structured API error payload
+- ongoing or terminal session state:
+  returned through the session snapshot
+
+That separation is important. A request can succeed while the session itself is
+already failed, completed, or cancelled.
+
+## Input Modes
+
+The FastAPI layer currently accepts these monitoring modes:
+
+- `video_segments`
+- `video_files`
+- `api_stream`
+
+Invalid mode values are rejected at the API boundary.
+
+## Current Integration Limits
+
+This is still a migration-stage backend layer.
+
+Today that means:
+
+- FastAPI wraps the current local-first backend logic
+- CLI-backed bridge behavior still exists during the transition
+- Electron integration is still partial
+- renderer-facing playback concerns still belong to Electron
+
+So the FastAPI layer is already useful and testable, but it is not yet the only
+active transport path in the application.

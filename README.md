@@ -47,7 +47,7 @@ Use this quick path:
   [docs/session-model.md](./docs/session-model.md)
 - setup and docs map: [docs/README.md](./docs/README.md)
 - frontend and transport: [docs/frontend-architecture.md](./docs/frontend-architecture.md)
-- future FastAPI direction: [docs/fastapi-boundary.md](./docs/fastapi-boundary.md)
+- FastAPI boundary and current API status: [docs/fastapi-boundary.md](./docs/fastapi-boundary.md)
 
 ## Current Capabilities
 

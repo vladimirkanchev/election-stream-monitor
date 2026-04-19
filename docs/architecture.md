@@ -311,14 +311,35 @@ That keeps three layers aligned:
 
 ## FastAPI boundary
 
-If the project adds FastAPI later, the clean ownership split is:
+A first FastAPI boundary now exists for the stable backend/session contract.
+
+It currently provides:
+
+- `GET /health`
+- `GET /detectors`
+- `POST /sessions`
+- `GET /sessions/{session_id}`
+- `POST /sessions/{session_id}/cancel`
+- `POST /playback/resolve`
+
+The current FastAPI layer is still a thin HTTP wrapper over the local-first
+session/domain code. Electron integration is still partial, and the CLI bridge
+remains part of the migration path.
+
+Use these docs together:
+
+- [fastapi-boundary.md](./fastapi-boundary.md)
+  - practical run/use/current-status guide
+- [architecture-decision-fastapi.md](./architecture-decision-fastapi.md)
+  - ownership split and migration order
+
+Current ownership split:
 
 - FastAPI owns:
-  - session start
-  - session stop / cancel
-  - session read
-  - detector catalog
-  - playback source resolution
+  - stable monitoring/session backend behavior
+  - structured API error payloads
+  - session snapshot reads
+  - validated playback-resolution contract
 - local/runtime-specific layers keep owning:
   - Electron-only `local-media://` serving
   - remote HLS proxying for renderer playback
@@ -330,3 +351,12 @@ If the project adds FastAPI later, the clean ownership split is:
 That split is intentional because FastAPI should expose the stable monitoring
 contract, not absorb every desktop/runtime concern that currently exists only
 to support the local Electron app.
+
+If you change FastAPI request/response semantics, review these together:
+
+- `src/api/schemas.py`
+- `frontend/src/bridge/contract.ts`
+- `frontend/src/types.ts`
+- `docs/contracts.md`
+- `tests/test_api_boundary.py`
+- `frontend/src/bridge/contract.test.ts`
