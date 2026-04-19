@@ -146,6 +146,33 @@ If you are a coding agent or a human contributor, the safest order is:
 
 That order fits this repo better than starting from the UI first.
 
+Treat `src/analyzer_contract.py` and `src/analyzer_registry.py` as the first
+places to verify before editing detector wiring. They are the most common
+source-of-truth files that agents and contributors accidentally bypass.
+
+## Safe Edit Checklist
+
+When adding or changing an analyzer, review these together:
+
+- `src/analyzer_contract.py`
+- `src/analyzer_registry.py`
+- the analyzer implementation file
+- alert-rule registration if alerts are expected
+- frontend detector catalog assumptions
+- backend tests for analyzer output
+- any frontend or contract docs that describe detector catalog behavior
+
+In practice, this usually means:
+
+1. define or update the analyzer result shape
+2. register the analyzer explicitly
+3. confirm the detector catalog still makes sense to the frontend
+4. add or update alert-rule behavior if the analyzer should emit warnings
+5. add tests before treating the analyzer as stable
+
+This keeps detector logic, registration, alert behavior, and UI visibility from
+drifting apart.
+
 ## Things to avoid for now
 
 Avoid:

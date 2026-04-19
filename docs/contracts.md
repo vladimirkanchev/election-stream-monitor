@@ -32,6 +32,32 @@ For code-level truth, the closest sources are:
 - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
 - [`frontend/src/types.ts`](../frontend/src/types.ts)
 
+## Current Source Of Truth
+
+For the current project stage:
+
+- backend session snapshot source of truth:
+  - [`src/session_io.py`](../src/session_io.py)
+  - [`src/session_models.py`](../src/session_models.py)
+  - [`src/session_runner.py`](../src/session_runner.py)
+- frontend bridge normalization source of truth:
+  - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
+  - [`frontend/src/types.ts`](../frontend/src/types.ts)
+- FastAPI request/response contract source of truth:
+  - [`src/api/schemas.py`](../src/api/schemas.py)
+  - [`src/api/routers/`](../src/api/routers)
+
+## Do Not Drift These Together By Accident
+
+When changing one of these, review the others too:
+
+- [`src/api/schemas.py`](../src/api/schemas.py)
+- [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
+- [`frontend/src/types.ts`](../frontend/src/types.ts)
+- [`docs/session-model.md`](./session-model.md)
+- [`tests/test_api_boundary.py`](../tests/test_api_boundary.py)
+- [`frontend/src/bridge/contract.test.ts`](../frontend/src/bridge/contract.test.ts)
+
 ## API Stream Source Contract v1
 
 Purpose:
@@ -213,6 +239,24 @@ Notes:
 - `alerts` and `results` are append-oriented event views
 - playback state is not part of this contract
 - `api_stream` sessions use the same snapshot contract as local modes
+
+### Route failures vs session state
+
+The current project intentionally uses two different failure channels:
+
+- immediate request failure
+  - returned as a structured API error payload
+- ongoing or terminal session lifecycle state
+  - returned through the session snapshot
+
+Important snapshot progress fields are:
+
+- `progress.status`
+- `progress.status_reason`
+- `progress.status_detail`
+
+This keeps request-level problems distinct from the state of an already-running
+session.
 
 ## Alert Event v1
 

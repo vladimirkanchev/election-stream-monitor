@@ -206,6 +206,24 @@ The session model is stricter now than in earlier iterations:
 
 The backend also resets any per-session rolling alert-rule state when a session starts or ends.
 
+## Route Failures Vs Session State
+
+The current project intentionally uses two different failure channels:
+
+- immediate request failure
+  - returned as a structured API error payload
+- ongoing or terminal session lifecycle state
+  - returned through the persisted session snapshot
+
+Important snapshot progress fields are:
+
+- `progress.status`
+- `progress.status_reason`
+- `progress.status_detail`
+
+This separation matters now that FastAPI route-level failures and persisted
+session state are both part of the backend contract.
+
 ## Why this model works well right now
 
 This contract is intentionally simple:
