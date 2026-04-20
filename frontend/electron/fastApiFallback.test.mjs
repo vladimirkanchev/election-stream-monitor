@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { ApiHttpError } from "./apiErrors.mjs";
 import {
-  ApiHttpError,
   createFastApiReadinessState,
   isFastApiAvailable,
   resolvePlaybackSourceWithFallback,

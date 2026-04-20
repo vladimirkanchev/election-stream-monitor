@@ -5,10 +5,8 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
-import {
-  ApiHttpError,
-  createFastApiReadinessState,
-} from "./fastApiFallback.mjs";
+import { ApiHttpError } from "./apiErrors.mjs";
+import { createFastApiReadinessState } from "./fastApiFallback.mjs";
 import {
   createFastApiProcessState,
   ensureFastApiProcessStarted as ensureFastApiProcessStartedWithState,
@@ -34,9 +32,10 @@ import {
  *
  * Responsibilities here are intentionally narrow:
  *
+ * - own local FastAPI startup/readiness for the desktop runtime
  * - translate IPC requests into FastAPI-backed backend calls under one shared
- *   runtime policy, including local FastAPI startup/readiness ownership
- * - expose a privileged ``local-media://`` protocol for local files
+ *   runtime policy
+ * - expose a privileged `local-media://` protocol for local files
  * - proxy remote HLS assets through that local scheme when renderer playback
  *   would otherwise fail because of CORS
  *
