@@ -110,4 +110,59 @@ describe("Electron bridge response mapping", () => {
       },
     });
   });
+
+  it("maps cancel-session missing-session failures into the bridge error payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_CANCEL_FAILED",
+      "Session cancel request failed",
+      async () => {
+        throw new ApiHttpError("Session not found", {
+          status: 404,
+          apiPayload: {
+            detail: "Session not found",
+            error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-123",
+          },
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_CANCEL_FAILED",
+        message: "Session cancel request failed",
+        details: "No persisted session snapshot found for session_id=session-123",
+        backend_error_code: "session_not_found",
+        status_reason: "session_not_found",
+        status_detail: "No persisted session snapshot found for session_id=session-123",
+      },
+    });
+  });
+
+  it("wraps cancel-session success with the expected bridge payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_CANCEL_FAILED",
+      "Session cancel request failed",
+      async () => ({
+        session_id: "session-123",
+        mode: "video_segments",
+        input_path: "/data/streams/segments",
+        selected_detectors: ["video_blur"],
+        status: "cancelling",
+      }),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        session_id: "session-123",
+        mode: "video_segments",
+        input_path: "/data/streams/segments",
+        selected_detectors: ["video_blur"],
+        status: "cancelling",
+      },
+    });
+  });
 });

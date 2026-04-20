@@ -163,6 +163,79 @@ describe("bridge contract normalization", () => {
     });
   });
 
+  it("raises a typed bridge error when cancelSession returns an explicit backend failure", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn(),
+      cancelSession: vi.fn().mockResolvedValue(
+        fail(
+          "SESSION_CANCEL_FAILED",
+          "Session cancel request failed",
+          "No persisted session snapshot found for session_id=session-123",
+          {
+            backend_error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-123",
+          },
+        ),
+      ),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.cancelSession("session-123")).rejects.toMatchObject({
+      name: "BridgeTransportError",
+      code: "SESSION_CANCEL_FAILED",
+      message: "Session cancel request failed",
+      details: "No persisted session snapshot found for session_id=session-123",
+      backendErrorCode: "session_not_found",
+      statusReason: "session_not_found",
+      statusDetail: "No persisted session snapshot found for session_id=session-123",
+    });
+  });
+
+  it("accepts a FastAPI-style cancelSession success payload", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn(),
+      cancelSession: vi.fn().mockResolvedValue({
+        ok: true,
+        data: {
+          session_id: "session-123",
+          mode: "video_segments",
+          input_path: "/data/streams/segments",
+          selected_detectors: ["video_blur"],
+          status: "cancelling",
+        },
+      }),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.cancelSession("session-123")).resolves.toEqual({
+      session_id: "session-123",
+      mode: "video_segments",
+      input_path: "/data/streams/segments",
+      selected_detectors: ["video_blur"],
+      status: "cancelling",
+    });
+  });
+
+  it("accepts a null cancelSession success payload", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn(),
+      cancelSession: vi.fn().mockResolvedValue({
+        ok: true,
+        data: null,
+      }),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.cancelSession("session-123")).resolves.toBeNull();
+  });
+
   it("normalizes malformed readSession data inside an explicit success envelope", async () => {
     const bridge = createNormalizedBridge({
       listDetectors: vi.fn(),

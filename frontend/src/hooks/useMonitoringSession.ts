@@ -128,12 +128,12 @@ export function useMonitoringSession({
     try {
       if (isSessionRunning) {
         const nextSession = await localBridge.cancelSession(currentSession.session_id);
+        // A cancel bridge success may legitimately return null when the backend
+        // accepted the stop request without an updated session summary payload.
         if (nextSession) {
           setSession(nextSession);
           setSnapshot((current) => updateSnapshotSession(current, nextSession));
-          return;
         }
-        throw new Error("missing cancel session payload");
       }
     } catch (caughtError) {
       setError(getSessionStopErrorMessage(caughtError));
