@@ -102,7 +102,7 @@ Right now it works in a simple local-first way:
 
 - a session is created when monitoring starts
 - progress, alerts, and results are written to local JSON / JSONL files
-- the frontend polls those files through the Electron/Python bridge
+- the frontend polls those snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
 The current feature set is intentionally narrow, but it is designed to be easy
@@ -134,10 +134,10 @@ From your point of view, the flow is pretty simple:
 1. You pick a source, choose the detectors you want, and hit `Start Monitoring`.
 2. The frontend handles the visible workflow: setup, playback, live status, and
    the basic session controls.
-3. Electron acts as the local bridge between the UI and the Python runtime. It
-   also handles playback-specific duties such as local media serving and the
-   HLS proxy path used when remote streams cannot be played directly in the
-   renderer.
+3. Electron acts as the local bridge between the UI and the FastAPI-backed
+   Python runtime. It also handles playback-specific duties such as local media
+   serving and the HLS proxy path used when remote streams cannot be played
+   directly in the renderer.
 4. The backend session runner and stream loader do the monitoring work in the
    background: they open files or stream chunks, move through them step by
    step, and keep the session running.
@@ -146,11 +146,11 @@ From your point of view, the flow is pretty simple:
 6. Detectors produce structured results, and the alert-rule layer turns the
    important ones into warnings that are easier to notice and understand.
 7. Session state is persisted locally, and the frontend polls snapshots through
-   the Electron/Python bridge so you can see progress, status, and alerts in
-   near real time instead of guessing whether the run is stuck.
+   Electron and the local FastAPI backend so you can see progress, status, and
+   alerts in near real time instead of guessing whether the run is stuck.
 
 The diagram below shows the runtime flow behind the app: source input,
-playback source resolution, the Electron/Python boundary, backend monitoring,
+playback source resolution, the Electron/FastAPI boundary, backend monitoring,
 and session-state polling back into the UI. The editable file is
 [diagram_final.svg](./docs/assets/diagram_final.svg), and the PDF version is
 [diagram_final.pdf](./docs/assets/diagram_final.pdf).

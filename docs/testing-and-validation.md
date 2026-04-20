@@ -67,6 +67,12 @@ Frontend contract checks:
 - `frontend/electron/fastApiFallback.test.mjs`
   - FastAPI readiness cache and fallback policy
   - no-fallback behavior for structured API business errors
+- `frontend/electron/fastApiRuntimePolicy.test.mjs`
+  - startup timeout and clear unavailable-runtime behavior
+  - no-operation execution after startup failure
+- `frontend/electron/fastApiProcessManager.test.mjs`
+  - FastAPI process ownership
+  - single-start behavior and process-state reset
 - `frontend/electron/bridgeResponses.test.mjs`
   - Electron bridge success/error envelope mapping
   - structured bridge payload expectations for lifecycle operations
@@ -104,8 +110,26 @@ cd frontend
 npm run test:cancel-migration
 ```
 
-If the next change touches FastAPI startup/readiness behavior, add or run
-Electron-layer tests first before expanding into broader app-level checks.
+Startup/runtime checkpoint:
+
+```bash
+cd frontend
+npm run test:startup-runtime
+```
+
+Startup milestone checkpoint:
+
+```bash
+cd frontend
+npm run test:startup-milestone
+```
+
+Use this checkpoint after a meaningful FastAPI startup/readiness change when
+you want both the focused Electron runtime tests and the broader frontend
+session-flow checks in one run.
+
+If a change touches FastAPI startup/readiness behavior, run Electron-layer
+startup tests first before expanding into broader app-level checks.
 
 For narrower diagnosis:
 

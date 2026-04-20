@@ -15,26 +15,24 @@ This frontend is the React shell for the richer local monitoring workflow.
   - latest result preview
   - session history
   - alert detail drawer
-- The detector list and live session flow currently use a demo bridge in
-  [`src/bridge/demoBridge.ts`](./src/bridge/demoBridge.ts).
-- The Python backend contract for the real local bridge already exists in:
+- The Electron runtime now uses a FastAPI-backed local bridge for the main
+  detector/session/playback flow.
+- The Python backend contract for that local runtime still builds on:
   - [`../src/analyzer_registry.py`](../src/analyzer_registry.py)
   - [`../src/session_cli.py`](../src/session_cli.py)
   - [`../src/session_runner.py`](../src/session_runner.py)
   - [`../src/session_io.py`](../src/session_io.py)
 
-## Why It Uses a Demo Bridge For Now
+## Runtime Model
 
 A browser-only React app cannot directly launch local Python commands or read
-local session files without a host bridge. For the no-FastAPI path, the next
-step is to add a small Node/Electron/Tauri bridge that:
+local session files without a host bridge. In the desktop runtime, Electron now
+owns that bridge and talks to the local FastAPI backend for normal operation.
 
-1. runs `python3 src/session_cli.py list-detectors`
-2. runs `python3 src/session_cli.py run-session ...`
-3. polls `python3 src/session_cli.py read-session --session-id ...`
-4. returns progress, alerts, and results back to the React app
+The Python CLI is still useful for tooling/debugging tasks, but it is no longer
+the normal frontend runtime transport.
 
-## Expected Real Bridge Commands
+## Useful Tooling Commands
 
 List detectors:
 
@@ -42,13 +40,33 @@ List detectors:
 python3 src/session_cli.py list-detectors --mode video_segments
 ```
 
-Run one session:
+Start one session:
 
 ```bash
-python3 src/session_cli.py run-session \
+python3 src/session_cli.py start-session \
   --mode video_segments \
   --input-path ./data/streams/segments \
   --detector video_metrics
+```
+
+Read one session snapshot:
+
+```bash
+python3 src/session_cli.py read-session --session-id <session-id>
+```
+
+Cancel one session:
+
+```bash
+python3 src/session_cli.py cancel-session --session-id <session-id>
+```
+
+Resolve one playback source:
+
+```bash
+python3 src/session_cli.py resolve-playback-source \
+  --mode video_segments \
+  --input-path ./data/streams/segments
 ```
 
 ## Run The Frontend
@@ -61,6 +79,5 @@ npm install
 npm run dev
 ```
 
-The current UI is a realistic frontend shell for Iteration 1, but it still
-needs the real local bridge to launch Python sessions and poll live session
-files from the browser flow.
+The current UI runs through Electron and the local FastAPI backend during
+normal desktop development.
