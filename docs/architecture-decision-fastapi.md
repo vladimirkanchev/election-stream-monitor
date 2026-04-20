@@ -4,8 +4,8 @@ This document records the current architectural decision for introducing
 FastAPI into the local-first monitoring runtime.
 
 It is a short reference for contributors. The goal is to keep ownership
-boundaries explicit while the Electron bridge moves from transitional transport
-fallbacks toward a FastAPI-owned local HTTP runtime.
+boundaries explicit now that the Electron bridge uses a FastAPI-owned local
+HTTP runtime for normal desktop operation.
 
 ## Decision Summary
 
@@ -41,7 +41,7 @@ implementation details.
 - remote HLS playback proxying for the renderer
 - playback URL transformation for renderer-safe consumption
 - local runtime process management
-- optionally later, FastAPI process startup and supervision
+- FastAPI process startup/readiness supervision for the desktop runtime
 
 These responsibilities are tied to the desktop host and renderer environment.
 They are not part of the stable backend monitoring contract.
@@ -56,7 +56,6 @@ They are not part of the stable backend monitoring contract.
 The frontend should not need to know whether data came from:
 
 - demo bridge
-- CLI-backed Electron bridge
 - FastAPI-backed Electron bridge
 
 ## CLI Status
@@ -68,6 +67,16 @@ That means:
 - existing CLI entry points remain usable for scripted inspection, manual
   lifecycle control, and backend diagnostics
 - Electron runtime behavior should not depend on the CLI in normal operation
+
+The supported tooling/debugging commands are:
+
+- `list-detectors`
+- `start-session`
+- `read-session`
+- `cancel-session`
+- `resolve-playback-source`
+
+`run-session` remains an internal worker helper used by `start-session`.
 
 The CLI is a tooling seam, not the intended normal runtime transport for
 session/domain operations.

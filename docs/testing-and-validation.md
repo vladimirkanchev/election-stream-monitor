@@ -143,6 +143,22 @@ If one side of the contract changes, do not rely on only backend tests or only
 frontend tests. Run at least one focused backend contract check and one focused
 frontend normalization check together.
 
+### Runtime Doc Alignment
+
+When the desktop runtime model changes, keep these docs aligned:
+
+- `docs/fastapi-boundary.md`
+- `docs/architecture-decision-fastapi.md`
+- `docs/architecture.md`
+- `README.md`
+- `frontend/README.md`
+
+These docs should describe the same normal runtime path:
+
+- Electron owns local FastAPI startup/readiness
+- FastAPI is the normal desktop runtime backend
+- Python CLI commands remain available for tooling/debugging only
+
 ### Build Validation
 
 Common local build command:

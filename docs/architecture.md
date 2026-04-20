@@ -62,8 +62,9 @@ It is now:
    - selected detectors
 2. The React app calls the normalized bridge surface exposed through
    `window.electionBridge`.
-3. Electron invokes the Python CLI and returns explicit success/error
-   envelopes to the frontend transport layer.
+3. Electron owns local runtime startup/readiness, talks to the local FastAPI
+   backend for normal operation, and returns explicit success/error envelopes
+   to the frontend transport layer.
 4. [`src/session_runner.py`](../src/session_runner.py) resolves files or slices for the chosen mode.
 5. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which detectors are enabled for that mode.
 6. [`src/detectors.py`](../src/detectors.py) produces flat result rows.
@@ -223,8 +224,7 @@ The frontend is local-first and talks to Python through Electron.
 Important parts:
 
 - [`frontend/electron/main.mjs`](../frontend/electron/main.mjs)
-  - minimal Electron bridge handlers
-  - session CLI calls
+  - Electron-owned FastAPI startup/readiness and bridge handlers
   - local media serving and remote HLS proxying for playback
 - [`frontend/src/hooks/useSetupState.ts`](../frontend/src/hooks/useSetupState.ts)
   - setup state
@@ -322,9 +322,12 @@ It currently provides:
 - `POST /sessions/{session_id}/cancel`
 - `POST /playback/resolve`
 
-The current FastAPI layer is still a thin HTTP wrapper over the local-first
-session/domain code. Electron integration is still partial, and the Python CLI
-remains as a tooling/debugging seam rather than the normal runtime bridge.
+The current FastAPI layer is the normal runtime backend boundary for the
+desktop app. Electron now owns local FastAPI startup/readiness and uses the
+API for normal session and playback-resolution bridge operations.
+
+The Python CLI remains available as a tooling/debugging seam rather than the
+normal runtime bridge.
 
 Use these docs together:
 
@@ -346,7 +349,8 @@ Current ownership split:
   - local file trust rules
   - FFmpeg/FFprobe invocation
   - temp-file materialization and cleanup
-  - local process-spawn details for detached session execution
+  - local process-spawn details for detached session execution and backend
+    startup
 
 That split is intentional because FastAPI should expose the stable monitoring
 contract, not absorb every desktop/runtime concern that currently exists only

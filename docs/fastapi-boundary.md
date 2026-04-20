@@ -6,7 +6,7 @@ how to run it locally, what contract it exposes, and what is still incomplete.
 Right now, FastAPI is the owned runtime backend for the main Electron session
 bridge. It is still a thin HTTP boundary over the existing local-first
 session/domain code, and it does not replace Electron-specific playback or
-renderer transport responsibilities.
+other desktop/runtime host responsibilities.
 
 ## Current Status
 
@@ -33,8 +33,10 @@ What is still partial:
 
 ## Current Runtime State
 
-Electron now uses FastAPI as the normal runtime transport for the main session
-lifecycle and read paths.
+For normal desktop operation, Electron now talks to the local FastAPI backend.
+
+Electron owns local FastAPI startup/readiness and uses FastAPI for the main
+session lifecycle and playback-resolution bridge operations.
 
 Python CLI commands remain available as tooling/debugging commands, not as the
 normal Electron runtime backend path.
@@ -64,6 +66,10 @@ From the repository root:
 . .venv/bin/activate
 uvicorn api.app:app --app-dir src --reload
 ```
+
+The Electron desktop runtime can also start the local FastAPI process as part
+of its owned startup/readiness flow. Running `uvicorn` manually is mainly
+useful for backend-focused development and debugging.
 
 Open the interactive docs at:
 
