@@ -1,11 +1,13 @@
-export class ApiHttpError extends Error {
-  constructor(message, { status, apiPayload } = {}) {
-    super(message);
-    this.name = "ApiHttpError";
-    this.status = status ?? null;
-    this.apiPayload = apiPayload ?? null;
-  }
-}
+import { ApiHttpError } from "./apiErrors.mjs";
+
+/**
+ * Legacy FastAPI fallback helper kept as a lower-level transport/test seam.
+ *
+ * Normal Electron runtime handlers now use the shared runtime policy in
+ * `fastApiRuntimePolicy.mjs` instead of broad CLI fallback. This module
+ * remains useful for transport-specific tests, readiness-cache helpers, and
+ * shared API error handling.
+ */
 
 export function createFastApiReadinessState() {
   return {

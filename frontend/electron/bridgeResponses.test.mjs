@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiHttpError } from "./fastApiFallback.mjs";
+import { ApiHttpError } from "./apiErrors.mjs";
 import { handleBridgeOperation } from "./bridgeResponses.mjs";
 
 describe("Electron bridge response mapping", () => {

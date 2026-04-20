@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+// Expose the stable renderer bridge; Electron runtime policy lives in main.
 const electionBridge = Object.freeze({
   listDetectors: (mode) => ipcRenderer.invoke("bridge:list-detectors", mode),
   startSession: (input) => ipcRenderer.invoke("bridge:start-session", input),
