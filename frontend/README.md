@@ -27,7 +27,8 @@ This frontend is the React shell for the richer local monitoring workflow.
 
 A browser-only React app cannot directly launch local Python commands or read
 local session files without a host bridge. In the desktop runtime, Electron now
-owns that bridge and talks to the local FastAPI backend for normal operation.
+owns that bridge, starts/waits for the local FastAPI backend as needed, and
+talks to it for normal operation.
 
 The Python CLI is still useful for tooling/debugging tasks, but it is no longer
 the normal frontend runtime transport.

@@ -19,8 +19,9 @@ with `index.m3u8`, and direct remote `.m3u8` / `.mp4` `api_stream` inputs.
 I’m trying to keep the project small enough to understand and structured
 enough to extend. The goal is to make detector, frontend, and rule changes
 feel manageable instead of messy. Over time, I’d like to grow it into an MVP
-with a FastAPI-backed service layer and a cloud deployment path, but that is
-still a later step rather than the current stage of the project.
+with a stronger service/deployment story and eventually a cloud deployment
+path. Today, the local desktop runtime already uses a FastAPI-backed backend
+boundary with Electron as the desktop host.
 
 ## Why this project exists
 
@@ -48,6 +49,12 @@ Use this quick path:
 - setup and docs map: [docs/README.md](./docs/README.md)
 - frontend and transport: [docs/frontend-architecture.md](./docs/frontend-architecture.md)
 - FastAPI boundary and current API status: [docs/fastapi-boundary.md](./docs/fastapi-boundary.md)
+
+## Desktop Runtime Summary
+
+The Electron desktop app now uses the local FastAPI backend for normal runtime
+operation. Python CLI commands remain available for tooling/debugging and
+scripted inspection, but they are not the normal app transport.
 
 ## Current Capabilities
 
