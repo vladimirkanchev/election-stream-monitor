@@ -145,8 +145,8 @@ export async function enterApiStreamSource(url: string) {
   });
 }
 
-export function toggleFirstDetector() {
-  fireEvent.click(screen.getByRole("checkbox"));
+export async function toggleFirstDetector() {
+  fireEvent.click(await screen.findByRole("checkbox"));
 }
 
 export function startMonitoring() {
