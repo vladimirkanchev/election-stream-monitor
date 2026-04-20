@@ -104,6 +104,9 @@ cd frontend
 npm run test:cancel-migration
 ```
 
+If the next change touches FastAPI startup/readiness behavior, add or run
+Electron-layer tests first before expanding into broader app-level checks.
+
 For narrower diagnosis:
 
 ```bash

@@ -29,6 +29,23 @@ What is still partial:
 - the CLI bridge is still part of the current runtime path
 - playback proxying and renderer-specific media handling still live in Electron
 
+## Current Runtime State
+
+Electron now uses FastAPI-first transport for the main session lifecycle and
+read paths. Temporary CLI fallback still exists for transport unavailability
+during the migration phase.
+
+This is an intentional transitional state, not the final runtime architecture.
+
+## Next Step
+
+The next architectural step is to decide how Electron owns FastAPI
+startup/readiness:
+
+- whether Electron starts or supervises the FastAPI process
+- when unavailability should still allow fallback
+- when FastAPI should fail clearly instead
+
 ## Run Locally
 
 From the repository root:

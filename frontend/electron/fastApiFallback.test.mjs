@@ -249,6 +249,51 @@ describe("FastAPI readiness and fallback helpers", () => {
     expect(cliOperation).toHaveBeenCalledTimes(1);
   });
 
+  it("rechecks FastAPI readiness after an unavailable result and uses the API once health recovers", async () => {
+    let currentTime = 10_000;
+    const now = () => currentTime;
+
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce({ ok: true });
+
+    const firstCliOperation = vi.fn().mockResolvedValue([{ id: "video_metrics" }]);
+    const secondApiOperation = vi.fn().mockResolvedValue([{ id: "video_blur" }]);
+
+    const firstResult = await withFastApiFallback({
+      state,
+      apiGetHealth,
+      operationName: "bridge:list-detectors",
+      apiOperation: vi.fn(),
+      cliOperation: firstCliOperation,
+      ttlMs: 1500,
+      now,
+      warn: vi.fn(),
+    });
+
+    expect(firstResult).toEqual([{ id: "video_metrics" }]);
+    expect(state.available).toBe(false);
+
+    currentTime += 1600;
+
+    const secondResult = await withFastApiFallback({
+      state,
+      apiGetHealth,
+      operationName: "bridge:list-detectors",
+      apiOperation: secondApiOperation,
+      cliOperation: vi.fn(),
+      ttlMs: 1500,
+      now,
+      warn: vi.fn(),
+    });
+
+    expect(secondResult).toEqual([{ id: "video_blur" }]);
+    expect(secondApiOperation).toHaveBeenCalledTimes(1);
+    expect(state.available).toBe(true);
+    expect(apiGetHealth).toHaveBeenCalledTimes(2);
+  });
+
   it("reuses readiness within TTL and marks state unavailable after transport failure", async () => {
     let currentTime = 10_000;
     const now = () => currentTime;
