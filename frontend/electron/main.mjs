@@ -301,7 +301,14 @@ ipcMain.handle("bridge:cancel-session", async (_event, sessionId) => {
   return handleBridgeOperation(
     "SESSION_CANCEL_FAILED",
     "Session cancel request failed",
-    async () => runJsonCommand(["cancel-session", "--session-id", sessionId]),
+    async () => withFastApiFallback({
+      state: fastApiReadiness,
+      apiGetHealth,
+      operationName: "bridge:cancel-session",
+      apiOperation: () => apiCancelSession(sessionId),
+      cliOperation: () => runJsonCommand(["cancel-session", "--session-id", sessionId]),
+      ttlMs: FASTAPI_READINESS_TTL_MS,
+    }),
   );
 });
 

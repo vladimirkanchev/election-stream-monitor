@@ -133,4 +133,65 @@ describe("App cancel-session integration", () => {
       ).toBeTruthy();
     });
   });
+
+  it("shows the bridge-aware stop message for backend-style cancel failures", async () => {
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSnapshot());
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      fail(
+        "SESSION_CANCEL_FAILED",
+        "Session cancel request failed",
+        "No persisted session snapshot found for session_id=session-1",
+        {
+          backend_error_code: "session_not_found",
+          status_reason: "session_not_found",
+          status_detail: "No persisted session snapshot found for session_id=session-1",
+        },
+      ),
+    );
+
+    await renderApp();
+
+    await enterLocalSource();
+    toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Monitoring could not be ended cleanly. The local monitoring bridge reported a request failure.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("does not show a stop error when cancelSession resolves with null", async () => {
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSnapshot());
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+    await renderApp();
+
+    await enterLocalSource();
+    toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(mockBridge.cancelSession).toHaveBeenCalledWith("session-1");
+    });
+
+    expect(screen.queryByText(/Monitoring could not be ended cleanly\./)).toBeNull();
+  });
 });

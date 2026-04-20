@@ -180,6 +180,75 @@ describe("FastAPI readiness and fallback helpers", () => {
     expect(cliOperation).toHaveBeenCalledTimes(1);
   });
 
+  it("does not fall back to CLI on structured FastAPI missing-session errors for cancel-session", async () => {
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
+    const apiOperation = vi.fn().mockRejectedValue(
+      new ApiHttpError("Session not found", {
+        status: 404,
+        apiPayload: {
+          detail: "Session not found",
+          error_code: "session_not_found",
+          status_reason: "session_not_found",
+          status_detail: "No persisted session snapshot found for session_id=session-123",
+        },
+      }),
+    );
+    const cliOperation = vi.fn();
+
+    await expect(
+      withFastApiFallback({
+        state,
+        apiGetHealth,
+        operationName: "bridge:cancel-session",
+        apiOperation,
+        cliOperation,
+        warn: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      name: "ApiHttpError",
+      status: 404,
+      apiPayload: {
+        error_code: "session_not_found",
+        status_reason: "session_not_found",
+      },
+    });
+
+    expect(cliOperation).not.toHaveBeenCalled();
+  });
+
+  it("falls back to CLI on FastAPI unavailability for cancel-session", async () => {
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    const apiOperation = vi.fn();
+    const cliOperation = vi.fn().mockResolvedValue({
+      session_id: "session-123",
+      mode: "video_files",
+      input_path: "/tmp/input.mp4",
+      selected_detectors: ["video_metrics"],
+      status: "cancelling",
+    });
+
+    const result = await withFastApiFallback({
+      state,
+      apiGetHealth,
+      operationName: "bridge:cancel-session",
+      apiOperation,
+      cliOperation,
+      warn: vi.fn(),
+    });
+
+    expect(result).toEqual({
+      session_id: "session-123",
+      mode: "video_files",
+      input_path: "/tmp/input.mp4",
+      selected_detectors: ["video_metrics"],
+      status: "cancelling",
+    });
+    expect(apiOperation).not.toHaveBeenCalled();
+    expect(cliOperation).toHaveBeenCalledTimes(1);
+  });
+
   it("reuses readiness within TTL and marks state unavailable after transport failure", async () => {
     let currentTime = 10_000;
     const now = () => currentTime;

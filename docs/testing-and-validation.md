@@ -97,6 +97,13 @@ cd frontend
 npm run test:frontend-checkpoint
 ```
 
+Cancel migration checkpoint:
+
+```bash
+cd frontend
+npm run test:cancel-migration
+```
+
 For narrower diagnosis:
 
 ```bash

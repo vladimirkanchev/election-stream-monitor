@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:electron-bridge": "vitest run electron/fastApiFallback.test.mjs electron/bridgeResponses.test.mjs",
     "test:session-flow": "vitest run src/bridge/contract.test.ts src/uiErrors.test.ts src/App.startSession.test.tsx src/App.pollingStatus.test.tsx src/App.cancelSession.test.tsx",
+    "test:cancel-migration": "vitest run electron/fastApiFallback.test.mjs electron/bridgeResponses.test.mjs src/bridge/contract.test.ts src/App.cancelSession.test.tsx",
     "test:frontend-checkpoint": "npm run test:electron-bridge && npm run test:session-flow",
     "test:watch": "vitest",
     "build:web": "npm run sync:detectors && tsc -b --incremental false && vite build",
