@@ -1,4 +1,9 @@
-"""Tests for small session CLI responses used by the frontend bridge."""
+"""Tests for the tooling/debugging session CLI commands.
+
+These tests keep the supported Python CLI surface explicit for scripted
+inspection, manual lifecycle control, and backend diagnostics. They are not
+the primary Electron runtime transport tests.
+"""
 
 import json
 from pathlib import Path
@@ -7,9 +12,23 @@ import pytest
 
 import session_cli
 
+# Electron runtime bridge behavior is covered separately in frontend/electron tests.
+
+
+def test_cli_keeps_the_supported_tooling_commands() -> None:
+    """The supported tooling command set should stay explicit and stable."""
+    parser = session_cli.build_parser()
+    commands = parser._subparsers._group_actions[0].choices.keys()
+
+    assert "list-detectors" in commands
+    assert "start-session" in commands
+    assert "read-session" in commands
+    assert "cancel-session" in commands
+    assert "resolve-playback-source" in commands
+
 
 def test_cancel_session_returns_full_session_shape(monkeypatch, capsys) -> None:
-    """Cancel-session should preserve source metadata needed by the frontend."""
+    """Cancel-session should preserve source metadata for tooling/debugging use."""
     monkeypatch.setattr(
         "sys.argv",
         ["session_cli.py", "cancel-session", "--session-id", "session-123"],
@@ -44,7 +63,7 @@ def test_cancel_session_returns_full_session_shape(monkeypatch, capsys) -> None:
 
 
 def test_start_session_returns_pending_shape_for_api_stream(monkeypatch, capsys) -> None:
-    """Start-session should preserve remote mode and input shape for api streams."""
+    """Start-session should preserve api_stream shape for tooling/debugging use."""
     popen_calls: list[dict[str, object]] = []
 
     class DummyPopen:
@@ -85,7 +104,7 @@ def test_start_session_returns_pending_shape_for_api_stream(monkeypatch, capsys)
 def test_start_session_uses_detached_child_process_settings(
     monkeypatch, tmp_path: Path, capsys
 ) -> None:
-    """Start-session should spawn one detached run-session child with stable bridge settings."""
+    """Start-session should spawn the internal run-session worker with stable settings."""
     popen_calls: list[dict[str, object]] = []
 
     class DummyPopen:
@@ -140,7 +159,7 @@ def test_start_session_uses_detached_child_process_settings(
 
 
 def test_resolve_playback_source_returns_remote_url_for_api_stream(monkeypatch, capsys) -> None:
-    """Resolve-playback-source should return passthrough remote URLs for api streams."""
+    """Resolve-playback-source should return passthrough remote URLs for tooling use."""
     monkeypatch.setattr(
         "sys.argv",
         [

@@ -1,8 +1,19 @@
-"""Small CLI entry points for the local React/Electron bridge.
+"""Tooling/debugging CLI for local session inspection and manual workflows.
 
-The CLI is intentionally narrow: it exposes a few explicit operations used by
-the Electron main process and keeps the bridge semantics separate from the
-frontend transport details.
+The Electron desktop runtime now talks to the local FastAPI backend for normal
+operation. This CLI remains available for explicit tooling/debugging tasks and
+scripted inspection.
+
+Supported tooling commands:
+- list-detectors
+- start-session
+- read-session
+- cancel-session
+- resolve-playback-source
+
+The `run-session` command is an internal helper used by `start-session` to
+spawn the detached worker process. It is not the normal frontend runtime
+transport.
 """
 
 import argparse
@@ -24,8 +35,10 @@ from stream_loader import (
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Create the CLI parser."""
-    parser = argparse.ArgumentParser(description="Local session bridge helpers")
+    """Create the CLI parser for tooling/debugging commands."""
+    parser = argparse.ArgumentParser(
+        description="Tooling/debugging helpers for local session workflows"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list-detectors")
