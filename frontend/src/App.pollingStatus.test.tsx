@@ -43,7 +43,7 @@ describe("App polling and status integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => expect(screen.getByText("Running")).toBeTruthy());
@@ -66,7 +66,7 @@ describe("App polling and status integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -112,7 +112,7 @@ describe("App polling and status integration", () => {
     await renderApp();
 
     await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -238,7 +238,7 @@ describe("App polling and status integration", () => {
     await renderApp();
 
     await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -289,7 +289,7 @@ describe("App polling and status integration", () => {
     await renderApp();
 
     await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -339,7 +339,7 @@ describe("App polling and status integration", () => {
     await renderApp();
 
     await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {

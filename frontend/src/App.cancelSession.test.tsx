@@ -29,7 +29,7 @@ describe("App cancel-session integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(true);
 
     startMonitoring();
@@ -66,7 +66,7 @@ describe("App cancel-session integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -90,7 +90,7 @@ describe("App cancel-session integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -116,7 +116,7 @@ describe("App cancel-session integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -153,7 +153,7 @@ describe("App cancel-session integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
@@ -179,7 +179,7 @@ describe("App cancel-session integration", () => {
     await renderApp();
 
     await enterLocalSource();
-    toggleFirstDetector();
+    await toggleFirstDetector();
     startMonitoring();
 
     await waitFor(() => {
