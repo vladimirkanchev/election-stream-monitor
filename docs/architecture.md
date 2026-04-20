@@ -323,8 +323,8 @@ It currently provides:
 - `POST /playback/resolve`
 
 The current FastAPI layer is still a thin HTTP wrapper over the local-first
-session/domain code. Electron integration is still partial, and the CLI bridge
-remains part of the migration path.
+session/domain code. Electron integration is still partial, and the Python CLI
+remains as a tooling/debugging seam rather than the normal runtime bridge.
 
 Use these docs together:
 

@@ -4,8 +4,8 @@ This document records the current architectural decision for introducing
 FastAPI into the local-first monitoring runtime.
 
 It is a short reference for contributors. The goal is to keep ownership
-boundaries explicit while the Electron bridge transitions from CLI-backed calls
-toward a local HTTP API.
+boundaries explicit while the Electron bridge moves from transitional transport
+fallbacks toward a FastAPI-owned local HTTP runtime.
 
 ## Decision Summary
 
@@ -61,16 +61,16 @@ The frontend should not need to know whether data came from:
 
 ## CLI Status
 
-The current CLI bridge remains a valid fallback during migration.
+The Python CLI remains available as a tooling and debugging seam.
 
 That means:
 
-- existing CLI entry points remain usable while FastAPI integration is incomplete
-- Electron can migrate operation by operation instead of switching transport all
-  at once
+- existing CLI entry points remain usable for scripted inspection, manual
+  lifecycle control, and backend diagnostics
+- Electron runtime behavior should not depend on the CLI in normal operation
 
-The CLI is a migration fallback and tooling seam, not the intended long-term
-main transport for session/domain operations.
+The CLI is a tooling seam, not the intended normal runtime transport for
+session/domain operations.
 
 ## Session State Policy
 
@@ -100,8 +100,10 @@ Recommended order:
 4. move lifecycle-changing operations later:
    - `POST /sessions`
    - `POST /sessions/{session_id}/cancel`
-5. keep CLI fallback during the transition
-6. revisit Electron-managed FastAPI startup after the API boundary is stable
+5. move normal Electron runtime paths fully onto FastAPI
+6. move FastAPI startup/readiness ownership into Electron runtime policy
+7. keep CLI available only for tooling/debugging if still useful
+8. harden and validate the owned runtime model with focused tests and broader checkpoints
 
 ## Explicit Non-Goals For This Phase
 

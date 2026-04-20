@@ -3,8 +3,10 @@
 This document explains the current FastAPI layer in the project: what it does,
 how to run it locally, what contract it exposes, and what is still incomplete.
 
-Right now, FastAPI is a thin HTTP boundary over the existing local-first
-session/domain code. It does not replace the whole Electron bridge yet.
+Right now, FastAPI is the owned runtime backend for the main Electron session
+bridge. It is still a thin HTTP boundary over the existing local-first
+session/domain code, and it does not replace Electron-specific playback or
+renderer transport responsibilities.
 
 ## Current Status
 
@@ -25,26 +27,34 @@ These endpoints already use:
 
 What is still partial:
 
-- Electron is not fully migrated to use FastAPI for all bridge operations
-- the CLI bridge is still part of the current runtime path
 - playback proxying and renderer-specific media handling still live in Electron
+- startup/readiness ownership is in place, but the runtime model still needs
+  hardening and broader validation
 
 ## Current Runtime State
 
-Electron now uses FastAPI-first transport for the main session lifecycle and
-read paths. Temporary CLI fallback still exists for transport unavailability
-during the migration phase.
+Electron now uses FastAPI as the normal runtime transport for the main session
+lifecycle and read paths.
 
-This is an intentional transitional state, not the final runtime architecture.
+Python CLI commands remain available as tooling/debugging commands, not as the
+normal Electron runtime backend path.
 
-## Next Step
+## Current Startup Model
 
-The next architectural step is to decide how Electron owns FastAPI
-startup/readiness:
+Electron now:
 
-- whether Electron starts or supervises the FastAPI process
-- when unavailability should still allow fallback
-- when FastAPI should fail clearly instead
+- starts the local FastAPI process when needed
+- waits briefly for `/health` during startup
+- uses one shared runtime policy for unavailable-backend behavior
+
+The next step is to harden and validate that startup model rather than decide
+whether it should exist.
+
+That means:
+
+- validating startup/readiness ownership with focused Electron tests
+- deciding whether any development-only escape hatch is still needed
+- tightening docs and runtime policy as the model settles
 
 ## Run Locally
 
@@ -175,9 +185,9 @@ This is still a migration-stage backend layer.
 Today that means:
 
 - FastAPI wraps the current local-first backend logic
-- CLI-backed bridge behavior still exists during the transition
+- CLI entry points still exist for tooling/debugging and scripted inspection
 - Electron integration is still partial
 - renderer-facing playback concerns still belong to Electron
 
 So the FastAPI layer is already useful and testable, but it is not yet the only
-active transport path in the application.
+owned runtime concern in the application.
