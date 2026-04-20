@@ -3,15 +3,22 @@ import { access, readFile, stat } from "node:fs/promises";
 import { constants as fsConstants, createReadStream } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import {
   ApiHttpError,
   createFastApiReadinessState,
-  withFastApiFallback,
-  resolvePlaybackSourceWithFallback,
 } from "./fastApiFallback.mjs";
+import {
+  createFastApiProcessState,
+  ensureFastApiProcessStarted as ensureFastApiProcessStartedWithState,
+  stopFastApiProcess as stopFastApiProcessWithState,
+} from "./fastApiProcessManager.mjs";
+import {
+  createFastApiRuntimeState,
+  runWithFastApiRuntimePolicy,
+  waitForFastApiReady,
+} from "./fastApiRuntimePolicy.mjs";
 import { handleBridgeOperation, isApiErrorPayload } from "./bridgeResponses.mjs";
 import {
   createRemotePlaybackRequestHeaders,
@@ -27,28 +34,33 @@ import {
  *
  * Responsibilities here are intentionally narrow:
  *
- * - translate IPC requests into FastAPI-backed backend calls, with temporary
- *   CLI fallback for operations still in migration
+ * - translate IPC requests into FastAPI-backed backend calls under one shared
+ *   runtime policy, including local FastAPI startup/readiness ownership
  * - expose a privileged ``local-media://`` protocol for local files
  * - proxy remote HLS assets through that local scheme when renderer playback
  *   would otherwise fail because of CORS
  *
  * Business rules such as source validation, monitoring lifecycle, and alert
- * semantics stay on the Python/backend side.
+ * semantics stay on the Python/backend side. Python CLI entry points remain
+ * available for tooling/debugging, not as the normal runtime transport.
  */
 
-const execFileAsync = promisify(execFile);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const frontendRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(frontendRoot, "..");
-const sessionCliPath = path.join(repoRoot, "src", "session_cli.py");
 const preloadPath = path.join(__dirname, "preload.mjs");
 const remoteHlsProxyRegistry = createRemoteHlsProxyRegistry();
-const FASTAPI_BASE_URL = process.env.ELECTION_API_BASE_URL ?? "http://127.0.0.1:8000";
-const FASTAPI_READINESS_TTL_MS = 1500;
+const FASTAPI_HOST = "127.0.0.1";
+const FASTAPI_PORT = Number(process.env.ELECTION_API_PORT ?? "8000");
+const FASTAPI_BASE_URL =
+  process.env.ELECTION_API_BASE_URL ?? `http://${FASTAPI_HOST}:${FASTAPI_PORT}`;
+const FASTAPI_STARTUP_TIMEOUT_MS = 10_000;
+const FASTAPI_HEALTHCHECK_INTERVAL_MS = 250;
 
 let fastApiReadiness = createFastApiReadinessState();
+let fastApiRuntimeState = createFastApiRuntimeState();
+let fastApiProcessState = createFastApiProcessState();
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -85,17 +97,40 @@ async function resolvePythonExecutable() {
   }
 }
 
-async function runJsonCommand(args) {
+async function resolveFastApiCommand() {
   const pythonExecutable = await resolvePythonExecutable();
-  const { stdout } = await execFileAsync(
-    pythonExecutable,
-    [sessionCliPath, ...args],
-    {
-      cwd: repoRoot,
-      maxBuffer: 10 * 1024 * 1024,
+  return {
+    command: pythonExecutable,
+    args: [
+      "-m",
+      "uvicorn",
+      "api.app:app",
+      "--app-dir",
+      "src",
+      "--host",
+      FASTAPI_HOST,
+      "--port",
+      String(FASTAPI_PORT),
+    ],
+  };
+}
+
+async function ensureCurrentFastApiProcessStarted() {
+  return ensureFastApiProcessStartedWithState({
+    state: fastApiProcessState,
+    hasExternalBaseUrl: Boolean(process.env.ELECTION_API_BASE_URL),
+    resolveCommand: resolveFastApiCommand,
+    spawnProcess: spawn,
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: "1",
     },
-  );
-  return JSON.parse(stdout);
+  });
+}
+
+async function stopFastApiProcess() {
+  return stopFastApiProcessWithState(fastApiProcessState);
 }
 
 async function callApi(path, options = {}) {
@@ -136,6 +171,12 @@ async function callApi(path, options = {}) {
   }
 
   return payload;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function apiGetHealth() {
@@ -180,6 +221,39 @@ async function apiStartSession(input) {
 async function apiCancelSession(sessionId) {
   return callApi(`/sessions/${encodeURIComponent(sessionId)}/cancel`, {
     method: "POST",
+  });
+}
+
+function markFastApiReady() {
+  fastApiReadiness = createFastApiReadinessState();
+  fastApiReadiness.checkedAt = Date.now();
+  fastApiReadiness.available = true;
+}
+
+function markFastApiUnavailable() {
+  fastApiReadiness = createFastApiReadinessState();
+  fastApiReadiness.checkedAt = Date.now();
+  fastApiReadiness.available = false;
+}
+
+async function waitForCurrentFastApiReady() {
+  return waitForFastApiReady({
+    state: fastApiRuntimeState,
+    ensureFastApiProcessStarted: ensureCurrentFastApiProcessStarted,
+    apiGetHealth,
+    markReady: markFastApiReady,
+    markUnavailable: markFastApiUnavailable,
+    delay,
+    timeoutMs: FASTAPI_STARTUP_TIMEOUT_MS,
+    intervalMs: FASTAPI_HEALTHCHECK_INTERVAL_MS,
+  });
+}
+
+async function runWithCurrentFastApiRuntimePolicy(operation) {
+  return runWithFastApiRuntimePolicy({
+    state: fastApiRuntimeState,
+    waitForFastApiReadyImpl: waitForCurrentFastApiReady,
+    operation,
   });
 }
 
@@ -236,20 +310,9 @@ ipcMain.handle("bridge:list-detectors", async (_event, mode) => {
   return handleBridgeOperation(
     "DETECTOR_CATALOG_FAILED",
     "Detector catalog request failed",
-    async () => withFastApiFallback({
-      state: fastApiReadiness,
-      apiGetHealth,
-      operationName: "bridge:list-detectors",
-      apiOperation: () => apiListDetectors(mode),
-      cliOperation: async () => {
-        const args = ["list-detectors"];
-        if (mode) {
-          args.push("--mode", mode);
-        }
-        return runJsonCommand(args);
-      },
-      ttlMs: FASTAPI_READINESS_TTL_MS,
-    }),
+    async () => runWithCurrentFastApiRuntimePolicy(
+      () => apiListDetectors(mode),
+    ),
   );
 });
 
@@ -257,28 +320,9 @@ ipcMain.handle("bridge:start-session", async (_event, input) => {
   return handleBridgeOperation(
     "SESSION_START_FAILED",
     "Session start request failed",
-    async () => withFastApiFallback({
-      state: fastApiReadiness,
-      apiGetHealth,
-      operationName: "bridge:start-session",
-      apiOperation: () => apiStartSession(input),
-      // Session start still keeps a temporary CLI fallback while FastAPI
-      // startup/readiness ownership remains part of the migration work.
-      cliOperation: async () => {
-        const args = [
-          "start-session",
-          "--mode",
-          input.source.kind,
-          "--input-path",
-          input.source.path,
-        ];
-        for (const detectorId of input.selectedDetectors ?? []) {
-          args.push("--detector", detectorId);
-        }
-        return runJsonCommand(args);
-      },
-      ttlMs: FASTAPI_READINESS_TTL_MS,
-    }),
+    async () => runWithCurrentFastApiRuntimePolicy(
+      () => apiStartSession(input),
+    ),
   );
 });
 
@@ -286,14 +330,9 @@ ipcMain.handle("bridge:read-session", async (_event, sessionId) => {
   return handleBridgeOperation(
     "SESSION_READ_FAILED",
     "Session read request failed",
-    async () => withFastApiFallback({
-      state: fastApiReadiness,
-      apiGetHealth,
-      operationName: "bridge:read-session",
-      apiOperation: () => apiReadSession(sessionId),
-      cliOperation: () => runJsonCommand(["read-session", "--session-id", sessionId]),
-      ttlMs: FASTAPI_READINESS_TTL_MS,
-    }),
+    async () => runWithCurrentFastApiRuntimePolicy(
+      () => apiReadSession(sessionId),
+    ),
   );
 });
 
@@ -301,14 +340,9 @@ ipcMain.handle("bridge:cancel-session", async (_event, sessionId) => {
   return handleBridgeOperation(
     "SESSION_CANCEL_FAILED",
     "Session cancel request failed",
-    async () => withFastApiFallback({
-      state: fastApiReadiness,
-      apiGetHealth,
-      operationName: "bridge:cancel-session",
-      apiOperation: () => apiCancelSession(sessionId),
-      cliOperation: () => runJsonCommand(["cancel-session", "--session-id", sessionId]),
-      ttlMs: FASTAPI_READINESS_TTL_MS,
-    }),
+    async () => runWithCurrentFastApiRuntimePolicy(
+      () => apiCancelSession(sessionId),
+    ),
   );
 });
 
@@ -316,31 +350,24 @@ ipcMain.handle("bridge:resolve-playback-source", async (_event, input) => {
   return handleBridgeOperation(
     "PLAYBACK_SOURCE_RESOLUTION_FAILED",
     "Playback source resolution failed",
-    async () => resolvePlaybackSourceWithFallback({
-      state: fastApiReadiness,
-      apiGetHealth,
-      apiResolvePlaybackSource,
-      cliResolvePlaybackSource: async (cliInput) => {
-        const args = [
-          "resolve-playback-source",
-          "--mode",
-          cliInput.source.kind,
-          "--input-path",
-          cliInput.source.path,
-        ];
-        if (cliInput.currentItem) {
-          args.push("--current-item", cliInput.currentItem);
-        }
-        return runJsonCommand(args);
-      },
-      input,
-      toRendererMediaUrl,
-      ttlMs: FASTAPI_READINESS_TTL_MS,
+    async () => runWithCurrentFastApiRuntimePolicy(async () => {
+      const result = await apiResolvePlaybackSource(input);
+      return toRendererMediaUrl(result.source);
     }),
   );
 });
 
-app.whenReady().then(() => {
+app.on("before-quit", () => {
+  void stopFastApiProcess();
+});
+
+app.whenReady().then(async () => {
+  const readiness = await waitForCurrentFastApiReady();
+
+  if (readiness.status === "failed_to_start") {
+    console.error("[fastapi] failed to become ready", readiness.error);
+  }
+
   protocol.handle("local-media", async (request) => {
     const requestUrl = new URL(request.url);
     if (requestUrl.hostname === "proxy") {
