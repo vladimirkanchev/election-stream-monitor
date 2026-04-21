@@ -258,6 +258,97 @@ describe("Electron bridge response mapping", () => {
     });
   });
 
+  it("wraps failed terminal read-session snapshots as normal bridge success payloads", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      async () => ({
+        session: {
+          session_id: "session-456",
+          mode: "api_stream",
+          input_path: "https://example.com/live/index.m3u8",
+          selected_detectors: ["video_metrics"],
+          status: "failed",
+        },
+        progress: {
+          session_id: "session-456",
+          status: "failed",
+          processed_count: 3,
+          total_count: 8,
+          current_item: "live-window-003.ts",
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_metrics"],
+          alert_count: 1,
+          last_updated_utc: "2026-04-21 10:05:00",
+          status_reason: "source_unreachable",
+          status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+        },
+        alerts: [],
+        results: [],
+        latest_result: null,
+      }),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        session: {
+          session_id: "session-456",
+          mode: "api_stream",
+          input_path: "https://example.com/live/index.m3u8",
+          selected_detectors: ["video_metrics"],
+          status: "failed",
+        },
+        progress: {
+          session_id: "session-456",
+          status: "failed",
+          processed_count: 3,
+          total_count: 8,
+          current_item: "live-window-003.ts",
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_metrics"],
+          alert_count: 1,
+          last_updated_utc: "2026-04-21 10:05:00",
+          status_reason: "source_unreachable",
+          status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+        },
+        alerts: [],
+        results: [],
+        latest_result: null,
+      },
+    });
+  });
+
+  it("maps read-session missing-session failures into the bridge error payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      async () => {
+        throw new ApiHttpError("Session not found", {
+          status: 404,
+          apiPayload: {
+            detail: "Session not found",
+            error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-456",
+          },
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_READ_FAILED",
+        message: "Session read request failed",
+        details: "No persisted session snapshot found for session_id=session-456",
+        backend_error_code: "session_not_found",
+        status_reason: "session_not_found",
+        status_detail: "No persisted session snapshot found for session_id=session-456",
+      },
+    });
+  });
+
   it("maps runtime-policy unavailable failures into a clear bridge failure", async () => {
     const result = await handleBridgeOperation(
       "SESSION_READ_FAILED",
