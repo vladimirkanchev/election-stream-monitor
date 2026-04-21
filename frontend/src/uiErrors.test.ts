@@ -151,6 +151,21 @@ describe("ui error messages", () => {
     );
   });
 
+  it("keeps missing-session cancel failures on the generic bridge-aware stop wording", () => {
+    const error = new BridgeTransportError({
+      code: "SESSION_CANCEL_FAILED",
+      message: "Session cancel request failed",
+      details: "No persisted session snapshot found for session_id=session-123",
+      backend_error_code: "session_not_found",
+      status_reason: "session_not_found",
+      status_detail: "No persisted session snapshot found for session_id=session-123",
+    });
+
+    expect(getSessionStopErrorMessage(error)).toBe(
+      "Monitoring could not be ended cleanly. The local monitoring bridge reported a request failure.",
+    );
+  });
+
   it("exports explicit api_stream runtime messages for future live UI states", () => {
     expect(getApiStreamOperatorMessage("reconnecting")).toBe(
       "The live stream is temporarily unavailable. Monitoring is reconnecting.",

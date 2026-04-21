@@ -171,20 +171,28 @@ describe("App cancel-session integration", () => {
     });
   });
 
-  it("shows a specific stop message when cancel is rejected for an already completed session", async () => {
+  it("suppresses a stop request after polling has already settled the UI into Completed", async () => {
     (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSnapshot());
-    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue(
-      fail(
-        "SESSION_CANCEL_FAILED",
-        "Session cancel request failed",
-        "Session session-1 is already completed.",
-        {
-          backend_error_code: "cancel_failed",
-          status_reason: "cancel_failed",
-          status_detail: "Session session-1 is already completed.",
+    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      makeSnapshot({
+        session: {
+          ...RUNNING_SESSION,
+          status: "completed",
         },
-      ),
+        progress: {
+          session_id: "session-1",
+          status: "completed",
+          processed_count: 4,
+          total_count: 4,
+          current_item: null,
+          latest_result_detector: "video_blur",
+          latest_result_detectors: ["video_blur"],
+          alert_count: 0,
+          last_updated_utc: "2026-04-21 12:30:00",
+          status_reason: "completed",
+          status_detail: null,
+        },
+      }),
     );
 
     await renderApp();
@@ -194,18 +202,18 @@ describe("App cancel-session integration", () => {
     startMonitoring();
 
     await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
+      expect(screen.getByText("Completed")).toBeTruthy();
     });
 
     endMonitoring();
 
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Monitoring was already ending or had already finished.",
-        ),
-      ).toBeTruthy();
-    });
+    expect(mockBridge.cancelSession).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText("Monitoring was already ending or had already finished."),
+    ).toBeNull();
+    expect(
+      screen.getByText("Monitoring finished successfully for the current source."),
+    ).toBeTruthy();
   });
 
   it("does not show a stop error when cancelSession resolves with null", async () => {
