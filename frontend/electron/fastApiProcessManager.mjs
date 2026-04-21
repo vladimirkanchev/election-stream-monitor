@@ -1,3 +1,16 @@
+/**
+ * Low-level FastAPI child-process ownership for the Electron desktop runtime.
+ *
+ * This module intentionally stays narrow:
+ * - spawn and track the child process
+ * - stream child stdout/stderr for diagnostics
+ * - clear child state on exit/error
+ * - stop the child during shutdown
+ *
+ * Startup/readiness policy belongs in higher-level orchestration rather than
+ * here, so this file can stay focused on process lifecycle primitives.
+ */
+
 export function createFastApiProcessState() {
   return {
     child: null,

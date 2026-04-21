@@ -3,21 +3,10 @@ import { access, readFile, stat } from "node:fs/promises";
 import { constants as fsConstants, createReadStream } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { ApiHttpError } from "./apiErrors.mjs";
-import { createFastApiReadinessState } from "./fastApiFallback.mjs";
-import {
-  createFastApiProcessState,
-  ensureFastApiProcessStarted as ensureFastApiProcessStartedWithState,
-  stopFastApiProcess as stopFastApiProcessWithState,
-} from "./fastApiProcessManager.mjs";
-import {
-  createFastApiRuntimeState,
-  runWithFastApiRuntimePolicy,
-  waitForFastApiReady,
-} from "./fastApiRuntimePolicy.mjs";
 import { handleBridgeOperation, isApiErrorPayload } from "./bridgeResponses.mjs";
+import { createFastApiStartupOrchestrator } from "./fastApiStartupOrchestrator.mjs";
 import {
   createRemotePlaybackRequestHeaders,
   createRemoteHlsProxyRegistry,
@@ -32,6 +21,7 @@ import {
  *
  * Responsibilities here are intentionally narrow:
  *
+ * - compose the Electron desktop runtime from focused helper modules
  * - own local FastAPI startup/readiness for the desktop runtime
  * - translate IPC requests into FastAPI-backed backend calls under one shared
  *   runtime policy
@@ -57,10 +47,6 @@ const FASTAPI_BASE_URL =
 const FASTAPI_STARTUP_TIMEOUT_MS = 10_000;
 const FASTAPI_HEALTHCHECK_INTERVAL_MS = 250;
 
-let fastApiReadiness = createFastApiReadinessState();
-let fastApiRuntimeState = createFastApiRuntimeState();
-let fastApiProcessState = createFastApiProcessState();
-
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "local-media",
@@ -85,52 +71,6 @@ app.commandLine.appendSwitch("in-process-gpu");
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("disable-features", "UseOzonePlatform");
 app.commandLine.appendSwitch("ozone-platform", "x11");
-
-async function resolvePythonExecutable() {
-  const venvPython = path.join(repoRoot, ".venv", "bin", "python");
-  try {
-    await access(venvPython, fsConstants.X_OK);
-    return venvPython;
-  } catch {
-    return "python3";
-  }
-}
-
-async function resolveFastApiCommand() {
-  const pythonExecutable = await resolvePythonExecutable();
-  return {
-    command: pythonExecutable,
-    args: [
-      "-m",
-      "uvicorn",
-      "api.app:app",
-      "--app-dir",
-      "src",
-      "--host",
-      FASTAPI_HOST,
-      "--port",
-      String(FASTAPI_PORT),
-    ],
-  };
-}
-
-async function ensureCurrentFastApiProcessStarted() {
-  return ensureFastApiProcessStartedWithState({
-    state: fastApiProcessState,
-    hasExternalBaseUrl: Boolean(process.env.ELECTION_API_BASE_URL),
-    resolveCommand: resolveFastApiCommand,
-    spawnProcess: spawn,
-    cwd: repoRoot,
-    env: {
-      ...process.env,
-      PYTHONUNBUFFERED: "1",
-    },
-  });
-}
-
-async function stopFastApiProcess() {
-  return stopFastApiProcessWithState(fastApiProcessState);
-}
 
 async function callApi(path, options = {}) {
   const response = await fetch(`${FASTAPI_BASE_URL}${path}`, {
@@ -170,12 +110,6 @@ async function callApi(path, options = {}) {
   }
 
   return payload;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }
 
 async function apiGetHealth() {
@@ -223,38 +157,17 @@ async function apiCancelSession(sessionId) {
   });
 }
 
-function markFastApiReady() {
-  fastApiReadiness = createFastApiReadinessState();
-  fastApiReadiness.checkedAt = Date.now();
-  fastApiReadiness.available = true;
-}
-
-function markFastApiUnavailable() {
-  fastApiReadiness = createFastApiReadinessState();
-  fastApiReadiness.checkedAt = Date.now();
-  fastApiReadiness.available = false;
-}
-
-async function waitForCurrentFastApiReady() {
-  return waitForFastApiReady({
-    state: fastApiRuntimeState,
-    ensureFastApiProcessStarted: ensureCurrentFastApiProcessStarted,
-    apiGetHealth,
-    markReady: markFastApiReady,
-    markUnavailable: markFastApiUnavailable,
-    delay,
-    timeoutMs: FASTAPI_STARTUP_TIMEOUT_MS,
-    intervalMs: FASTAPI_HEALTHCHECK_INTERVAL_MS,
-  });
-}
-
-async function runWithCurrentFastApiRuntimePolicy(operation) {
-  return runWithFastApiRuntimePolicy({
-    state: fastApiRuntimeState,
-    waitForFastApiReadyImpl: waitForCurrentFastApiReady,
-    operation,
-  });
-}
+// `main.mjs` composes the startup/readiness seam but does not own its
+// low-level process mechanics or readiness policy details.
+const fastApiStartup = createFastApiStartupOrchestrator({
+  repoRoot,
+  host: FASTAPI_HOST,
+  port: FASTAPI_PORT,
+  hasExternalBaseUrl: Boolean(process.env.ELECTION_API_BASE_URL),
+  startupTimeoutMs: FASTAPI_STARTUP_TIMEOUT_MS,
+  healthcheckIntervalMs: FASTAPI_HEALTHCHECK_INTERVAL_MS,
+  apiGetHealth,
+});
 
 function isAllowedRemotePlaybackSource(source) {
   return source.startsWith("http://") || source.startsWith("https://");
@@ -305,68 +218,80 @@ function createWindow() {
   }
 }
 
-ipcMain.handle("bridge:list-detectors", async (_event, mode) => {
-  return handleBridgeOperation(
-    "DETECTOR_CATALOG_FAILED",
-    "Detector catalog request failed",
-    async () => runWithCurrentFastApiRuntimePolicy(
-      () => apiListDetectors(mode),
-    ),
-  );
-});
+function registerBridgeHandlers() {
+  ipcMain.handle("bridge:list-detectors", async (_event, mode) => {
+    return handleBridgeOperation(
+      "DETECTOR_CATALOG_FAILED",
+      "Detector catalog request failed",
+      async () => fastApiStartup.runWithRuntimePolicy(
+        () => apiListDetectors(mode),
+      ),
+    );
+  });
 
-ipcMain.handle("bridge:start-session", async (_event, input) => {
-  return handleBridgeOperation(
-    "SESSION_START_FAILED",
-    "Session start request failed",
-    async () => runWithCurrentFastApiRuntimePolicy(
-      () => apiStartSession(input),
-    ),
-  );
-});
+  ipcMain.handle("bridge:start-session", async (_event, input) => {
+    return handleBridgeOperation(
+      "SESSION_START_FAILED",
+      "Session start request failed",
+      async () => fastApiStartup.runWithRuntimePolicy(
+        () => apiStartSession(input),
+      ),
+    );
+  });
 
-ipcMain.handle("bridge:read-session", async (_event, sessionId) => {
-  return handleBridgeOperation(
-    "SESSION_READ_FAILED",
-    "Session read request failed",
-    async () => runWithCurrentFastApiRuntimePolicy(
-      () => apiReadSession(sessionId),
-    ),
-  );
-});
+  ipcMain.handle("bridge:read-session", async (_event, sessionId) => {
+    return handleBridgeOperation(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      async () => fastApiStartup.runWithRuntimePolicy(
+        () => apiReadSession(sessionId),
+      ),
+    );
+  });
 
-ipcMain.handle("bridge:cancel-session", async (_event, sessionId) => {
-  return handleBridgeOperation(
-    "SESSION_CANCEL_FAILED",
-    "Session cancel request failed",
-    async () => runWithCurrentFastApiRuntimePolicy(
-      () => apiCancelSession(sessionId),
-    ),
-  );
-});
+  ipcMain.handle("bridge:cancel-session", async (_event, sessionId) => {
+    return handleBridgeOperation(
+      "SESSION_CANCEL_FAILED",
+      "Session cancel request failed",
+      async () => fastApiStartup.runWithRuntimePolicy(
+        () => apiCancelSession(sessionId),
+      ),
+    );
+  });
 
-ipcMain.handle("bridge:resolve-playback-source", async (_event, input) => {
-  return handleBridgeOperation(
-    "PLAYBACK_SOURCE_RESOLUTION_FAILED",
-    "Playback source resolution failed",
-    async () => runWithCurrentFastApiRuntimePolicy(async () => {
-      const result = await apiResolvePlaybackSource(input);
-      return toRendererMediaUrl(result.source);
-    }),
-  );
-});
+  ipcMain.handle("bridge:resolve-playback-source", async (_event, input) => {
+    return handleBridgeOperation(
+      "PLAYBACK_SOURCE_RESOLUTION_FAILED",
+      "Playback source resolution failed",
+      async () => fastApiStartup.runWithRuntimePolicy(async () => {
+        const result = await apiResolvePlaybackSource(input);
+        return toRendererMediaUrl(result.source);
+      }),
+    );
+  });
+}
 
-app.on("before-quit", () => {
-  void stopFastApiProcess();
-});
+function registerAppLifecycleHandlers() {
+  app.on("before-quit", () => {
+    // App lifecycle wiring stays here; the orchestrator handles the backend
+    // policy/details behind this single shutdown call.
+    void fastApiStartup.stopProcess();
+  });
 
-app.whenReady().then(async () => {
-  const readiness = await waitForCurrentFastApiReady();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
 
-  if (readiness.status === "failed_to_start") {
-    console.error("[fastapi] failed to become ready", readiness.error);
-  }
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+}
 
+function registerLocalMediaProtocol() {
   protocol.handle("local-media", async (request) => {
     const requestUrl = new URL(request.url);
     if (requestUrl.hostname === "proxy") {
@@ -374,15 +299,18 @@ app.whenReady().then(async () => {
     }
     return handleLocalMediaRequest(request, requestUrl);
   });
+}
 
+async function initializeDesktopRuntime() {
+  const readiness = await fastApiStartup.waitForReady();
+
+  if (readiness.status === "failed_to_start") {
+    console.error("[fastapi] failed to become ready", readiness.error);
+  }
+
+  registerLocalMediaProtocol();
   createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
-});
+}
 
 async function handleRemoteHlsProxyRequest(request, requestUrl) {
   // Proxy tokens are opaque renderer-facing identifiers. Only the main
@@ -600,8 +528,6 @@ function guessContentType(filePath) {
   return "application/octet-stream";
 }
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+registerBridgeHandlers();
+registerAppLifecycleHandlers();
+app.whenReady().then(initializeDesktopRuntime);
