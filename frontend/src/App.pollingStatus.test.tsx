@@ -198,9 +198,159 @@ describe("App polling and status integration", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("The live stream monitoring run stopped after hitting a runtime safety limit."),
+        screen.getByText("The live monitoring run ended after hitting a runtime safety limit."),
       ).toBeTruthy();
       expect(screen.getByText("Failed")).toBeTruthy();
+    });
+  });
+
+  it("switches from reconnecting to a terminal retry-budget message when api stream recovery finally fails", async () => {
+    const liveSession: SessionSummary = {
+      session_id: "session-api-retry-exhausted",
+      mode: "api_stream",
+      input_path: "https://example.com/live/playlist.m3u8",
+      selected_detectors: ["video_blur"],
+      status: "running",
+    };
+    const runningSnapshot = makeSnapshot({
+      session: liveSession,
+      progress: {
+        session_id: "session-api-retry-exhausted",
+        status: "running",
+        processed_count: 1,
+        total_count: 4,
+        current_item: "live-window-001",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-04 09:10:00",
+        status_reason: null,
+        status_detail: null,
+      },
+    });
+    const failedSnapshot = makeSnapshot({
+      session: { ...liveSession, status: "failed" },
+      progress: {
+        session_id: "session-api-retry-exhausted",
+        status: "failed",
+        processed_count: 1,
+        total_count: 4,
+        current_item: "live-window-001",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-04 09:10:02",
+        status_reason: "source_unreachable",
+        status_detail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
+      },
+    });
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(runningSnapshot)
+      .mockRejectedValueOnce(new Error("poll failed"))
+      .mockResolvedValue(failedSnapshot);
+
+    await renderApp();
+
+    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
+      ).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
+        ),
+      ).toBeTruthy();
+      expect(screen.getByText("Failed")).toBeTruthy();
+    });
+
+    expect(
+      screen.queryByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
+    ).toBeNull();
+  });
+
+  it("shows an idle-budget warning when a bounded api stream run completes after going quiet", async () => {
+    const liveSession: SessionSummary = {
+      session_id: "session-api-idle-completed",
+      mode: "api_stream",
+      input_path: "https://example.com/live/playlist.m3u8",
+      selected_detectors: ["video_blur"],
+      status: "running",
+    };
+    const runningSnapshot = makeSnapshot({
+      session: liveSession,
+      progress: {
+        session_id: "session-api-idle-completed",
+        status: "running",
+        processed_count: 2,
+        total_count: 4,
+        current_item: "live-window-002",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-04 09:20:00",
+        status_reason: null,
+        status_detail: null,
+      },
+    });
+    const completedSnapshot = makeSnapshot({
+      session: { ...liveSession, status: "completed" },
+      progress: {
+        session_id: "session-api-idle-completed",
+        status: "completed",
+        processed_count: 2,
+        total_count: 4,
+        current_item: "live-window-002",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-04 09:20:03",
+        status_reason: "idle_poll_budget_exhausted",
+        status_detail: "Idle poll budget exhausted",
+      },
+    });
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(runningSnapshot)
+      .mockResolvedValue(completedSnapshot);
+
+    await renderApp();
+
+    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Completed")).toBeTruthy();
+      expect(screen.getByText("The bounded live monitoring run has ended for the current stream.")).toBeTruthy();
+      expect(
+        screen.getByText(
+          "The live stream stopped producing new chunks. Monitoring ended after the idle polling budget was exhausted.",
+        ),
+      ).toBeTruthy();
     });
   });
 
@@ -680,7 +830,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Live, 4 chunks analyzed")).toBeTruthy();
       expect(
         screen.getByText(
-          "Live monitoring ended with an error. The stream may be unavailable or the reconnect budget may have been exhausted.",
+          "Live monitoring ended with an error. Check the monitoring details for the specific live-stream reason.",
         ),
       ).toBeTruthy();
     });

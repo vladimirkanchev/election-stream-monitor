@@ -168,28 +168,28 @@ function buildSessionMessage(
 
   if (status === "cancelling") {
     if (isApiStream) {
-      return "The current live stream session is stopping cleanly.";
+      return "Live monitoring is stopping cleanly for the current stream.";
     }
     return "The current session is ending. Playback and monitoring are being stopped cleanly.";
   }
 
   if (status === "completed") {
     if (isApiStream) {
-      return "The current bounded live run finished cleanly.";
+      return "The bounded live monitoring run has ended for the current stream.";
     }
     return "Monitoring finished successfully for the current source.";
   }
 
   if (status === "cancelled") {
     if (isApiStream) {
-      return "Live monitoring was stopped by the user. You can reconnect and start again.";
+      return "Live monitoring was stopped by the user. You can start it again when needed.";
     }
     return "Monitoring was stopped by the user. You can adjust the setup and start again.";
   }
 
   if (status === "failed") {
     if (isApiStream) {
-      return "Live monitoring ended with an error. The stream may be unavailable or the reconnect budget may have been exhausted.";
+      return "Live monitoring ended with an error. Check the monitoring details for the specific live-stream reason.";
     }
     return "Monitoring ended with an error. Check the source path and try again.";
   }

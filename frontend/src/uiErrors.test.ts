@@ -30,7 +30,7 @@ describe("ui error messages", () => {
     });
 
     expect(getSessionStartErrorMessage(error, "api_stream")).toBe(
-      "The live stream could not be reconnected. Monitoring stopped after the retry budget was exhausted.",
+      "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
     );
   });
 
@@ -77,15 +77,15 @@ describe("ui error messages", () => {
       },
       {
         details: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
-        expected: "The live stream could not be reconnected. Monitoring stopped after the retry budget was exhausted.",
+        expected: "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
       },
       {
         details: "api_stream session runtime exceeded max duration",
-        expected: "The live stream monitoring run stopped after hitting a runtime safety limit.",
+        expected: "The live monitoring run ended after hitting a runtime safety limit.",
       },
       {
         details: "api_stream playlist refresh limit exceeded",
-        expected: "The live stream monitoring run stopped after hitting a runtime safety limit.",
+        expected: "The live monitoring run ended after hitting a runtime safety limit.",
       },
     ];
 
@@ -166,13 +166,16 @@ describe("ui error messages", () => {
     );
   });
 
-  it("exports explicit api_stream runtime messages for future live UI states", () => {
+  it("exports explicit api_stream runtime messages for reconnecting and idle-bounded completion", () => {
     expect(getApiStreamOperatorMessage("reconnecting")).toBe(
       "The live stream is temporarily unavailable. Monitoring is reconnecting.",
     );
+    expect(getApiStreamOperatorMessage("idlePollBudgetExhausted")).toBe(
+      "The live stream stopped producing new chunks. Monitoring ended after the idle polling budget was exhausted.",
+    );
   });
 
-  it("maps failed api_stream session snapshots to operator-safe terminal messages", () => {
+  it("maps api_stream session snapshots to operator-safe terminal and warning messages", () => {
     expect(
       getApiStreamSessionStateMessage({
         status: "failed",
@@ -180,7 +183,7 @@ describe("ui error messages", () => {
         statusDetail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
       }),
     ).toBe(
-      "The live stream could not be reconnected. Monitoring stopped after the retry budget was exhausted.",
+      "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
     );
 
     expect(
@@ -189,7 +192,7 @@ describe("ui error messages", () => {
         statusReason: "source_unreachable",
         statusDetail: "api_stream session runtime exceeded max duration",
       }),
-    ).toBe("The live stream monitoring run stopped after hitting a runtime safety limit.");
+    ).toBe("The live monitoring run ended after hitting a runtime safety limit.");
 
     expect(
       getApiStreamSessionStateMessage({
@@ -197,7 +200,9 @@ describe("ui error messages", () => {
         statusReason: "idle_poll_budget_exhausted",
         statusDetail: null,
       }),
-    ).toBeNull();
+    ).toBe(
+      "The live stream stopped producing new chunks. Monitoring ended after the idle polling budget was exhausted.",
+    );
   });
 
   it("maps missing HLS playlists to a specific playback message", () => {

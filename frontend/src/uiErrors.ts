@@ -114,6 +114,7 @@ export function getApiStreamOperatorMessage(
     | "streamUnavailable"
     | "reconnecting"
     | "reconnectBudgetExhausted"
+    | "idlePollBudgetExhausted"
     | "safetyLimitReached"
     | "directMediaRequired"
     | "unsupportedSource",
@@ -124,9 +125,11 @@ export function getApiStreamOperatorMessage(
     case "reconnecting":
       return "The live stream is temporarily unavailable. Monitoring is reconnecting.";
     case "reconnectBudgetExhausted":
-      return "The live stream could not be reconnected. Monitoring stopped after the retry budget was exhausted.";
+      return "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.";
+    case "idlePollBudgetExhausted":
+      return "The live stream stopped producing new chunks. Monitoring ended after the idle polling budget was exhausted.";
     case "safetyLimitReached":
-      return "The live stream monitoring run stopped after hitting a runtime safety limit.";
+      return "The live monitoring run ended after hitting a runtime safety limit.";
     case "unsupportedSource":
       return "The selected live stream source is not supported by the current monitoring runtime.";
     case "streamUnavailable":
@@ -141,6 +144,12 @@ export function getApiStreamSessionStateMessage(args: {
   statusDetail?: string | null;
 }): string | null {
   const status = args.status ?? null;
+  if (status === "completed" && args.statusReason === "idle_poll_budget_exhausted") {
+    // This is a bounded live completion, not a failed run, but it still needs
+    // a warning-level operator explanation because the stream ended by going
+    // quiet rather than by reaching a normal terminal manifest boundary.
+    return getApiStreamOperatorMessage("idlePollBudgetExhausted");
+  }
   if (status !== "failed") {
     return null;
   }

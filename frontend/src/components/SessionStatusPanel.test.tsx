@@ -78,7 +78,7 @@ describe("SessionStatusPanel diagnostics", () => {
 
     expect(
       screen.getByText(
-        "The live stream could not be reconnected. Monitoring stopped after the retry budget was exhausted.",
+        "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
       ),
     ).toBeTruthy();
   });
