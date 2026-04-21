@@ -796,6 +796,10 @@ def _build_terminal_progress_status(
         return "cancel_requested", "Cancellation requested by client"
 
     if status == "completed":
+        if session_end_reason == "idle_poll_budget_exhausted":
+            # Keep the overall live-run outcome as completed while exposing
+            # the bounded-idle stop as a more specific machine-readable reason.
+            return "idle_poll_budget_exhausted", "Idle poll budget exhausted"
         if session_end_reason and session_end_reason != "completed":
             return "completed", _humanize_session_end_reason(session_end_reason)
         return "completed", None
@@ -811,6 +815,11 @@ def _build_terminal_progress_status(
                 return "validation_failed", terminal_failure_reason
             return "validation_failed", "Session input validation failed"
         if source_kind == "api_stream":
+            # Keep the stable failed-stream reason compact at the backend
+            # contract layer. Loader/runtime specifics stay in
+            # `terminal_failure_reason` and therefore surface through
+            # `status_detail` until a future profile/policy branch proves that
+            # a richer machine-readable split is worth the cross-layer churn.
             if terminal_failure_reason:
                 return "source_unreachable", terminal_failure_reason
             if error is not None:

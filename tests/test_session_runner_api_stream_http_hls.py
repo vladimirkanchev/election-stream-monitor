@@ -293,6 +293,219 @@ def test_run_local_session_http_hls_api_stream_persists_failed_snapshot_on_loade
     assert "reconnect_budget_exhausted" in str(snapshot["progress"]["status_detail"])
 
 
+def test_run_local_session_http_hls_api_stream_preserves_partial_progress_before_terminal_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A live run should keep accepted partial progress even if a later outage becomes terminal."""
+    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    monkeypatch.setattr(config, "API_STREAM_MAX_RECONNECT_ATTEMPTS", 1)
+    monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
+    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    monkeypatch.setattr(
+        session_runner,
+        "get_api_stream_loader",
+        lambda session_id=None: HttpHlsApiStreamLoader(
+            session_id or "session-api-http-partial-then-failed"
+        ),
+    )
+    monkeypatch.setattr("stream_loader.time.sleep", lambda seconds: None)
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer({"segment_000.ts": 0.82}),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (
+                200,
+                "\n".join(
+                    [
+                        "#EXTM3U",
+                        "#EXT-X-TARGETDURATION:1",
+                        "#EXT-X-MEDIA-SEQUENCE:0",
+                        "#EXTINF:1.0,",
+                        "segment_000.ts",
+                    ]
+                ),
+                "application/vnd.apple.mpegurl",
+            ),
+            (503, "busy", "text/plain"),
+            (503, "busy", "text/plain"),
+        ],
+        "/live/segment_000.ts": (200, b"000", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        with pytest.raises(ValueError, match="reconnect budget exhausted"):
+            run_local_session(
+                mode="api_stream",
+                input_path=f"{base_url}/live/index.m3u8",
+                selected_detectors=["video_blur"],
+                session_id="session-api-http-partial-then-failed",
+            )
+
+    snapshot = read_session_snapshot("session-api-http-partial-then-failed")
+
+    assert snapshot["session"]["status"] == "failed"
+    assert snapshot["progress"]["status"] == "failed"
+    assert snapshot["progress"]["processed_count"] == 1
+    assert snapshot["progress"]["current_item"] == "segment_000.ts"
+    assert len(snapshot["results"]) == 1
+    assert snapshot["progress"]["status_reason"] == "source_unreachable"
+    assert "reconnect_budget_exhausted" in str(snapshot["progress"]["status_detail"])
+
+
+def test_run_local_session_http_hls_api_stream_preserves_progress_across_temporary_outage_before_terminal_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Accepted work should survive a temporary segment outage before a later terminal reconnect failure."""
+    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    monkeypatch.setattr(config, "API_STREAM_MAX_RECONNECT_ATTEMPTS", 1)
+    monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
+    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    monkeypatch.setattr(
+        session_runner,
+        "get_api_stream_loader",
+        lambda session_id=None: HttpHlsApiStreamLoader(
+            session_id or "session-api-http-temp-then-terminal"
+        ),
+    )
+    monkeypatch.setattr("stream_loader.time.sleep", lambda seconds: None)
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer(
+            {
+                "segment_000.ts": 0.82,
+                "segment_002.ts": 0.79,
+            }
+        ),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (
+                200,
+                "\n".join(
+                    [
+                        "#EXTM3U",
+                        "#EXT-X-TARGETDURATION:1",
+                        "#EXT-X-MEDIA-SEQUENCE:0",
+                        "#EXTINF:1.0,",
+                        "segment_000.ts",
+                        "#EXTINF:1.0,",
+                        "segment_001.ts",
+                        "#EXTINF:1.0,",
+                        "segment_002.ts",
+                    ]
+                ),
+                "application/vnd.apple.mpegurl",
+            ),
+            (503, "busy", "text/plain"),
+            (503, "busy", "text/plain"),
+        ],
+        "/live/segment_000.ts": (200, b"000", "video/mp2t"),
+        "/live/segment_001.ts": (503, "temporarily busy", "text/plain"),
+        "/live/segment_002.ts": (200, b"002", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        with pytest.raises(ValueError, match="reconnect budget exhausted"):
+            run_local_session(
+                mode="api_stream",
+                input_path=f"{base_url}/live/index.m3u8",
+                selected_detectors=["video_blur"],
+                session_id="session-api-http-temp-then-terminal",
+            )
+
+    snapshot = read_session_snapshot("session-api-http-temp-then-terminal")
+
+    assert snapshot["session"]["status"] == "failed"
+    assert snapshot["progress"]["status"] == "failed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["current_item"] == "segment_002.ts"
+    assert len(snapshot["results"]) == 2
+    assert snapshot["progress"]["status_reason"] == "source_unreachable"
+    assert "reconnect_budget_exhausted" in str(snapshot["progress"]["status_detail"])
+
+
+def test_run_local_session_http_hls_api_stream_preserves_partial_progress_before_runtime_limit_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A runtime safety stop should keep already accepted progress and results."""
+    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    monkeypatch.setattr(config, "API_STREAM_MAX_IDLE_PLAYLIST_POLLS", 10)
+    monkeypatch.setattr(config, "API_STREAM_MAX_SESSION_RUNTIME_SEC", 5.0)
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    monkeypatch.setattr(
+        session_runner,
+        "get_api_stream_loader",
+        lambda session_id=None: HttpHlsApiStreamLoader(
+            session_id or "session-api-http-runtime-after-progress"
+        ),
+    )
+    monkeypatch.setattr("stream_loader.time.sleep", lambda seconds: None)
+    ticks = iter([0.0, 0.0, 6.0, 6.0, 6.0])
+    monkeypatch.setattr("stream_loader.time.monotonic", lambda: next(ticks))
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer({"segment_000.ts": 0.82}),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": (
+            200,
+            "\n".join(
+                [
+                    "#EXTM3U",
+                    "#EXT-X-TARGETDURATION:1",
+                    "#EXT-X-MEDIA-SEQUENCE:0",
+                    "#EXTINF:1.0,",
+                    "segment_000.ts",
+                ]
+            ),
+            "application/vnd.apple.mpegurl",
+        ),
+        "/live/segment_000.ts": (200, b"000", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        with pytest.raises(ValueError, match="session runtime exceeded max duration"):
+            run_local_session(
+                mode="api_stream",
+                input_path=f"{base_url}/live/index.m3u8",
+                selected_detectors=["video_blur"],
+                session_id="session-api-http-runtime-after-progress",
+            )
+
+    snapshot = read_session_snapshot("session-api-http-runtime-after-progress")
+
+    assert snapshot["session"]["status"] == "failed"
+    assert snapshot["progress"]["status"] == "failed"
+    assert snapshot["progress"]["processed_count"] == 1
+    assert snapshot["progress"]["current_item"] == "segment_000.ts"
+    assert len(snapshot["results"]) == 1
+    assert snapshot["progress"]["status_reason"] == "source_unreachable"
+    assert "session runtime exceeded max duration" in str(snapshot["progress"]["status_detail"])
+
+
 def test_run_local_session_logs_api_stream_failure_summary(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -437,5 +650,5 @@ def test_run_local_session_http_hls_api_stream_stops_cleanly_after_idle_poll_bud
     assert snapshot["progress"]["processed_count"] == 2
     assert snapshot["progress"]["current_item"] == "segment_001.ts"
     assert len(snapshot["results"]) == 2
-    assert snapshot["progress"]["status_reason"] == "completed"
+    assert snapshot["progress"]["status_reason"] == "idle_poll_budget_exhausted"
     assert snapshot["progress"]["status_detail"] == "Idle poll budget exhausted"
