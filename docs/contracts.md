@@ -258,6 +258,35 @@ Important snapshot progress fields are:
 This keeps request-level problems distinct from the state of an already-running
 session.
 
+### Current `api_stream` recovery and terminal expectations
+
+For the current bridge/frontend contract:
+
+- transient live polling failures may surface as reconnecting UI messaging
+  while the frontend keeps the last good session snapshot
+- terminal live failures still come through the ordinary session snapshot
+  contract rather than a separate live-only failure channel
+- failed live sessions intentionally keep a compact stable
+  `progress.status_reason = "source_unreachable"` while the more specific
+  runtime cause remains in `progress.status_detail`
+- idle-bounded live completion now persists as:
+  - `progress.status = "completed"`
+  - `progress.status_reason = "idle_poll_budget_exhausted"`
+  - `progress.status_detail = "Idle poll budget exhausted"`
+
+Current frontend operator wording is expected to distinguish:
+
+- reconnecting while recovery is still plausible
+- retry-budget exhaustion as terminal
+- runtime safety stop as terminal
+- unsupported live source as validation/configuration issue
+- completed live run with idle-budget warning as distinct from ordinary local
+  success messaging
+
+This keeps the frontend aligned with the compact backend contract: the UI may
+be more explanatory, but it should not invent a separate live-only lifecycle
+state model.
+
 ### Lifecycle edge contract notes
 
 The current lifecycle hardening makes these edge rules explicit:

@@ -195,6 +195,26 @@ For live sessions, `progress.json` now also carries:
 - `status_detail`
   - detailed failure text when the session failed terminally
 
+### Current `api_stream` operational meaning
+
+For the current runtime, `api_stream` sessions follow these operational rules:
+
+- transient polling/read failures do not immediately clear the last good
+  frontend session state
+- retryable upstream failures remain recoverable until reconnect budget is
+  exhausted
+- reconnect-budget exhaustion and runtime safety limits are terminal outcomes
+  for the run
+- idle polling exhaustion persists as:
+  - `status = completed`
+  - `status_reason = idle_poll_budget_exhausted`
+  - `status_detail = "Idle poll budget exhausted"`
+- failed live runs intentionally keep a compact stable
+  `status_reason = source_unreachable`, with the more specific loader/runtime
+  cause preserved in `status_detail`
+- frontend operator messaging may still surface idle exhaustion as a warning
+  even though the persisted session outcome remains `completed`
+
 This is the current bridge between detailed backend observability and
 operator-safe frontend wording.
 
