@@ -351,6 +351,68 @@ describe("bridge contract normalization", () => {
     });
   });
 
+  it("normalizes a terminal failed session snapshot from the bridge without losing lifecycle details", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn().mockResolvedValue(
+        ok({
+          session: {
+            session_id: "session-456",
+            mode: "api_stream",
+            input_path: "https://example.com/live/index.m3u8",
+            selected_detectors: ["video_metrics"],
+            status: "failed",
+          },
+          progress: {
+            session_id: "session-456",
+            status: "failed",
+            processed_count: 3,
+            total_count: 8,
+            current_item: "live-window-003.ts",
+            latest_result_detector: "video_metrics",
+            latest_result_detectors: ["video_metrics"],
+            alert_count: 1,
+            last_updated_utc: "2026-04-21 10:05:00",
+            status_reason: "source_unreachable",
+            status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+          },
+          alerts: [],
+          results: [],
+          latest_result: null,
+        }),
+      ),
+      cancelSession: vi.fn(),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.readSession("session-456")).resolves.toEqual({
+      session: {
+        session_id: "session-456",
+        mode: "api_stream",
+        input_path: "https://example.com/live/index.m3u8",
+        selected_detectors: ["video_metrics"],
+        status: "failed",
+      },
+      progress: {
+        session_id: "session-456",
+        status: "failed",
+        processed_count: 3,
+        total_count: 8,
+        current_item: "live-window-003.ts",
+        latest_result_detector: "video_metrics",
+        latest_result_detectors: ["video_metrics"],
+        alert_count: 1,
+        last_updated_utc: "2026-04-21 10:05:00",
+        status_reason: "source_unreachable",
+        status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+      },
+      alerts: [],
+      results: [],
+      latest_result: null,
+    });
+  });
+
   it("raises a typed bridge error when readSession returns a missing-session failure", async () => {
     const bridge = createNormalizedBridge({
       listDetectors: vi.fn(),
@@ -377,6 +439,37 @@ describe("bridge contract normalization", () => {
       backendErrorCode: "session_not_found",
       statusReason: "session_not_found",
       statusDetail: "No persisted session snapshot found for session_id=session-123",
+    });
+  });
+
+  it("preserves typed lifecycle metadata for explicit readSession bridge failures", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn().mockResolvedValue(
+        fail(
+          "SESSION_READ_FAILED",
+          "Session read request failed",
+          "No persisted session snapshot found for session_id=session-456",
+          {
+            backend_error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-456",
+          },
+        ),
+      ),
+      cancelSession: vi.fn(),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.readSession("session-456")).rejects.toMatchObject({
+      name: "BridgeTransportError",
+      code: "SESSION_READ_FAILED",
+      message: "Session read request failed",
+      details: "No persisted session snapshot found for session_id=session-456",
+      backendErrorCode: "session_not_found",
+      statusReason: "session_not_found",
+      statusDetail: "No persisted session snapshot found for session_id=session-456",
     });
   });
 
