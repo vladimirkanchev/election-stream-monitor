@@ -27,6 +27,7 @@ boundaries.
 
 Key review themes:
 
+- `main.mjs` should read mostly as composition/wiring, not backend-policy detail
 - source validation and trust policy
 - reconnect and failure policy
 - temp-file lifecycle
