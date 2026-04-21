@@ -16,6 +16,26 @@ Decide which parts of the current generic `api_stream` runtime should stay
 generic, which should become profile-driven for election monitoring, and which
 should remain deferred until the system needs more semantic richness.
 
+## Mini Decision Checkpoint
+
+This checkpoint reflects the current backend code and the focused recovery
+tests added in the same branch.
+
+Current decision:
+
+- keep the stable `status_reason` vocabulary small for now
+- continue using `status_detail` for most loader/runtime-specific `api_stream`
+  failure detail
+- treat idle exhaustion as the only clearly unresolved semantic tension
+- avoid adding richer interrupted/degraded lifecycle categories in this branch
+
+Why this checkpoint matters:
+
+- it keeps the current branch focused on evidence-backed clarification rather
+  than semantic expansion
+- it narrows later implementation work to the one area that still appears
+  meaningfully questionable for election streams: idle exhaustion semantics
+
 ## Decision Task 1: Idle Exhaustion Semantics
 
 ### Question
@@ -32,7 +52,7 @@ or should it later map to something more interruption-oriented?
 - loader stop reason: `idle_poll_budget_exhausted`
 - persisted terminal session:
   - `status = completed`
-  - `status_reason = completed`
+  - `status_reason = idle_poll_budget_exhausted`
   - `status_detail = Idle poll budget exhausted`
 
 ### Why this matters
@@ -83,8 +103,11 @@ Cons:
 
 ### Recommended direction
 
-- prefer **B**
-- avoid **C** until profile work is ready
+- **current branch outcome:** apply the narrow clarification now by persisting
+  `status_reason = idle_poll_budget_exhausted` while keeping `status = completed`
+- still prefer later profile-aware policy work if different election stream
+  classes need different idle semantics beyond this clarification
+- avoid a broader generic semantic rewrite until profile work is ready
 
 ## Decision Task 2: Which Budgets Become Profile-Driven First
 
@@ -203,6 +226,25 @@ Cons:
 - prefer **A** or **B** first
 - defer **C** unless current semantics clearly stop serving operators well
 
+## Current Branch Outcome
+
+Applying the conservative sequence for this branch leads to:
+
+1. checkpoint the real ambiguity first
+2. keep stable reasons compact where they are already serving well
+3. apply one narrow semantic clarification for idle exhaustion
+4. defer any richer interrupted/degraded split unless a later branch proves it
+   necessary
+
+That means the current branch now carries one targeted persisted-lifecycle
+clarification:
+
+- `status = completed`
+- `status_reason = idle_poll_budget_exhausted`
+- `status_detail = Idle poll budget exhausted`
+
+while still avoiding broader reason-taxonomy churn.
+
 ## Suggested Execution Order
 
 ### Phase 1: policy decisions without behavior change
@@ -227,6 +269,12 @@ Cons:
 ## Recommended Default Stance For Now
 
 If a new branch starts from these notes today, the safest planning defaults are:
+
+- keep `status` stable unless there is a strong user-facing reason to change it
+- allow `status_reason` to become more specific only when the meaning is both
+  operationally important and cross-layer stable
+- treat idle exhaustion as clarified for now, but revisit whether different
+  election profiles should interpret it differently
 
 - idle exhaustion is the highest-priority semantic question
 - runtime/reconnect/idle/refresh budgets are the first profile-driven knobs

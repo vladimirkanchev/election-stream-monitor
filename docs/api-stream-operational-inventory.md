@@ -31,6 +31,61 @@ Primary sources:
 - [`tests/test_stream_loader_http_hls_limits.py`](../tests/test_stream_loader_http_hls_limits.py)
 - [`tests/test_session_runner_api_stream_http_hls.py`](../tests/test_session_runner_api_stream_http_hls.py)
 
+## Reviewer Checklist
+
+Use this short checklist when reviewing current `api_stream` operational
+behavior before proposing new election-stream policy:
+
+- confirm which upstream failures are retryable vs terminal
+- confirm where reconnect budget exhaustion becomes terminal
+- confirm what idle poll exhaustion currently persists as
+- confirm which safety rails are global runtime protections rather than
+  election-specific policy choices
+- confirm which terminal meanings are stable in `status_reason`
+- confirm which detail is intentionally left in `status_detail`
+- flag where election-stream suitability differs from current generic meaning
+
+## Settled Current Behavior
+
+At the end of the current branch, the intended `api_stream` operational
+baseline is:
+
+- transient upstream and polling failures may show up as reconnecting behavior
+  in the frontend while the backend keeps the last good session snapshot
+- retryable loader failures consume reconnect budget and become terminal only
+  after that budget is exhausted
+- runtime, refresh, fetch-size, and temp-storage limits remain global safety
+  rails rather than election-specific policy
+- idle polling exhaustion now persists as:
+  - `status = completed`
+  - `status_reason = idle_poll_budget_exhausted`
+  - `status_detail = "Idle poll budget exhausted"`
+- failed live runs intentionally keep a compact stable
+  `status_reason = source_unreachable` while preserving loader/runtime detail in
+  `status_detail`
+- frontend live UX now distinguishes:
+  - reconnecting
+  - retry budget exhausted
+  - runtime safety stop
+  - unsupported source
+  - completed live run with idle-budget warning
+
+This note remains the detailed maintainer inventory. The canonical docs should
+only carry the settled behavior above, not the full planning analysis.
+
+## Quick Baseline Table
+
+This table is the shortest summary of what step 1 currently tells us.
+
+| Area | Current behavior | Evidence level | Election-stream note |
+| --- | --- | --- | --- |
+| reconnect retries | retryable failures consume reconnect budget and eventually fail terminally | explicitly tested | baseline is good; tolerance likely needs tuning later |
+| idle budgets | idle exhaustion stops cleanly and currently persists as `completed` with `status_reason=idle_poll_budget_exhausted` | explicitly tested | biggest likely mismatch for polling-station monitoring |
+| runtime budgets | session runtime and refresh counts are bounded by hard safety limits | explicitly tested | likely need longer defaults for civic all-day runs |
+| byte/storage limits | fetch size and temp storage are bounded by terminal safety limits | explicitly tested | meaning is acceptable; tuning may change later |
+| upstream HTTP/network failures | timeout, `URLError`, and selected HTTP statuses are retryable; others are terminal | partly tested, partly code-derived | current classification is a reasonable baseline |
+| terminal status mapping | failed `api_stream` runs currently collapse into `source_unreachable` with detail preserved separately | explicitly tested for key outcomes, broader mapping is code-derived | stable baseline now; richer distinction may be needed later |
+
 ## Current Behavior Summary
 
 ### Reconnect retries
@@ -56,6 +111,11 @@ Current classification source:
 - `TimeoutError` is retryable
 - `URLError` is retryable
 - other HTTP failures are terminal
+
+Evidence level:
+
+- explicitly tested for repeated `503` and timeout exhaustion cases
+- partly code-derived for the full HTTP status classification boundary
 
 Current test evidence:
 
@@ -84,12 +144,16 @@ Current behavior:
 - this path currently results in a completed session outcome at runner level
 - session progress currently persists:
   - `status = "completed"`
-  - `status_reason = "completed"`
+  - `status_reason = "idle_poll_budget_exhausted"`
   - `status_detail = "Idle poll budget exhausted"`
 
 Current test evidence:
 
 - `test_run_local_session_http_hls_api_stream_stops_cleanly_after_idle_poll_budget(...)`
+
+Evidence level:
+
+- explicitly tested
 
 Election-stream suitability note:
 
@@ -126,6 +190,10 @@ Current test evidence:
 - runtime limit enforcement test
 - playlist refresh limit enforcement test
 
+Evidence level:
+
+- explicitly tested
+
 Election-stream suitability note:
 
 - these limits are useful as safety rails
@@ -152,6 +220,10 @@ Current test evidence:
 
 - temp storage budget enforcement test
 - max fetch byte budget enforcement test
+
+Evidence level:
+
+- explicitly tested
 
 Election-stream suitability note:
 
@@ -180,6 +252,12 @@ Current test evidence:
 - temporary segment outage is skipped while later segments continue
 - repeated timeout failures exhaust reconnect budget
 - repeated `503` failures exhaust reconnect budget
+
+Evidence level:
+
+- explicitly tested for the major transient failure paths above
+- partly code-derived for the complete HTTP status and malformed-playlist
+  classification boundary
 
 Election-stream suitability note:
 
@@ -224,11 +302,17 @@ Current test evidence:
   - `status_detail` mentioning reconnect budget exhaustion
 - idle poll exhaustion persists:
   - `status = completed`
-  - `status_reason = completed`
+  - `status_reason = idle_poll_budget_exhausted`
   - `status_detail = Idle poll budget exhausted`
 - cancel-after-iteration persists:
   - `status_reason = cancel_requested`
   - detailed cancel timing note
+
+Evidence level:
+
+- explicitly tested for failed, completed-idle, and cancel terminal outcomes
+- partly code-derived for the full runner mapping matrix in
+  `_build_terminal_progress_status(...)`
 
 Election-stream suitability note:
 
@@ -317,3 +401,15 @@ network failure handling. It is the meaning of:
 
 That makes this inventory a good foundation for later election-specific policy
 work without changing current contracts prematurely.
+
+## Baseline Use
+
+For the current branch, treat this note as:
+
+- the baseline map of current `api_stream` semantics
+- the reference for what is already explicitly covered by tests
+- the place to start before proposing election-specific policy changes in a
+  later branch
+
+Do not treat this note itself as a contract change. It is an inventory of
+current truth plus election-stream suitability commentary.
