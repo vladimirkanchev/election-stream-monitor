@@ -258,6 +258,36 @@ Important snapshot progress fields are:
 This keeps request-level problems distinct from the state of an already-running
 session.
 
+### Lifecycle edge contract notes
+
+The current lifecycle hardening makes these edge rules explicit:
+
+- terminal session reads remain successful snapshot reads
+  - `completed`, `failed`, and `cancelled` states are returned through the
+    normal session snapshot contract
+- invalid lifecycle actions fail at the request boundary
+  - for example, `cancel-session` against a terminal session returns a
+    structured route failure rather than a synthetic success
+- missing-session route failures stay distinct from snapshot normalization
+  - backend persistence helpers may degrade missing files to a stable empty
+    shape internally
+  - API and bridge layers turn missing-session route lookups into structured
+    failures such as `session_not_found`
+- frontend bridge normalization preserves structured lifecycle failures
+  - typed bridge errors keep `backend_error_code`, `status_reason`, and
+    `status_detail` instead of flattening them into generic failures
+- cancel success still allows `null`
+  - a successful cancel request may return either an updated `SessionSummary`
+    or `null` when no immediate summary payload is available
+
+Frontend lifecycle behavior now also depends on two intentionally stable
+consumer rules:
+
+- polling reads are tolerant of transient failures and keep the last good
+  session state in the UI instead of immediately clearing it
+- duplicate in-flight cancel requests are suppressed so the frontend keeps one
+  active stop request rather than fanning out repeated cancels
+
 ## Alert Event v1
 
 Purpose:

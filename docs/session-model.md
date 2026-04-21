@@ -206,6 +206,43 @@ The session model is stricter now than in earlier iterations:
 
 The backend also resets any per-session rolling alert-rule state when a session starts or ends.
 
+## Lifecycle Truth Table
+
+This table defines the intended meaning of the current session lifecycle for the
+local desktop runtime. It is the reference for backend behavior, FastAPI route
+responses, Electron bridge mapping, and frontend session UX.
+
+| Situation | Expected result | Notes |
+| --- | --- | --- |
+| start-session succeeds | return pending `SessionSummary` | The frontend may transition into active monitoring after later reads/polls. |
+| read/poll for an active session | return current persisted session snapshot | Persisted session files are the source of truth, not inferred frontend state. |
+| cancel-session for a running session | accept request and return `SessionSummary` or `null` | `null` is still a valid success when no updated summary is returned immediately. |
+| cancel-session for a session already in a terminal state | return a structured failure | Do not silently treat an invalid cancel state as a normal success. |
+| read/poll after a session completes | return terminal snapshot with `completed` status | Terminal state should remain readable after active processing stops. |
+| read/poll after a session fails | return terminal snapshot with `failed` status and details | Failure reason should remain available through persisted progress fields. |
+| read/poll while a session is cancelling | may temporarily return `cancelling` before terminal settlement | Frontend should tolerate short transition windows during shutdown. |
+| read/poll after a session is cancelled | return terminal snapshot with `cancelled` status if persisted | `cancelled` is terminal once the backend settles there. |
+| read/poll with a stale or missing session id | return a structured missing-session failure | Do not synthesize empty success payloads for missing sessions. |
+| cancel-session with a stale or missing session id | return a structured missing-session failure | Do not silently succeed or fallback. |
+| polling read fails transiently while the last good snapshot is still known | keep the last good session state in the UI and retry on the next interval | Polling failures are intentionally tolerant at the frontend session layer. |
+| repeated cancel requests arrive while a previous cancel request is still pending | suppress duplicate cancel requests | The frontend should keep one in-flight cancel request rather than fan out repeated stop attempts. |
+| read/poll reports `session_not_found` after a cancel request has already moved the UI into `cancelling` | keep the last good ending state rather than surface a new route error immediately | Current frontend behavior prefers a stable shutdown UX over replacing the ending state with a transient missing-session error. |
+
+### Interpretation Rules
+
+- Persisted session snapshots are the source of truth for lifecycle state.
+- Route-level request failures and session lifecycle state are different things.
+- Terminal states should remain readable after a session stops running.
+- Invalid cancel requests should fail clearly rather than look like successful cancellation.
+- Frontend transport normalization should preserve these meanings rather than reinterpret them.
+- Frontend polling is intentionally tolerant of one-off read failures and keeps the last good session state instead of clearing the session immediately.
+- Frontend stop behavior should suppress duplicate in-flight cancel requests and prefer a stable ending/terminal state over repeated stop churn.
+
+At the backend persistence-helper layer, missing session snapshot reads still
+degrade to the stable empty snapshot shape. Structured missing-session failures
+are introduced later at the API boundary when that empty snapshot means
+"session not found" for a route-level request.
+
 ## Route Failures Vs Session State
 
 The current project intentionally uses two different failure channels:
