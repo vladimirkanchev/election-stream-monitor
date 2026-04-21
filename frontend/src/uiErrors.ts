@@ -25,6 +25,13 @@ export function getSessionStartErrorMessage(
 
 export function getSessionStopErrorMessage(error?: unknown): string {
   if (isBridgeTransportError(error)) {
+    if (
+      error.code === "SESSION_CANCEL_FAILED"
+      && error.statusReason === "cancel_failed"
+    ) {
+      return "Monitoring was already ending or had already finished.";
+    }
+
     return getBridgeAwareSessionMessage(
       error.code,
       "Monitoring could not be ended cleanly.",

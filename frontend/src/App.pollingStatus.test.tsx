@@ -3,8 +3,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
+import { fail } from "./bridge/contract";
 import type { SessionSummary } from "./types";
 import {
+  endMonitoring,
   enterApiStreamSource,
   enterLocalSource,
   makeSnapshot,
@@ -200,6 +202,387 @@ describe("App polling and status integration", () => {
       ).toBeTruthy();
       expect(screen.getByText("Failed")).toBeTruthy();
     });
+  });
+
+  it("moves from cancelling to stopped after polling returns a cancelled snapshot", async () => {
+    const cancelledSnapshot = makeSnapshot({
+      session: { ...RUNNING_SESSION, status: "cancelled" },
+      progress: {
+        session_id: "session-1",
+        status: "cancelled",
+        processed_count: 2,
+        total_count: 4,
+        current_item: null,
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 11:00:01",
+        status_reason: "cancel_requested",
+        status_detail: "Cancellation requested by client",
+      },
+    });
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockResolvedValue(cancelledSnapshot);
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...RUNNING_SESSION,
+      status: "cancelling",
+    });
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Ending")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Stopped")).toBeTruthy();
+    });
+  });
+
+  it("does not regress back to Running after polling reaches a cancelled terminal state", async () => {
+    const cancelledSnapshot = makeSnapshot({
+      session: { ...RUNNING_SESSION, status: "cancelled" },
+      progress: {
+        session_id: "session-1",
+        status: "cancelled",
+        processed_count: 2,
+        total_count: 4,
+        current_item: null,
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 11:00:01",
+        status_reason: "cancel_requested",
+        status_detail: "Cancellation requested by client",
+      },
+    });
+    const staleRunningSnapshot = makeSnapshot({
+      session: { ...RUNNING_SESSION, status: "running" },
+      progress: {
+        session_id: "session-1",
+        status: "running",
+        processed_count: 2,
+        total_count: 4,
+        current_item: "segment_0002.ts",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 10:59:59",
+        status_reason: "running",
+        status_detail: null,
+      },
+    });
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockResolvedValueOnce(cancelledSnapshot)
+      .mockResolvedValueOnce(staleRunningSnapshot)
+      .mockResolvedValue(staleRunningSnapshot);
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Stopped")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Stopped")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Running")).toBeNull();
+  });
+
+  it("keeps ending state coherent when cancel is requested while a poll is still in flight", async () => {
+    let resolvePoll: ((value: ReturnType<typeof makeSnapshot>) => void) | null = null;
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePoll = resolve;
+          }),
+      );
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...RUNNING_SESSION,
+      status: "cancelling",
+    });
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Ending")).toBeTruthy();
+      expect(mockBridge.cancelSession).toHaveBeenCalledTimes(1);
+    });
+
+    resolvePoll?.(
+      makeSnapshot({
+        session: { ...RUNNING_SESSION, status: "cancelled" },
+        progress: {
+          session_id: "session-1",
+          status: "cancelled",
+          processed_count: 2,
+          total_count: 4,
+          current_item: null,
+          latest_result_detector: "video_blur",
+          latest_result_detectors: ["video_blur"],
+          alert_count: 0,
+          last_updated_utc: "2026-04-21 12:00:01",
+          status_reason: "cancel_requested",
+          status_detail: "Cancellation requested by client",
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Stopped")).toBeTruthy();
+    });
+  });
+
+  it("does not regress back to Failed after polling reaches a failed terminal state", async () => {
+    const failedSnapshot = makeSnapshot({
+      session: { ...RUNNING_SESSION, status: "failed" },
+      progress: {
+        session_id: "session-1",
+        status: "failed",
+        processed_count: 2,
+        total_count: 4,
+        current_item: "segment_0002.ts",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 12:10:01",
+        status_reason: "terminal_failure",
+        status_detail: "session runtime exceeded max duration",
+      },
+    });
+    const staleRunningSnapshot = makeSnapshot({
+      session: { ...RUNNING_SESSION, status: "running" },
+      progress: {
+        session_id: "session-1",
+        status: "running",
+        processed_count: 2,
+        total_count: 4,
+        current_item: "segment_0002.ts",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 12:09:59",
+        status_reason: "running",
+        status_detail: null,
+      },
+    });
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockResolvedValueOnce(failedSnapshot)
+      .mockResolvedValueOnce(staleRunningSnapshot)
+      .mockResolvedValue(staleRunningSnapshot);
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Running")).toBeNull();
+  });
+
+  it("keeps the last good session state when polling returns a missing-session bridge failure", async () => {
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockResolvedValueOnce(
+        fail(
+          "SESSION_READ_FAILED",
+          "Session read request failed",
+          "No persisted session snapshot found for session_id=session-1",
+          {
+            backend_error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-1",
+          },
+        ),
+      )
+      .mockResolvedValue(makeSnapshot());
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+      expect(screen.getByText("Mock Player")).toBeTruthy();
+    });
+
+    expect(
+      screen.queryByText(/The local monitoring bridge reported a request failure\./i),
+    ).toBeNull();
+  });
+
+  it("recovers from a polling failure during cancelling and still settles on stopped", async () => {
+    const cancelledSnapshot = makeSnapshot({
+      session: { ...RUNNING_SESSION, status: "cancelled" },
+      progress: {
+        session_id: "session-1",
+        status: "cancelled",
+        processed_count: 2,
+        total_count: 4,
+        current_item: null,
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 12:20:02",
+        status_reason: "cancel_requested",
+        status_detail: "Cancellation requested by client",
+      },
+    });
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockRejectedValueOnce(new Error("poll failed during cancel"))
+      .mockResolvedValue(cancelledSnapshot);
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...RUNNING_SESSION,
+      status: "cancelling",
+    });
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Ending")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Stopped")).toBeTruthy();
+    });
+  });
+
+  it("keeps the last good ending state when a post-cancel poll reports session_not_found", async () => {
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(makeSnapshot())
+      .mockResolvedValueOnce(
+        fail(
+          "SESSION_READ_FAILED",
+          "Session read request failed",
+          "No persisted session snapshot found for session_id=session-1",
+          {
+            backend_error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-1",
+          },
+        ),
+      );
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...RUNNING_SESSION,
+      status: "cancelling",
+    });
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Ending")).toBeTruthy();
+    });
+
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+
+    await waitFor(() => {
+      expect(screen.getByText("Ending")).toBeTruthy();
+    });
+
+    expect(
+      screen.queryByText(/The local monitoring bridge reported a request failure\./i),
+    ).toBeNull();
   });
 
   it("shows live session status details for api stream runs", async () => {

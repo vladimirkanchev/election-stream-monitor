@@ -171,6 +171,43 @@ describe("App cancel-session integration", () => {
     });
   });
 
+  it("shows a specific stop message when cancel is rejected for an already completed session", async () => {
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSnapshot());
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+      fail(
+        "SESSION_CANCEL_FAILED",
+        "Session cancel request failed",
+        "Session session-1 is already completed.",
+        {
+          backend_error_code: "cancel_failed",
+          status_reason: "cancel_failed",
+          status_detail: "Session session-1 is already completed.",
+        },
+      ),
+    );
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Monitoring was already ending or had already finished.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
   it("does not show a stop error when cancelSession resolves with null", async () => {
     (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
     (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSnapshot());
@@ -193,5 +230,41 @@ describe("App cancel-session integration", () => {
     });
 
     expect(screen.queryByText(/Monitoring could not be ended cleanly\./)).toBeNull();
+  });
+
+  it("keeps a single in-flight cancel request when End Monitoring is clicked repeatedly", async () => {
+    let resolveCancel: ((value: SessionSummary | null) => void) | null = null;
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(makeSnapshot());
+    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCancel = resolve;
+        }),
+    );
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    endMonitoring();
+    endMonitoring();
+    endMonitoring();
+
+    await waitFor(() => {
+      expect(mockBridge.cancelSession).toHaveBeenCalledTimes(1);
+    });
+
+    resolveCancel?.({
+      ...RUNNING_SESSION,
+      status: "cancelling",
+    });
   });
 });

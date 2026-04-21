@@ -110,7 +110,7 @@ export function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionS
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   (mockBridge.listDetectors as ReturnType<typeof vi.fn>).mockResolvedValue(DETECTORS);
   (mockBridge.resolvePlaybackSource as ReturnType<typeof vi.fn>).mockResolvedValue(
     "local-media://segments/index.m3u8",

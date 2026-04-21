@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiHttpError } from "./apiErrors.mjs";
 import { handleBridgeOperation } from "./bridgeResponses.mjs";
+import { FastApiUnavailableError } from "./fastApiRuntimePolicy.mjs";
 
 describe("Electron bridge response mapping", () => {
   it("wraps start-session success with the expected bridge payload", async () => {
@@ -141,6 +142,36 @@ describe("Electron bridge response mapping", () => {
     });
   });
 
+  it("maps cancel-session invalid-state failures into the bridge error payload", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_CANCEL_FAILED",
+      "Session cancel request failed",
+      async () => {
+        throw new ApiHttpError("Session cannot be cancelled from its current state", {
+          status: 409,
+          apiPayload: {
+            detail: "Session cannot be cancelled from its current state",
+            error_code: "cancel_failed",
+            status_reason: "cancel_failed",
+            status_detail: "Session session-123 is already completed.",
+          },
+        });
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_CANCEL_FAILED",
+        message: "Session cancel request failed",
+        details: "Session session-123 is already completed.",
+        backend_error_code: "cancel_failed",
+        status_reason: "cancel_failed",
+        status_detail: "Session session-123 is already completed.",
+      },
+    });
+  });
+
   it("wraps cancel-session success with the expected bridge payload", async () => {
     const result = await handleBridgeOperation(
       "SESSION_CANCEL_FAILED",
@@ -162,6 +193,89 @@ describe("Electron bridge response mapping", () => {
         input_path: "/data/streams/segments",
         selected_detectors: ["video_blur"],
         status: "cancelling",
+      },
+    });
+  });
+
+  it("wraps terminal read-session snapshots as normal bridge success payloads", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      async () => ({
+        session: {
+          session_id: "session-123",
+          mode: "video_files",
+          input_path: "/tmp/input.mp4",
+          selected_detectors: ["video_metrics"],
+          status: "completed",
+        },
+        progress: {
+          session_id: "session-123",
+          status: "completed",
+          processed_count: 4,
+          total_count: 4,
+          current_item: null,
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_metrics"],
+          alert_count: 0,
+          last_updated_utc: "2026-04-21 10:00:00",
+          status_reason: "completed",
+          status_detail: null,
+        },
+        alerts: [],
+        results: [],
+        latest_result: null,
+      }),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        session: {
+          session_id: "session-123",
+          mode: "video_files",
+          input_path: "/tmp/input.mp4",
+          selected_detectors: ["video_metrics"],
+          status: "completed",
+        },
+        progress: {
+          session_id: "session-123",
+          status: "completed",
+          processed_count: 4,
+          total_count: 4,
+          current_item: null,
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_metrics"],
+          alert_count: 0,
+          last_updated_utc: "2026-04-21 10:00:00",
+          status_reason: "completed",
+          status_detail: null,
+        },
+        alerts: [],
+        results: [],
+        latest_result: null,
+      },
+    });
+  });
+
+  it("maps runtime-policy unavailable failures into a clear bridge failure", async () => {
+    const result = await handleBridgeOperation(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      async () => {
+        throw new FastApiUnavailableError();
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: "SESSION_READ_FAILED",
+        message: "Session read request failed",
+        details: "Local FastAPI backend is unavailable",
+        backend_error_code: null,
+        status_reason: null,
+        status_detail: null,
       },
     });
   });

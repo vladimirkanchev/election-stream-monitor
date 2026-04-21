@@ -203,6 +203,8 @@ export function normalizeSessionSnapshot(value: unknown): SessionSnapshot {
     return EMPTY_SNAPSHOT;
   }
 
+  // Terminal snapshots remain normal read successes; route-level failures are
+  // represented separately as typed bridge errors before normalization.
   return {
     session: normalizeSessionSummary(value.session),
     progress: normalizeSessionProgress(value.progress),
