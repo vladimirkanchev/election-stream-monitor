@@ -59,3 +59,14 @@ class SessionStartFailedError(ApiDomainError):
             status_reason="session_start_failed",
             status_detail=detail,
         )
+
+
+class CancelFailedError(ApiDomainError):
+    def __init__(self, session_id: str, current_status: str) -> None:
+        super().__init__(
+            detail="Session cannot be cancelled from its current state",
+            error_code="cancel_failed",
+            status_code=409,
+            status_reason="cancel_failed",
+            status_detail=f"Session {session_id} is already {current_status}.",
+        )
