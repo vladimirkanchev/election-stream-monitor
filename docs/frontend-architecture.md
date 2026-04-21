@@ -111,7 +111,9 @@ Current responsibilities are split like this:
 - `preload.mjs`
   - exposes one minimal `window.electionBridge` surface
 - `main.mjs`
-  - handles IPC and wraps backend results in success/error envelopes
+  - stays mostly as Electron bootstrap and wiring
+  - registers bridge handlers and app/protocol lifecycle hooks
+  - delegates FastAPI startup/readiness orchestration and transport details to focused helpers
 - `contract.ts`
   - normalizes payloads and raises typed bridge errors
 - `transport.ts`

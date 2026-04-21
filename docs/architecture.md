@@ -224,7 +224,9 @@ The frontend is local-first and talks to Python through Electron.
 Important parts:
 
 - [`frontend/electron/main.mjs`](../frontend/electron/main.mjs)
-  - Electron-owned FastAPI startup/readiness and bridge handlers
+  - thin Electron composition/wiring entrypoint
+  - owns high-level bootstrap order, bridge registration, and app lifecycle hooks
+  - delegates FastAPI startup/readiness and playback transport details to focused helpers
   - local media serving and remote HLS proxying for playback
 - [`frontend/src/hooks/useSetupState.ts`](../frontend/src/hooks/useSetupState.ts)
   - setup state
