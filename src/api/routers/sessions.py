@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter
 
 from api.errors import (
+    CancelFailedError,
     SessionNotFoundError,
     SessionStartFailedError,
     ValidationFailedError,
@@ -23,6 +24,7 @@ from source_validation import validate_source_input
 from stream_loader import build_api_stream_start_session_contract
 
 router = APIRouter(tags=["sessions"])
+TERMINAL_SESSION_STATUSES = {"completed", "cancelled", "failed"}
 
 
 @router.post(
@@ -100,6 +102,10 @@ async def get_session(session_id: str) -> SessionSnapshotResponse:
     response_model=CancelSessionResponse,
     responses={
         404: {"model": ApiErrorResponse, "description": "Session not found"},
+        409: {
+            "model": ApiErrorResponse,
+            "description": "Cancel not allowed for current session state",
+        },
     },
 )
 async def cancel_session(session_id: str) -> CancelSessionResponse:
@@ -107,6 +113,10 @@ async def cancel_session(session_id: str) -> CancelSessionResponse:
     session = snapshot.get("session")
     if session is None:
         raise SessionNotFoundError(session_id)
+
+    session_status = session.get("status")
+    if session_status in TERMINAL_SESSION_STATUSES:
+        raise CancelFailedError(session_id, str(session_status))
 
     request_session_cancel(session_id)
     return CancelSessionResponse(

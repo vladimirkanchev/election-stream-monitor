@@ -327,6 +327,69 @@ def test_get_session_returns_fully_populated_snapshot(monkeypatch) -> None:
     }
 
 
+def test_get_session_returns_terminal_completed_snapshot(monkeypatch) -> None:
+    def fake_read_session_snapshot(session_id: str) -> dict[str, object]:
+        return {
+            "session": {
+                "session_id": session_id,
+                "mode": "video_files",
+                "input_path": "/tmp/input.mp4",
+                "selected_detectors": ["video_metrics"],
+                "status": "completed",
+            },
+            "progress": {
+                "session_id": session_id,
+                "status": "completed",
+                "processed_count": 4,
+                "total_count": 4,
+                "current_item": None,
+                "latest_result_detector": "video_metrics",
+                "latest_result_detectors": ["video_metrics"],
+                "alert_count": 0,
+                "last_updated_utc": "2026-04-21 10:00:00",
+                "status_reason": "completed",
+                "status_detail": None,
+            },
+            "alerts": [],
+            "results": [],
+            "latest_result": None,
+        }
+
+    monkeypatch.setattr(
+        "api.routers.sessions.read_session_snapshot",
+        fake_read_session_snapshot,
+    )
+
+    response = request("GET", "/sessions/session-completed")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session": {
+            "session_id": "session-completed",
+            "mode": "video_files",
+            "input_path": "/tmp/input.mp4",
+            "selected_detectors": ["video_metrics"],
+            "status": "completed",
+        },
+        "progress": {
+            "session_id": "session-completed",
+            "status": "completed",
+            "processed_count": 4,
+            "total_count": 4,
+            "current_item": None,
+            "latest_result_detector": "video_metrics",
+            "latest_result_detectors": ["video_metrics"],
+            "alert_count": 0,
+            "last_updated_utc": "2026-04-21 10:00:00",
+            "status_reason": "completed",
+            "status_detail": None,
+        },
+        "alerts": [],
+        "results": [],
+        "latest_result": None,
+    }
+
+
 def test_sessions_start_requires_payload() -> None:
     response = request("POST", "/sessions")
 
@@ -603,7 +666,7 @@ def test_cancel_session_happy_path(monkeypatch) -> None:
     }
 
 
-def test_cancel_session_terminal_state_current_behavior(monkeypatch) -> None:
+def test_cancel_session_rejects_terminal_state(monkeypatch) -> None:
     cancelled: list[str] = []
 
     def fake_request_session_cancel(session_id: str) -> None:
@@ -647,14 +710,13 @@ def test_cancel_session_terminal_state_current_behavior(monkeypatch) -> None:
 
     response = request("POST", "/sessions/test-session-123/cancel")
 
-    assert response.status_code == 200
-    assert cancelled == ["test-session-123"]
+    assert response.status_code == 409
+    assert cancelled == []
     assert response.json() == {
-        "session_id": "test-session-123",
-        "mode": "video_files",
-        "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
-        "selected_detectors": ["video_metrics"],
-        "status": "cancelling",
+        "detail": "Session cannot be cancelled from its current state",
+        "error_code": "cancel_failed",
+        "status_reason": "cancel_failed",
+        "status_detail": "Session test-session-123 is already completed.",
     }
 
 

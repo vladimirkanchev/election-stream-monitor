@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import config
+import pytest
 from session_io import (
     append_alert,
     append_result,
@@ -71,6 +72,22 @@ def test_session_io_records_cancel_request(monkeypatch, tmp_path: Path) -> None:
     request_session_cancel("session-456")
 
     assert is_session_cancel_requested("session-456") is True
+
+
+def test_request_session_cancel_is_idempotent_for_repeated_requests(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Repeated cancel requests should keep the same persisted intent."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    first_path = request_session_cancel("session-repeat-cancel")
+    second_path = request_session_cancel("session-repeat-cancel")
+
+    assert first_path == second_path
+    assert json.loads(first_path.read_text(encoding="utf-8")) == {
+        "session_id": "session-repeat-cancel",
+        "cancel_requested": True,
+    }
 
 
 def test_session_snapshot_tolerates_invalid_json_file(
@@ -235,6 +252,64 @@ def test_update_session_status_rejects_invalid_terminal_transition(
         assert "completed -> running" in str(error)
     else:
         raise AssertionError("Expected invalid session transitions to be rejected")
+
+
+def test_update_session_status_persists_valid_pending_to_running_transition(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Valid lifecycle transitions should persist updated session metadata."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = SessionMetadata(
+        session_id="session-valid-transition",
+        mode="video_segments",
+        input_path="/tmp/input",
+        selected_detectors=["video_metrics"],
+        status="pending",
+    )
+    initialize_session(metadata)
+
+    updated = update_session_status(metadata, "running")
+    snapshot = read_session_snapshot("session-valid-transition")
+
+    assert updated.status == "running"
+    assert snapshot["session"]["status"] == "running"
+
+
+def test_update_session_status_rejects_cancelled_to_running_transition(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Cancelled sessions should not be allowed to transition back to running."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = SessionMetadata(
+        session_id="session-cancelled-transition",
+        mode="video_segments",
+        input_path="/tmp/input",
+        selected_detectors=["video_metrics"],
+        status="cancelled",
+    )
+
+    with pytest.raises(InvalidSessionTransitionError, match="cancelled -> running"):
+        update_session_status(metadata, "running")
+
+
+def test_update_session_status_rejects_failed_to_running_transition(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Failed sessions should not be allowed to transition back to running."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = SessionMetadata(
+        session_id="session-failed-transition",
+        mode="video_segments",
+        input_path="/tmp/input",
+        selected_detectors=["video_metrics"],
+        status="failed",
+    )
+
+    with pytest.raises(InvalidSessionTransitionError, match="failed -> running"):
+        update_session_status(metadata, "running")
 
 
 def test_write_session_progress_rejects_completed_progress_with_missing_work(
