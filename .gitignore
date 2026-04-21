@@ -17,8 +17,13 @@ wheels/
 # Frontend / Node build output
 frontend/node_modules/
 frontend/dist/
+frontend/coverage/
+frontend/.vite/
 frontend/tsconfig.tsbuildinfo
 frontend/public/detectors.json
+
+# Test / coverage output
+coverage/
 
 # Local runtime data and developer-owned media inputs
 data/metrics/
