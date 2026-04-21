@@ -82,7 +82,12 @@ def update_session_status(metadata: SessionMetadata, status: SessionStatus) -> S
 
 
 def request_session_cancel(session_id: str) -> Path:
-    """Persist a cancel request that can be picked up by the session runner."""
+    """Persist a cancel request that can be picked up by the session runner.
+
+    This helper is intentionally file-oriented and tolerant. Higher-level API
+    routes and runner logic decide whether cancellation is valid for the
+    current lifecycle state; this helper only records cancel intent.
+    """
     request_path = get_cancel_request_path(session_id)
     request_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_file(
