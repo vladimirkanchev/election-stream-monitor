@@ -194,6 +194,35 @@ describe("bridge contract normalization", () => {
     });
   });
 
+  it("preserves invalid cancel-state failures as typed bridge transport errors", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn(),
+      cancelSession: vi.fn().mockResolvedValue(
+        fail(
+          "SESSION_CANCEL_FAILED",
+          "Session cancel request failed",
+          "Session session-123 is already completed.",
+          {
+            backend_error_code: "cancel_failed",
+            status_reason: "cancel_failed",
+            status_detail: "Session session-123 is already completed.",
+          },
+        ),
+      ),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.cancelSession("session-123")).rejects.toMatchObject({
+      name: "BridgeTransportError",
+      code: "SESSION_CANCEL_FAILED",
+      backendErrorCode: "cancel_failed",
+      statusReason: "cancel_failed",
+      statusDetail: "Session session-123 is already completed.",
+    });
+  });
+
   it("accepts a FastAPI-style cancelSession success payload", async () => {
     const bridge = createNormalizedBridge({
       listDetectors: vi.fn(),
@@ -257,6 +286,97 @@ describe("bridge contract normalization", () => {
       alerts: [],
       results: [],
       latest_result: null,
+    });
+  });
+
+  it("normalizes a terminal completed session snapshot from the bridge", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn().mockResolvedValue(
+        ok({
+          session: {
+            session_id: "session-123",
+            mode: "video_files",
+            input_path: "/tmp/input.mp4",
+            selected_detectors: ["video_metrics"],
+            status: "completed",
+          },
+          progress: {
+            session_id: "session-123",
+            status: "completed",
+            processed_count: 4,
+            total_count: 4,
+            current_item: null,
+            latest_result_detector: "video_metrics",
+            latest_result_detectors: ["video_metrics"],
+            alert_count: 0,
+            last_updated_utc: "2026-04-21 10:00:00",
+            status_reason: "completed",
+            status_detail: null,
+          },
+          alerts: [],
+          results: [],
+          latest_result: null,
+        }),
+      ),
+      cancelSession: vi.fn(),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.readSession("session-123")).resolves.toEqual({
+      session: {
+        session_id: "session-123",
+        mode: "video_files",
+        input_path: "/tmp/input.mp4",
+        selected_detectors: ["video_metrics"],
+        status: "completed",
+      },
+      progress: {
+        session_id: "session-123",
+        status: "completed",
+        processed_count: 4,
+        total_count: 4,
+        current_item: null,
+        latest_result_detector: "video_metrics",
+        latest_result_detectors: ["video_metrics"],
+        alert_count: 0,
+        last_updated_utc: "2026-04-21 10:00:00",
+        status_reason: "completed",
+        status_detail: null,
+      },
+      alerts: [],
+      results: [],
+      latest_result: null,
+    });
+  });
+
+  it("raises a typed bridge error when readSession returns a missing-session failure", async () => {
+    const bridge = createNormalizedBridge({
+      listDetectors: vi.fn(),
+      startSession: vi.fn(),
+      readSession: vi.fn().mockResolvedValue(
+        fail(
+          "SESSION_READ_FAILED",
+          "Session read request failed",
+          "No persisted session snapshot found for session_id=session-123",
+          {
+            backend_error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-123",
+          },
+        ),
+      ),
+      cancelSession: vi.fn(),
+      resolvePlaybackSource: vi.fn(),
+    });
+
+    await expect(bridge.readSession("session-123")).rejects.toMatchObject({
+      name: "BridgeTransportError",
+      code: "SESSION_READ_FAILED",
+      backendErrorCode: "session_not_found",
+      statusReason: "session_not_found",
+      statusDetail: "No persisted session snapshot found for session_id=session-123",
     });
   });
 

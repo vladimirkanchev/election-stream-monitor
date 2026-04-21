@@ -5,6 +5,7 @@ import {
   getApiStreamOperatorMessage,
   getApiStreamSessionStateMessage,
   getHlsPlaybackErrorMessage,
+  getSessionStopErrorMessage,
   getSessionStartErrorMessage,
 } from "./uiErrors";
 
@@ -132,6 +133,21 @@ describe("ui error messages", () => {
 
     expect(getSessionStartErrorMessage(error, "video_segments")).toBe(
       "Monitoring could not be started. The local monitoring bridge reported a request failure.",
+    );
+  });
+
+  it("maps invalid cancel-state bridge failures to a more specific stop message", () => {
+    const error = new BridgeTransportError({
+      code: "SESSION_CANCEL_FAILED",
+      message: "Session cancel request failed",
+      details: "Session session-123 is already completed.",
+      backend_error_code: "cancel_failed",
+      status_reason: "cancel_failed",
+      status_detail: "Session session-123 is already completed.",
+    });
+
+    expect(getSessionStopErrorMessage(error)).toBe(
+      "Monitoring was already ending or had already finished.",
     );
   });
 
