@@ -139,9 +139,90 @@ npm run test:electron-bridge
 npm run test:session-flow
 ```
 
+## Lifecycle Slice Validation
+
+After each lifecycle-hardening slice, run:
+
+```bash
+cd frontend
+npm run test:startup-milestone
+```
+
+Use the full frontend suite at larger boundaries, such as before grouping
+commits or after a broader lifecycle/race hardening pass:
+
+```bash
+cd frontend
+npm run test
+```
+
 If one side of the contract changes, do not rely on only backend tests or only
 frontend tests. Run at least one focused backend contract check and one focused
 frontend normalization check together.
+
+## Lifecycle Coverage Audit
+
+Current lifecycle coverage is already spread across the main layers:
+
+- backend tests
+  - `tests/test_session_runner.py`
+    - start-to-completed flow
+    - mid-run cancel leading to `cancelled`
+    - runtime failure persistence
+    - validation failure persistence
+    - `api_stream` terminal failure and cancel scenarios
+  - `tests/test_session_io.py`
+    - invalid terminal transitions
+    - completed-progress consistency checks
+- FastAPI boundary tests
+  - `tests/test_api_boundary.py`
+    - missing-session reads
+    - start validation and spawn failures
+    - populated snapshot reads
+    - cancel success
+    - missing-session cancel failure
+    - current terminal cancel behavior
+- Electron bridge/runtime tests
+  - `frontend/electron/bridgeResponses.test.mjs`
+    - start/cancel success mapping
+    - structured start/cancel failure mapping
+    - generic unavailable-runtime failure mapping
+  - `frontend/electron/fastApiRuntimePolicy.test.mjs`
+    - startup readiness success
+    - startup timeout and clear unavailable failure
+  - `frontend/electron/fastApiFallback.test.mjs`
+    - legacy fallback/helper seam coverage for start/read/cancel edge cases
+- frontend app/session-flow tests
+  - `frontend/src/App.startSession.test.tsx`
+    - start failures
+    - malformed start payloads
+    - initial-read failure after start
+    - successful `api_stream` start flow
+  - `frontend/src/App.cancelSession.test.tsx`
+    - normal cancel flow
+    - typed cancel failures
+    - malformed cancel payloads
+    - missing-session cancel failure
+    - `cancelSession -> null` success
+  - `frontend/src/App.pollingStatus.test.tsx`
+    - running-to-completed polling flow
+    - polling failure with recovery
+    - running-to-failed terminal transitions
+    - `api_stream` status/detail messaging
+
+Current high-value gaps:
+
+- no explicit backend truth-table style test for repeated cancel requests
+- no explicit backend/API test for canceling an already terminal session as a final intended rule
+- no focused Electron test for read-session missing-session bridge mapping
+- no frontend app-flow coverage for cancel-after-completion
+- no race-oriented app tests yet:
+  - cancel while a poll is in flight
+  - stale poll result arriving after cancel request
+  - repeated end/cancel requests from the UI
+
+Use this audit before adding more lifecycle tests so new coverage fills a real
+gap instead of duplicating an existing layer.
 
 ### Runtime Doc Alignment
 
