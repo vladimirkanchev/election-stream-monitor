@@ -287,6 +287,9 @@ consumer rules:
   session state in the UI instead of immediately clearing it
 - duplicate in-flight cancel requests are suppressed so the frontend keeps one
   active stop request rather than fanning out repeated cancels
+- once the UI has already settled into terminal `completed`, the app suppresses
+  a late extra stop request instead of issuing a cancel action that can no
+  longer change the session outcome
 
 ## Alert Event v1
 

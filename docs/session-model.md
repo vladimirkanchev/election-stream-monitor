@@ -206,6 +206,21 @@ The session model is stricter now than in earlier iterations:
 
 The backend also resets any per-session rolling alert-rule state when a session starts or ends.
 
+### Backend Transition Rules
+
+At the persistence-model layer, backend session metadata is the source of truth
+for valid lifecycle transitions:
+
+- `pending` may remain `pending` or move to `running`, `cancelled`, or `failed`
+- `running` may remain `running` or move to `completed`, `cancelled`, or `failed`
+- `cancelling` may remain `cancelling` or settle to `cancelled` or `failed`
+- terminal states remain terminal and do not transition back into active work
+
+The low-level cancel-request helper is intentionally narrower than the route
+layer. It records cancel intent as a file-backed marker, while higher-level API
+and runner behavior decide whether cancellation is valid for the current
+session state.
+
 ## Lifecycle Truth Table
 
 This table defines the intended meaning of the current session lifecycle for the
@@ -226,6 +241,7 @@ responses, Electron bridge mapping, and frontend session UX.
 | cancel-session with a stale or missing session id | return a structured missing-session failure | Do not silently succeed or fallback. |
 | polling read fails transiently while the last good snapshot is still known | keep the last good session state in the UI and retry on the next interval | Polling failures are intentionally tolerant at the frontend session layer. |
 | repeated cancel requests arrive while a previous cancel request is still pending | suppress duplicate cancel requests | The frontend should keep one in-flight cancel request rather than fan out repeated stop attempts. |
+| the UI has already settled into terminal `completed` state before another stop attempt | suppress the extra stop request and keep the completed view | The app-level session UX prefers the settled terminal state over issuing a late cancel request that can no longer change the outcome. |
 | read/poll reports `session_not_found` after a cancel request has already moved the UI into `cancelling` | keep the last good ending state rather than surface a new route error immediately | Current frontend behavior prefers a stable shutdown UX over replacing the ending state with a transient missing-session error. |
 
 ### Interpretation Rules
@@ -237,6 +253,7 @@ responses, Electron bridge mapping, and frontend session UX.
 - Frontend transport normalization should preserve these meanings rather than reinterpret them.
 - Frontend polling is intentionally tolerant of one-off read failures and keeps the last good session state instead of clearing the session immediately.
 - Frontend stop behavior should suppress duplicate in-flight cancel requests and prefer a stable ending/terminal state over repeated stop churn.
+- Once the UI has already settled into `completed`, the app suppresses another stop request rather than surfacing a late cancel-state failure from a request it no longer needs to send.
 
 At the backend persistence-helper layer, missing session snapshot reads still
 degrade to the stable empty snapshot shape. Structured missing-session failures
