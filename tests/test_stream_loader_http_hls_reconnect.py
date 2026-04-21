@@ -245,6 +245,50 @@ def test_http_hls_loader_fails_when_reconnect_budget_is_exhausted(
     cleanup_api_stream_temp_session_dir("session-http-budget")
 
 
+def test_http_hls_loader_recovers_after_multiple_retryable_playlist_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Multiple retryable playlist failures should still recover while budget remains."""
+    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
+    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+
+    playlist_text = "\n".join(
+        [
+            "#EXTM3U",
+            "#EXT-X-TARGETDURATION:1",
+            "#EXT-X-MEDIA-SEQUENCE:10",
+            "#EXTINF:1.0,",
+            "segment_010.ts",
+            "#EXT-X-ENDLIST",
+        ]
+    )
+    routes = {
+        "/live/index.m3u8": [
+            (503, "busy", "text/plain"),
+            (503, "busy", "text/plain"),
+            (200, playlist_text, "application/vnd.apple.mpegurl"),
+        ],
+        "/live/segment_010.ts": (200, b"010", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        loader = HttpHlsApiStreamLoader("session-http-multi-recover")
+        slices = collect_api_stream_slices(loader, source)
+        telemetry = loader.telemetry_snapshot()
+
+    assert [slice_.window_index for slice_ in slices] == [10]
+    assert telemetry.reconnect_attempt_count == 2
+    assert telemetry.reconnect_budget_exhaustion_count == 0
+    assert telemetry.terminal_failure_reason is None
+    cleanup_api_stream_temp_session_dir("session-http-multi-recover")
+
+
 def test_http_hls_loader_persists_identity_keys_and_skips_replayed_segments(
     monkeypatch,
     tmp_path: Path,
