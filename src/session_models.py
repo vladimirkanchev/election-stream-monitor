@@ -16,6 +16,11 @@ SessionStatus = Literal[
 ]
 EventSeverity = Literal["info", "warning"]
 
+# Persisted session metadata uses this lifecycle map as the backend source of
+# truth. Route-level responses may still surface transient summaries such as
+# `cancelling` before `session.json` settles to a terminal state.
+TERMINAL_SESSION_STATUSES: set[SessionStatus] = {"cancelled", "completed", "failed"}
+
 ALLOWED_SESSION_STATUS_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
     "pending": {"pending", "running", "cancelled", "failed"},
     "running": {"running", "cancelled", "completed", "failed"},
