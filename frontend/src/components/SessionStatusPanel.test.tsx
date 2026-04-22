@@ -53,19 +53,114 @@ afterEach(() => {
   cleanup();
 });
 
-describe("SessionStatusPanel diagnostics", () => {
-  it("shows a monitoring retry diagnostic when session polling is retrying", () => {
-    renderPanel({
-      sessionError: "The live stream is temporarily unavailable. Monitoring is reconnecting.",
-    });
+describe("SessionStatusPanel monitoring UX", () => {
+  it("keeps live stop and terminal summaries distinct", () => {
+    const { rerender } = render(
+      <SessionStatusPanel
+        source={API_STREAM_SOURCE}
+        sessionStatus="cancelling"
+        progress={{ ...BASE_PROGRESS, status: "cancelling" }}
+        selectedDetectorCount={1}
+        visibleAlertCount={0}
+        playbackTime={5}
+        playbackDuration={null}
+        playbackLive
+        playbackStatus="playing"
+        sessionError={null}
+      />,
+    );
 
-    expect(screen.getByText("Monitoring")).toBeTruthy();
+    expect(screen.getByText("Stopping now")).toBeTruthy();
+    expect(screen.getByText("The current monitoring run is settling a stop request.")).toBeTruthy();
+    expect(screen.getByText("A stop request is settling for the current live stream.")).toBeTruthy();
+
+    rerender(
+      <SessionStatusPanel
+        source={API_STREAM_SOURCE}
+        sessionStatus="cancelled"
+        progress={{ ...BASE_PROGRESS, status: "cancelled", current_item: null }}
+        selectedDetectorCount={1}
+        visibleAlertCount={0}
+        playbackTime={5}
+        playbackDuration={null}
+        playbackLive
+        playbackStatus="stopped"
+        sessionError={null}
+      />,
+    );
+
+    expect(screen.getByText("Stopped by user")).toBeTruthy();
+    expect(screen.getByText("Monitoring was ended by the user.")).toBeTruthy();
     expect(
-      screen.getByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
+      screen.getByText("Live monitoring was stopped by the user before the current stream completed."),
+    ).toBeTruthy();
+
+    rerender(
+      <SessionStatusPanel
+        source={API_STREAM_SOURCE}
+        sessionStatus="failed"
+        progress={{
+          ...BASE_PROGRESS,
+          status: "failed",
+          status_reason: "source_unreachable",
+          status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+        }}
+        selectedDetectorCount={1}
+        visibleAlertCount={0}
+        playbackTime={5}
+        playbackDuration={null}
+        playbackLive
+        playbackStatus="stopped"
+        sessionError={null}
+      />,
+    );
+
+    expect(screen.getByText("Needs attention")).toBeTruthy();
+    expect(screen.getByText("Monitoring ended with a problem that needs review.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Live monitoring ended before this stream finished. Check the details below for more information.",
+      ),
     ).toBeTruthy();
   });
 
-  it("shows a terminal monitoring diagnostic from api stream failure metadata", () => {
+  it("shows completed live runs and idle-bounded completion warnings separately", () => {
+    renderPanel({
+      sessionStatus: "completed",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "completed",
+        status_reason: "idle_poll_budget_exhausted",
+        status_detail: "Idle poll budget exhausted",
+      },
+    });
+
+    expect(screen.getByText("Ended after going quiet")).toBeTruthy();
+    expect(
+      screen.getByText("Monitoring stopped after the live stream stopped sending new video."),
+    ).toBeTruthy();
+    expect(screen.getByText("The bounded live monitoring run completed for the current stream.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The live stream stopped sending new video, so monitoring has ended.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("renders a reconnecting cue separately from terminal diagnostics", () => {
+    renderPanel({
+      sessionError: "The live stream dropped for a moment. Monitoring is trying to reconnect.",
+    });
+
+    expect(screen.getByText("Recovering")).toBeTruthy();
+    expect(screen.getByText("Trying to reconnect to the live stream.")).toBeTruthy();
+    expect(screen.getByText("Monitoring")).toBeTruthy();
+    expect(
+      screen.getByText("The live stream dropped for a moment. Monitoring is trying to reconnect."),
+    ).toBeTruthy();
+  });
+
+  it("renders terminal monitoring diagnostics from api stream failure metadata", () => {
     renderPanel({
       sessionStatus: "failed",
       progress: {
@@ -78,7 +173,7 @@ describe("SessionStatusPanel diagnostics", () => {
 
     expect(
       screen.getByText(
-        "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
+        "Monitoring could not reconnect to the live stream, so it has ended.",
       ),
     ).toBeTruthy();
   });
@@ -94,5 +189,27 @@ describe("SessionStatusPanel diagnostics", () => {
         "Playback failed separately from monitoring. Monitoring may still be running; check the player panel for the playback-specific reason.",
       ),
     ).toBeTruthy();
+  });
+
+  it("orders monitoring errors ahead of secondary playback diagnostics", () => {
+    const { container } = renderPanel({
+      sessionStatus: "failed",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "failed",
+        status_reason: "source_unreachable",
+        status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+      },
+      playbackStatus: "error",
+    });
+
+    const diagnosticItems = Array.from(
+      container.querySelectorAll(".session-diagnostics__item"),
+    ).map((item) => item.textContent?.trim());
+
+    expect(diagnosticItems).toEqual([
+      "Monitoring Monitoring could not reconnect to the live stream, so it has ended.",
+      "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
+    ]);
   });
 });
