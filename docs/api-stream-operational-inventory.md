@@ -73,6 +73,27 @@ baseline is:
 This note remains the detailed maintainer inventory. The canonical docs should
 only carry the settled behavior above, not the full planning analysis.
 
+## Branch Closeout
+
+This inventory remains the detailed maintainer note for the branch.
+
+The canonical lifecycle statements now live in:
+
+- [`docs/contracts.md`](./contracts.md)
+- [`docs/session-model.md`](./session-model.md)
+
+Use this inventory when you need the operational reasoning and evidence trail.
+Use the canonical docs when you need the current shared contract.
+
+Current branch-end validation baseline:
+
+- frontend package:
+  - `npm run test:electron-bridge`
+  - `npm run test:frontend-checkpoint`
+
+That keeps this note from becoming a second copy of the canonical lifecycle
+docs while still recording which validation checkpoint the branch closed on.
+
 ## Quick Baseline Table
 
 This table is the shortest summary of what step 1 currently tells us.

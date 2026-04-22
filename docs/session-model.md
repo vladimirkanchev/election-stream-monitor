@@ -214,9 +214,28 @@ For the current runtime, `api_stream` sessions follow these operational rules:
   cause preserved in `status_detail`
 - frontend operator messaging may still surface idle exhaustion as a warning
   even though the persisted session outcome remains `completed`
+- frontend live UX may also surface temporary reconnecting cues while the
+  persisted session remains in its last good active state
+- session summaries and diagnostics now intentionally distinguish:
+  - reconnecting vs terminal failure
+  - stopped by user vs failed
+  - bounded completion vs bounded completion with idle-warning semantics
 
 This is the current bridge between detailed backend observability and
 operator-safe frontend wording.
+
+### Current validation baseline
+
+At the end of this branch, the lifecycle behavior above is treated as settled
+because it is covered by the current milestone checks:
+
+- frontend package:
+  - `npm run test:electron-bridge`
+  - `npm run test:frontend-checkpoint`
+
+These are the baseline validation commands to rerun before further lifecycle
+doc changes. They help keep the canonical docs tied to tested behavior rather
+than to planning-only intent.
 
 The session model is stricter now than in earlier iterations:
 
