@@ -258,6 +258,39 @@ Important snapshot progress fields are:
 This keeps request-level problems distinct from the state of an already-running
 session.
 
+### Current monitoring lifecycle expectations
+
+For the current branch state, frontend and bridge consumers should assume:
+
+- `status` remains the top-level lifecycle outcome:
+  - `pending`
+  - `running`
+  - `cancelling`
+  - `completed`
+  - `cancelled`
+  - `failed`
+- `status_reason` stays intentionally compact and stable
+- `status_detail` carries the more specific loader/runtime explanation when one
+  is needed
+
+For `api_stream`, the currently important operator-facing distinctions are:
+
+- transient polling/read failures may temporarily surface as reconnecting in
+  the frontend without clearing the last good session snapshot
+- reconnect-budget exhaustion is terminal and should be presented as a failed
+  live run
+- runtime safety limits are terminal and should be presented as a safety stop,
+  not as a source-shape validation problem
+- idle polling exhaustion persists as:
+  - `status = completed`
+  - `status_reason = idle_poll_budget_exhausted`
+  - `status_detail = "Idle poll budget exhausted"`
+- the frontend may still present that idle-completed case with warning-like
+  wording so operators can distinguish it from an ordinary clean completion
+
+The bridge/frontend layer should reflect these meanings, not invent a separate
+degraded-state lifecycle model on its own.
+
 ### Current `api_stream` recovery and terminal expectations
 
 For the current bridge/frontend contract:
