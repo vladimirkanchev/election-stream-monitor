@@ -124,18 +124,14 @@ describe("App polling and status integration", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 1100));
 
     await waitFor(() => {
-      expect(
-        screen.getByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
-      ).toBeTruthy();
+      expect(screen.getByText("Recovering")).toBeTruthy();
     });
 
     await new Promise((resolve) => window.setTimeout(resolve, 1100));
 
     await waitFor(() => {
-      expect(
-        screen.queryByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
-      ).toBeNull();
-      expect(screen.getByText("Live monitoring is active and currently analyzing live-window-001.")).toBeTruthy();
+      expect(screen.queryByText("Recovering")).toBeNull();
+      expect(screen.getByText("Running")).toBeTruthy();
     });
   });
 
@@ -197,9 +193,7 @@ describe("App polling and status integration", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 1100));
 
     await waitFor(() => {
-      expect(
-        screen.getByText("The live monitoring run ended after hitting a runtime safety limit."),
-      ).toBeTruthy();
+      expect(screen.getByText(/taking too long/i)).toBeTruthy();
       expect(screen.getByText("Failed")).toBeTruthy();
     });
   });
@@ -264,25 +258,17 @@ describe("App polling and status integration", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 1100));
 
     await waitFor(() => {
-      expect(
-        screen.getByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
-      ).toBeTruthy();
+      expect(screen.getByText("Recovering")).toBeTruthy();
     });
 
     await new Promise((resolve) => window.setTimeout(resolve, 1100));
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText("Needs attention")).toBeTruthy();
       expect(screen.getByText("Failed")).toBeTruthy();
     });
 
-    expect(
-      screen.queryByText("The live stream is temporarily unavailable. Monitoring is reconnecting."),
-    ).toBeNull();
+    expect(screen.queryByText("Recovering")).toBeNull();
   });
 
   it("shows an idle-budget warning when a bounded api stream run completes after going quiet", async () => {
@@ -345,12 +331,7 @@ describe("App polling and status integration", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Completed")).toBeTruthy();
-      expect(screen.getByText("The bounded live monitoring run has ended for the current stream.")).toBeTruthy();
-      expect(
-        screen.getByText(
-          "The live stream stopped producing new chunks. Monitoring ended after the idle polling budget was exhausted.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText("Ended after going quiet")).toBeTruthy();
     });
   });
 
@@ -830,7 +811,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Live, 4 chunks analyzed")).toBeTruthy();
       expect(
         screen.getByText(
-          "Live monitoring ended with an error. Check the monitoring details for the specific live-stream reason.",
+          "Live monitoring ended before this stream finished. Check the details below for more information.",
         ),
       ).toBeTruthy();
     });

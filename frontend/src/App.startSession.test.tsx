@@ -203,7 +203,7 @@ describe("App start-session integration", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.",
+          "Monitoring could not reconnect to the live stream, so it has ended.",
         ),
       ).toBeTruthy();
     });
@@ -226,7 +226,7 @@ describe("App start-session integration", () => {
     await waitFor(() => {
       expect(
         screen.getByText(
-          "This looks like a webpage URL, not a direct media stream. Paste a direct .m3u8 or .mp4 URL instead.",
+          "This link opens a webpage, not the video stream itself. Paste the direct video link (.m3u8 or .mp4) instead.",
         ),
       ).toBeTruthy();
     });
