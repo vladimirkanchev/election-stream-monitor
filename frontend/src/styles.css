@@ -219,6 +219,104 @@ select {
   line-height: 1.5;
 }
 
+.monitor-card__status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 1px solid #ddd3c5;
+  background: #f6efe4;
+  color: #56665f;
+}
+
+.monitor-card__status--active {
+  background: #edf7f0;
+  border-color: #b6d8bf;
+  color: #24593f;
+}
+
+.monitor-card__status--warning {
+  background: #fdf3e6;
+  border-color: #ecd2ad;
+  color: #7d5531;
+}
+
+.monitor-card__status--terminal {
+  background: #fcebe6;
+  border-color: #e5b7a7;
+  color: #8f3f24;
+}
+
+.monitor-card__status--idle {
+  background: #f6efe4;
+  border-color: #ddd3c5;
+  color: #56665f;
+}
+
+.session-overview {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8f3eb;
+  border: 1px solid #e4d9cb;
+}
+
+.session-overview--active {
+  background: #eef7f0;
+  border-color: #c8ddce;
+}
+
+.session-overview--warning {
+  background: #fdf3e6;
+  border-color: #ecd2ad;
+}
+
+.session-overview--terminal {
+  background: #fcebe6;
+  border-color: #e5b7a7;
+}
+
+.session-overview--idle {
+  background: #f8f3eb;
+  border-color: #e4d9cb;
+}
+
+.session-overview__eyebrow {
+  margin: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8c776a;
+}
+
+.session-overview__message {
+  margin-top: 6px;
+}
+
+.session-overview__cue {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.session-overview__cue--active {
+  color: #24593f;
+}
+
+.session-overview__cue--warning {
+  color: #7d5531;
+}
+
+.session-overview__cue--terminal {
+  color: #8f3f24;
+}
+
+.session-overview__cue--idle {
+  color: #5e6d66;
+}
+
 .session-diagnostics {
   margin-top: 12px;
   display: flex;

@@ -121,17 +121,17 @@ export function getApiStreamOperatorMessage(
 ): string {
   switch (reason) {
     case "directMediaRequired":
-      return "This looks like a webpage URL, not a direct media stream. Paste a direct .m3u8 or .mp4 URL instead.";
+      return "This link opens a webpage, not the video stream itself. Paste the direct video link (.m3u8 or .mp4) instead.";
     case "reconnecting":
-      return "The live stream is temporarily unavailable. Monitoring is reconnecting.";
+      return "The live stream dropped for a moment. Monitoring is trying to reconnect.";
     case "reconnectBudgetExhausted":
-      return "The live stream could not be reconnected. Monitoring ended after the retry budget was exhausted.";
+      return "Monitoring could not reconnect to the live stream, so it has ended.";
     case "idlePollBudgetExhausted":
-      return "The live stream stopped producing new chunks. Monitoring ended after the idle polling budget was exhausted.";
+      return "The live stream stopped sending new video, so monitoring has ended.";
     case "safetyLimitReached":
-      return "The live monitoring run ended after hitting a runtime safety limit.";
+      return "Monitoring ended because this live run was taking too long.";
     case "unsupportedSource":
-      return "The selected live stream source is not supported by the current monitoring runtime.";
+      return "This live stream link is not supported here.";
     case "streamUnavailable":
     default:
       return "The selected live stream is unavailable right now.";
