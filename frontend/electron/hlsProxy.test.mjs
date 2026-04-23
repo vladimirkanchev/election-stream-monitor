@@ -15,6 +15,23 @@ import {
   shouldTreatAsHlsPlaylist,
 } from "./hlsProxy.mjs";
 
+function playlistResponse(lines, contentType = "application/vnd.apple.mpegurl") {
+  return [200, lines.join("\n"), contentType];
+}
+
+function assetResponse(
+  body,
+  contentType = "video/mp2t",
+  status = 200,
+  headers = {},
+) {
+  return [status, body, contentType, headers];
+}
+
+function expectProxyPath(proxyUrl) {
+  expect(proxyUrl).toContain("local-media://proxy/");
+}
+
 describe("electron HLS proxy helpers", () => {
   it("detects direct remote HLS URLs", () => {
     expect(isRemoteHlsUrl("https://cdn.example.com/live/playlist.m3u8")).toBe(true);
@@ -29,6 +46,16 @@ describe("electron HLS proxy helpers", () => {
 
     expect(token).toBeTruthy();
     expect(registry.resolve(token)).toBe("https://cdn.example.com/live/playlist.m3u8");
+  });
+
+  it("returns null for unknown proxy tokens", () => {
+    const registry = createRemoteHlsProxyRegistry();
+
+    expect(registry.resolve("missing-token")).toBeNull();
+  });
+
+  it("returns null when a proxy pathname does not include a token", () => {
+    expect(parseProxyToken("/")).toBeNull();
   });
 
   it("drops expired proxy entries during registry pruning", async () => {
@@ -134,27 +161,19 @@ describe("electron HLS proxy helpers", () => {
 
   it("proxies a master playlist through to variant and segment assets end-to-end", async () => {
     const routes = {
-      "/master.m3u8": [
-        200,
-        [
+      "/master.m3u8": playlistResponse([
           "#EXTM3U",
           "#EXT-X-STREAM-INF:BANDWIDTH=1280000",
           "variant/low.m3u8",
-        ].join("\n"),
-        "application/vnd.apple.mpegurl",
-      ],
-      "/variant/low.m3u8": [
-        200,
-        [
+        ]),
+      "/variant/low.m3u8": playlistResponse([
           "#EXTM3U",
           "#EXTINF:6.0,",
           "segment_0001.ts",
           '#EXT-X-KEY:METHOD=AES-128,URI="enc.key"',
-        ].join("\n"),
-        "application/vnd.apple.mpegurl",
-      ],
-      "/variant/segment_0001.ts": [200, "segment-body", "video/mp2t"],
-      "/variant/enc.key": [200, "secret", "application/octet-stream"],
+        ]),
+      "/variant/segment_0001.ts": assetResponse("segment-body"),
+      "/variant/enc.key": assetResponse("secret", "application/octet-stream"),
     };
 
     await withLocalHttpRoutes(routes, async (baseUrl) => {
@@ -233,16 +252,12 @@ describe("electron HLS proxy helpers", () => {
 
   it("supports parallel reads against the same proxied playlist and segment", async () => {
     const routes = {
-      "/index.m3u8": [
-        200,
-        [
+      "/index.m3u8": playlistResponse([
           "#EXTM3U",
           "#EXTINF:6.0,",
           "segment_0001.ts",
-        ].join("\n"),
-        "application/vnd.apple.mpegurl",
-      ],
-      "/segment_0001.ts": [200, "segment-body", "video/mp2t"],
+        ]),
+      "/segment_0001.ts": assetResponse("segment-body"),
     };
 
     await withLocalHttpRoutes(routes, async (baseUrl) => {
@@ -270,16 +285,12 @@ describe("electron HLS proxy helpers", () => {
 
   it("surfaces missing variant playlists as clean proxy errors", async () => {
     const routes = {
-      "/master.m3u8": [
-        200,
-        [
+      "/master.m3u8": playlistResponse([
           "#EXTM3U",
           "#EXT-X-STREAM-INF:BANDWIDTH=1280000",
           "variant/missing.m3u8",
-        ].join("\n"),
-        "application/vnd.apple.mpegurl",
-      ],
-      "/variant/missing.m3u8": [404, "not found", "text/plain"],
+        ]),
+      "/variant/missing.m3u8": assetResponse("not found", "text/plain", 404),
     };
 
     await withLocalHttpRoutes(routes, async (baseUrl) => {
@@ -299,16 +310,12 @@ describe("electron HLS proxy helpers", () => {
 
   it("surfaces missing media segments as clean proxy errors", async () => {
     const routes = {
-      "/index.m3u8": [
-        200,
-        [
+      "/index.m3u8": playlistResponse([
           "#EXTM3U",
           "#EXTINF:6.0,",
           "segment_missing.ts",
-        ].join("\n"),
-        "application/vnd.apple.mpegurl",
-      ],
-      "/segment_missing.ts": [404, "not found", "text/plain"],
+        ]),
+      "/segment_missing.ts": assetResponse("not found", "text/plain", 404),
     };
 
     await withLocalHttpRoutes(routes, async (baseUrl) => {
@@ -385,6 +392,144 @@ describe("electron HLS proxy helpers", () => {
     expect(payload.headers.get("content-range")).toBe("bytes 0-13/100");
     expect(payload.headers.get("content-length")).toBe("14");
   });
+
+  it("preserves query strings when rewriting proxied playlist assets", () => {
+    const seenAssetUrls = [];
+    const rewritten = rewriteHlsManifest(
+      [
+        "#EXTM3U",
+        '#EXT-X-KEY:METHOD=AES-128,URI="enc.key?token=abc"',
+        "#EXTINF:6.0,",
+        "segment_0001.ts?token=seg-1&part=2",
+      ].join("\n"),
+      "https://cdn.example.com/live/index.m3u8?session=1",
+      (assetUrl) => {
+        seenAssetUrls.push(assetUrl);
+        return buildProxyMediaUrl(`token-${seenAssetUrls.length}`, ".bin");
+      },
+    );
+
+    expect(seenAssetUrls).toEqual([
+      "https://cdn.example.com/live/enc.key?token=abc",
+      "https://cdn.example.com/live/segment_0001.ts?token=seg-1&part=2",
+    ]);
+    expect(rewritten).toContain('URI="local-media://proxy/token-1.bin"');
+    expect(rewritten).toContain("local-media://proxy/token-2.bin");
+  });
+
+  it("keeps non-hls remote urls out of the proxy path", () => {
+    expect(isRemoteHlsUrl("local-media://proxy/token-segment.ts.bin")).toBe(false);
+    expect(isRemoteHlsUrl("file:///tmp/local.m3u8")).toBe(false);
+    expect(isRemoteHlsUrl("not-a-url")).toBe(false);
+  });
+
+  it("surfaces upstream 503 responses as clean proxy errors", async () => {
+    const blockedResponse = new Response("temporary outage", {
+      status: 503,
+      headers: { "content-type": "text/plain" },
+    });
+    const payload = await parseRemoteHlsProxyPayload({
+      targetUrl: "https://streams.example.com/live.m3u8",
+      remoteResponse: blockedResponse,
+      registerProxyUrl: (assetUrl) => buildProxyMediaUrl(`token-${assetUrl.split("/").pop()}`),
+      guessContentType: () => "application/vnd.apple.mpegurl",
+    });
+
+    expect(payload.kind).toBe("error");
+    expect(payload.status).toBe(503);
+    expect(payload.message).toContain("HTTP 503");
+  });
+
+  it("does not forward cache-control policy when proxying passthrough media assets", async () => {
+    const assetResponse = new Response("segment-body", {
+      status: 200,
+      headers: {
+        "content-type": "video/mp2t",
+        "content-length": "12",
+        "cache-control": "public, max-age=600",
+        "pragma": "cache",
+      },
+    });
+    const payload = await parseRemoteHlsProxyPayload({
+      targetUrl: "https://streams.example.com/live/segment.ts",
+      remoteResponse: assetResponse,
+      registerProxyUrl: (assetUrl) => buildProxyMediaUrl(`token-${assetUrl.split("/").pop()}`),
+      guessContentType: () => "video/mp2t",
+    });
+
+    expect(payload.kind).toBe("asset");
+    expect(payload.headers.get("cache-control")).toBe("no-store");
+    expect(payload.headers.get("pragma")).toBeNull();
+  });
+
+  it("does not leak upstream set-cookie headers through passthrough asset responses", async () => {
+    const assetResponse = new Response("segment-body", {
+      status: 200,
+      headers: {
+        "content-type": "video/mp2t",
+        "content-length": "12",
+        "set-cookie": "session=upstream-secret; HttpOnly",
+      },
+    });
+    const payload = await parseRemoteHlsProxyPayload({
+      targetUrl: "https://streams.example.com/live/segment.ts",
+      remoteResponse: assetResponse,
+      registerProxyUrl: (assetUrl) => buildProxyMediaUrl(`token-${assetUrl.split("/").pop()}`),
+      guessContentType: () => "video/mp2t",
+    });
+
+    expect(payload.kind).toBe("asset");
+    expect(payload.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("forwards range headers when creating remote playback requests", () => {
+    const headers = createRemotePlaybackRequestHeaders("bytes=0-99");
+
+    expect(headers.get("range")).toBe("bytes=0-99");
+    expect(headers.get("accept")).toContain("application/vnd.apple.mpegurl");
+  });
+
+  it("does not forward renderer auth or cookie headers when proxying upstream asset requests", async () => {
+    const seenHeaders = [];
+    const routes = {
+      "/index.m3u8": playlistResponse([
+          "#EXTM3U",
+          "#EXTINF:6.0,",
+          "segment_0001.ts",
+        ]),
+      "/segment_0001.ts": [
+        200,
+        "segment-body",
+        "video/mp2t",
+        {},
+        (request) => {
+          seenHeaders.push({
+            authorization: request.headers.authorization ?? null,
+            cookie: request.headers.cookie ?? null,
+          });
+        },
+      ],
+    };
+
+    await withLocalHttpRoutes(routes, async (baseUrl) => {
+      const registry = createRemoteHlsProxyRegistry();
+      const playlistPayload = await fetchProxiedAsset(
+        registry.register(`${baseUrl}/index.m3u8`),
+        registry,
+      );
+      expect(playlistPayload.kind).toBe("playlist");
+
+      const segmentPayload = await fetchProxiedAsset(firstProxiedUrl(playlistPayload.bodyText), registry);
+      expect(segmentPayload.kind).toBe("asset");
+    });
+
+    expect(seenHeaders).toEqual([
+      {
+        authorization: null,
+        cookie: null,
+      },
+    ]);
+  });
 });
 
 function extractProxiedUrls(text) {
@@ -417,11 +562,16 @@ async function fetchProxiedAsset(proxyUrl, registry) {
 
 async function withLocalHttpRoutes(routes, callback) {
   const server = createServer((request, response) => {
-    const route = routes[request.url] ?? [404, "not found", "text/plain"];
-    const [status, body, contentType] = route;
+    const rawRoute = routes[request.url] ?? [404, "not found", "text/plain"];
+    const route = Array.isArray(rawRoute) && Array.isArray(rawRoute[0]) ? rawRoute[0] : rawRoute;
+    const [status, body, contentType, extraHeaders = {}, onRequest = null] = route;
+    if (onRequest) {
+      onRequest(request);
+    }
     response.writeHead(status, {
       "content-type": contentType,
       "content-length": Buffer.byteLength(body),
+      ...extraHeaders,
     });
     response.end(body);
   });
