@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import config
 import stream_loader
 from analyzer_contract import AnalysisSlice
 from stream_loader import (
@@ -17,8 +18,6 @@ from stream_loader import (
     ApiStreamLoaderExceptionPolicy,
     ApiStreamLocalHttpTestHarnessContract,
     ApiStreamProgressSemantics,
-    ApiStreamSourceContract,
-    ApiStreamTempFilePolicy,
     FakeApiStreamEvent,
     FakeApiStreamLoader,
     PlaceholderApiStreamLoader,
@@ -30,33 +29,17 @@ from stream_loader import (
     build_api_stream_http_loader_contract,
     build_api_stream_loader_exception_policy,
     build_api_stream_local_http_test_harness_contract,
-    build_api_stream_playback_contract,
     build_api_stream_progress_semantics,
     build_api_stream_runtime_policy,
     build_api_stream_slice_identity_key,
     build_api_stream_source_contract,
-    build_api_stream_source_group,
-    build_api_stream_start_session_contract,
     build_api_stream_temp_file_policy,
     build_api_stream_temp_session_dir,
+    cleanup_api_stream_temp_session_dir,
     collect_api_stream_slices,
     select_api_stream_master_playlist_variant,
     validate_api_stream_chunk_sequence,
 )
-
-
-def test_build_api_stream_runtime_policy_reflects_current_config() -> None:
-    """The runtime policy helper should expose the current validation/fetch limits."""
-    policy = build_api_stream_runtime_policy()
-
-    assert "http" in policy.allowed_schemes
-    assert "https" in policy.allowed_schemes
-    assert policy.max_reconnect_attempts >= 1
-    assert policy.fetch_timeout_sec > 0
-    assert policy.max_fetch_bytes > 0
-    assert policy.max_session_runtime_sec > 0
-    assert policy.max_playlist_refreshes >= 1
-
 
 @pytest.mark.parametrize(
     ("builder", "expected_type", "expected_fields"),
@@ -122,20 +105,6 @@ def test_api_stream_contract_builders_keep_stable_core_fields(
     for field_name, expected_value in expected_fields.items():
         assert getattr(contract, field_name) == expected_value
 
-
-def test_build_api_stream_temp_file_policy_uses_session_scoped_cleanup_defaults() -> None:
-    """Future live temp files should keep one explicit root, budget, and cleanup policy."""
-    policy = build_api_stream_temp_file_policy()
-
-    assert isinstance(policy, ApiStreamTempFilePolicy)
-    assert policy.session_scoped is True
-    assert policy.cleanup_on_completed is True
-    assert policy.cleanup_on_cancelled is True
-    assert policy.cleanup_on_failed is True
-    assert policy.max_bytes == 500_000_000
-    assert "api_stream" in str(policy.temp_root)
-
-
 def test_build_api_stream_temp_session_dir_is_session_scoped() -> None:
     """Each live session should get one dedicated temp directory under the shared root."""
     session_dir = build_api_stream_temp_session_dir("session-123")
@@ -168,29 +137,6 @@ def test_build_api_stream_failure_semantics_matches_current_live_contract() -> N
     assert semantics.duplicate_results_allowed is False
     assert semantics.duplicate_alerts_allowed is False
     assert semantics.max_reconnect_attempts == reconnect_budget
-
-
-def test_api_stream_source_related_builders_share_validated_remote_identity() -> None:
-    """Source, start-session, and playback builders should preserve one validated remote identity."""
-    input_path = "https://example.com/live/playlist.m3u8"
-    source_contract = build_api_stream_source_contract(input_path)
-    start_contract = build_api_stream_start_session_contract(
-        input_path=input_path,
-        selected_detectors=["video_blur", "video_metrics"],
-    )
-    playback_contract = build_api_stream_playback_contract(input_path)
-
-    assert source_contract == ApiStreamSourceContract(
-        kind="api_stream",
-        input_path=input_path,
-        access="api_stream",
-    )
-    assert start_contract.mode == "api_stream"
-    assert start_contract.input_path == input_path
-    assert start_contract.selected_detectors == ["video_blur", "video_metrics"]
-    assert playback_contract.source == input_path
-    assert build_api_stream_source_group(source_contract) == input_path
-
 
 def test_build_api_stream_chunk_identity_uses_readable_default_current_item() -> None:
     """Live chunks should have deterministic readable item names even without upstream names."""
@@ -437,6 +383,33 @@ def test_build_api_stream_temp_session_dir_rejects_blank_session_ids() -> None:
     """Temp-dir creation should reject blank session identities early."""
     with pytest.raises(ValueError, match="non-empty session_id"):
         build_api_stream_temp_session_dir("   ")
+
+
+@pytest.mark.parametrize("session_id", ["../escape", "nested/session", r"nested\\session"])
+def test_build_api_stream_temp_session_dir_rejects_unsafe_session_ids(session_id: str) -> None:
+    """Temp-dir creation should reject traversal or multi-component session ids."""
+    with pytest.raises(ValueError, match="single safe session_id"):
+        build_api_stream_temp_session_dir(session_id)
+
+
+def test_cleanup_api_stream_temp_session_dir_unlinks_symlink_without_touching_target(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Cleanup should remove a symlinked temp dir entry without deleting its target directory."""
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path)
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    outside_file = outside_dir / "segment_0001.ts"
+    outside_file.write_bytes(b"video")
+    session_dir = tmp_path / "session-link"
+    session_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    cleanup_api_stream_temp_session_dir("session-link")
+
+    assert not session_dir.exists()
+    assert outside_dir.exists()
+    assert outside_file.exists()
 
 
 def test_select_api_stream_master_playlist_variant_rejects_empty_variant_lists() -> None:

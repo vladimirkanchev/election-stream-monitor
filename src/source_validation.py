@@ -9,6 +9,7 @@ they reach detector execution or future remote-stream fetching logic.
 from __future__ import annotations
 
 import ipaddress
+import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -149,6 +150,15 @@ def _validate_api_stream_host(hostname: str) -> None:
             f"api_stream host is not allowed in {policy['mode']} mode: {normalized_host}"
         )
 
+    if (
+        policy["enforce_dns_host_check"]
+        and not policy["allow_private_hosts"]
+        and _host_resolves_to_local_network_target(normalized_host)
+    ):
+        raise InvalidSourceInputError(
+            f"api_stream host resolves to a local-network target in {policy['mode']} mode: {normalized_host}"
+        )
+
     if policy["allowed_hosts"] and not _host_matches_allowlist(
         normalized_host,
         policy["allowed_hosts"],
@@ -168,6 +178,9 @@ def _get_api_stream_host_policy() -> dict[str, object]:
             "allow_private_hosts": bool(
                 getattr(config, "API_STREAM_SERVICE_ALLOW_PRIVATE_HOSTS", False)
             ),
+            "enforce_dns_host_check": bool(
+                getattr(config, "API_STREAM_VALIDATE_DNS_HOSTS", False)
+            ),
             "require_allowlist": True,
         }
 
@@ -175,6 +188,9 @@ def _get_api_stream_host_policy() -> dict[str, object]:
         "mode": "local",
         "allowed_hosts": tuple(getattr(config, "API_STREAM_ALLOWED_HOSTS", ()) or ()),
         "allow_private_hosts": bool(getattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", False)),
+        "enforce_dns_host_check": bool(
+            getattr(config, "API_STREAM_VALIDATE_DNS_HOSTS", False)
+        ),
         "require_allowlist": False,
     }
 
@@ -214,3 +230,27 @@ def _is_local_network_target(hostname: str) -> bool:
             parsed_ip.is_unspecified,
         )
     )
+
+
+def _resolve_api_stream_host_ips(hostname: str) -> set[str]:
+    """Resolve one hostname into IP address strings for optional trust checks."""
+    try:
+        records = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return set()
+
+    resolved_ips: set[str] = set()
+    for _family, _socktype, _proto, _canonname, sockaddr in records:
+        if sockaddr and isinstance(sockaddr, tuple) and sockaddr:
+            address = sockaddr[0]
+            if isinstance(address, str):
+                resolved_ips.add(address)
+    return resolved_ips
+
+
+def _host_resolves_to_local_network_target(hostname: str) -> bool:
+    """Return whether DNS resolution would land on a local/private address."""
+    if _is_local_network_target(hostname):
+        return True
+
+    return any(_is_local_network_target(address) for address in _resolve_api_stream_host_ips(hostname))

@@ -1018,7 +1018,7 @@ def build_api_stream_temp_session_dir(session_id: str) -> Path:
     session-scoped subdirectory so cleanup can happen on completion, cancel,
     or failure without affecting neighboring sessions.
     """
-    normalized_session_id = session_id.strip()
+    normalized_session_id = _normalize_api_stream_session_id(session_id)
     if not normalized_session_id:
         raise ValueError("api_stream temp session directory requires a non-empty session_id")
     return build_api_stream_temp_file_policy().temp_root / normalized_session_id
@@ -1027,8 +1027,19 @@ def build_api_stream_temp_session_dir(session_id: str) -> Path:
 def cleanup_api_stream_temp_session_dir(session_id: str) -> None:
     """Remove the temp directory for one live session when it exists."""
     session_dir = build_api_stream_temp_session_dir(session_id)
-    if session_dir.exists():
+    if session_dir.is_symlink():
+        session_dir.unlink(missing_ok=True)
+    elif session_dir.exists():
         shutil.rmtree(session_dir, ignore_errors=True)
+
+
+def _normalize_api_stream_session_id(session_id: str) -> str:
+    normalized_session_id = str(session_id).strip()
+    if normalized_session_id in {".", ".."} or any(
+        separator in normalized_session_id for separator in ("/", "\\")
+    ):
+        raise ValueError("api_stream temp session directory requires a single safe session_id")
+    return normalized_session_id
 
 
 def _build_api_stream_request(url: str) -> Request:

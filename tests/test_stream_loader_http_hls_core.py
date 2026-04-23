@@ -4,7 +4,10 @@ These cases cover the concrete loader's ordinary fetch and playlist semantics
 without mixing in reconnect-budget or soak-style concerns.
 """
 
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
@@ -16,32 +19,126 @@ from stream_loader import (
     build_api_stream_source_contract,
     cleanup_api_stream_temp_session_dir,
     collect_api_stream_slices,
+    iter_api_stream_slices,
 )
 from tests.stream_loader_http_hls_test_support import _serve_local_hls
 
+
+def _configure_http_hls_loader_test(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    poll_interval_sec: float = 0.0,
+    max_idle_playlist_polls: int | None = None,
+    sleep=None,
+) -> None:
+    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", poll_interval_sec)
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    if max_idle_playlist_polls is not None:
+        monkeypatch.setattr(
+            config,
+            "API_STREAM_MAX_IDLE_PLAYLIST_POLLS",
+            max_idle_playlist_polls,
+        )
+    if sleep is not None:
+        monkeypatch.setattr(stream_loader.time, "sleep", sleep)
+
+
+def _playlist(*lines: str) -> str:
+    return "\n".join(["#EXTM3U", *lines])
+
+
+def _media_playlist(
+    media_sequence: int,
+    *segments: str,
+    target_duration: int = 1,
+    endlist: bool = True,
+) -> str:
+    lines = [
+        "#EXT-X-TARGETDURATION:{target_duration}".format(
+            target_duration=target_duration
+        ),
+        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
+    ]
+    for segment in segments:
+        lines.extend(["#EXTINF:1.0,", segment])
+    if endlist:
+        lines.append("#EXT-X-ENDLIST")
+    return _playlist(*lines)
+
+
+def _collect_http_hls_slices(base_url: str, playlist_path: str, session_id: str):
+    source = build_api_stream_source_contract(f"{base_url}{playlist_path}")
+    loader = HttpHlsApiStreamLoader(session_id)
+    return collect_api_stream_slices(loader, source)
+
+
+@contextmanager
+def _serve_dynamic_local_hls(build_routes):
+    route_counts: dict[str, int] = {}
+    routes: dict[str, list[object]] = {}
+
+    def next_response(path: str) -> tuple[int, str | bytes, str, dict[str, str]]:
+        sequence = routes.get(path)
+        if not sequence:
+            return (404, "not found", "text/plain", {})
+        index = min(route_counts[path], len(sequence) - 1)
+        route_counts[path] += 1
+        response = sequence[index]
+        assert isinstance(response, tuple)
+        if len(response) == 3:
+            status, body, content_type = response
+            return status, body, content_type, {}
+        status, body, content_type, headers = response
+        return status, body, content_type, headers
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            status, body, content_type, headers = next_response(self.path)
+            payload = body.encode("utf-8") if isinstance(body, str) else body
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            for header_name, header_value in headers.items():
+                self.send_header(header_name, header_value)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, format: str, *args) -> None:  # noqa: A003
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    built_routes = build_routes(base_url)
+    routes.update(
+        {
+            path: (list(spec) if isinstance(spec, list) else [spec])
+            for path, spec in built_routes.items()
+        }
+    )
+    route_counts.update({path: 0 for path in built_routes})
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield base_url
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
+# Playlist semantics
 
 def test_http_hls_loader_collects_media_playlist_segments(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     """The concrete loader should fetch a media playlist and materialize segment slices."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
-    playlist_text = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:0",
-            "#EXTINF:1.0,",
-            "segment_000.ts",
-            "#EXTINF:1.0,",
-            "segment_001.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    playlist_text = _media_playlist(0, "segment_000.ts", "segment_001.ts")
     routes = {
         "/live/index.m3u8": (200, playlist_text, "application/vnd.apple.mpegurl"),
         "/live/segment_000.ts": (200, b"ts-000", "video/mp2t"),
@@ -49,9 +146,7 @@ def test_http_hls_loader_collects_media_playlist_segments(
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-media")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(base_url, "/live/index.m3u8", "session-http-media")
 
     assert [slice_.source_name for slice_ in slices] == ["segment_000.ts", "segment_001.ts"]
     assert [slice_.window_index for slice_ in slices] == [0, 1]
@@ -64,30 +159,15 @@ def test_http_hls_loader_selects_first_master_playlist_variant(
     tmp_path: Path,
 ) -> None:
     """The first real loader should apply the explicit first-variant master-playlist policy."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
-    master_text = "\n".join(
-        [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360',
-            "low/index.m3u8",
-            '#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=1280x720',
-            "high/index.m3u8",
-        ]
+    master_text = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360',
+        "low/index.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=1280x720',
+        "high/index.m3u8",
     )
-    media_text = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:10",
-            "#EXTINF:1.0,",
-            "segment_low_010.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    media_text = _media_playlist(10, "segment_low_010.ts")
     routes = {
         "/master.m3u8": (200, master_text, "application/vnd.apple.mpegurl"),
         "/low/index.m3u8": (200, media_text, "application/vnd.apple.mpegurl"),
@@ -101,9 +181,7 @@ def test_http_hls_loader_selects_first_master_playlist_variant(
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/master.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-master")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(base_url, "/master.m3u8", "session-http-master")
 
     assert [slice_.source_name for slice_ in slices] == ["segment_low_010.ts"]
     assert [slice_.window_index for slice_ in slices] == [10]
@@ -115,29 +193,20 @@ def test_http_hls_loader_uses_first_master_variant_even_when_it_is_weak_but_play
     tmp_path: Path,
 ) -> None:
     """First-variant selection should remain predictable even for a low-quality playable stream."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
-    master_text = "\n".join(
-        [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=180000,RESOLUTION=320x180',
-            "weak/index.m3u8",
-            '#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1920x1080',
-            "strong/index.m3u8",
-        ]
+    master_text = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=180000,RESOLUTION=320x180',
+        "weak/index.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1920x1080',
+        "strong/index.m3u8",
     )
-    weak_media = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:2",
-            "#EXT-X-MEDIA-SEQUENCE:20",
-            "#EXTINF:2.0,",
-            "segment_weak_020.ts",
-            "#EXT-X-ENDLIST",
-        ]
+    weak_media = _playlist(
+        "#EXT-X-TARGETDURATION:2",
+        "#EXT-X-MEDIA-SEQUENCE:20",
+        "#EXTINF:2.0,",
+        "segment_weak_020.ts",
+        "#EXT-X-ENDLIST",
     )
     strong_media = weak_media.replace("segment_weak_020.ts", "segment_strong_020.ts")
     routes = {
@@ -149,9 +218,11 @@ def test_http_hls_loader_uses_first_master_variant_even_when_it_is_weak_but_play
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/master.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-master-weak-first")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/master.m3u8",
+            "session-http-master-weak-first",
+        )
 
     assert [slice_.source_name for slice_ in slices] == ["segment_weak_020.ts"]
     cleanup_api_stream_temp_session_dir("session-http-master-weak-first")
@@ -162,35 +233,17 @@ def test_http_hls_loader_resolves_nested_master_playlist_variants(
     tmp_path: Path,
 ) -> None:
     """Nested master playlists should still resolve to a reachable media playlist."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
-    outer_master = "\n".join(
-        [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360',
-            "variant/master.m3u8",
-        ]
+    outer_master = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360',
+        "variant/master.m3u8",
     )
-    inner_master = "\n".join(
-        [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=750000,RESOLUTION=960x540',
-            "media/index.m3u8",
-        ]
+    inner_master = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=750000,RESOLUTION=960x540',
+        "media/index.m3u8",
     )
-    media_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:12",
-            "#EXTINF:1.0,",
-            "segment_012.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    media_playlist = _media_playlist(12, "segment_012.ts")
     routes = {
         "/master.m3u8": (200, outer_master, "application/vnd.apple.mpegurl"),
         "/variant/master.m3u8": (200, inner_master, "application/vnd.apple.mpegurl"),
@@ -199,9 +252,11 @@ def test_http_hls_loader_resolves_nested_master_playlist_variants(
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/master.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-nested-master")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/master.m3u8",
+            "session-http-nested-master",
+        )
 
     assert [slice_.window_index for slice_ in slices] == [12]
     cleanup_api_stream_temp_session_dir("session-http-nested-master")
@@ -212,30 +267,15 @@ def test_http_hls_loader_ignores_malformed_master_variant_entries_and_uses_first
     tmp_path: Path,
 ) -> None:
     """A malformed master entry without a URI should not prevent using the next valid variant."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
-    master_text = "\n".join(
-        [
-            "#EXTM3U",
-            '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=426x240',
-            "# malformed first variant entry has no URI",
-            '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=960x540',
-            "valid/index.m3u8",
-        ]
+    master_text = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=426x240',
+        "# malformed first variant entry has no URI",
+        '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=960x540',
+        "valid/index.m3u8",
     )
-    media_text = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:15",
-            "#EXTINF:1.0,",
-            "segment_valid_015.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    media_text = _media_playlist(15, "segment_valid_015.ts")
     routes = {
         "/master.m3u8": (200, master_text, "application/vnd.apple.mpegurl"),
         "/valid/index.m3u8": (200, media_text, "application/vnd.apple.mpegurl"),
@@ -243,47 +283,133 @@ def test_http_hls_loader_ignores_malformed_master_variant_entries_and_uses_first
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/master.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-master-malformed-entry")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/master.m3u8",
+            "session-http-master-malformed-entry",
+        )
 
     assert [slice_.window_index for slice_ in slices] == [15]
     assert [slice_.source_name for slice_ in slices] == ["segment_valid_015.ts"]
     cleanup_api_stream_temp_session_dir("session-http-master-malformed-entry")
 
 
+def test_http_hls_loader_resolves_parent_relative_segment_paths_from_nested_media_playlist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Segment URIs with .. should resolve relative to the nested media playlist location."""
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
+
+    media_text = _media_playlist(
+        50,
+        "../segments/segment_050.ts",
+        "../segments/segment_051.ts",
+    )
+    routes = {
+        "/nested/live/index.m3u8": (200, media_text, "application/vnd.apple.mpegurl"),
+        "/nested/segments/segment_050.ts": (200, b"050", "video/mp2t"),
+        "/nested/segments/segment_051.ts": (200, b"051", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/nested/live/index.m3u8",
+            "session-http-parent-relative-segments",
+        )
+
+    assert [slice_.source_name for slice_ in slices] == [
+        "segment_050.ts",
+        "segment_051.ts",
+    ]
+    assert [slice_.window_index for slice_ in slices] == [50, 51]
+    cleanup_api_stream_temp_session_dir("session-http-parent-relative-segments")
+
+
+def test_http_hls_loader_rejects_master_playlist_without_any_usable_variant_uri(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A master playlist with only malformed variant entries should fail clearly."""
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
+
+    master_text = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=426x240',
+        "# no usable variant URI here",
+        '#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=960x540',
+        "   ",
+    )
+    routes = {
+        "/master.m3u8": (200, master_text, "application/vnd.apple.mpegurl"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        source = build_api_stream_source_contract(f"{base_url}/master.m3u8")
+        loader = HttpHlsApiStreamLoader("session-http-master-no-usable-variant")
+        with pytest.raises(
+            ValueError,
+            match="api_stream master playlist requires at least one variant URL",
+        ):
+            collect_api_stream_slices(loader, source)
+
+    cleanup_api_stream_temp_session_dir("session-http-master-no-usable-variant")
+
+
+def test_http_hls_loader_follows_variant_redirect_before_resolving_media_playlist(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A master-playlist variant may redirect before it reaches the final media playlist."""
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
+
+    master_text = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360',
+        "variant/index.m3u8",
+    )
+    routes = {
+        "/master.m3u8": (200, master_text, "application/vnd.apple.mpegurl"),
+        "/variant/index.m3u8": (
+            302,
+            "",
+            "text/plain",
+            {"Location": "/media/index.m3u8"},
+        ),
+        "/media/index.m3u8": (
+            200,
+            _media_playlist(61, "segment_061.ts"),
+            "application/vnd.apple.mpegurl",
+        ),
+        "/media/segment_061.ts": (200, b"061", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/master.m3u8",
+            "session-http-master-variant-redirect",
+        )
+
+    assert [slice_.window_index for slice_ in slices] == [61]
+    assert [slice_.source_name for slice_ in slices] == ["segment_061.ts"]
+    cleanup_api_stream_temp_session_dir("session-http-master-variant-redirect")
+
+
+# Progression and live-window behavior
+
 def test_http_hls_loader_polls_playlist_and_emits_only_new_segments(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     """Playlist refresh should discover only new segments on later polls."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:3",
-            "#EXTINF:1.0,",
-            "segment_003.ts",
-        ]
-    )
-    second_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:3",
-            "#EXTINF:1.0,",
-            "segment_003.ts",
-            "#EXTINF:1.0,",
-            "segment_004.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    first_playlist = _media_playlist(3, "segment_003.ts", endlist=False)
+    second_playlist = _media_playlist(3, "segment_003.ts", "segment_004.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -294,9 +420,7 @@ def test_http_hls_loader_polls_playlist_and_emits_only_new_segments(
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-refresh")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(base_url, "/live/index.m3u8", "session-http-refresh")
 
     assert [slice_.window_index for slice_ in slices] == [3, 4]
     assert [slice_.source_name for slice_ in slices] == ["segment_003.ts", "segment_004.ts"]
@@ -308,37 +432,20 @@ def test_http_hls_loader_handles_sliding_window_playlist_histories(
     tmp_path: Path,
 ) -> None:
     """Sliding HLS windows should allow old segments to disappear without duplicating survivors."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:10",
-            "#EXTINF:1.0,",
-            "segment_010.ts",
-            "#EXTINF:1.0,",
-            "segment_011.ts",
-            "#EXTINF:1.0,",
-            "segment_012.ts",
-        ]
+    first_playlist = _media_playlist(
+        10,
+        "segment_010.ts",
+        "segment_011.ts",
+        "segment_012.ts",
+        endlist=False,
     )
-    second_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:12",
-            "#EXTINF:1.0,",
-            "segment_012.ts",
-            "#EXTINF:1.0,",
-            "segment_013.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    second_playlist = _media_playlist(12, "segment_012.ts", "segment_013.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -351,9 +458,7 @@ def test_http_hls_loader_handles_sliding_window_playlist_histories(
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
-        loader = HttpHlsApiStreamLoader("session-http-sliding")
-        slices = collect_api_stream_slices(loader, source)
+        slices = _collect_http_hls_slices(base_url, "/live/index.m3u8", "session-http-sliding")
 
     assert [slice_.window_index for slice_ in slices] == [10, 11, 12, 13]
     assert [slice_.source_name for slice_ in slices] == [
@@ -698,33 +803,14 @@ def test_http_hls_loader_prunes_replay_cache_when_playlist_window_slides(
     tmp_path: Path,
 ) -> None:
     """Older replay keys should not grow forever once the visible playlist window advances."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:10",
-            "#EXTINF:1.0,",
-            "segment_010.ts",
-            "#EXTINF:1.0,",
-            "segment_011.ts",
-        ]
-    )
-    second_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:12",
-            "#EXTINF:1.0,",
-            "segment_012.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    first_playlist = _media_playlist(10, "segment_010.ts", "segment_011.ts", endlist=False)
+    second_playlist = _media_playlist(12, "segment_012.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -759,43 +845,35 @@ def test_http_hls_loader_adapts_polling_to_target_duration_drift(
     tmp_path: Path,
 ) -> None:
     """Target-duration drift should change the next live refresh wait without breaking loading."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 2.0)
-    monkeypatch.setattr(config, "API_STREAM_MAX_IDLE_PLAYLIST_POLLS", 3)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
     sleep_calls: list[float] = []
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        poll_interval_sec=2.0,
+        max_idle_playlist_polls=3,
+        sleep=lambda seconds: sleep_calls.append(seconds),
+    )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:4",
-            "#EXT-X-MEDIA-SEQUENCE:30",
-            "#EXTINF:4.0,",
-            "segment_030.ts",
-        ]
+    first_playlist = _playlist(
+        "#EXT-X-TARGETDURATION:4",
+        "#EXT-X-MEDIA-SEQUENCE:30",
+        "#EXTINF:4.0,",
+        "segment_030.ts",
     )
-    second_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:30",
-            "#EXTINF:4.0,",
-            "segment_030.ts",
-        ]
+    second_playlist = _playlist(
+        "#EXT-X-TARGETDURATION:1",
+        "#EXT-X-MEDIA-SEQUENCE:30",
+        "#EXTINF:4.0,",
+        "segment_030.ts",
     )
-    third_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:30",
-            "#EXTINF:4.0,",
-            "segment_030.ts",
-            "#EXTINF:1.0,",
-            "segment_031.ts",
-            "#EXT-X-ENDLIST",
-        ]
+    third_playlist = _playlist(
+        "#EXT-X-TARGETDURATION:1",
+        "#EXT-X-MEDIA-SEQUENCE:30",
+        "#EXTINF:4.0,",
+        "segment_030.ts",
+        "#EXTINF:1.0,",
+        "segment_031.ts",
+        "#EXT-X-ENDLIST",
     )
     routes = {
         "/live/index.m3u8": [
@@ -817,17 +895,19 @@ def test_http_hls_loader_adapts_polling_to_target_duration_drift(
     cleanup_api_stream_temp_session_dir("session-http-drift")
 
 
+# Malformed playlist and partial-refresh behavior
+
 def test_http_hls_loader_treats_temporarily_malformed_refresh_as_retryable_noise(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     """A malformed 200 OK refresh should be skipped so later valid media can still continue."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
     monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
     warning_logs: list[tuple[str, tuple[object, ...]]] = []
     monkeypatch.setattr(
         stream_loader.logger,
@@ -835,27 +915,8 @@ def test_http_hls_loader_treats_temporarily_malformed_refresh_as_retryable_noise
         lambda message, *args: warning_logs.append((message, args)),
     )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:90",
-            "#EXTINF:1.0,",
-            "segment_090.ts",
-        ]
-    )
-    final_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:90",
-            "#EXTINF:1.0,",
-            "segment_090.ts",
-            "#EXTINF:1.0,",
-            "segment_091.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    first_playlist = _media_playlist(90, "segment_090.ts", endlist=False)
+    final_playlist = _media_playlist(90, "segment_090.ts", "segment_091.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -882,48 +943,68 @@ def test_http_hls_loader_treats_temporarily_malformed_refresh_as_retryable_noise
     cleanup_api_stream_temp_session_dir("session-http-malformed-refresh")
 
 
+def test_http_hls_loader_surfaces_late_terminal_refresh_failure_after_emitting_early_segments(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Already accepted segments should still be emitted before a later fatal refresh stops loading."""
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
+
+    first_playlist = _media_playlist(96, "segment_096.ts", endlist=False)
+    fatal_refresh = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=426x240',
+        "   ",
+    )
+    routes = {
+        "/live/index.m3u8": [
+            (200, first_playlist, "application/vnd.apple.mpegurl"),
+            (200, fatal_refresh, "application/vnd.apple.mpegurl"),
+        ],
+        "/live/segment_096.ts": (200, b"096", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        loader = HttpHlsApiStreamLoader("session-http-late-terminal-refresh")
+        iterator = iter_api_stream_slices(loader, source)
+
+        first_slice = next(iterator)
+        assert first_slice.window_index == 96
+        assert first_slice.source_name == "segment_096.ts"
+
+        with pytest.raises(
+            ValueError,
+            match="api_stream master playlist requires at least one variant URL",
+        ):
+            next(iterator)
+
+    cleanup_api_stream_temp_session_dir("session-http-late-terminal-refresh")
+
+
 def test_http_hls_loader_treats_invalid_target_duration_tag_as_retryable_refresh_noise(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     """A refresh with a malformed TARGETDURATION tag should be skipped until a valid playlist appears."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
     monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:92",
-            "#EXTINF:1.0,",
-            "segment_092.ts",
-        ]
+    first_playlist = _media_playlist(92, "segment_092.ts", endlist=False)
+    malformed_refresh = _playlist(
+        "#EXT-X-TARGETDURATION:not-a-number",
+        "#EXT-X-MEDIA-SEQUENCE:92",
+        "#EXTINF:1.0,",
+        "segment_092.ts",
     )
-    malformed_refresh = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:not-a-number",
-            "#EXT-X-MEDIA-SEQUENCE:92",
-            "#EXTINF:1.0,",
-            "segment_092.ts",
-        ]
-    )
-    final_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:92",
-            "#EXTINF:1.0,",
-            "segment_092.ts",
-            "#EXTINF:1.0,",
-            "segment_093.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    final_playlist = _media_playlist(92, "segment_092.ts", "segment_093.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -948,43 +1029,21 @@ def test_http_hls_loader_recovers_from_partial_refresh_missing_segment_uri(
     tmp_path: Path,
 ) -> None:
     """A partial refresh with a dangling EXTINF should recover once the next valid playlist arrives."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:94",
-            "#EXTINF:1.0,",
-            "segment_094.ts",
-        ]
+    first_playlist = _media_playlist(94, "segment_094.ts", endlist=False)
+    partial_refresh = _playlist(
+        "#EXT-X-TARGETDURATION:1",
+        "#EXT-X-MEDIA-SEQUENCE:94",
+        "#EXTINF:1.0,",
+        "segment_094.ts",
+        "#EXTINF:1.0,",
     )
-    partial_refresh = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:94",
-            "#EXTINF:1.0,",
-            "segment_094.ts",
-            "#EXTINF:1.0,",
-        ]
-    )
-    final_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:94",
-            "#EXTINF:1.0,",
-            "segment_094.ts",
-            "#EXTINF:1.0,",
-            "segment_095.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    final_playlist = _media_playlist(94, "segment_094.ts", "segment_095.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -1009,33 +1068,14 @@ def test_http_hls_loader_continues_when_missing_segment_disappears_from_later_wi
     tmp_path: Path,
 ) -> None:
     """A missing segment that falls out of the live window should not block later visible segments."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
 
-    first_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:400",
-            "#EXTINF:1.0,",
-            "segment_400.ts",
-            "#EXTINF:1.0,",
-            "segment_401.ts",
-        ]
-    )
-    advanced_playlist = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:402",
-            "#EXTINF:1.0,",
-            "segment_402.ts",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    first_playlist = _media_playlist(400, "segment_400.ts", "segment_401.ts", endlist=False)
+    advanced_playlist = _media_playlist(402, "segment_402.ts")
     routes = {
         "/live/index.m3u8": [
             (200, first_playlist, "application/vnd.apple.mpegurl"),
@@ -1055,26 +1095,51 @@ def test_http_hls_loader_continues_when_missing_segment_disappears_from_later_wi
     cleanup_api_stream_temp_session_dir("session-http-disappearing-segment")
 
 
+def test_http_hls_loader_handles_mixed_relative_and_absolute_segment_uris(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A media playlist may mix relative paths with absolute segment URLs."""
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
+
+    def build_routes(base_url: str) -> dict[str, object]:
+        playlist_text = _playlist(
+            "#EXT-X-TARGETDURATION:1",
+            "#EXT-X-MEDIA-SEQUENCE:60",
+            "#EXTINF:1.0,",
+            "relative_060.ts",
+            "#EXTINF:1.0,",
+            f"{base_url}/cdn/segment_061.ts",
+            "#EXT-X-ENDLIST",
+        )
+        return {
+            "/live/index.m3u8": (200, playlist_text, "application/vnd.apple.mpegurl"),
+            "/live/relative_060.ts": (200, b"060", "video/mp2t"),
+            "/cdn/segment_061.ts": (200, b"061", "video/mp2t"),
+        }
+
+    with _serve_dynamic_local_hls(build_routes) as base_url:
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/live/index.m3u8",
+            "session-http-mixed-absolute-relative",
+        )
+
+    assert [slice_.source_name for slice_ in slices] == ["relative_060.ts", "segment_061.ts"]
+    assert [slice_.window_index for slice_ in slices] == [60, 61]
+    cleanup_api_stream_temp_session_dir("session-http-mixed-absolute-relative")
+
+
+# Provider and transport edge behavior
+
 def test_http_hls_loader_accepts_uppercase_playlist_and_segment_suffixes(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     """Uppercase playlist paths and segment suffixes should still load cleanly."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
-    playlist_text = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:210",
-            "#EXTINF:1.0,",
-            "SEGMENT_210.TS",
-            "#EXT-X-ENDLIST",
-        ]
-    )
+    playlist_text = _media_playlist(210, "SEGMENT_210.TS")
     routes = {
         "/LIVE/INDEX.M3U8": (200, playlist_text, "application/vnd.apple.mpegurl"),
         "/LIVE/SEGMENT_210.TS": (200, b"210", "video/mp2t"),
@@ -1090,28 +1155,52 @@ def test_http_hls_loader_accepts_uppercase_playlist_and_segment_suffixes(
     cleanup_api_stream_temp_session_dir("session-http-uppercase-suffixes")
 
 
+def test_http_hls_loader_fetches_query_string_segments_while_normalizing_source_names(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Segment fetches may require query strings even though emitted source names stay stable."""
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
+
+    routes = {
+        "/live/index.m3u8": (
+            200,
+            _media_playlist(
+                70,
+                "segment_070.ts?token=alpha",
+                "segment_071.ts?token=beta",
+            ),
+            "application/vnd.apple.mpegurl",
+        ),
+        "/live/segment_070.ts?token=alpha": (200, b"070", "video/mp2t"),
+        "/live/segment_071.ts?token=beta": (200, b"071", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        slices = _collect_http_hls_slices(
+            base_url,
+            "/live/index.m3u8",
+            "session-http-query-segments",
+        )
+
+    assert [slice_.source_name for slice_ in slices] == ["segment_070.ts", "segment_071.ts"]
+    assert [slice_.window_index for slice_ in slices] == [70, 71]
+    cleanup_api_stream_temp_session_dir("session-http-query-segments")
+
+
 def test_http_hls_loader_retries_playlist_fetch_before_succeeding(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
     """Retryable playlist failures should be retried inside the loader seam."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
-    monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
-
-    playlist_text = "\n".join(
-        [
-            "#EXTM3U",
-            "#EXT-X-TARGETDURATION:1",
-            "#EXT-X-MEDIA-SEQUENCE:0",
-            "#EXTINF:1.0,",
-            "segment_000.ts",
-            "#EXT-X-ENDLIST",
-        ]
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
     )
+    monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
+
+    playlist_text = _media_playlist(0, "segment_000.ts")
     routes = {
         "/live/index.m3u8": [
             (503, "upstream busy", "text/plain"),
@@ -1134,27 +1223,19 @@ def test_http_hls_loader_retries_playlist_fetch_after_http_429(
     tmp_path: Path,
 ) -> None:
     """HTTP 429 responses should be treated like retryable provider throttling."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    _configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        sleep=lambda seconds: None,
+    )
     monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
 
     routes = {
         "/live/index.m3u8": [
             (429, "slow down", "text/plain"),
             (
                 200,
-                "\n".join(
-                    [
-                        "#EXTM3U",
-                        "#EXT-X-TARGETDURATION:1",
-                        "#EXT-X-MEDIA-SEQUENCE:0",
-                        "#EXTINF:1.0,",
-                        "segment_000.ts",
-                        "#EXT-X-ENDLIST",
-                    ]
-                ),
+                _media_playlist(0, "segment_000.ts"),
                 "application/vnd.apple.mpegurl",
             ),
         ],
@@ -1176,9 +1257,7 @@ def test_http_hls_loader_surfaces_http_403_as_explicit_terminal_provider_failure
     tmp_path: Path,
 ) -> None:
     """HTTP 403 stays terminal today and should surface a clear provider-facing reason."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
     routes = {
         "/live/index.m3u8": [
@@ -1201,24 +1280,13 @@ def test_http_hls_loader_follows_playlist_redirects(
     tmp_path: Path,
 ) -> None:
     """Provider-style playlist redirects should resolve before normal polling begins."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
     routes = {
         "/entry.m3u8": (302, "", "text/plain", {"Location": "/live/index.m3u8"}),
         "/live/index.m3u8": (
             200,
-            "\n".join(
-                [
-                    "#EXTM3U",
-                    "#EXT-X-TARGETDURATION:1",
-                    "#EXT-X-MEDIA-SEQUENCE:10",
-                    "#EXTINF:1.0,",
-                    "segment_010.ts",
-                    "#EXT-X-ENDLIST",
-                ]
-            ),
+            _media_playlist(10, "segment_010.ts"),
             "application/vnd.apple.mpegurl",
         ),
         "/live/segment_010.ts": (200, b"010", "video/mp2t"),
@@ -1238,23 +1306,12 @@ def test_http_hls_loader_tolerates_playlist_with_odd_content_type(
     tmp_path: Path,
 ) -> None:
     """Some providers serve playlists with generic content types; parsing should stay text-based."""
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
 
     routes = {
         "/live/index.m3u8": (
             200,
-            "\n".join(
-                [
-                    "#EXTM3U",
-                    "#EXT-X-TARGETDURATION:1",
-                    "#EXT-X-MEDIA-SEQUENCE:12",
-                    "#EXTINF:1.0,",
-                    "segment_012.ts",
-                    "#EXT-X-ENDLIST",
-                ]
-            ),
+            _media_playlist(12, "segment_012.ts"),
             "text/plain",
         ),
         "/live/segment_012.ts": (200, b"012", "video/mp2t"),

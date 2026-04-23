@@ -91,7 +91,10 @@ async def start_session(payload: StartSessionRequest) -> SessionSummaryResponse:
     },
 )
 async def get_session(session_id: str) -> SessionSnapshotResponse:
-    snapshot = read_session_snapshot(session_id)
+    try:
+        snapshot = read_session_snapshot(session_id)
+    except ValueError as err:
+        raise ValidationFailedError(str(err)) from err
     if snapshot.get("session") is None:
         raise SessionNotFoundError(session_id)
     return SessionSnapshotResponse.model_validate(snapshot)
@@ -109,7 +112,10 @@ async def get_session(session_id: str) -> SessionSnapshotResponse:
     },
 )
 async def cancel_session(session_id: str) -> CancelSessionResponse:
-    snapshot = read_session_snapshot(session_id)
+    try:
+        snapshot = read_session_snapshot(session_id)
+    except ValueError as err:
+        raise ValidationFailedError(str(err)) from err
     session = snapshot.get("session")
     if session is None:
         raise SessionNotFoundError(session_id)
@@ -118,7 +124,10 @@ async def cancel_session(session_id: str) -> CancelSessionResponse:
     if session_status in TERMINAL_SESSION_STATUSES:
         raise CancelFailedError(session_id, str(session_status))
 
-    request_session_cancel(session_id)
+    try:
+        request_session_cancel(session_id)
+    except ValueError as err:
+        raise ValidationFailedError(str(err)) from err
     return CancelSessionResponse(
         session_id=session_id,
         mode=session.get("mode"),

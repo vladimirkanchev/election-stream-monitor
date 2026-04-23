@@ -156,13 +156,13 @@ def should_alert_video_black(session_id: str, row: dict[str, object]) -> bool:
     """
     source_group = _source_group_from_row(row)
     key = _build_rule_key(session_id, "video_metrics", source_group)
-    longest_black_sec = float(row.get("longest_black_sec", 0.0) or 0.0)
+    longest_black_sec = _coerce_float(row.get("longest_black_sec"), 0.0)
 
     rolling_ratio, observed_window_sec = update_video_black_window(
         session_id=session_id,
         source_group=source_group,
-        duration_sec=float(row.get("duration_sec", 0.0) or 0.0),
-        black_ratio=float(row.get("black_ratio", 0.0) or 0.0),
+        duration_sec=_coerce_float(row.get("duration_sec"), 0.0),
+        black_ratio=_coerce_float(row.get("black_ratio"), 0.0),
     )
     _record_black_window_metrics(row, rolling_ratio, observed_window_sec)
 
@@ -224,7 +224,7 @@ def should_alert_video_blur(session_id: str, row: dict[str, object]) -> bool:
     key = _build_rule_key(session_id, "video_blur", _source_group_from_row(row))
     scores = _update_blur_window(
         key,
-        float(row.get("blur_score", 0.0) or 0.0),
+        _coerce_float(row.get("blur_score"), 0.0),
     )
     median_score = median(scores) if scores else 0.0
     high_count = _count_blur_scores_above_threshold(scores)
@@ -274,6 +274,13 @@ def build_video_blur_message(row: dict[str, object]) -> str:
 
 def _source_group_from_row(row: dict[str, object]) -> str:
     return str(row.get("source_group") or row.get("source_name", ""))
+
+
+def _coerce_float(value: object, default: float) -> float:
+    try:
+        return float(value or default)
+    except (TypeError, ValueError):
+        return default
 
 
 def _source_name_from_row(row: dict[str, object]) -> str:

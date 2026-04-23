@@ -67,13 +67,27 @@ def test_validate_source_input_rejects_url_like_values_for_local_modes() -> None
         validate_source_input("video_files", "javascript:alert(1)")
 
 
-def test_validate_api_stream_url_rejects_private_network_targets_by_default() -> None:
+@pytest.mark.parametrize(
+    "candidate_url",
+    [
+        "http://localhost:8080/live.m3u8",
+        "http://127.0.0.1/live.m3u8",
+        "http://[::1]/live.m3u8",
+        "http://169.254.169.254/latest/meta-data.m3u8",
+    ],
+)
+def test_validate_api_stream_url_rejects_local_network_targets_by_default(
+    candidate_url: str,
+) -> None:
     """Local mode should reject obvious internal-network probing targets by default."""
     with pytest.raises(ValueError, match="not allowed in local mode"):
-        validate_api_stream_url("http://localhost:8080/live.m3u8")
+        validate_api_stream_url(candidate_url)
 
-    with pytest.raises(ValueError, match="not allowed in local mode"):
-        validate_api_stream_url("http://127.0.0.1/live.m3u8")
+
+def test_validate_api_stream_url_rejects_embedded_credentials() -> None:
+    """Remote URLs should fail closed when credentials are embedded in the authority."""
+    with pytest.raises(ValueError, match="must not include credentials"):
+        validate_api_stream_url("https://operator:secret@streams.example.com/live.m3u8")
 
 
 def test_validate_api_stream_url_requires_explicit_allowlist_in_service_mode(
@@ -120,6 +134,56 @@ def test_validate_api_stream_url_requires_allowed_host_when_allowlist_is_configu
         validate_api_stream_url("https://other.example.com/live.m3u8")
 
 
+def test_validate_api_stream_url_rejects_suffix_confusion_hosts_when_allowlisted(
+    monkeypatch,
+) -> None:
+    """Allowlists should accept exact hosts and real subdomains, not lookalike suffix hosts."""
+    monkeypatch.setattr("config.API_STREAM_ALLOWED_HOSTS", ("streams.example.com",))
+
+    assert validate_api_stream_url("https://edge.streams.example.com/live.m3u8") == (
+        "https://edge.streams.example.com/live.m3u8"
+    )
+
+    with pytest.raises(ValueError, match="allowed host list"):
+        validate_api_stream_url("https://streams.example.com.evil.test/live.m3u8")
+
+
+@pytest.mark.parametrize(
+    "resolved_ips",
+    [
+        {"127.0.0.1"},
+        {"10.20.30.40"},
+        {"93.184.216.34", "172.16.0.12"},
+    ],
+)
+def test_validate_api_stream_url_rejects_local_network_dns_resolutions_when_dns_checks_are_enabled(
+    monkeypatch,
+    resolved_ips: set[str],
+) -> None:
+    monkeypatch.setattr("config.API_STREAM_VALIDATE_DNS_HOSTS", True)
+    monkeypatch.setattr(
+        "source_validation._resolve_api_stream_host_ips",
+        lambda hostname: resolved_ips,
+    )
+
+    with pytest.raises(ValueError, match="resolves to a local-network target"):
+        validate_api_stream_url("https://streams.example.com/live.m3u8")
+
+
+def test_validate_api_stream_url_accepts_hosts_that_resolve_to_public_ips_when_dns_checks_are_enabled(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("config.API_STREAM_VALIDATE_DNS_HOSTS", True)
+    monkeypatch.setattr(
+        "source_validation._resolve_api_stream_host_ips",
+        lambda hostname: {"93.184.216.34"},
+    )
+
+    assert validate_api_stream_url("https://streams.example.com/live.m3u8") == (
+        "https://streams.example.com/live.m3u8"
+    )
+
+
 def test_ensure_path_within_root_rejects_traversal(tmp_path: Path) -> None:
     """Joined local item paths should stay under the declared root."""
     root = tmp_path / "segments"
@@ -128,3 +192,59 @@ def test_ensure_path_within_root_rejects_traversal(tmp_path: Path) -> None:
     outside.write_bytes(b"video")
 
     assert ensure_path_within_root(root, root / "../outside.ts") is None
+
+
+def test_ensure_path_within_root_rejects_symlink_escape(tmp_path: Path) -> None:
+    """Symlinked paths should be rejected when they resolve outside the allowed root."""
+    root = tmp_path / "segments"
+    root.mkdir()
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+    escaped_segment = outside_dir / "segment_0001.ts"
+    escaped_segment.write_bytes(b"video")
+    symlinked_dir = root / "nested"
+    symlinked_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    assert ensure_path_within_root(root, symlinked_dir / "segment_0001.ts") is None
+
+
+def test_ensure_path_within_root_rejects_symlinked_file_escape(tmp_path: Path) -> None:
+    """Symlinked files should not be accepted when they resolve outside the allowed root."""
+    root = tmp_path / "segments"
+    root.mkdir()
+    outside_file = tmp_path / "outside.ts"
+    outside_file.write_bytes(b"video")
+    escaped_file = root / "segment_0001.ts"
+    escaped_file.symlink_to(outside_file)
+
+    assert ensure_path_within_root(root, escaped_file) is None
+
+
+def test_ensure_path_within_root_accepts_normalized_nested_paths_inside_root(
+    tmp_path: Path,
+) -> None:
+    """Repeated separators and `..` segments should still resolve when they stay inside the root."""
+    root = tmp_path / "segments"
+    nested_dir = root / "nested"
+    nested_dir.mkdir(parents=True)
+    segment = root / "segment_0001.ts"
+    segment.write_bytes(b"video")
+
+    candidate = nested_dir / ".." / "segment_0001.ts"
+
+    assert ensure_path_within_root(root, candidate) == segment.resolve()
+
+
+def test_ensure_path_within_root_rejects_mixed_parent_segments_that_escape_root(
+    tmp_path: Path,
+) -> None:
+    """Mixed nested paths should still fail closed when normalization escapes the declared root."""
+    root = tmp_path / "segments"
+    nested_dir = root / "nested"
+    nested_dir.mkdir(parents=True)
+    outside_file = tmp_path / "outside.ts"
+    outside_file.write_bytes(b"video")
+
+    candidate = nested_dir / ".." / ".." / "outside.ts"
+
+    assert ensure_path_within_root(root, candidate) is None
