@@ -55,8 +55,11 @@ When changing one of these, review the others too:
 - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
 - [`frontend/src/types.ts`](../frontend/src/types.ts)
 - [`docs/session-model.md`](./session-model.md)
-- [`tests/test_api_boundary.py`](../tests/test_api_boundary.py)
-- [`frontend/src/bridge/contract.test.ts`](../frontend/src/bridge/contract.test.ts)
+- [`tests/test_api_boundary_contracts.py`](../tests/test_api_boundary_contracts.py)
+- [`tests/test_api_boundary_sessions.py`](../tests/test_api_boundary_sessions.py)
+- [`frontend/src/bridge/contract.success.test.ts`](../frontend/src/bridge/contract.success.test.ts)
+- [`frontend/src/bridge/contract.errors.test.ts`](../frontend/src/bridge/contract.errors.test.ts)
+- [`frontend/src/bridge/contract.session-snapshot.test.ts`](../frontend/src/bridge/contract.session-snapshot.test.ts)
 
 ## API Stream Source Contract v1
 

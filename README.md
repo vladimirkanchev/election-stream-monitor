@@ -301,6 +301,11 @@ What is already covered well:
 - frontend Vitest coverage for playback and session-status UX
 - opt-in public-stream smoke tests and a documented local validation workflow
 
+Current branch validation baseline:
+
+- backend: `350 passed, 3 skipped`
+- frontend/Electron: `24 files passed, 203 tests passed`
+
 If you want the deeper testing notes, start here:
 
 - [testing-and-validation.md](./docs/testing-and-validation.md)
