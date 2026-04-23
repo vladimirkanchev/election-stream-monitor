@@ -48,18 +48,23 @@ protect the boundary between backend contracts and frontend normalization.
 
 Backend/API contract checks:
 
-- `tests/test_api_boundary.py`
+- `tests/test_api_boundary_validation.py`
   - FastAPI request validation
-  - structured API error payloads
-  - session start/read/cancel behavior
+- `tests/test_api_boundary_playback.py`
   - playback-resolution behavior
+- `tests/test_api_boundary_sessions.py`
+  - session start/read/cancel behavior
+- `tests/test_api_boundary_contracts.py`
+  - structured API error payloads
   - populated session snapshot response shape
 
 Frontend contract checks:
 
-- `frontend/src/bridge/contract.test.ts`
-  - bridge normalization
+- `frontend/src/bridge/contract.success.test.ts`
+  - bridge success normalization
+- `frontend/src/bridge/contract.errors.test.ts`
   - typed bridge failures
+- `frontend/src/bridge/contract.session-snapshot.test.ts`
   - session snapshot compatibility
 - `frontend/src/uiErrors.test.ts`
   - operator-facing error wording
@@ -88,12 +93,12 @@ Use these focused checks when changing:
 Useful focused commands:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_api_boundary.py -q
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_api_boundary_*.py -q
 ```
 
 ```bash
 cd frontend
-npm run test -- src/bridge/contract.test.ts src/uiErrors.test.ts
+npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.test.ts src/uiErrors.test.ts
 ```
 
 Frontend migration checkpoint:
@@ -175,13 +180,16 @@ Current lifecycle coverage is already spread across the main layers:
     - invalid terminal transitions
     - completed-progress consistency checks
 - FastAPI boundary tests
-  - `tests/test_api_boundary.py`
+  - `tests/test_api_boundary_validation.py`
+    - request validation failures
+  - `tests/test_api_boundary_sessions.py`
     - missing-session reads
-    - start validation and spawn failures
-    - populated snapshot reads
     - cancel success
     - missing-session cancel failure
     - current terminal cancel behavior
+  - `tests/test_api_boundary_contracts.py`
+    - structured error envelopes
+    - malformed nested payload fail-closed behavior
 - Electron bridge/runtime tests
   - `frontend/electron/bridgeResponses.test.mjs`
     - start/cancel success mapping
@@ -216,8 +224,17 @@ Current high-value gaps:
 - no explicit backend/API test for canceling an already terminal session as a final intended rule
 - no focused Electron test for read-session missing-session bridge mapping
 - no frontend app-flow coverage for cancel-after-completion
-- no race-oriented app tests yet:
-  - cancel while a poll is in flight
+
+## Current Branch Validation Baseline
+
+This branch currently has a green full-suite validation baseline:
+
+- backend: `350 passed, 3 skipped`
+- frontend/Electron: `24 files passed, 203 tests passed`
+
+That is strong coverage for the current late-prototype / MVP stage.
+The remaining gaps are mostly security-policy activation and deeper Electron
+main-process composition checks, not broad missing functional coverage.
   - stale poll result arriving after cancel request
   - repeated end/cancel requests from the UI
 
