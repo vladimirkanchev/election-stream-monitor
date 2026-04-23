@@ -10,13 +10,41 @@ import {
 } from "./uiErrors";
 
 describe("ui error messages", () => {
+  function startFailure(
+    details: string,
+    metadata?: {
+      backend_error_code?: string;
+      status_reason?: string;
+      status_detail?: string;
+    },
+  ) {
+    return new BridgeTransportError({
+      code: "SESSION_START_FAILED",
+      message: "Session start request failed",
+      details,
+      ...metadata,
+    });
+  }
+
+  function cancelFailure(
+    details: string,
+    metadata?: {
+      backend_error_code?: string;
+      status_reason?: string;
+      status_detail?: string;
+    },
+  ) {
+    return new BridgeTransportError({
+      code: "SESSION_CANCEL_FAILED",
+      message: "Session cancel request failed",
+      details,
+      ...metadata,
+    });
+  }
+
   describe("session start messaging", () => {
     it("maps unavailable api_stream start failures to an operator-safe message", () => {
-      const error = new BridgeTransportError({
-        code: "SESSION_START_FAILED",
-        message: "Session start request failed",
-        details: "stream unavailable: upstream timeout",
-      });
+      const error = startFailure("stream unavailable: upstream timeout");
 
       expect(getSessionStartErrorMessage(error, "api_stream")).toBe(
         "The selected live stream is unavailable right now.",
@@ -24,11 +52,7 @@ describe("ui error messages", () => {
     });
 
     it("maps reconnect-budget failures for api_stream to a specific operator message", () => {
-      const error = new BridgeTransportError({
-        code: "SESSION_START_FAILED",
-        message: "Session start request failed",
-        details: "api_stream reconnect budget exhausted",
-      });
+      const error = startFailure("api_stream reconnect budget exhausted");
 
       expect(getSessionStartErrorMessage(error, "api_stream")).toBe(
         "Monitoring could not reconnect to the live stream, so it has ended.",
@@ -36,10 +60,7 @@ describe("ui error messages", () => {
     });
 
     it("uses backend error metadata when api_stream start failures carry structured FastAPI context", () => {
-      const error = new BridgeTransportError({
-        code: "SESSION_START_FAILED",
-        message: "Session start request failed",
-        details: "Request validation failed",
+      const error = startFailure("Request validation failed", {
         backend_error_code: "validation_failed",
         status_reason: "validation_failed",
         status_detail: "api_stream requires a direct .m3u8 or .mp4 URL, not a webpage URL.",
@@ -92,14 +113,20 @@ describe("ui error messages", () => {
       ];
 
       for (const testCase of cases) {
-        const error = new BridgeTransportError({
-          code: "SESSION_START_FAILED",
-          message: "Session start request failed",
-          details: testCase.details,
-        });
+        const error = startFailure(testCase.details);
 
         expect(getSessionStartErrorMessage(error, "api_stream")).toBe(testCase.expected);
       }
+    });
+
+    it("maps reconnecting api_stream start failures from structured retry metadata", () => {
+      const error = startFailure("temporary retryable upstream failure", {
+        status_detail: "retryable upstream failure while reconnecting",
+      });
+
+      expect(getSessionStartErrorMessage(error, "api_stream")).toBe(
+        "The live stream dropped for a moment. Monitoring is trying to reconnect.",
+      );
     });
 
     it("keeps generic local start failures unchanged for non-live sources", () => {
@@ -117,10 +144,7 @@ describe("ui error messages", () => {
 
   describe("session stop messaging", () => {
     it("maps invalid cancel-state bridge failures to a more specific stop message", () => {
-      const error = new BridgeTransportError({
-        code: "SESSION_CANCEL_FAILED",
-        message: "Session cancel request failed",
-        details: "Session session-123 is already completed.",
+      const error = cancelFailure("Session session-123 is already completed.", {
         backend_error_code: "cancel_failed",
         status_reason: "cancel_failed",
         status_detail: "Session session-123 is already completed.",
@@ -132,17 +156,28 @@ describe("ui error messages", () => {
     });
 
     it("keeps missing-session cancel failures on the generic bridge-aware stop wording", () => {
-      const error = new BridgeTransportError({
-        code: "SESSION_CANCEL_FAILED",
-        message: "Session cancel request failed",
-        details: "No persisted session snapshot found for session_id=session-123",
-        backend_error_code: "session_not_found",
-        status_reason: "session_not_found",
-        status_detail: "No persisted session snapshot found for session_id=session-123",
-      });
+      const error = cancelFailure(
+        "No persisted session snapshot found for session_id=session-123",
+        {
+          backend_error_code: "session_not_found",
+          status_reason: "session_not_found",
+          status_detail: "No persisted session snapshot found for session_id=session-123",
+        },
+      );
 
       expect(getSessionStopErrorMessage(error)).toBe(
         "Monitoring could not be ended cleanly. The local monitoring bridge reported a request failure.",
+      );
+    });
+
+    it("maps invalid bridge stop responses to the bridge-invalid-response wording", () => {
+      const error = new BridgeTransportError({
+        code: "INVALID_BRIDGE_RESPONSE",
+        message: "invalid bridge cancel response",
+      });
+
+      expect(getSessionStopErrorMessage(error)).toBe(
+        "Monitoring could not be ended cleanly. The local bridge returned an invalid response.",
       );
     });
   });
@@ -186,6 +221,24 @@ describe("ui error messages", () => {
         "The live stream stopped sending new video, so monitoring has ended.",
       );
     });
+
+    it("returns no operator message for non-failed non-warning api_stream states", () => {
+      expect(
+        getApiStreamSessionStateMessage({
+          status: "running",
+          statusReason: "running",
+          statusDetail: null,
+        }),
+      ).toBeNull();
+
+      expect(
+        getApiStreamSessionStateMessage({
+          status: "cancelled",
+          statusReason: "cancelled_by_user",
+          statusDetail: "Stopped from the desktop UI",
+        }),
+      ).toBeNull();
+    });
   });
 
   describe("playback messaging", () => {
@@ -217,6 +270,16 @@ describe("ui error messages", () => {
           responseText: "Remote HLS source returned html instead of a playlist",
         }),
       ).toBe("The selected HLS source did not return a valid playlist.");
+    });
+
+    it("falls back to the generic HLS open message for uncategorized playback failures", () => {
+      expect(
+        getHlsPlaybackErrorMessage({
+          details: "networkError",
+          responseCode: 500,
+          responseText: "upstream timeout",
+        }),
+      ).toBe("The selected HLS stream could not be opened for playback.");
     });
   });
 });

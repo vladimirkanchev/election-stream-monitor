@@ -17,21 +17,147 @@ import {
   toggleFirstDetector,
 } from "./testing/appHarness";
 
+const API_STREAM_URL = "https://example.com/live/playlist.m3u8";
+const POLLING_TICK_MS = 1100;
+
+function makeLocalSession(
+  overrides: Partial<SessionSummary> = {},
+): SessionSummary {
+  return {
+    ...RUNNING_SESSION,
+    ...overrides,
+  };
+}
+
+function makeLocalSnapshot(args: {
+  session?: Partial<SessionSummary>;
+  progress?: Partial<NonNullable<ReturnType<typeof makeSnapshot>["progress"]>>;
+} = {}) {
+  const session = makeLocalSession(args.session);
+  return makeSnapshot({
+    session,
+    progress: {
+      session_id: session.session_id,
+      status: session.status,
+      processed_count: 2,
+      total_count: 4,
+      current_item: session.status === "cancelled" ? null : "segment_0002.ts",
+      latest_result_detector: "video_blur",
+      latest_result_detectors: ["video_blur"],
+      alert_count: 0,
+      last_updated_utc: "2026-04-21 11:00:01",
+      status_reason: session.status === "running" ? "running" : null,
+      status_detail: null,
+      ...args.progress,
+    },
+  });
+}
+
+function makeApiStreamSession(
+  overrides: Partial<SessionSummary> = {},
+): SessionSummary {
+  return {
+    session_id: "session-api-live",
+    mode: "api_stream",
+    input_path: API_STREAM_URL,
+    selected_detectors: ["video_blur"],
+    status: "running",
+    ...overrides,
+  };
+}
+
+function makeApiStreamSnapshot(args: {
+  session?: Partial<SessionSummary>;
+  progress?: Partial<NonNullable<ReturnType<typeof makeSnapshot>["progress"]>>;
+} = {}) {
+  const session = makeApiStreamSession(args.session);
+  return makeSnapshot({
+    session,
+    progress: {
+      session_id: session.session_id,
+      status: session.status,
+      processed_count: 1,
+      total_count: 4,
+      current_item: "live-window-001",
+      latest_result_detector: "video_blur",
+      latest_result_detectors: ["video_blur"],
+      alert_count: 0,
+      last_updated_utc: "2026-04-04 09:00:00",
+      status_reason: null,
+      status_detail: null,
+      ...args.progress,
+    },
+  });
+}
+
+function mockApiStreamPolling(args: {
+  session?: Partial<SessionSummary>;
+  polls: Array<ReturnType<typeof makeSnapshot> | Error>;
+}) {
+  const session = makeApiStreamSession(args.session);
+  (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(session);
+
+  const readSession = mockBridge.readSession as ReturnType<typeof vi.fn>;
+  for (const poll of args.polls) {
+    if (poll instanceof Error) {
+      readSession.mockRejectedValueOnce(poll);
+    } else {
+      readSession.mockResolvedValueOnce(poll);
+    }
+  }
+
+  const finalPoll = args.polls.at(-1);
+  if (finalPoll && !(finalPoll instanceof Error)) {
+    readSession.mockResolvedValue(finalPoll);
+  }
+
+  return session;
+}
+
+async function waitForPollingTick(count = 1) {
+  for (let index = 0; index < count; index += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, POLLING_TICK_MS));
+  }
+}
+
+async function startLocalMonitoringFlow(path = "/data/streams/segments") {
+  await renderApp();
+  await enterLocalSource(path);
+  await toggleFirstDetector();
+  startMonitoring();
+
+  await waitFor(() => {
+    expect(screen.getByText("Running")).toBeTruthy();
+  });
+}
+
+async function startApiStreamMonitoringFlow(args: {
+  url?: string;
+  selectDetector?: boolean;
+  expectedStatusLabel?: string;
+} = {}) {
+  await renderApp();
+  await enterApiStreamSource(args.url ?? API_STREAM_URL);
+  if (args.selectDetector ?? true) {
+    await toggleFirstDetector();
+  }
+  startMonitoring();
+
+  await waitFor(() => {
+    expect(screen.getByText(args.expectedStatusLabel ?? "Running")).toBeTruthy();
+  });
+}
+
 describe("App polling and status integration", () => {
+  // Local session polling and terminal-state stability
+
   it("updates status from polling and shows completed state", async () => {
-    const completedSnapshot = makeSnapshot({
-      session: {
-        ...RUNNING_SESSION,
-        status: "completed",
-      },
+    const completedSnapshot = makeLocalSnapshot({
+      session: { status: "completed" },
       progress: {
-        session_id: "session-1",
-        status: "completed",
         processed_count: 4,
         total_count: 4,
         current_item: "segment_0004.ts",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
         alert_count: 1,
         last_updated_utc: "2026-04-02 10:00:04",
       },
@@ -42,15 +168,8 @@ describe("App polling and status integration", () => {
       .mockResolvedValueOnce(completedSnapshot)
       .mockResolvedValue(completedSnapshot);
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => expect(screen.getByText("Running")).toBeTruthy());
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startLocalMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Completed")).toBeTruthy();
@@ -63,19 +182,10 @@ describe("App polling and status integration", () => {
     (mockBridge.readSession as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(makeSnapshot())
       .mockRejectedValueOnce(new Error("poll failed"))
-      .mockResolvedValue(makeSnapshot());
+      .mockResolvedValue(makeLocalSnapshot());
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startLocalMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Running")).toBeTruthy();
@@ -84,50 +194,27 @@ describe("App polling and status integration", () => {
   });
 
   it("shows a reconnecting message for api stream polling failures and clears it on recovery", async () => {
-    const liveSession: SessionSummary = {
+    const liveSession = mockApiStreamPolling({
       session_id: "session-api-reconnect",
-      mode: "api_stream",
-      input_path: "https://example.com/live/playlist.m3u8",
-      selected_detectors: ["video_blur"],
-      status: "running",
-    };
-    const liveSnapshot = makeSnapshot({
-      session: liveSession,
-      progress: {
-        session_id: "session-api-reconnect",
-        status: "running",
-        processed_count: 1,
-        total_count: 4,
-        current_item: "live-window-001",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:00:00",
-      },
-    });
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce(liveSnapshot)
-      .mockRejectedValueOnce(new Error("poll failed"))
-      .mockResolvedValue(liveSnapshot);
-
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-reconnect" },
+        }),
+        new Error("poll failed"),
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-reconnect" },
+        }),
+      ],
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Recovering")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.queryByText("Recovering")).toBeNull();
@@ -135,62 +222,53 @@ describe("App polling and status integration", () => {
     });
   });
 
-  it("shows a safety-limit message when a running api stream snapshot turns terminal", async () => {
-    const liveSession: SessionSummary = {
-      session_id: "session-api-failed-runtime",
-      mode: "api_stream",
-      input_path: "https://example.com/live/playlist.m3u8",
-      selected_detectors: ["video_blur"],
-      status: "running",
-    };
-    const runningSnapshot = makeSnapshot({
-      session: liveSession,
-      progress: {
-        session_id: "session-api-failed-runtime",
-        status: "running",
-        processed_count: 1,
-        total_count: 4,
-        current_item: "live-window-001",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:00:00",
-        status_reason: null,
-        status_detail: null,
-      },
-    });
-    const failedSnapshot = makeSnapshot({
-      session: { ...liveSession, status: "failed" },
-      progress: {
-        session_id: "session-api-failed-runtime",
-        status: "failed",
-        processed_count: 1,
-        total_count: 4,
-        current_item: "live-window-001",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:00:01",
-        status_reason: "terminal_failure",
-        status_detail: "api_stream session runtime exceeded max duration",
-      },
+  it("keeps reconnecting as a warning-only state until an api stream actually becomes terminal", async () => {
+    mockApiStreamPolling({
+      session_id: "session-api-reconnecting-only",
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-reconnecting-only" },
+        }),
+        new Error("poll failed"),
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-reconnecting-only" },
+        }),
+      ],
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce(runningSnapshot)
-      .mockResolvedValue(failedSnapshot);
-
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    startMonitoring();
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
+      expect(screen.getByText("Recovering")).toBeTruthy();
       expect(screen.getByText("Running")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    expect(screen.queryByText("Needs attention")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
+    expect(screen.queryByText("Ended after going quiet")).toBeNull();
+  });
+
+  it("shows a safety-limit message when a running api stream snapshot turns terminal", async () => {
+    const liveSession = mockApiStreamPolling({
+      session_id: "session-api-failed-runtime",
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-failed-runtime" },
+        }),
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-failed-runtime", status: "failed" },
+          progress: {
+            last_updated_utc: "2026-04-04 09:00:01",
+            status_reason: "terminal_failure",
+            status_detail: "api_stream session runtime exceeded max duration",
+          },
+        }),
+      ],
+    });
+
+    await startApiStreamMonitoringFlow({ selectDetector: false });
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText(/taking too long/i)).toBeTruthy();
@@ -199,69 +277,33 @@ describe("App polling and status integration", () => {
   });
 
   it("switches from reconnecting to a terminal retry-budget message when api stream recovery finally fails", async () => {
-    const liveSession: SessionSummary = {
+    const liveSession = mockApiStreamPolling({
       session_id: "session-api-retry-exhausted",
-      mode: "api_stream",
-      input_path: "https://example.com/live/playlist.m3u8",
-      selected_detectors: ["video_blur"],
-      status: "running",
-    };
-    const runningSnapshot = makeSnapshot({
-      session: liveSession,
-      progress: {
-        session_id: "session-api-retry-exhausted",
-        status: "running",
-        processed_count: 1,
-        total_count: 4,
-        current_item: "live-window-001",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:10:00",
-        status_reason: null,
-        status_detail: null,
-      },
-    });
-    const failedSnapshot = makeSnapshot({
-      session: { ...liveSession, status: "failed" },
-      progress: {
-        session_id: "session-api-retry-exhausted",
-        status: "failed",
-        processed_count: 1,
-        total_count: 4,
-        current_item: "live-window-001",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:10:02",
-        status_reason: "source_unreachable",
-        status_detail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
-      },
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-retry-exhausted" },
+          progress: { last_updated_utc: "2026-04-04 09:10:00" },
+        }),
+        new Error("poll failed"),
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-retry-exhausted", status: "failed" },
+          progress: {
+            last_updated_utc: "2026-04-04 09:10:02",
+            status_reason: "source_unreachable",
+            status_detail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
+          },
+        }),
+      ],
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce(runningSnapshot)
-      .mockRejectedValueOnce(new Error("poll failed"))
-      .mockResolvedValue(failedSnapshot);
-
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Recovering")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Needs attention")).toBeTruthy();
@@ -272,62 +314,31 @@ describe("App polling and status integration", () => {
   });
 
   it("shows an idle-budget warning when a bounded api stream run completes after going quiet", async () => {
-    const liveSession: SessionSummary = {
+    const liveSession = mockApiStreamPolling({
       session_id: "session-api-idle-completed",
-      mode: "api_stream",
-      input_path: "https://example.com/live/playlist.m3u8",
-      selected_detectors: ["video_blur"],
-      status: "running",
-    };
-    const runningSnapshot = makeSnapshot({
-      session: liveSession,
-      progress: {
-        session_id: "session-api-idle-completed",
-        status: "running",
-        processed_count: 2,
-        total_count: 4,
-        current_item: "live-window-002",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:20:00",
-        status_reason: null,
-        status_detail: null,
-      },
-    });
-    const completedSnapshot = makeSnapshot({
-      session: { ...liveSession, status: "completed" },
-      progress: {
-        session_id: "session-api-idle-completed",
-        status: "completed",
-        processed_count: 2,
-        total_count: 4,
-        current_item: "live-window-002",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-04 09:20:03",
-        status_reason: "idle_poll_budget_exhausted",
-        status_detail: "Idle poll budget exhausted",
-      },
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-idle-completed" },
+          progress: {
+            processed_count: 2,
+            current_item: "live-window-002",
+          },
+        }),
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-idle-completed", status: "completed" },
+          progress: {
+            processed_count: 2,
+            current_item: "live-window-002",
+            last_updated_utc: "2026-04-04 09:20:03",
+            status_reason: "idle_poll_budget_exhausted",
+            status_detail: "Idle poll budget exhausted",
+          },
+        }),
+      ],
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce(runningSnapshot)
-      .mockResolvedValue(completedSnapshot);
-
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Completed")).toBeTruthy();
@@ -335,19 +346,204 @@ describe("App polling and status integration", () => {
     });
   });
 
-  it("moves from cancelling to stopped after polling returns a cancelled snapshot", async () => {
-    const cancelledSnapshot = makeSnapshot({
-      session: { ...RUNNING_SESSION, status: "cancelled" },
+  it("does not regress back to Running after an idle-complete terminal state receives a stale older snapshot", async () => {
+    const liveSession = makeApiStreamSession({
+      session_id: "session-api-idle-terminal",
+    });
+    const completedSnapshot = makeApiStreamSnapshot({
+      session: { session_id: "session-api-idle-terminal", status: "completed" },
       progress: {
-        session_id: "session-1",
-        status: "cancelled",
         processed_count: 2,
-        total_count: 4,
-        current_item: null,
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-21 11:00:01",
+        current_item: "live-window-002",
+        last_updated_utc: "2026-04-04 09:22:03",
+        status_reason: "idle_poll_budget_exhausted",
+        status_detail: "Idle poll budget exhausted",
+      },
+    });
+    const staleRunningSnapshot = makeApiStreamSnapshot({
+      session: { session_id: "session-api-idle-terminal" },
+      progress: {
+        processed_count: 2,
+        current_item: "live-window-002",
+        last_updated_utc: "2026-04-04 09:21:59",
+      },
+    });
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-idle-terminal" },
+          progress: {
+            processed_count: 2,
+            current_item: "live-window-002",
+            last_updated_utc: "2026-04-04 09:22:00",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(completedSnapshot)
+      .mockResolvedValueOnce(staleRunningSnapshot)
+      .mockResolvedValue(staleRunningSnapshot);
+
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.getByText("Completed")).toBeTruthy();
+      expect(screen.getByText("Ended after going quiet")).toBeTruthy();
+    });
+
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.getByText("Completed")).toBeTruthy();
+      expect(screen.getByText("Ended after going quiet")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Running")).toBeNull();
+    expect(screen.queryByText("Recovering")).toBeNull();
+  });
+
+  it("replaces reconnecting with the idle-complete warning when a recovering api stream settles after going quiet", async () => {
+    mockApiStreamPolling({
+      session_id: "session-api-reconnect-then-idle-complete",
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-reconnect-then-idle-complete" },
+          progress: {
+            processed_count: 2,
+            current_item: "live-window-002",
+          },
+        }),
+        new Error("poll failed"),
+        makeApiStreamSnapshot({
+          session: {
+            session_id: "session-api-reconnect-then-idle-complete",
+            status: "completed",
+          },
+          progress: {
+            processed_count: 2,
+            current_item: "live-window-002",
+            last_updated_utc: "2026-04-04 09:25:03",
+            status_reason: "idle_poll_budget_exhausted",
+            status_detail: "Idle poll budget exhausted",
+          },
+        }),
+      ],
+    });
+
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.getByText("Recovering")).toBeTruthy();
+    });
+
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.getByText("Completed")).toBeTruthy();
+      expect(screen.getByText("Ended after going quiet")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Recovering")).toBeNull();
+    expect(screen.queryByText("Needs attention")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
+  });
+
+  it("can recover from reconnecting and still later settle on a terminal failure without stale recovery cues", async () => {
+    mockApiStreamPolling({
+      session_id: "session-api-recover-then-fail",
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-recover-then-fail" },
+          progress: { last_updated_utc: "2026-04-04 09:30:00" },
+        }),
+        new Error("poll failed"),
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-recover-then-fail" },
+          progress: {
+            last_updated_utc: "2026-04-04 09:30:02",
+            processed_count: 2,
+            current_item: "live-window-002",
+          },
+        }),
+        makeApiStreamSnapshot({
+          session: {
+            session_id: "session-api-recover-then-fail",
+            status: "failed",
+          },
+          progress: {
+            last_updated_utc: "2026-04-04 09:30:04",
+            processed_count: 2,
+            current_item: "live-window-002",
+            status_reason: "source_unreachable",
+            status_detail:
+              "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
+          },
+        }),
+      ],
+    });
+
+    await startApiStreamMonitoringFlow();
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.getByText("Recovering")).toBeTruthy();
+    });
+
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.queryByText("Recovering")).toBeNull();
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    await waitForPollingTick();
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed")).toBeTruthy();
+      expect(screen.getByText("Needs attention")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Recovering")).toBeNull();
+  });
+
+  it("keeps a running api stream without progress in a neutral state until real warnings appear", async () => {
+    mockApiStreamPolling({
+      session_id: "session-api-no-progress-yet",
+      polls: [
+        makeApiStreamSnapshot({
+          session: { session_id: "session-api-no-progress-yet" },
+          progress: {
+            processed_count: 0,
+            total_count: 0,
+            current_item: null,
+            latest_result_detector: null,
+            latest_result_detectors: [],
+            status_reason: null,
+            status_detail: null,
+          },
+        }),
+      ],
+    });
+
+    await startApiStreamMonitoringFlow();
+
+    await waitFor(() => {
+      expect(screen.getByText("Running")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Recovering")).toBeNull();
+    expect(screen.queryByText("Needs attention")).toBeNull();
+    expect(screen.queryByText("Ended after going quiet")).toBeNull();
+    expect(screen.queryByText("Failed")).toBeNull();
+  });
+
+  it("moves from cancelling to stopped after polling returns a cancelled snapshot", async () => {
+    const cancelledSnapshot = makeLocalSnapshot({
+      session: { status: "cancelled" },
+      progress: {
         status_reason: "cancel_requested",
         status_detail: "Cancellation requested by client",
       },
@@ -361,15 +557,7 @@ describe("App polling and status integration", () => {
       status: "cancelling",
     });
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
+    await startLocalMonitoringFlow();
 
     endMonitoring();
 
@@ -377,7 +565,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Ending")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Stopped")).toBeTruthy();
@@ -385,36 +573,16 @@ describe("App polling and status integration", () => {
   });
 
   it("does not regress back to Running after polling reaches a cancelled terminal state", async () => {
-    const cancelledSnapshot = makeSnapshot({
-      session: { ...RUNNING_SESSION, status: "cancelled" },
+    const cancelledSnapshot = makeLocalSnapshot({
+      session: { status: "cancelled" },
       progress: {
-        session_id: "session-1",
-        status: "cancelled",
-        processed_count: 2,
-        total_count: 4,
-        current_item: null,
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
-        last_updated_utc: "2026-04-21 11:00:01",
         status_reason: "cancel_requested",
         status_detail: "Cancellation requested by client",
       },
     });
-    const staleRunningSnapshot = makeSnapshot({
-      session: { ...RUNNING_SESSION, status: "running" },
+    const staleRunningSnapshot = makeLocalSnapshot({
       progress: {
-        session_id: "session-1",
-        status: "running",
-        processed_count: 2,
-        total_count: 4,
-        current_item: "segment_0002.ts",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
         last_updated_utc: "2026-04-21 10:59:59",
-        status_reason: "running",
-        status_detail: null,
       },
     });
 
@@ -425,23 +593,14 @@ describe("App polling and status integration", () => {
       .mockResolvedValueOnce(staleRunningSnapshot)
       .mockResolvedValue(staleRunningSnapshot);
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startLocalMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Stopped")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Stopped")).toBeTruthy();
@@ -467,17 +626,8 @@ describe("App polling and status integration", () => {
       status: "cancelling",
     });
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startLocalMonitoringFlow();
+    await waitForPollingTick();
 
     endMonitoring();
 
@@ -487,17 +637,9 @@ describe("App polling and status integration", () => {
     });
 
     resolvePoll?.(
-      makeSnapshot({
-        session: { ...RUNNING_SESSION, status: "cancelled" },
+      makeLocalSnapshot({
+        session: { status: "cancelled" },
         progress: {
-          session_id: "session-1",
-          status: "cancelled",
-          processed_count: 2,
-          total_count: 4,
-          current_item: null,
-          latest_result_detector: "video_blur",
-          latest_result_detectors: ["video_blur"],
-          alert_count: 0,
           last_updated_utc: "2026-04-21 12:00:01",
           status_reason: "cancel_requested",
           status_detail: "Cancellation requested by client",
@@ -511,36 +653,17 @@ describe("App polling and status integration", () => {
   });
 
   it("does not regress back to Failed after polling reaches a failed terminal state", async () => {
-    const failedSnapshot = makeSnapshot({
-      session: { ...RUNNING_SESSION, status: "failed" },
+    const failedSnapshot = makeLocalSnapshot({
+      session: { status: "failed" },
       progress: {
-        session_id: "session-1",
-        status: "failed",
-        processed_count: 2,
-        total_count: 4,
-        current_item: "segment_0002.ts",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
         last_updated_utc: "2026-04-21 12:10:01",
         status_reason: "terminal_failure",
         status_detail: "session runtime exceeded max duration",
       },
     });
-    const staleRunningSnapshot = makeSnapshot({
-      session: { ...RUNNING_SESSION, status: "running" },
+    const staleRunningSnapshot = makeLocalSnapshot({
       progress: {
-        session_id: "session-1",
-        status: "running",
-        processed_count: 2,
-        total_count: 4,
-        current_item: "segment_0002.ts",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
         last_updated_utc: "2026-04-21 12:09:59",
-        status_reason: "running",
-        status_detail: null,
       },
     });
 
@@ -551,23 +674,14 @@ describe("App polling and status integration", () => {
       .mockResolvedValueOnce(staleRunningSnapshot)
       .mockResolvedValue(staleRunningSnapshot);
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startLocalMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Failed")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Failed")).toBeTruthy();
@@ -594,17 +708,8 @@ describe("App polling and status integration", () => {
       )
       .mockResolvedValue(makeSnapshot());
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await startLocalMonitoringFlow();
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Running")).toBeTruthy();
@@ -617,17 +722,9 @@ describe("App polling and status integration", () => {
   });
 
   it("recovers from a polling failure during cancelling and still settles on stopped", async () => {
-    const cancelledSnapshot = makeSnapshot({
-      session: { ...RUNNING_SESSION, status: "cancelled" },
+    const cancelledSnapshot = makeLocalSnapshot({
+      session: { status: "cancelled" },
       progress: {
-        session_id: "session-1",
-        status: "cancelled",
-        processed_count: 2,
-        total_count: 4,
-        current_item: null,
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 0,
         last_updated_utc: "2026-04-21 12:20:02",
         status_reason: "cancel_requested",
         status_detail: "Cancellation requested by client",
@@ -644,15 +741,7 @@ describe("App polling and status integration", () => {
       status: "cancelling",
     });
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
+    await startLocalMonitoringFlow();
 
     endMonitoring();
 
@@ -660,8 +749,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Ending")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick(2);
 
     await waitFor(() => {
       expect(screen.getByText("Stopped")).toBeTruthy();
@@ -689,15 +777,7 @@ describe("App polling and status integration", () => {
       status: "cancelling",
     });
 
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
+    await startLocalMonitoringFlow();
 
     endMonitoring();
 
@@ -705,7 +785,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Ending")).toBeTruthy();
     });
 
-    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    await waitForPollingTick();
 
     await waitFor(() => {
       expect(screen.getByText("Ending")).toBeTruthy();
@@ -716,44 +796,14 @@ describe("App polling and status integration", () => {
     ).toBeNull();
   });
 
+  // API stream transition and status-detail rendering
+
   it("shows live session status details for api stream runs", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockImplementation(
-      async (input) => ({
-        session_id: "session-api-live",
-        mode: input.source.kind,
-        input_path: input.source.path,
-        selected_detectors: input.selectedDetectors,
-        status: "running",
-      }),
-    );
-    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(
-      makeSnapshot({
-        session: {
-          session_id: "session-api-live",
-          mode: "api_stream",
-          input_path: "https://example.com/live/playlist.m3u8",
-          selected_detectors: ["video_blur"],
-          status: "running",
-        },
-        progress: {
-          session_id: "session-api-live",
-          status: "running",
-          processed_count: 1,
-          total_count: 4,
-          current_item: "live-window-001",
-          latest_result_detector: "video_blur",
-          latest_result_detectors: ["video_blur"],
-          alert_count: 0,
-          last_updated_utc: "2026-04-04 09:00:00",
-        },
-      }),
-    );
+    mockApiStreamPolling({
+      polls: [makeApiStreamSnapshot()],
+    });
 
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    await toggleFirstDetector();
-    startMonitoring();
+    await startApiStreamMonitoringFlow();
 
     await waitFor(() => {
       expect(screen.getByText("Running")).toBeTruthy();
@@ -768,43 +818,29 @@ describe("App polling and status integration", () => {
   });
 
   it("shows failed live-session status details for api stream runs", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockImplementation(
-      async (input) => ({
+    mockApiStreamPolling({
+      session: {
         session_id: "session-api-failed",
-        mode: input.source.kind,
-        input_path: input.source.path,
-        selected_detectors: input.selectedDetectors,
         status: "failed",
-      }),
-    );
-    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(
-      makeSnapshot({
-        session: {
-          session_id: "session-api-failed",
-          mode: "api_stream",
-          input_path: "https://example.com/live/playlist.m3u8",
-          selected_detectors: ["video_blur"],
-          status: "failed",
-        },
-        progress: {
-          session_id: "session-api-failed",
-          status: "failed",
-          processed_count: 4,
-          total_count: 6,
-          current_item: "live-window-004",
-          latest_result_detector: "video_blur",
-          latest_result_detectors: ["video_blur"],
-          alert_count: 1,
-          last_updated_utc: "2026-04-04 09:00:04",
-        },
-      }),
-    );
+      },
+      polls: [
+        makeApiStreamSnapshot({
+          session: {
+            session_id: "session-api-failed",
+            status: "failed",
+          },
+          progress: {
+            processed_count: 4,
+            total_count: 6,
+            current_item: "live-window-004",
+            alert_count: 1,
+            last_updated_utc: "2026-04-04 09:00:04",
+          },
+        }),
+      ],
+    });
 
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    await toggleFirstDetector();
-    startMonitoring();
+    await startApiStreamMonitoringFlow({ expectedStatusLabel: "Failed" });
 
     await waitFor(() => {
       expect(screen.getByText("Failed")).toBeTruthy();
@@ -818,43 +854,27 @@ describe("App polling and status integration", () => {
   });
 
   it("shows longer-run live progress wording for api stream runs", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockImplementation(
-      async (input) => ({
+    mockApiStreamPolling({
+      session: {
         session_id: "session-api-long",
-        mode: input.source.kind,
-        input_path: input.source.path,
-        selected_detectors: input.selectedDetectors,
-        status: "running",
-      }),
-    );
-    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue(
-      makeSnapshot({
-        session: {
-          session_id: "session-api-long",
-          mode: "api_stream",
-          input_path: "https://example.com/live/playlist.m3u8",
-          selected_detectors: ["video_blur"],
-          status: "running",
-        },
-        progress: {
-          session_id: "session-api-long",
-          status: "running",
-          processed_count: 6,
-          total_count: 9,
-          current_item: "live-window-006",
-          latest_result_detector: "video_blur",
-          latest_result_detectors: ["video_blur"],
-          alert_count: 1,
-          last_updated_utc: "2026-04-04 09:00:06",
-        },
-      }),
-    );
+      },
+      polls: [
+        makeApiStreamSnapshot({
+          session: {
+            session_id: "session-api-long",
+          },
+          progress: {
+            processed_count: 6,
+            total_count: 9,
+            current_item: "live-window-006",
+            alert_count: 1,
+            last_updated_utc: "2026-04-04 09:00:06",
+          },
+        }),
+      ],
+    });
 
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    await toggleFirstDetector();
-    startMonitoring();
+    await startApiStreamMonitoringFlow();
 
     await waitFor(() => {
       expect(screen.getByText("Live, 6 chunks analyzed")).toBeTruthy();

@@ -13,6 +13,12 @@ const API_STREAM_SOURCE: MonitorSource = {
   access: "api_stream",
 };
 
+const VIDEO_SEGMENTS_SOURCE: MonitorSource = {
+  kind: "video_segments",
+  path: "/tmp/segments",
+  access: "local_path",
+};
+
 const BASE_PROGRESS: SessionProgress = {
   session_id: "session-1",
   status: "running",
@@ -27,26 +33,34 @@ const BASE_PROGRESS: SessionProgress = {
   status_detail: null,
 };
 
-function renderPanel(args: {
+type RenderPanelArgs = {
   progress?: SessionProgress | null;
   sessionStatus?: "idle" | "starting" | "pending" | "running" | "cancelling" | "cancelled" | "completed" | "failed";
   playbackStatus?: PlaybackStatus;
   sessionError?: string | null;
-}) {
-  return render(
-    <SessionStatusPanel
-      source={API_STREAM_SOURCE}
-      sessionStatus={args.sessionStatus ?? "running"}
-      progress={args.progress ?? BASE_PROGRESS}
-      selectedDetectorCount={1}
-      visibleAlertCount={0}
-      playbackTime={5}
-      playbackDuration={null}
-      playbackLive
-      playbackStatus={args.playbackStatus ?? "playing"}
-      sessionError={args.sessionError ?? null}
-    />,
-  );
+  source?: MonitorSource;
+  playbackLive?: boolean;
+  playbackTime?: number;
+  playbackDuration?: number | null;
+};
+
+function buildPanelProps(args: RenderPanelArgs = {}) {
+  return {
+    source: args.source ?? API_STREAM_SOURCE,
+    sessionStatus: args.sessionStatus ?? "running",
+    progress: args.progress ?? BASE_PROGRESS,
+    selectedDetectorCount: 1,
+    visibleAlertCount: 0,
+    playbackTime: args.playbackTime ?? 5,
+    playbackDuration: args.playbackDuration ?? null,
+    playbackLive: args.playbackLive ?? true,
+    playbackStatus: args.playbackStatus ?? "playing",
+    sessionError: args.sessionError ?? null,
+  } satisfies React.ComponentProps<typeof SessionStatusPanel>;
+}
+
+function renderPanel(args: RenderPanelArgs = {}) {
+  return render(<SessionStatusPanel {...buildPanelProps(args)} />);
 }
 
 afterEach(() => {
@@ -147,6 +161,28 @@ describe("SessionStatusPanel monitoring UX", () => {
     ).toBeTruthy();
   });
 
+  it("shows finished-cleanly live completion without the idle warning messaging", () => {
+    renderPanel({
+      sessionStatus: "completed",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "completed",
+        status_reason: "completed",
+        status_detail: null,
+        current_item: null,
+      },
+    });
+
+    expect(screen.getByText("Finished cleanly")).toBeTruthy();
+    expect(
+      screen.getByText("The live monitoring run reached a normal completion point."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("The bounded live monitoring run completed for the current stream."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Ended after going quiet")).toBeNull();
+  });
+
   it("renders a reconnecting cue separately from terminal diagnostics", () => {
     renderPanel({
       sessionError: "The live stream dropped for a moment. Monitoring is trying to reconnect.",
@@ -158,6 +194,23 @@ describe("SessionStatusPanel monitoring UX", () => {
     expect(
       screen.getByText("The live stream dropped for a moment. Monitoring is trying to reconnect."),
     ).toBeTruthy();
+  });
+
+  it("does not show a reconnecting cue while a live session is running normally", () => {
+    renderPanel({
+      sessionStatus: "running",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "running",
+        status_reason: "running",
+        status_detail: null,
+      },
+      sessionError: null,
+    });
+
+    expect(screen.queryByText("Recovering")).toBeNull();
+    expect(screen.queryByText("Trying to reconnect to the live stream.")).toBeNull();
+    expect(screen.getByText("Live monitoring is active and currently analyzing live-window-002.")).toBeTruthy();
   });
 
   it("renders terminal monitoring diagnostics from api stream failure metadata", () => {
@@ -191,6 +244,60 @@ describe("SessionStatusPanel monitoring UX", () => {
     ).toBeTruthy();
   });
 
+  it("keeps non-live cancelled wording distinct from live stopped-by-user messaging", () => {
+    renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "cancelled",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "cancelled",
+        current_item: null,
+      },
+      playbackStatus: "stopped",
+    });
+
+    expect(screen.getByText("Stopped by user")).toBeTruthy();
+    expect(screen.getByText("Monitoring was ended by the user.")).toBeTruthy();
+    expect(
+      screen.getByText("Monitoring was stopped by the user. You can adjust the setup and start again."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Live monitoring was stopped by the user before the current stream completed."),
+    ).toBeNull();
+  });
+
+  it("aligns non-live analysis progress with playback position for segment sources", () => {
+    renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      playbackLive: false,
+      playbackTime: 12,
+      playbackDuration: 20,
+      progress: {
+        ...BASE_PROGRESS,
+        processed_count: 9,
+        total_count: 10,
+      },
+    });
+
+    expect(screen.getByText("Analysis")).toBeTruthy();
+    expect(screen.getByText("6/10")).toBeTruthy();
+  });
+
+  it("shows a waiting analysis label before the first live chunk is accepted", () => {
+    renderPanel({
+      sessionStatus: "running",
+      progress: {
+        ...BASE_PROGRESS,
+        processed_count: 0,
+        total_count: 0,
+        current_item: null,
+      },
+    });
+
+    expect(screen.getByText("Live monitoring is active for the current stream.")).toBeTruthy();
+    expect(screen.getByText("Live, waiting for the first chunk")).toBeTruthy();
+  });
+
   it("orders monitoring errors ahead of secondary playback diagnostics", () => {
     const { container } = renderPanel({
       sessionStatus: "failed",
@@ -211,5 +318,60 @@ describe("SessionStatusPanel monitoring UX", () => {
       "Monitoring Monitoring could not reconnect to the live stream, so it has ended.",
       "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
     ]);
+  });
+
+  it("treats playback failure as terminal once monitoring is no longer running", () => {
+    const { container } = renderPanel({
+      sessionStatus: "completed",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "completed",
+        status_reason: "completed",
+        status_detail: null,
+      },
+      playbackStatus: "error",
+    });
+
+    const diagnosticItems = Array.from(
+      container.querySelectorAll(".session-diagnostics__item"),
+    ).map((item) => item.textContent?.trim());
+
+    expect(diagnosticItems).toEqual([
+      "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
+    ]);
+  });
+
+  it("shows raw lifecycle fields in the debug section when expanded", () => {
+    renderPanel({
+      sessionStatus: "failed",
+      progress: {
+        ...BASE_PROGRESS,
+        status: "failed",
+        status_reason: "source_unreachable",
+        status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+      },
+    });
+
+    expect(screen.getByText("Show debug info")).toBeTruthy();
+    expect(screen.getByText("Raw session status")).toBeTruthy();
+    expect(screen.getByText("failed")).toBeTruthy();
+    expect(screen.getByText("source_unreachable")).toBeTruthy();
+    expect(
+      screen.getByText("api_stream reconnect budget exhausted: upstream returned HTTP 503"),
+    ).toBeTruthy();
+    expect(screen.getByText("video_blur")).toBeTruthy();
+  });
+
+  it("shows discovered live chunks separately in the debug section", () => {
+    renderPanel({
+      progress: {
+        ...BASE_PROGRESS,
+        processed_count: 2,
+        total_count: 5,
+      },
+    });
+
+    expect(screen.getByText("Processed live chunks")).toBeTruthy();
+    expect(screen.getByText("2 chunks analyzed, 5 discovered")).toBeTruthy();
   });
 });
