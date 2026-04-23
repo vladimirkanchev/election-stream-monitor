@@ -43,7 +43,10 @@ EMPTY_SESSION_SNAPSHOT = {
 
 def get_session_dir(session_id: str) -> Path:
     """Return the filesystem directory used by a session."""
-    return config.SESSION_OUTPUT_FOLDER / session_id
+    return config.SESSION_OUTPUT_FOLDER / _normalize_session_path_component(
+        session_id,
+        context="session directory",
+    )
 
 
 def initialize_session(metadata: SessionMetadata) -> Path:
@@ -246,6 +249,18 @@ def _write_json_file(file_path: Path, payload: dict[str, object]) -> None:
         temp_path = Path(temp_file.name)
 
     temp_path.replace(file_path)
+
+
+def _normalize_session_path_component(session_id: str, *, context: str) -> str:
+    """Return one session path component or raise when traversal is attempted."""
+    normalized_session_id = str(session_id).strip()
+    if not normalized_session_id:
+        raise ValueError(f"{context} requires a non-empty session_id")
+    if normalized_session_id in {".", ".."} or any(
+        separator in normalized_session_id for separator in ("/", "\\")
+    ):
+        raise ValueError(f"{context} requires a single safe path component")
+    return normalized_session_id
 
 
 def _read_json_file(file_path: Path) -> dict[str, object] | None:

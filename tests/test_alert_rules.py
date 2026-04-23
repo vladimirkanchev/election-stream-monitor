@@ -6,6 +6,46 @@ import alert_rules
 from alert_rules import evaluate_alerts, list_available_alert_rules, reset_session_rule_state
 
 
+def _black_row(
+    *,
+    timestamp_utc: str = "2026-03-31 10:00:00",
+    source_group: str = "playlist-a",
+    source_name: str = "segment_001.ts",
+    black_detected: bool = True,
+    duration_sec: float = 1.0,
+    black_ratio: object = 0.95,
+    longest_black_sec: object = 1.2,
+) -> dict[str, object]:
+    return {
+        "timestamp_utc": timestamp_utc,
+        "source_group": source_group,
+        "source_name": source_name,
+        "black_detected": black_detected,
+        "duration_sec": duration_sec,
+        "black_ratio": black_ratio,
+        "longest_black_sec": longest_black_sec,
+    }
+
+
+def _blur_row(
+    *,
+    timestamp_utc: str = "2026-03-31 10:00:00",
+    source_group: str = "playlist-a",
+    source_name: str = "segment_001.ts",
+    blur_detected: bool = True,
+    blur_score: object = 0.80,
+    threshold_used: object = 0.72,
+) -> dict[str, object]:
+    return {
+        "timestamp_utc": timestamp_utc,
+        "source_group": source_group,
+        "source_name": source_name,
+        "blur_detected": blur_detected,
+        "blur_score": blur_score,
+        "threshold_used": threshold_used,
+    }
+
+
 def test_list_available_alert_rules_returns_builtin_rule_metadata() -> None:
     """Built-in alert rules should expose lightweight metadata with stable ids."""
     rules = list_available_alert_rules()
@@ -235,6 +275,82 @@ def test_video_black_rule_does_not_repeat_until_recovery_then_alerts_again() -> 
         },
     )
     assert len(second_alert) == 1
+
+
+def test_video_black_rule_respects_continuous_duration_boundary() -> None:
+    """Black rule should enter exactly at the configured continuous-black threshold."""
+    reset_session_rule_state("session-black-boundary")
+
+    alerts = evaluate_alerts(
+        session_id="session-black-boundary",
+        detector_id="video_metrics",
+        row=_black_row(
+            longest_black_sec=1.0,
+            black_ratio=0.25,
+        ),
+    )
+
+    assert len(alerts) == 1
+    assert "Longest black interval 1.0 sec" in alerts[0].message
+
+
+def test_video_black_rule_does_not_alert_just_below_continuous_duration_boundary() -> None:
+    """Black rule should not enter when the continuous interval is just under threshold."""
+    reset_session_rule_state("session-black-below-boundary")
+
+    alerts = evaluate_alerts(
+        session_id="session-black-below-boundary",
+        detector_id="video_metrics",
+        row=_black_row(
+            longest_black_sec=0.99,
+            black_ratio=0.25,
+        ),
+    )
+
+    assert alerts == []
+
+
+def test_video_black_rule_does_not_alert_when_rolling_ratio_is_just_below_threshold() -> None:
+    """Rolling black alerts should stay quiet when the weighted ratio is just below threshold."""
+    reset_session_rule_state("session-black-rolling-below")
+
+    first = evaluate_alerts(
+        session_id="session-black-rolling-below",
+        detector_id="video_metrics",
+        row=_black_row(
+            timestamp_utc="2026-03-31 10:00:00",
+            source_group="playlist-threshold",
+            source_name="segment_001.ts",
+            longest_black_sec=0.4,
+            black_ratio=0.79,
+        ),
+    )
+    second = evaluate_alerts(
+        session_id="session-black-rolling-below",
+        detector_id="video_metrics",
+        row=_black_row(
+            timestamp_utc="2026-03-31 10:00:01",
+            source_group="playlist-threshold",
+            source_name="segment_002.ts",
+            longest_black_sec=0.4,
+            black_ratio=0.79,
+        ),
+    )
+    third = evaluate_alerts(
+        session_id="session-black-rolling-below",
+        detector_id="video_metrics",
+        row=_black_row(
+            timestamp_utc="2026-03-31 10:00:02",
+            source_group="playlist-threshold",
+            source_name="segment_003.ts",
+            longest_black_sec=0.4,
+            black_ratio=0.79,
+        ),
+    )
+
+    assert first == []
+    assert second == []
+    assert third == []
 
 
 def test_video_black_rule_resets_between_sessions() -> None:
@@ -723,3 +839,54 @@ def test_video_blur_rule_does_not_recover_from_other_source_groups() -> None:
     )
 
     assert still_active_on_a == []
+
+
+def test_video_black_rule_ignores_malformed_numeric_payload_fields_safely() -> None:
+    """Black rule should tolerate malformed numeric payloads without crashing or alerting."""
+    reset_session_rule_state("session-black-malformed")
+
+    alerts = evaluate_alerts(
+        session_id="session-black-malformed",
+        detector_id="video_metrics",
+        row=_black_row(
+            black_ratio="bad",
+            longest_black_sec=None,
+        ),
+    )
+
+    assert alerts == []
+
+
+def test_video_blur_rule_ignores_malformed_numeric_payload_fields_safely() -> None:
+    """Blur rule should tolerate malformed numeric payloads without crashing or alerting."""
+    reset_session_rule_state("session-blur-malformed")
+
+    alerts = evaluate_alerts(
+        session_id="session-blur-malformed",
+        detector_id="video_blur",
+        row=_blur_row(
+            blur_score="bad",
+            threshold_used=None,
+        ),
+    )
+
+    assert alerts == []
+
+
+def test_evaluate_alerts_keeps_detector_rules_isolated() -> None:
+    """One detector's row shape should not accidentally trigger another detector's rule path."""
+    reset_session_rule_state("session-detector-isolation")
+
+    black_only = evaluate_alerts(
+        session_id="session-detector-isolation",
+        detector_id="video_blur",
+        row=_black_row(),
+    )
+    blur_only = evaluate_alerts(
+        session_id="session-detector-isolation",
+        detector_id="video_metrics",
+        row=_blur_row(),
+    )
+
+    assert black_only == []
+    assert blur_only == []

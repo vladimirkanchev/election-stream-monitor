@@ -28,54 +28,141 @@ class DummyStore:
         self.rows.append(row)
 
 
+def _write_video_file(tmp_path: Path, name: str = "sample.ts") -> Path:
+    file_path = tmp_path / name
+    file_path.write_bytes(b"video-bytes")
+    return file_path
+
+
+def _video_metrics_row(
+    *,
+    source_name: str,
+    timestamp_utc: str = "2026-03-30 10:00:00",
+    processing_sec: float = 0.01,
+    duration_sec: float = 2.0,
+    black_detected: bool = False,
+    black_segment_count: int = 0,
+    total_black_sec: float = 0.0,
+    longest_black_sec: float = 0.0,
+    black_ratio: float = 0.0,
+    picture_threshold_used: float = 0.98,
+    pixel_threshold_used: float = 0.1,
+    min_duration_sec: float = 0.5,
+    **extra: object,
+) -> dict[str, object]:
+    return {
+        "analyzer": "video_metrics",
+        "source_type": "video",
+        "source_name": source_name,
+        "timestamp_utc": timestamp_utc,
+        "processing_sec": processing_sec,
+        "duration_sec": duration_sec,
+        "black_detected": black_detected,
+        "black_segment_count": black_segment_count,
+        "total_black_sec": total_black_sec,
+        "longest_black_sec": longest_black_sec,
+        "black_ratio": black_ratio,
+        "picture_threshold_used": picture_threshold_used,
+        "pixel_threshold_used": pixel_threshold_used,
+        "min_duration_sec": min_duration_sec,
+        **extra,
+    }
+
+
+def _video_blur_row(
+    *,
+    source_name: str,
+    timestamp_utc: str = "2026-03-30 10:00:00",
+    processing_sec: float = 0.02,
+    blur_detected: bool = False,
+    blur_score: float = 0.15,
+    threshold_used: float = 0.72,
+    **extra: object,
+) -> dict[str, object]:
+    return {
+        "analyzer": "video_blur",
+        "source_type": "video",
+        "source_name": source_name,
+        "timestamp_utc": timestamp_utc,
+        "processing_sec": processing_sec,
+        "blur_detected": blur_detected,
+        "blur_score": blur_score,
+        "threshold_used": threshold_used,
+        **extra,
+    }
+
+
+def _registration(
+    *,
+    name: str,
+    analyzer,
+    store_name: str,
+    supported_modes: tuple[str, ...] = ("video_segments",),
+    supported_suffixes: tuple[str, ...] = (".ts",),
+    display_name: str | None = None,
+    description: str = "Test detector",
+    produces_alerts: bool = False,
+) -> AnalyzerRegistration:
+    return AnalyzerRegistration(
+        name=name,
+        analyzer=analyzer,
+        store_name=store_name,
+        supported_modes=supported_modes,
+        supported_suffixes=supported_suffixes,
+        display_name=display_name or name.replace("_", " ").title(),
+        description=description,
+        produces_alerts=produces_alerts,
+    )
+
+
+def _patch_registrations(
+    monkeypatch,
+    *registrations: AnalyzerRegistration,
+) -> None:
+    monkeypatch.setattr(
+        processor,
+        "get_enabled_analyzers",
+        lambda mode: list(registrations),
+    )
+
+
+def _patch_store_registry(
+    monkeypatch,
+    *,
+    video_metrics=None,
+    blur_metrics=None,
+) -> None:
+    monkeypatch.setattr(
+        processor,
+        "STORE_REGISTRY",
+        {
+            "video_metrics": video_metrics if video_metrics is not None else DummyStore(),
+            "blur_metrics": blur_metrics if blur_metrics is not None else DummyStore(),
+        },
+    )
+
+
 def test_run_enabled_analyzers_routes_result_to_matching_store(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Processor should route one valid detector row into the matching store."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
 
     def fake_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
-        return {
-            "analyzer": "video_metrics",
-            "source_type": "video",
-            "source_name": file_path.name,
-            "timestamp_utc": "2026-03-30 10:00:00",
-            "processing_sec": 0.01,
-            "duration_sec": 2.0,
-            "black_detected": False,
-            "black_segment_count": 0,
-            "total_black_sec": 0.0,
-            "longest_black_sec": 0.0,
-            "black_ratio": 0.0,
-            "picture_threshold_used": 0.98,
-            "pixel_threshold_used": 0.1,
-            "min_duration_sec": 0.5,
-        }
+        return _video_metrics_row(source_name=file_path.name)
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=fake_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Test detector",
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=fake_analyzer,
+            store_name="video_metrics",
+        ),
     )
 
     dummy_store = DummyStore()
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {"video_metrics": dummy_store, "blur_metrics": DummyStore()},
-    )
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
     results = processor.run_enabled_analyzers(
         file_path=file_path,
@@ -89,27 +176,19 @@ def test_run_enabled_analyzers_routes_result_to_matching_store(
 
 def test_run_enabled_analyzers_skips_unmatched_suffix(monkeypatch, tmp_path: Path) -> None:
     """Processor should skip detectors whose suffix contract does not match the file."""
-    file_path = tmp_path / "sample.mp4"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path, "sample.mp4")
 
     def fake_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = (file_path, prefix)
         return {"unexpected": True}
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=fake_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Test detector",
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=fake_analyzer,
+            store_name="video_metrics",
+        ),
     )
 
     results = processor.run_enabled_analyzers(
@@ -125,8 +204,7 @@ def test_run_enabled_analyzers_bundle_isolates_detector_failures(
     monkeypatch, tmp_path: Path
 ) -> None:
     """One crashing detector should not prevent later healthy detectors from running."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
 
     def failing_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = (file_path, prefix)
@@ -134,57 +212,31 @@ def test_run_enabled_analyzers_bundle_isolates_detector_failures(
 
     def healthy_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
-        return {
-            "analyzer": "video_metrics",
-            "source_type": "video",
-            "source_name": file_path.name,
-            "timestamp_utc": "2026-03-30 10:00:00",
-            "processing_sec": 0.02,
-            "duration_sec": 2.0,
-            "black_detected": False,
-            "black_segment_count": 0,
-            "total_black_sec": 0.0,
-            "longest_black_sec": 0.0,
-            "black_ratio": 0.0,
-            "picture_threshold_used": 0.98,
-            "pixel_threshold_used": 0.1,
-            "min_duration_sec": 0.5,
-        }
+        return _video_metrics_row(
+            source_name=file_path.name,
+            processing_sec=0.02,
+        )
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="broken_detector",
-                analyzer=failing_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Broken Detector",
-                description="Fails on purpose",
-            ),
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=healthy_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Works after a failure",
-            ),
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="broken_detector",
+            analyzer=failing_analyzer,
+            store_name="video_metrics",
+            display_name="Broken Detector",
+            description="Fails on purpose",
+        ),
+        _registration(
+            name="video_metrics",
+            analyzer=healthy_analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Works after a failure",
+        ),
     )
 
     dummy_store = DummyStore()
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": dummy_store,
-            "blur_metrics": DummyStore(),
-        },
-    )
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
     bundle = processor.run_enabled_analyzers_bundle(
         file_path=file_path,
@@ -202,28 +254,22 @@ def test_run_enabled_analyzers_bundle_logs_failure_context(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Detector failure logs should keep enough context to debug one broken slice."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
     logged: list[tuple[str, tuple[object, ...]]] = []
 
     def failing_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = (file_path, prefix)
         raise RuntimeError("ffmpeg failed")
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="broken_detector",
-                analyzer=failing_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Broken Detector",
-                description="Fails on purpose",
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="broken_detector",
+            analyzer=failing_analyzer,
+            store_name="video_metrics",
+            display_name="Broken Detector",
+            description="Fails on purpose",
+        ),
     )
     monkeypatch.setattr(
         processor.logger,
@@ -262,8 +308,7 @@ def test_run_enabled_analyzers_bundle_keeps_healthy_results_when_other_detectors
     monkeypatch, tmp_path: Path
 ) -> None:
     """Healthy detectors should still contribute results when neighbors misbehave."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
 
     def failing_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = (file_path, prefix)
@@ -275,60 +320,35 @@ def test_run_enabled_analyzers_bundle_keeps_healthy_results_when_other_detectors
 
     def healthy_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
-        return {
-            "analyzer": "video_blur",
-            "source_type": "video",
-            "source_name": file_path.name,
-            "timestamp_utc": "2026-03-30 10:00:00",
-            "processing_sec": 0.02,
-            "blur_detected": False,
-            "blur_score": 0.15,
-            "threshold_used": 0.72,
-        }
+        return _video_blur_row(source_name=file_path.name)
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="broken_detector",
-                analyzer=failing_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Broken Detector",
-                description="Fails on purpose",
-            ),
-            AnalyzerRegistration(
-                name="malformed_detector",
-                analyzer=malformed_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Malformed Detector",
-                description="Returns a non-dict payload",
-            ),
-            AnalyzerRegistration(
-                name="video_blur",
-                analyzer=healthy_analyzer,
-                store_name="blur_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Blur",
-                description="Healthy detector after failures",
-            ),
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="broken_detector",
+            analyzer=failing_analyzer,
+            store_name="video_metrics",
+            display_name="Broken Detector",
+            description="Fails on purpose",
+        ),
+        _registration(
+            name="malformed_detector",
+            analyzer=malformed_analyzer,
+            store_name="video_metrics",
+            display_name="Malformed Detector",
+            description="Returns a non-dict payload",
+        ),
+        _registration(
+            name="video_blur",
+            analyzer=healthy_analyzer,
+            store_name="blur_metrics",
+            display_name="Video Blur",
+            description="Healthy detector after failures",
+        ),
     )
 
     blur_store = DummyStore()
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": DummyStore(),
-            "blur_metrics": blur_store,
-        },
-    )
+    _patch_store_registry(monkeypatch, blur_metrics=blur_store)
 
     bundle = processor.run_enabled_analyzers_bundle(
         file_path=file_path,
@@ -345,8 +365,7 @@ def test_run_enabled_analyzers_bundle_skips_malformed_rows(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Rows missing the shared analyzer fields should be ignored safely."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
 
     def malformed_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = (file_path, prefix)
@@ -355,31 +374,19 @@ def test_run_enabled_analyzers_bundle_skips_malformed_rows(
             "black_detected": True,
         }
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=malformed_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Malformed result detector",
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=malformed_analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Malformed result detector",
+        ),
     )
 
     dummy_store = DummyStore()
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": dummy_store,
-            "blur_metrics": DummyStore(),
-        },
-    )
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
     bundle = processor.run_enabled_analyzers_bundle(
         file_path=file_path,
@@ -396,8 +403,7 @@ def test_run_enabled_analyzers_bundle_skips_unexpected_payload_types(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Non-dict payloads such as None or strings should be ignored safely."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
 
     payloads = iter([None, "bad-payload"])
 
@@ -405,40 +411,26 @@ def test_run_enabled_analyzers_bundle_skips_unexpected_payload_types(
         _ = (file_path, prefix)
         return next(payloads)
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="invalid_a",
-                analyzer=invalid_payload_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Invalid A",
-                description="Returns None",
-            ),
-            AnalyzerRegistration(
-                name="invalid_b",
-                analyzer=invalid_payload_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Invalid B",
-                description="Returns string",
-            ),
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="invalid_a",
+            analyzer=invalid_payload_analyzer,
+            store_name="video_metrics",
+            display_name="Invalid A",
+            description="Returns None",
+        ),
+        _registration(
+            name="invalid_b",
+            analyzer=invalid_payload_analyzer,
+            store_name="video_metrics",
+            display_name="Invalid B",
+            description="Returns string",
+        ),
     )
 
     dummy_store = DummyStore()
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": dummy_store,
-            "blur_metrics": DummyStore(),
-        },
-    )
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
     bundle = processor.run_enabled_analyzers_bundle(
         file_path=file_path,
@@ -455,56 +447,28 @@ def test_run_enabled_analyzers_bundle_propagates_store_write_failures(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Store write failures should fail fast because persistence is part of the contract."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
 
     def healthy_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
-        return {
-            "analyzer": "video_metrics",
-            "source_type": "video",
-            "source_name": file_path.name,
-            "timestamp_utc": "2026-03-30 10:00:00",
-            "processing_sec": 0.01,
-            "duration_sec": 2.0,
-            "black_detected": False,
-            "black_segment_count": 0,
-            "total_black_sec": 0.0,
-            "longest_black_sec": 0.0,
-            "black_ratio": 0.0,
-            "picture_threshold_used": 0.98,
-            "pixel_threshold_used": 0.1,
-            "min_duration_sec": 0.5,
-        }
+        return _video_metrics_row(source_name=file_path.name)
 
     class FailingStore:
         def add_row(self, row: dict) -> None:
             _ = row
             raise OSError("disk full")
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=healthy_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Healthy detector",
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=healthy_analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Healthy detector",
+        ),
     )
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": FailingStore(),
-            "blur_metrics": DummyStore(),
-        },
-    )
+    _patch_store_registry(monkeypatch, video_metrics=FailingStore())
 
     try:
         processor.run_enabled_analyzers_bundle(
@@ -526,57 +490,29 @@ def test_run_enabled_analyzers_bundle_logs_store_failure_context(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Store write failures should log the same structured detector context."""
-    file_path = tmp_path / "sample.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path)
     logged: list[tuple[str, tuple[object, ...]]] = []
 
     def healthy_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
-        return {
-            "analyzer": "video_metrics",
-            "source_type": "video",
-            "source_name": file_path.name,
-            "timestamp_utc": "2026-03-30 10:00:00",
-            "processing_sec": 0.01,
-            "duration_sec": 2.0,
-            "black_detected": False,
-            "black_segment_count": 0,
-            "total_black_sec": 0.0,
-            "longest_black_sec": 0.0,
-            "black_ratio": 0.0,
-            "picture_threshold_used": 0.98,
-            "pixel_threshold_used": 0.1,
-            "min_duration_sec": 0.5,
-        }
+        return _video_metrics_row(source_name=file_path.name)
 
     class FailingStore:
         def add_row(self, row: dict) -> None:
             _ = row
             raise OSError("disk full")
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=healthy_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments",),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Healthy detector",
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=healthy_analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Healthy detector",
+        ),
     )
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": FailingStore(),
-            "blur_metrics": DummyStore(),
-        },
-    )
+    _patch_store_registry(monkeypatch, video_metrics=FailingStore())
     monkeypatch.setattr(
         processor.logger,
         "exception",
@@ -612,8 +548,7 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Temporal slice metadata should reach analyzers and survive into events."""
-    file_path = tmp_path / "segment_001.ts"
-    file_path.write_bytes(b"video-bytes")
+    file_path = _write_video_file(tmp_path, "segment_001.ts")
     observed_kwargs: dict[str, object] = {}
 
     def sliced_analyzer(
@@ -636,42 +571,30 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
                 "window_duration_sec": window_duration_sec,
             }
         )
-        return {
-            "analyzer": "video_metrics",
-            "source_type": "video",
-            "source_name": str(source_name),
-            "source_group": str(source_group),
-            "timestamp_utc": "2026-03-30 10:00:00",
-            "processing_sec": 0.01,
-            "duration_sec": 2.0,
-            "black_detected": True,
-            "black_segment_count": 1,
-            "total_black_sec": 2.0,
-            "longest_black_sec": 2.0,
-            "black_ratio": 1.0,
-            "picture_threshold_used": 0.98,
-            "pixel_threshold_used": 0.1,
-            "min_duration_sec": 0.5,
-            "window_index": window_index,
-            "window_start_sec": window_start_sec,
-            "window_duration_sec": window_duration_sec,
-        }
+        return _video_metrics_row(
+            source_name=str(source_name),
+            source_group=str(source_group),
+            black_detected=True,
+            black_segment_count=1,
+            total_black_sec=2.0,
+            longest_black_sec=2.0,
+            black_ratio=1.0,
+            window_index=window_index,
+            window_start_sec=window_start_sec,
+            window_duration_sec=window_duration_sec,
+        )
 
-    monkeypatch.setattr(
-        processor,
-        "get_enabled_analyzers",
-        lambda mode: [
-            AnalyzerRegistration(
-                name="video_metrics",
-                analyzer=sliced_analyzer,
-                store_name="video_metrics",
-                supported_modes=("video_segments", "api_stream"),
-                supported_suffixes=(".ts",),
-                display_name="Video Metrics",
-                description="Slice-aware detector",
-                produces_alerts=True,
-            )
-        ],
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=sliced_analyzer,
+            store_name="video_metrics",
+            supported_modes=("video_segments", "api_stream"),
+            display_name="Video Metrics",
+            description="Slice-aware detector",
+            produces_alerts=True,
+        ),
     )
     monkeypatch.setattr(
         processor,
@@ -692,14 +615,7 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
     )
 
     dummy_store = DummyStore()
-    monkeypatch.setattr(
-        processor,
-        "STORE_REGISTRY",
-        {
-            "video_metrics": dummy_store,
-            "blur_metrics": DummyStore(),
-        },
-    )
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
     bundle = processor.run_enabled_analyzers_bundle(
         file_path=file_path,
@@ -729,3 +645,314 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
     assert bundle["results"][0]["payload"]["window_start_sec"] == 14.0
     assert bundle["alerts"][0]["window_index"] == 7
     assert bundle["alerts"][0]["window_start_sec"] == 14.0
+
+
+def test_run_enabled_analyzers_bundle_filters_to_selected_analyzers(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Selected analyzer filtering should run only the explicitly requested detectors."""
+    file_path = _write_video_file(tmp_path)
+
+    def metrics_analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = prefix
+        return _video_metrics_row(source_name=file_path.name)
+
+    def blur_analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = prefix
+        return _video_blur_row(
+            source_name=file_path.name,
+            timestamp_utc="2026-03-30 10:00:01",
+        )
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=metrics_analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Metrics detector",
+        ),
+        _registration(
+            name="video_blur",
+            analyzer=blur_analyzer,
+            store_name="blur_metrics",
+            display_name="Video Blur",
+            description="Blur detector",
+        ),
+    )
+
+    metrics_store = DummyStore()
+    blur_store = DummyStore()
+    _patch_store_registry(
+        monkeypatch,
+        video_metrics=metrics_store,
+        blur_metrics=blur_store,
+    )
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-selected",
+        selected_analyzers={"video_blur"},
+    )
+
+    assert [result["detector_id"] for result in bundle["results"]] == ["video_blur"]
+    assert metrics_store.rows == []
+    assert blur_store.rows == [bundle["results"][0]["payload"]]
+
+
+def test_run_enabled_analyzers_bundle_returns_results_and_alerts_without_persisting(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Bundle mode should still produce results and alerts when store persistence is disabled."""
+    file_path = _write_video_file(tmp_path)
+
+    def analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = prefix
+        return _video_metrics_row(
+            source_name=file_path.name,
+            black_detected=True,
+            black_segment_count=1,
+            total_black_sec=2.0,
+            longest_black_sec=2.0,
+            black_ratio=1.0,
+        )
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Alerting detector",
+            produces_alerts=True,
+        ),
+    )
+    monkeypatch.setattr(
+        processor,
+        "evaluate_alerts",
+        lambda session_id, detector_id, row: [
+            AlertEvent(
+                session_id=session_id,
+                timestamp_utc=str(row["timestamp_utc"]),
+                detector_id=detector_id,
+                title="Black screen detected",
+                message="alert without store persistence",
+                severity="warning",
+                source_name=str(row["source_name"]),
+                window_index=None,
+                window_start_sec=None,
+            )
+        ],
+    )
+
+    dummy_store = DummyStore()
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-no-persist",
+        persist_to_store=False,
+    )
+
+    assert [result["detector_id"] for result in bundle["results"]] == ["video_metrics"]
+    assert [alert["detector_id"] for alert in bundle["alerts"]] == ["video_metrics"]
+    assert dummy_store.rows == []
+
+
+def test_run_enabled_analyzers_bundle_routes_generated_alerts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Alert-rule output should be returned alongside the detector result bundle."""
+    file_path = _write_video_file(tmp_path)
+
+    def analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = prefix
+        return _video_metrics_row(
+            source_name=file_path.name,
+            black_detected=True,
+            black_segment_count=1,
+            total_black_sec=2.0,
+            longest_black_sec=2.0,
+            black_ratio=1.0,
+        )
+
+    observed_alert_args: list[tuple[str, str, dict[str, object]]] = []
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="Alerting detector",
+            produces_alerts=True,
+        ),
+    )
+    monkeypatch.setattr(
+        processor,
+        "evaluate_alerts",
+        lambda session_id, detector_id, row: (
+            observed_alert_args.append((session_id, detector_id, row.copy())) or [
+                AlertEvent(
+                    session_id=session_id,
+                    timestamp_utc=str(row["timestamp_utc"]),
+                    detector_id=detector_id,
+                    title="Black screen detected",
+                    message="alert routing check",
+                    severity="warning",
+                    source_name=str(row["source_name"]),
+                    window_index=None,
+                    window_start_sec=None,
+                )
+            ]
+        ),
+    )
+
+    dummy_store = DummyStore()
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-alert-routing",
+    )
+
+    assert observed_alert_args == [
+        (
+            "session-alert-routing",
+            "video_metrics",
+            bundle["results"][0]["payload"],
+        )
+    ]
+    assert [alert["title"] for alert in bundle["alerts"]] == ["Black screen detected"]
+
+
+def test_run_enabled_analyzers_bundle_raises_when_store_registry_entry_is_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Missing store registry entries should fail as persistence errors, not be ignored."""
+    file_path = _write_video_file(tmp_path)
+
+    def analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = prefix
+        return _video_metrics_row(source_name=file_path.name)
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=analyzer,
+            store_name="missing_store",
+            display_name="Video Metrics",
+            description="Missing store detector",
+        ),
+    )
+    _patch_store_registry(monkeypatch)
+    monkeypatch.setattr(
+        processor,
+        "STORE_REGISTRY",
+        {"blur_metrics": DummyStore()},
+    )
+
+    try:
+        processor.run_enabled_analyzers_bundle(
+            file_path=file_path,
+            prefix="segments",
+            mode="video_segments",
+            session_id="session-missing-store",
+        )
+    except processor.ProcessorPersistenceError as error:
+        assert error.detector_id == "video_metrics"
+        assert error.store_name == "missing_store"
+        assert error.file_path == file_path
+        assert "missing_store" in str(error)
+    else:
+        raise AssertionError("Expected missing store entries to raise ProcessorPersistenceError")
+
+
+def test_run_enabled_analyzers_bundle_runs_analyzer_without_optional_prefix_parameter(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Analyzer kwargs should be filtered so detectors without optional prefix parameters still run."""
+    file_path = _write_video_file(tmp_path)
+    observed_file_paths: list[Path] = []
+
+    def analyzer(file_path: Path) -> dict:
+        observed_file_paths.append(file_path)
+        return _video_metrics_row(source_name=file_path.name)
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=analyzer,
+            store_name="video_metrics",
+            display_name="Video Metrics",
+            description="No-prefix detector",
+        ),
+    )
+    dummy_store = DummyStore()
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-no-prefix",
+    )
+
+    assert observed_file_paths == [file_path]
+    assert [result["detector_id"] for result in bundle["results"]] == ["video_metrics"]
+
+
+def test_run_enabled_analyzers_bundle_logs_file_name_when_analysis_slice_is_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Failure logs should fall back to the file name when no analysis slice context exists."""
+    file_path = _write_video_file(tmp_path, "fallback-name.ts")
+    logged: list[tuple[str, tuple[object, ...]]] = []
+
+    def failing_analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = (file_path, prefix)
+        raise RuntimeError("ffmpeg failed")
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="broken_detector",
+            analyzer=failing_analyzer,
+            store_name="video_metrics",
+            display_name="Broken Detector",
+            description="Fails on purpose",
+        ),
+    )
+    monkeypatch.setattr(
+        processor.logger,
+        "exception",
+        lambda message, *args: logged.append((message, args)),
+    )
+
+    processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-fallback-current-item",
+    )
+
+    assert logged
+    message, args = logged[0]
+    assert message == "Analyzer %s failed for %s [%s]"
+    assert args[2] == (
+        "session_id='session-fallback-current-item' "
+        "source_kind='video_segments' "
+        "current_item='fallback-name.ts' "
+        "detector_id='broken_detector'"
+    )

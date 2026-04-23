@@ -105,6 +105,16 @@ def test_request_session_cancel_remains_file_oriented_and_tolerant(
     }
 
 
+def test_request_session_cancel_rejects_session_id_path_traversal(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Session helpers should fail closed when a session id tries to escape the output root."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    with pytest.raises(ValueError, match="single safe path component"):
+        request_session_cancel("../escape")
+
+
 def test_session_snapshot_tolerates_invalid_json_file(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -130,6 +140,43 @@ def test_session_snapshot_tolerates_invalid_json_file(
     snapshot = read_session_snapshot("session-789")
 
     assert snapshot["session"]["session_id"] == "session-789"
+    assert snapshot["progress"] is None
+
+
+def test_session_snapshot_tolerates_file_vanishing_after_the_exists_check(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Snapshot reads should fail closed if a file disappears between existence and read."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    session_dir = tmp_path / "session-race"
+    session_dir.mkdir(parents=True)
+    metadata_path = session_dir / "session.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "session_id": "session-race",
+                "mode": "video_segments",
+                "input_path": "/tmp/input",
+                "selected_detectors": [],
+                "status": "running",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    original_read_text = Path.read_text
+
+    def flaky_read_text(self: Path, *args, **kwargs):
+        if self == metadata_path:
+            raise OSError("file disappeared mid-read")
+        return original_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    snapshot = read_session_snapshot("session-race")
+
+    assert snapshot["session"] is None
     assert snapshot["progress"] is None
 
 
