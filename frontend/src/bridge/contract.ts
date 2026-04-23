@@ -182,12 +182,39 @@ export function fail(
 export function unwrapBridgeValue<T>(value: T | BridgeResponse<T>): T {
   if (isBridgeResponse(value)) {
     if (!value.ok) {
-      throw new BridgeTransportError(value.error);
+      throw new BridgeTransportError(normalizeBridgeErrorPayload(value.error));
     }
     return value.data;
   }
 
   return value;
+}
+
+function normalizeBridgeErrorPayload(value: unknown): BridgeErrorPayload {
+  if (!isRecord(value)) {
+    return {
+      code: "INVALID_BRIDGE_RESPONSE",
+      message: "invalid bridge error response",
+      details: null,
+      backend_error_code: null,
+      status_reason: null,
+      status_detail: null,
+    };
+  }
+
+  return {
+    code: isBridgeErrorCode(value.code) ? value.code : "INVALID_BRIDGE_RESPONSE",
+    message:
+      typeof value.message === "string" && value.message.trim().length > 0
+        ? value.message
+        : "invalid bridge error response",
+    details: isNullableString(value.details) ? value.details : null,
+    backend_error_code: isNullableString(value.backend_error_code)
+      ? value.backend_error_code
+      : null,
+    status_reason: isNullableString(value.status_reason) ? value.status_reason : null,
+    status_detail: isNullableString(value.status_detail) ? value.status_detail : null,
+  };
 }
 
 export function normalizeDetectorOptions(value: unknown): DetectorOption[] {
@@ -370,6 +397,17 @@ function isDetectorStatus(
   return (
     typeof value === "string" &&
     VALID_DETECTOR_STATUSES.includes(value as DetectorOption["status"])
+  );
+}
+
+function isBridgeErrorCode(value: unknown): value is BridgeErrorCode {
+  return (
+    value === "DETECTOR_CATALOG_FAILED" ||
+    value === "SESSION_START_FAILED" ||
+    value === "SESSION_READ_FAILED" ||
+    value === "SESSION_CANCEL_FAILED" ||
+    value === "PLAYBACK_SOURCE_RESOLUTION_FAILED" ||
+    value === "INVALID_BRIDGE_RESPONSE"
   );
 }
 
