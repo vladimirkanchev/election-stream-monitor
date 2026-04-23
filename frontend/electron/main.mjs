@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, protocol } from "electron";
 import { access, readFile, stat } from "node:fs/promises";
 import { constants as fsConstants, createReadStream } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Readable } from "node:stream";
@@ -11,10 +11,15 @@ import {
   createRemotePlaybackRequestHeaders,
   createRemoteHlsProxyRegistry,
   isRemoteHlsUrl,
-  isRemoteHttpUrl,
-  parseProxyToken,
   parseRemoteHlsProxyPayload,
 } from "./hlsProxy.mjs";
+import {
+  createLocalMediaProtocolHandler,
+  resolveRemoteHlsProxyTarget,
+} from "./localMediaRequestPolicy.mjs";
+
+const require = createRequire(import.meta.url);
+const { app, BrowserWindow, ipcMain, protocol } = require("electron");
 
 /**
  * Electron main-process bridge for the local-first monitoring app.
@@ -292,13 +297,13 @@ function registerAppLifecycleHandlers() {
 }
 
 function registerLocalMediaProtocol() {
-  protocol.handle("local-media", async (request) => {
-    const requestUrl = new URL(request.url);
-    if (requestUrl.hostname === "proxy") {
-      return handleRemoteHlsProxyRequest(request, requestUrl);
-    }
-    return handleLocalMediaRequest(request, requestUrl);
-  });
+  protocol.handle(
+    "local-media",
+    createLocalMediaProtocolHandler({
+      handleRemoteHlsProxyRequest,
+      handleLocalMediaRequest,
+    }),
+  );
 }
 
 async function initializeDesktopRuntime() {
@@ -315,15 +320,11 @@ async function initializeDesktopRuntime() {
 async function handleRemoteHlsProxyRequest(request, requestUrl) {
   // Proxy tokens are opaque renderer-facing identifiers. Only the main
   // process knows the upstream target URL they resolve to.
-  const token = parseProxyToken(requestUrl.pathname);
-  if (!token) {
-    return new Response("Missing proxy token", { status: 400 });
+  const resolvedTarget = resolveRemoteHlsProxyTarget(requestUrl, remoteHlsProxyRegistry);
+  if (resolvedTarget.kind === "error") {
+    return resolvedTarget.response;
   }
-
-  const targetUrl = remoteHlsProxyRegistry.resolve(token);
-  if (!targetUrl || !isRemoteHttpUrl(targetUrl)) {
-    return new Response("Unknown proxied media target", { status: 404 });
-  }
+  const { targetUrl } = resolvedTarget;
 
   console.info("[remote-hls-proxy]", request.method, targetUrl);
 
@@ -389,14 +390,9 @@ async function fetchRemotePlaybackAsset(targetUrl, request) {
   });
 }
 
-async function handleLocalMediaRequest(request, requestUrl) {
+async function handleLocalMediaRequest(request, filePath) {
   // The local-media protocol serves both checked-in local fixtures and
   // backend-resolved local file paths through one renderer-safe URL space.
-  const filePath = decodeURIComponent(requestUrl.pathname);
-  if (!filePath) {
-    return new Response("Missing media path", { status: 400 });
-  }
-
   console.info("[local-media]", request.method, filePath);
 
   try {

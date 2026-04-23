@@ -34,11 +34,11 @@ describe("FastAPI readiness and fallback helpers", () => {
     );
   });
 
-  it("does not fall back to CLI on structured FastAPI business errors", async () => {
-    const state = createFastApiReadinessState();
-    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
-    const apiOperation = vi.fn().mockRejectedValue(
-      new ApiHttpError("Session not found", {
+  it.each([
+    {
+      label: "business errors",
+      operationName: "bridge:read-session",
+      error: new ApiHttpError("Session not found", {
         status: 404,
         apiPayload: {
           detail: "Session not found",
@@ -47,39 +47,14 @@ describe("FastAPI readiness and fallback helpers", () => {
           status_detail: "No persisted session snapshot found for session_id=abc123",
         },
       }),
-    );
-    const cliOperation = vi.fn();
-    const warn = vi.fn();
-
-    await expect(
-      withFastApiFallback({
-        state,
-        apiGetHealth,
-        operationName: "bridge:read-session",
-        apiOperation,
-        cliOperation,
-        warn,
-      }),
-    ).rejects.toMatchObject({
-      name: "ApiHttpError",
-      status: 404,
-      apiPayload: {
-        error_code: "session_not_found",
-      },
-    });
-
-    expect(cliOperation).not.toHaveBeenCalled();
-    expect(warn).not.toHaveBeenCalledWith(
-      expect.stringContaining("falling back to CLI"),
-      expect.anything(),
-    );
-  });
-
-  it("does not fall back to CLI on structured FastAPI validation errors for start-session", async () => {
-    const state = createFastApiReadinessState();
-    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
-    const apiOperation = vi.fn().mockRejectedValue(
-      new ApiHttpError("Request validation failed", {
+      expectedStatus: 404,
+      expectedErrorCode: "session_not_found",
+      expectedStatusReason: "session_not_found",
+    },
+    {
+      label: "validation errors for start-session",
+      operationName: "bridge:start-session",
+      error: new ApiHttpError("Request validation failed", {
         status: 422,
         apiPayload: {
           detail: "Request validation failed",
@@ -88,35 +63,14 @@ describe("FastAPI readiness and fallback helpers", () => {
           status_detail: "body.input_path: Field required",
         },
       }),
-    );
-    const cliOperation = vi.fn();
-
-    await expect(
-      withFastApiFallback({
-        state,
-        apiGetHealth,
-        operationName: "bridge:start-session",
-        apiOperation,
-        cliOperation,
-        warn: vi.fn(),
-      }),
-    ).rejects.toMatchObject({
-      name: "ApiHttpError",
-      status: 422,
-      apiPayload: {
-        error_code: "validation_failed",
-        status_reason: "validation_failed",
-      },
-    });
-
-    expect(cliOperation).not.toHaveBeenCalled();
-  });
-
-  it("does not fall back to CLI on structured FastAPI start-session errors", async () => {
-    const state = createFastApiReadinessState();
-    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
-    const apiOperation = vi.fn().mockRejectedValue(
-      new ApiHttpError("Session start failed", {
+      expectedStatus: 422,
+      expectedErrorCode: "validation_failed",
+      expectedStatusReason: "validation_failed",
+    },
+    {
+      label: "structured start-session failures",
+      operationName: "bridge:start-session",
+      error: new ApiHttpError("Session start failed", {
         status: 500,
         apiPayload: {
           detail: "Session start failed",
@@ -125,27 +79,62 @@ describe("FastAPI readiness and fallback helpers", () => {
           status_detail: "Failed to spawn detached monitoring process.",
         },
       }),
-    );
+      expectedStatus: 500,
+      expectedErrorCode: "session_start_failed",
+      expectedStatusReason: "session_start_failed",
+    },
+    {
+      label: "missing-session errors for cancel-session",
+      operationName: "bridge:cancel-session",
+      error: new ApiHttpError("Session not found", {
+        status: 404,
+        apiPayload: {
+          detail: "Session not found",
+          error_code: "session_not_found",
+          status_reason: "session_not_found",
+          status_detail: "No persisted session snapshot found for session_id=session-123",
+        },
+      }),
+      expectedStatus: 404,
+      expectedErrorCode: "session_not_found",
+      expectedStatusReason: "session_not_found",
+    },
+  ])("does not fall back to CLI on structured FastAPI $label", async ({
+    operationName,
+    error,
+    expectedStatus,
+    expectedErrorCode,
+    expectedStatusReason,
+  }) => {
+    const state = createFastApiReadinessState();
+    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
+    const apiOperation = vi.fn().mockRejectedValue(error);
     const cliOperation = vi.fn();
+    const warn = vi.fn();
 
     await expect(
       withFastApiFallback({
         state,
         apiGetHealth,
-        operationName: "bridge:start-session",
+        operationName,
         apiOperation,
         cliOperation,
-        warn: vi.fn(),
+        warn,
       }),
     ).rejects.toMatchObject({
       name: "ApiHttpError",
-      status: 500,
+      status: expectedStatus,
       apiPayload: {
-        error_code: "session_start_failed",
+        error_code: expectedErrorCode,
+        status_reason: expectedStatusReason,
       },
     });
 
     expect(cliOperation).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("falling back to CLI"),
+      expect.anything(),
+    );
   });
 
   it("falls back to CLI on FastAPI unavailability for start-session", async () => {
@@ -178,43 +167,6 @@ describe("FastAPI readiness and fallback helpers", () => {
     });
     expect(apiOperation).not.toHaveBeenCalled();
     expect(cliOperation).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not fall back to CLI on structured FastAPI missing-session errors for cancel-session", async () => {
-    const state = createFastApiReadinessState();
-    const apiGetHealth = vi.fn().mockResolvedValue({ ok: true });
-    const apiOperation = vi.fn().mockRejectedValue(
-      new ApiHttpError("Session not found", {
-        status: 404,
-        apiPayload: {
-          detail: "Session not found",
-          error_code: "session_not_found",
-          status_reason: "session_not_found",
-          status_detail: "No persisted session snapshot found for session_id=session-123",
-        },
-      }),
-    );
-    const cliOperation = vi.fn();
-
-    await expect(
-      withFastApiFallback({
-        state,
-        apiGetHealth,
-        operationName: "bridge:cancel-session",
-        apiOperation,
-        cliOperation,
-        warn: vi.fn(),
-      }),
-    ).rejects.toMatchObject({
-      name: "ApiHttpError",
-      status: 404,
-      apiPayload: {
-        error_code: "session_not_found",
-        status_reason: "session_not_found",
-      },
-    });
-
-    expect(cliOperation).not.toHaveBeenCalled();
   });
 
   it("falls back to CLI on FastAPI unavailability for cancel-session", async () => {

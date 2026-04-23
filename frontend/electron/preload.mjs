@@ -1,4 +1,7 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { contextBridge, ipcRenderer } = require("electron");
 
 // Expose the stable renderer bridge; Electron runtime policy lives in main.
 const electionBridge = Object.freeze({
