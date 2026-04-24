@@ -1,7 +1,9 @@
-"""Tests for fake/static api_stream runner behavior outside HTTP HLS transport.
+"""Tests for seam-based `api_stream` session-runner behavior.
 
-These cases cover the live-like session loop using seam loaders, leaving the
-real local HTTP HLS transport behavior in its own dedicated file.
+These cases focus on the runner's live-session orchestration in
+`src/session_runner.py` while avoiding real HTTP/HLS transport. They cover the
+same lifecycle surface with deterministic seam loaders, leaving transport-heavy
+coverage to `tests/test_session_runner_api_stream_http_hls.py`.
 """
 
 from pathlib import Path
