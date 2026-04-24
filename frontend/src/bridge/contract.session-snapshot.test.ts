@@ -1,3 +1,8 @@
+/**
+ * Session-snapshot compatibility tests for the public bridge contract facade
+ * and the fail-closed nested payload handling owned by `contractSessionSnapshot`.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 
 import { createNormalizedBridge, normalizeSessionSnapshot, ok } from "./contract";

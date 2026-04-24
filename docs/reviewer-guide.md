@@ -21,13 +21,22 @@ Start here if you care most about media ingest, HLS behavior, and trust-policy
 boundaries.
 
 - [`src/stream_loader.py`](../src/stream_loader.py)
+- [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py)
+- [`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py)
+- [`src/stream_loader_fakes.py`](../src/stream_loader_fakes.py)
 - [`src/source_validation.py`](../src/source_validation.py)
 - [`frontend/electron/hlsProxy.mjs`](../frontend/electron/hlsProxy.mjs)
 - [`frontend/electron/main.mjs`](../frontend/electron/main.mjs)
+- [`frontend/electron/fastApiStartupOrchestrator.mjs`](../frontend/electron/fastApiStartupOrchestrator.mjs)
+- [`frontend/electron/fastApiRuntimePolicy.mjs`](../frontend/electron/fastApiRuntimePolicy.mjs)
+- [`frontend/electron/localMediaRequestPolicy.mjs`](../frontend/electron/localMediaRequestPolicy.mjs)
+- [`frontend/electron/localMediaResponses.mjs`](../frontend/electron/localMediaResponses.mjs)
 
 Key review themes:
 
 - `main.mjs` should read mostly as composition/wiring, not backend-policy detail
+- startup orchestration vs low-level process/runtime policy ownership
+- request classification vs response generation on `local-media://`
 - source validation and trust policy
 - reconnect and failure policy
 - temp-file lifecycle
@@ -40,6 +49,8 @@ Start here if you care most about monitoring lifecycle, progress semantics, and
 persistence.
 
 - [`src/session_runner.py`](../src/session_runner.py)
+- [`src/session_runner_discovery.py`](../src/session_runner_discovery.py)
+- [`src/session_runner_progress.py`](../src/session_runner_progress.py)
 - [`src/session_io.py`](../src/session_io.py)
 - [`src/session_models.py`](../src/session_models.py)
 - [`src/processor.py`](../src/processor.py)
@@ -47,6 +58,7 @@ persistence.
 Key review themes:
 
 - session start/stop/cancel/fail behavior
+- local discovery vs lifecycle ownership
 - progress snapshots and persisted state
 - dedup/replay handling
 - detector/rule orchestration
@@ -59,6 +71,10 @@ Start here if you care most about operator clarity and runtime diagnostics.
 - [`frontend/src/components/SessionStatusPanel.tsx`](../frontend/src/components/SessionStatusPanel.tsx)
 - [`frontend/src/hooks/usePlaybackSource.ts`](../frontend/src/hooks/usePlaybackSource.ts)
 - [`frontend/src/hooks/useMonitoringSession.ts`](../frontend/src/hooks/useMonitoringSession.ts)
+- [`frontend/electron/playbackSourcePolicy.mjs`](../frontend/electron/playbackSourcePolicy.mjs)
+- [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
+- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
+- [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
 
 Key review themes:
 
@@ -66,6 +82,7 @@ Key review themes:
 - separation of playback vs monitoring failure states
 - operator diagnostics during retrying and terminal failures
 - frontend/backend contract alignment
+- bridge normalization vs transport fallback ownership
 
 ## Current Honest Project State
 

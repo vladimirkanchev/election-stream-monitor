@@ -1,3 +1,8 @@
+/**
+ * Success-path tests for the public bridge contract facade and the positive
+ * normalization paths delegated to detector and playback-source helpers.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { LocalBridge } from "../types";

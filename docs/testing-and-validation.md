@@ -16,6 +16,7 @@ The Python suite covers:
 - session runner lifecycle
 - session persistence and snapshot assembly
 - `api_stream` validation and loading
+- loader contract helpers and deterministic seam behavior
 - HLS/provider edge cases and soak-oriented scenarios
 
 Common local command:
@@ -57,15 +58,35 @@ Backend/API contract checks:
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - populated session snapshot response shape
+- `tests/test_stream_loader_contracts.py`
+  - `api_stream` contract-builder consistency
+  - loader seam helper invariants
+  - replay/identity helper behavior
+- `tests/test_stream_loader_http_hls_core.py`
+  - ordinary playlist parsing, variant resolution, and progression behavior
+- `tests/test_stream_loader_http_hls_reconnect.py`
+  - reconnect, replay de-duplication, and moving-window recovery behavior
+- `tests/test_stream_loader_http_hls_limits.py`
+  - runtime/fetch/temp-budget enforcement and cleanup guarantees
 
 Frontend contract checks:
 
 - `frontend/src/bridge/contract.success.test.ts`
   - bridge success normalization
+  - detector and playback-source normalization
 - `frontend/src/bridge/contract.errors.test.ts`
   - typed bridge failures
+  - transport-envelope error normalization
+  - bridge error payload fallback and typed metadata preservation
 - `frontend/src/bridge/contract.session-snapshot.test.ts`
   - session snapshot compatibility
+  - fail-closed nested payload handling
+- `frontend/src/bridge/transport.test.ts`
+  - transport selection and demo fallback behavior
+- `frontend/src/hooks/useMonitoringSession.test.tsx`
+  - hook behavior on top of normalized bridge snapshots and typed failures
+- `frontend/src/hooks/usePlaybackSource.test.tsx`
+  - hook behavior on top of normalized playback-source resolution
 - `frontend/src/uiErrors.test.ts`
   - operator-facing error wording
   - `api_stream` status/error interpretation
@@ -81,6 +102,20 @@ Frontend contract checks:
 - `frontend/electron/bridgeResponses.test.mjs`
   - Electron bridge success/error envelope mapping
   - structured bridge payload expectations for lifecycle operations
+- `frontend/electron/bridgeHandlerRegistry.test.mjs`
+  - current IPC channel map and shared runtime-policy wrapping
+- `frontend/electron/fastApiClient.test.mjs`
+  - FastAPI JSON request/response shaping
+- `frontend/electron/fastApiStartupOrchestrator.test.mjs`
+  - startup composition across process management, readiness checks, and policy
+- `frontend/electron/playbackSourcePolicy.test.mjs`
+  - renderer-safe playback URL adaptation
+- `frontend/electron/localMediaResponses.test.mjs`
+  - concrete `local-media://` file/range response helpers
+- `frontend/electron/localMediaRequestPolicy.test.mjs`
+  - `local-media://` request classification and routing policy
+- `frontend/electron/hlsProxy.test.mjs`
+  - remote HLS manifest rewriting and opaque proxy-token behavior
 
 Use these focused checks when changing:
 
@@ -88,7 +123,14 @@ Use these focused checks when changing:
 - session snapshot fields
 - bridge error payloads
 - frontend normalization logic
+- frontend transport selection and demo fallback behavior
+- bridge helper ownership or validator-sharing inside the normalized contract layer
 - Electron transport fallback or bridge-envelope behavior
+- Electron startup orchestration, readiness policy, or process ownership
+- Electron bridge-handler registration or playback URL adaptation
+- `local-media://` protocol routing/response behavior
+- `api_stream` contract builders or loader helper semantics
+- concrete HTTP/HLS reconnect, cleanup, or limit behavior
 
 Useful focused commands:
 
@@ -99,6 +141,11 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p n
 ```bash
 cd frontend
 npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.test.ts src/uiErrors.test.ts
+```
+
+```bash
+cd frontend
+npm run test:electron-bridge
 ```
 
 Frontend migration checkpoint:
@@ -165,17 +212,29 @@ If one side of the contract changes, do not rely on only backend tests or only
 frontend tests. Run at least one focused backend contract check and one focused
 frontend normalization check together.
 
+Note:
+
+- some Electron/HLS tests bind loopback listeners on `127.0.0.1`
+- those cases may fail inside stricter sandboxes even when the code is healthy
+- if that happens, rerun the same targeted suite in a normal local shell
+
 ## Lifecycle Coverage Audit
 
 Current lifecycle coverage is already spread across the main layers:
 
 - backend tests
-  - `tests/test_session_runner.py`
+  - `tests/test_session_runner_local.py`
     - start-to-completed flow
     - mid-run cancel leading to `cancelled`
     - runtime failure persistence
     - validation failure persistence
-    - `api_stream` terminal failure and cancel scenarios
+    - local discovery and slice-expansion behavior now owned by
+      `session_runner_discovery`
+  - `tests/test_session_runner_api_stream_basic.py`
+    - seam-loader `api_stream` completion, cancel, cleanup, and failure paths
+    - runner-owned live progress and summary logging behavior
+  - `tests/test_session_runner_api_stream_http_hls.py`
+    - real HTTP/HLS-backed `api_stream` transport and lifecycle integration
   - `tests/test_session_io.py`
     - invalid terminal transitions
     - completed-progress consistency checks
