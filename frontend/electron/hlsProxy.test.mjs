@@ -1,3 +1,13 @@
+/**
+ * Focused tests for opaque remote-HLS proxy token and manifest rewrite logic.
+ *
+ * This file complements:
+ *
+ * - `playbackSourcePolicy.test.mjs` for renderer URL adaptation
+ * - `localMediaRequestPolicy.test.mjs` for protocol routing
+ * - `localMediaResponses.test.mjs` for concrete protocol response helpers
+ */
+
 import { createServer } from "node:http";
 
 import { describe, expect, it } from "vitest";

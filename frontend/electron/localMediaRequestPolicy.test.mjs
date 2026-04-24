@@ -1,3 +1,11 @@
+/**
+ * Focused tests for request classification on the `local-media://` protocol.
+ *
+ * These cases stay separate from `localMediaResponses.test.mjs` so protocol
+ * routing policy and concrete response generation can be reasoned about
+ * independently.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 
 import {

@@ -1,3 +1,11 @@
+/**
+ * Legacy fallback/readiness tests for the Electron FastAPI bridge helpers.
+ *
+ * These cases now complement the extracted `fastApiClient.mjs` and
+ * `playbackSourcePolicy.mjs` tests by covering the older fallback seam that is
+ * still useful for transport-level behavior and migration safety checks.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 
 import { ApiHttpError } from "./apiErrors.mjs";

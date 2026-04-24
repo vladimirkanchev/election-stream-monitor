@@ -1,22 +1,19 @@
-import { access, readFile, stat } from "node:fs/promises";
-import { constants as fsConstants, createReadStream } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { Readable } from "node:stream";
-import { ApiHttpError } from "./apiErrors.mjs";
-import { handleBridgeOperation, isApiErrorPayload } from "./bridgeResponses.mjs";
+import { fileURLToPath } from "node:url";
+import { handleBridgeOperation } from "./bridgeResponses.mjs";
+import { registerFastApiBridgeHandlers } from "./bridgeHandlerRegistry.mjs";
+import { createFastApiClient } from "./fastApiClient.mjs";
 import { createFastApiStartupOrchestrator } from "./fastApiStartupOrchestrator.mjs";
 import {
-  createRemotePlaybackRequestHeaders,
   createRemoteHlsProxyRegistry,
   isRemoteHlsUrl,
-  parseRemoteHlsProxyPayload,
 } from "./hlsProxy.mjs";
+import { createLocalMediaResponseHandlers } from "./localMediaResponses.mjs";
 import {
   createLocalMediaProtocolHandler,
-  resolveRemoteHlsProxyTarget,
 } from "./localMediaRequestPolicy.mjs";
+import { toRendererMediaUrl } from "./playbackSourcePolicy.mjs";
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, ipcMain, protocol } = require("electron");
@@ -24,12 +21,11 @@ const { app, BrowserWindow, ipcMain, protocol } = require("electron");
 /**
  * Electron main-process bridge for the local-first monitoring app.
  *
- * Responsibilities here are intentionally narrow:
+ * Responsibilities here are intentionally narrow and mostly compositional:
  *
  * - compose the Electron desktop runtime from focused helper modules
  * - own local FastAPI startup/readiness for the desktop runtime
- * - translate IPC requests into FastAPI-backed backend calls under one shared
- *   runtime policy
+ * - register the shared bridge/runtime wiring used by the renderer IPC surface
  * - expose a privileged `local-media://` protocol for local files
  * - proxy remote HLS assets through that local scheme when renderer playback
  *   would otherwise fail because of CORS
@@ -37,6 +33,13 @@ const { app, BrowserWindow, ipcMain, protocol } = require("electron");
  * Business rules such as source validation, monitoring lifecycle, and alert
  * semantics stay on the Python/backend side. Python CLI entry points remain
  * available for tooling/debugging, not as the normal runtime transport.
+ *
+ * Detailed ownership now lives in:
+ *
+ * - `bridgeHandlerRegistry.mjs` for IPC channel registration
+ * - `fastApiClient.mjs` for FastAPI request/response shaping
+ * - `playbackSourcePolicy.mjs` for renderer-safe playback URLs
+ * - `localMediaResponses.mjs` for concrete protocol responses
  */
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,90 +80,16 @@ app.commandLine.appendSwitch("ignore-gpu-blocklist");
 app.commandLine.appendSwitch("disable-features", "UseOzonePlatform");
 app.commandLine.appendSwitch("ozone-platform", "x11");
 
-async function callApi(path, options = {}) {
-  const response = await fetch(`${FASTAPI_BASE_URL}${path}`, {
-    headers: {
-      Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers ?? {}),
-    },
-    ...options,
-  });
-
-  const contentType = response.headers.get("content-type") ?? "";
-  const isJson = contentType.includes("application/json");
-
-  let payload = null;
-  if (isJson) {
-    payload = await response.json();
-  } else {
-    const text = await response.text();
-    payload = text.length > 0 ? text : null;
-  }
-
-  if (!response.ok) {
-    const message = isApiErrorPayload(payload)
-      ? payload.detail
-      : `FastAPI request failed: ${response.status}`;
-    throw new ApiHttpError(message, {
-      status: response.status,
-      apiPayload: isApiErrorPayload(payload) ? payload : null,
-    });
-  }
-
-  if (!isJson) {
-    throw new ApiHttpError("FastAPI returned a non-JSON response", {
-      status: response.status,
-    });
-  }
-
-  return payload;
-}
-
-async function apiGetHealth() {
-  return callApi("/health");
-}
-
-async function apiListDetectors(mode) {
-  const params = new URLSearchParams();
-  if (mode) {
-    params.set("mode", mode);
-  }
-  const query = params.toString();
-  return callApi(`/detectors${query ? `?${query}` : ""}`);
-}
-
-async function apiReadSession(sessionId) {
-  return callApi(`/sessions/${encodeURIComponent(sessionId)}`);
-}
-
-async function apiResolvePlaybackSource(input) {
-  return callApi("/playback/resolve", {
-    method: "POST",
-    body: JSON.stringify({
-      mode: input.source.kind,
-      input_path: input.source.path,
-      current_item: input.currentItem,
-    }),
-  });
-}
-
-async function apiStartSession(input) {
-  return callApi("/sessions", {
-    method: "POST",
-    body: JSON.stringify({
-      mode: input.source.kind,
-      input_path: input.source.path,
-      selected_detectors: input.selectedDetectors ?? [],
-    }),
-  });
-}
-
-async function apiCancelSession(sessionId) {
-  return callApi(`/sessions/${encodeURIComponent(sessionId)}/cancel`, {
-    method: "POST",
-  });
-}
+const {
+  apiGetHealth,
+  apiListDetectors,
+  apiReadSession,
+  apiResolvePlaybackSource,
+  apiStartSession,
+  apiCancelSession,
+} = createFastApiClient({
+  baseUrl: FASTAPI_BASE_URL,
+});
 
 // `main.mjs` composes the startup/readiness seam but does not own its
 // low-level process mechanics or readiness policy details.
@@ -174,31 +103,15 @@ const fastApiStartup = createFastApiStartupOrchestrator({
   apiGetHealth,
 });
 
-function isAllowedRemotePlaybackSource(source) {
-  return source.startsWith("http://") || source.startsWith("https://");
-}
+const { handleRemoteHlsProxyRequest, handleLocalMediaRequest } = createLocalMediaResponseHandlers({
+  remoteHlsProxyRegistry,
+});
 
-function toRendererMediaUrl(source) {
-  if (!source) {
-    return null;
-  }
-
-  if (isAllowedRemotePlaybackSource(source)) {
-    if (isRemoteHlsUrl(source)) {
-      return remoteHlsProxyRegistry.register(source);
-    }
-    return source;
-  }
-
-  // Only the backend decides which remote schemes are safe. Anything else that
-  // still looks like a scheme here is rejected instead of being forwarded into
-  // the renderer as a playable source.
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(source)) {
-    throw new Error("Unsupported playback source scheme returned by backend");
-  }
-
-  const fileUrl = pathToFileURL(source);
-  return `local-media://media${fileUrl.pathname}`;
+function resolveRendererPlaybackSource(source) {
+  return toRendererMediaUrl(source, {
+    isRemoteHlsUrl,
+    registerRemoteHlsProxyUrl: (assetUrl) => remoteHlsProxyRegistry.register(assetUrl),
+  });
 }
 
 function createWindow() {
@@ -224,55 +137,16 @@ function createWindow() {
 }
 
 function registerBridgeHandlers() {
-  ipcMain.handle("bridge:list-detectors", async (_event, mode) => {
-    return handleBridgeOperation(
-      "DETECTOR_CATALOG_FAILED",
-      "Detector catalog request failed",
-      async () => fastApiStartup.runWithRuntimePolicy(
-        () => apiListDetectors(mode),
-      ),
-    );
-  });
-
-  ipcMain.handle("bridge:start-session", async (_event, input) => {
-    return handleBridgeOperation(
-      "SESSION_START_FAILED",
-      "Session start request failed",
-      async () => fastApiStartup.runWithRuntimePolicy(
-        () => apiStartSession(input),
-      ),
-    );
-  });
-
-  ipcMain.handle("bridge:read-session", async (_event, sessionId) => {
-    return handleBridgeOperation(
-      "SESSION_READ_FAILED",
-      "Session read request failed",
-      async () => fastApiStartup.runWithRuntimePolicy(
-        () => apiReadSession(sessionId),
-      ),
-    );
-  });
-
-  ipcMain.handle("bridge:cancel-session", async (_event, sessionId) => {
-    return handleBridgeOperation(
-      "SESSION_CANCEL_FAILED",
-      "Session cancel request failed",
-      async () => fastApiStartup.runWithRuntimePolicy(
-        () => apiCancelSession(sessionId),
-      ),
-    );
-  });
-
-  ipcMain.handle("bridge:resolve-playback-source", async (_event, input) => {
-    return handleBridgeOperation(
-      "PLAYBACK_SOURCE_RESOLUTION_FAILED",
-      "Playback source resolution failed",
-      async () => fastApiStartup.runWithRuntimePolicy(async () => {
-        const result = await apiResolvePlaybackSource(input);
-        return toRendererMediaUrl(result.source);
-      }),
-    );
+  registerFastApiBridgeHandlers({
+    ipcMain,
+    handleBridgeOperation,
+    runWithRuntimePolicy: (operation) => fastApiStartup.runWithRuntimePolicy(operation),
+    apiListDetectors,
+    apiStartSession,
+    apiReadSession,
+    apiCancelSession,
+    apiResolvePlaybackSource,
+    resolveRendererPlaybackSource,
   });
 }
 
@@ -315,213 +189,6 @@ async function initializeDesktopRuntime() {
 
   registerLocalMediaProtocol();
   createWindow();
-}
-
-async function handleRemoteHlsProxyRequest(request, requestUrl) {
-  // Proxy tokens are opaque renderer-facing identifiers. Only the main
-  // process knows the upstream target URL they resolve to.
-  const resolvedTarget = resolveRemoteHlsProxyTarget(requestUrl, remoteHlsProxyRegistry);
-  if (resolvedTarget.kind === "error") {
-    return resolvedTarget.response;
-  }
-  const { targetUrl } = resolvedTarget;
-
-  console.info("[remote-hls-proxy]", request.method, targetUrl);
-
-  try {
-    const remoteResponse = await fetchRemotePlaybackAsset(targetUrl, request);
-    const proxyPayload = await parseRemoteHlsProxyPayload({
-      targetUrl,
-      remoteResponse,
-      registerProxyUrl: (assetUrl) => remoteHlsProxyRegistry.register(assetUrl),
-      guessContentType,
-    });
-    console.info(
-      "[remote-hls-proxy] upstream response",
-      JSON.stringify({
-        targetUrl,
-        status: proxyPayload.status,
-        contentType: proxyPayload.contentType,
-      }),
-    );
-
-    if (proxyPayload.kind === "error") {
-      if (proxyPayload.preview) {
-        console.error(
-          "[remote-hls-proxy] upstream error preview",
-          JSON.stringify({
-            targetUrl,
-            status: proxyPayload.status,
-            preview: proxyPayload.preview,
-          }),
-        );
-      }
-      return new Response(proxyPayload.message, { status: proxyPayload.status });
-    }
-
-    if (proxyPayload.kind === "invalid_playlist") {
-      console.error(
-        "[remote-hls-proxy] invalid playlist response",
-        JSON.stringify({
-          targetUrl,
-          contentType: proxyPayload.contentType,
-          upstreamKind: proxyPayload.upstreamKind,
-          preview: proxyPayload.preview,
-        }),
-      );
-      return new Response(proxyPayload.message, { status: proxyPayload.status });
-    }
-
-    if (proxyPayload.kind === "playlist") {
-      return buildPlaylistResponse(proxyPayload.bodyText, proxyPayload.contentType, proxyPayload.status);
-    }
-
-    return buildProxyAssetResponse(remoteResponse, proxyPayload);
-  } catch (error) {
-    console.error("[remote-hls-proxy] failed", targetUrl, error);
-    return new Response("Failed to proxy remote HLS asset", { status: 502 });
-  }
-}
-
-async function fetchRemotePlaybackAsset(targetUrl, request) {
-  return fetch(targetUrl, {
-    method: "GET",
-    headers: createRemotePlaybackRequestHeaders(request.headers.get("range")),
-  });
-}
-
-async function handleLocalMediaRequest(request, filePath) {
-  // The local-media protocol serves both checked-in local fixtures and
-  // backend-resolved local file paths through one renderer-safe URL space.
-  console.info("[local-media]", request.method, filePath);
-
-  try {
-    await access(filePath, fsConstants.R_OK);
-  } catch {
-    console.error("[local-media] missing file", filePath);
-    return new Response("Media file not found", { status: 404 });
-  }
-
-  const extension = path.extname(filePath).toLowerCase();
-  if (extension === ".m3u8") {
-    return buildLocalPlaylistResponse(filePath);
-  }
-  return buildLocalBinaryMediaResponse(filePath, request, extension);
-}
-
-async function buildLocalPlaylistResponse(filePath) {
-  return buildPlaylistResponse(
-    await readFile(filePath, "utf-8"),
-    guessContentType(filePath),
-  );
-}
-
-async function buildLocalBinaryMediaResponse(filePath, request, extension) {
-  // We currently support range responses primarily for MP4 playback, because
-  // that is the path Chromium most often probes with byte-range requests.
-  const statResult = await stat(filePath);
-  const totalSize = statResult.size;
-  const range = parseLocalMediaRangeRequest({
-    rangeHeader: request.headers.get("range"),
-    totalSize,
-    allowPartialResponse: extension === ".mp4",
-  });
-
-  if (range.kind === "invalid") {
-    return new Response("Requested range not satisfiable", {
-      status: 416,
-      headers: {
-        "content-range": `bytes */${totalSize}`,
-      },
-    });
-  }
-
-  const headers = new Headers({
-    "accept-ranges": "bytes",
-    "cache-control": "no-store",
-    "content-type": guessContentType(filePath),
-    "content-length": String(range.end - range.start + 1),
-  });
-  if (range.status === 206) {
-    headers.set("content-range", `bytes ${range.start}-${range.end}/${totalSize}`);
-  }
-
-  const stream = createReadStream(filePath, { start: range.start, end: range.end });
-  return new Response(Readable.toWeb(stream), {
-    status: range.status,
-    headers,
-  });
-}
-
-function parseLocalMediaRangeRequest({ rangeHeader, totalSize, allowPartialResponse }) {
-  // Keep range parsing intentionally conservative. If we cannot parse a sane
-  // range, the caller either falls back to a whole-file response or returns a
-  // standard 416 for out-of-bounds ranges.
-  let start = 0;
-  let end = totalSize > 0 ? totalSize - 1 : 0;
-  let status = 200;
-
-  if (allowPartialResponse && rangeHeader) {
-    const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
-    if (match) {
-      if (match[1]) {
-        start = Number.parseInt(match[1], 10);
-      }
-      if (match[2]) {
-        end = Number.parseInt(match[2], 10);
-      }
-      if (!match[2] && totalSize > 0) {
-        end = totalSize - 1;
-      }
-      status = 206;
-    }
-  }
-
-  if (start > end || start >= totalSize) {
-    return { kind: "invalid" };
-  }
-
-  return {
-    kind: "ok",
-    start,
-    end,
-    status,
-  };
-}
-
-function buildPlaylistResponse(playlistBody, contentType, status = 200) {
-  // Playlist responses are always no-store because both local HLS fixtures and
-  // proxied remote playlists can change between refreshes.
-  return new Response(playlistBody, {
-    status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": contentType,
-    },
-  });
-}
-
-function buildProxyAssetResponse(remoteResponse, proxyPayload) {
-  // Non-playlist assets already carry the content stream from the upstream
-  // fetch, so the main process only needs to attach the sanitized headers.
-  return new Response(remoteResponse.body, {
-    status: proxyPayload.status,
-    headers: proxyPayload.headers,
-  });
-}
-
-function guessContentType(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
-  if (extension === ".mp4") {
-    return "video/mp4";
-  }
-  if (extension === ".m3u8") {
-    return "application/vnd.apple.mpegurl";
-  }
-  if (extension === ".ts") {
-    return "video/mp2t";
-  }
-  return "application/octet-stream";
 }
 
 registerBridgeHandlers();
