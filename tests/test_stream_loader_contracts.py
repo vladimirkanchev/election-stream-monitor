@@ -1,7 +1,13 @@
-"""Tests for `api_stream` loader contracts, helper builders, and seam loaders.
+"""Tests for `api_stream` contract helpers and deterministic seam loaders.
 
-This file keeps the lightweight source-of-truth checks separate from the
-heavier concrete HTTP HLS runtime behavior tests.
+This file is the lightweight source-of-truth check for the split loader area:
+
+- public facade behavior in `src/stream_loader.py`
+- shared builder/helper semantics in `src/stream_loader_contracts.py`
+- deterministic seam loaders in `src/stream_loader_fakes.py`
+
+The heavier concrete HTTP/HLS runtime behavior lives in the dedicated
+`test_stream_loader_http_hls_*` files.
 """
 
 from pathlib import Path
@@ -12,33 +18,28 @@ import config
 import stream_loader
 from analyzer_contract import AnalysisSlice
 from stream_loader import (
-    ApiStreamDedupPolicy,
-    ApiStreamFailureSemantics,
-    ApiStreamHttpLoaderContract,
-    ApiStreamLoaderExceptionPolicy,
-    ApiStreamLocalHttpTestHarnessContract,
-    ApiStreamProgressSemantics,
     FakeApiStreamEvent,
     FakeApiStreamLoader,
-    PlaceholderApiStreamLoader,
+    HttpHlsApiStreamLoader,
     StaticApiStreamLoader,
     build_api_stream_analysis_slice,
-    build_api_stream_chunk_identity,
-    build_api_stream_dedup_policy,
-    build_api_stream_failure_semantics,
-    build_api_stream_http_loader_contract,
-    build_api_stream_loader_exception_policy,
-    build_api_stream_local_http_test_harness_contract,
-    build_api_stream_progress_semantics,
-    build_api_stream_runtime_policy,
+    create_api_stream_loader,
+    build_api_stream_playback_contract,
     build_api_stream_slice_identity_key,
     build_api_stream_source_contract,
-    build_api_stream_temp_file_policy,
+    build_api_stream_start_session_contract,
     build_api_stream_temp_session_dir,
     cleanup_api_stream_temp_session_dir,
     collect_api_stream_slices,
     select_api_stream_master_playlist_variant,
     validate_api_stream_chunk_sequence,
+)
+from stream_loader_contracts import (
+    ApiStreamHttpLoaderContract,
+    build_api_stream_chunk_identity,
+    build_api_stream_http_loader_contract,
+    build_api_stream_runtime_policy,
+    build_api_stream_temp_file_policy,
 )
 
 @pytest.mark.parametrize(
@@ -51,44 +52,6 @@ from stream_loader import (
                 "accepted_playlist_types": ("media", "master"),
                 "master_playlist_policy": "first_variant",
                 "playlist_poll_interval_sec": 2.0,
-            },
-        ),
-        (
-            build_api_stream_local_http_test_harness_contract,
-            ApiStreamLocalHttpTestHarnessContract,
-            {
-                "server_kind": "local_http",
-                "fixture_format": "hls",
-                "playlist_entrypoint": "index.m3u8",
-            },
-        ),
-        (
-            build_api_stream_dedup_policy,
-            ApiStreamDedupPolicy,
-            {
-                "storage_scope": "loader_and_session",
-                "persisted_session_side": True,
-                "replayed_chunk_behavior": "skip_before_persistence",
-            },
-        ),
-        (
-            build_api_stream_loader_exception_policy,
-            ApiStreamLoaderExceptionPolicy,
-            {
-                "skip_inside_loader_failure_kinds": (
-                    "temporary_failure",
-                    "retryable_failure",
-                ),
-                "reconnect_owner": "loader",
-            },
-        ),
-        (
-            build_api_stream_progress_semantics,
-            ApiStreamProgressSemantics,
-            {
-                "running_total_count_mode": "latest_known",
-                "allow_null_total_count": False,
-                "frontend_progress_mode": "live_non_terminal",
             },
         ),
     ],
@@ -125,18 +88,48 @@ def test_select_api_stream_master_playlist_variant_uses_first_variant_policy() -
     assert selected == "https://example.com/live/variant-low.m3u8"
 
 
-def test_build_api_stream_failure_semantics_matches_current_live_contract() -> None:
-    """The live-failure helper should name status and reconnect expectations."""
-    semantics = build_api_stream_failure_semantics()
+def test_build_api_stream_runtime_policy_matches_current_live_contract() -> None:
+    """The runtime policy should keep the current reconnect and fetch budget settings."""
+    policy = build_api_stream_runtime_policy()
     reconnect_budget = build_api_stream_runtime_policy().max_reconnect_attempts
 
-    assert isinstance(semantics, ApiStreamFailureSemantics)
-    assert semantics.temporary_status == "running"
-    assert semantics.retryable_status == "running"
-    assert semantics.terminal_status == "failed"
-    assert semantics.duplicate_results_allowed is False
-    assert semantics.duplicate_alerts_allowed is False
-    assert semantics.max_reconnect_attempts == reconnect_budget
+    assert set(policy.allowed_schemes) == {"http", "https"}
+    assert policy.max_reconnect_attempts == reconnect_budget
+    assert policy.max_fetch_bytes == config.API_STREAM_MAX_FETCH_BYTES
+    assert policy.max_session_runtime_sec == config.API_STREAM_MAX_SESSION_RUNTIME_SEC
+
+
+def test_api_stream_public_contract_builders_share_one_validated_input_path() -> None:
+    """Source/start/playback builders should normalize the same validated URL once."""
+    raw_input_path = "  https://example.com/live/playlist.m3u8  "
+
+    source_contract = build_api_stream_source_contract(raw_input_path)
+    start_contract = build_api_stream_start_session_contract(
+        input_path=raw_input_path,
+        selected_detectors=["video_blur"],
+    )
+    playback_contract = build_api_stream_playback_contract(raw_input_path)
+
+    assert source_contract.input_path == "https://example.com/live/playlist.m3u8"
+    assert start_contract.input_path == source_contract.input_path
+    assert playback_contract.source == source_contract.input_path
+
+
+def test_api_stream_public_contract_builders_reject_invalid_urls_consistently() -> None:
+    """Shared validation should fail consistently across public builder helpers."""
+    invalid_input_path = "https://example.com/live/channel"
+
+    with pytest.raises(ValueError, match="direct .m3u8 or .mp4 URL"):
+        build_api_stream_source_contract(invalid_input_path)
+
+    with pytest.raises(ValueError, match="direct .m3u8 or .mp4 URL"):
+        build_api_stream_start_session_contract(
+            input_path=invalid_input_path,
+            selected_detectors=["video_metrics"],
+        )
+
+    with pytest.raises(ValueError, match="direct .m3u8 or .mp4 URL"):
+        build_api_stream_playback_contract(invalid_input_path)
 
 def test_build_api_stream_chunk_identity_uses_readable_default_current_item() -> None:
     """Live chunks should have deterministic readable item names even without upstream names."""
@@ -312,14 +305,14 @@ def test_fake_loader_raises_on_terminal_stop() -> None:
 def test_fake_loader_exhausts_retry_budget_for_retryable_failures() -> None:
     """Retryable failures should consume reconnect budget before becoming terminal."""
     source = build_api_stream_source_contract("https://example.com/live/playlist.m3u8")
-    semantics = build_api_stream_failure_semantics()
+    reconnect_budget = build_api_stream_runtime_policy().max_reconnect_attempts
     loader = FakeApiStreamLoader(
         [
             FakeApiStreamEvent(
                 kind="retryable_failure",
                 message=f"retry-{index}",
             )
-            for index in range(semantics.max_reconnect_attempts + 1)
+            for index in range(reconnect_budget + 1)
         ]
     )
 
@@ -418,14 +411,29 @@ def test_select_api_stream_master_playlist_variant_rejects_empty_variant_lists()
         select_api_stream_master_playlist_variant([])
 
 
-def test_placeholder_loader_yields_no_slices_until_real_loading_exists() -> None:
-    """The default placeholder should keep the seam explicit without fake ingestion."""
-    loader = PlaceholderApiStreamLoader()
+def test_static_loader_without_slices_yields_no_work() -> None:
+    """An empty static loader should keep the default seam simple and explicit."""
+    loader = StaticApiStreamLoader()
     loader.connect(build_api_stream_source_contract("https://example.com/live/playlist.m3u8"))
 
     assert list(loader.iter_slices()) == []
 
     loader.close()
+
+
+def test_create_api_stream_loader_uses_static_loader_without_session_id() -> None:
+    """Facade loader selection should use the empty deterministic seam by default."""
+    loader = create_api_stream_loader()
+
+    assert isinstance(loader, StaticApiStreamLoader)
+    assert loader.accepted_slice_count() == 0
+
+
+def test_create_api_stream_loader_uses_http_hls_loader_for_sessions() -> None:
+    """Session-scoped loader selection should still choose the real HTTP/HLS loader."""
+    loader = create_api_stream_loader("session-live-123")
+
+    assert isinstance(loader, HttpHlsApiStreamLoader)
 
 
 def test_static_loader_yields_supplied_slices_after_connect(tmp_path: Path) -> None:

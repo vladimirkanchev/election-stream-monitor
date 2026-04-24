@@ -1,7 +1,8 @@
-"""Tests for HTTP HLS limits, temp cleanup, and longer-running stability behavior.
+"""Tests for HTTP/HLS limits, temp cleanup, and longer-running stability.
 
 These cases isolate budget exhaustion, cleanup guarantees, and soak/restart
-coverage from the loader's ordinary fetch and reconnect paths.
+coverage from the loader's ordinary fetch and reconnect paths so failures can
+be attributed to one concern more quickly.
 """
 
 from dataclasses import replace
@@ -10,9 +11,13 @@ from pathlib import Path
 import pytest
 
 import config
-import stream_loader
+import stream_loader_http_hls
 from analyzer_contract import AnalysisSlice
-from session_io import read_api_stream_seen_chunk_keys, request_session_cancel
+from session_io import (
+    append_api_stream_seen_chunk_key,
+    read_api_stream_seen_chunk_keys,
+    request_session_cancel,
+)
 from stream_loader import (
     HttpHlsApiStreamLoader,
     build_api_stream_source_contract,
@@ -81,9 +86,9 @@ def _configure_http_hls_limits_test(
     if max_fetch_bytes is not None:
         monkeypatch.setattr(config, "API_STREAM_MAX_FETCH_BYTES", max_fetch_bytes)
     if sleep is not None:
-        monkeypatch.setattr(stream_loader.time, "sleep", sleep)
+        monkeypatch.setattr(stream_loader_http_hls.time, "sleep", sleep)
     if monotonic is not None:
-        monkeypatch.setattr(stream_loader.time, "monotonic", monotonic)
+        monkeypatch.setattr(stream_loader_http_hls.time, "monotonic", monotonic)
 
 
 def _playlist(*lines: str) -> str:
@@ -457,7 +462,7 @@ def test_http_hls_loader_recovers_from_interrupted_run_by_clearing_stale_temp_me
         temp_dir = build_api_stream_temp_session_dir(session_id)
         temp_dir.mkdir(parents=True, exist_ok=True)
         (temp_dir / "orphan-segment.ts").write_bytes(b"stale")
-        stream_loader.append_api_stream_seen_chunk_key(
+        append_api_stream_seen_chunk_key(
             session_id,
             (source.input_path, 0, "segment_000.ts"),
         )
@@ -516,7 +521,7 @@ def test_http_hls_loader_enforces_fetch_timeout_budget_cleanly(
     )
 
     monkeypatch.setattr(
-        stream_loader,
+        stream_loader_http_hls,
         "urlopen",
         lambda request, timeout=None: (_ for _ in ()).throw(TimeoutError()),
     )
@@ -723,7 +728,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_reconnect
 
     with _serve_local_hls(routes) as base_url:
         loader, source = _build_loader_source(base_url, session_id)
-        original_urlopen = stream_loader.urlopen
+        original_urlopen = stream_loader_http_hls.urlopen
         playlist_fetch_count = 0
 
         def flaky_urlopen(request, timeout=None):
@@ -735,7 +740,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_reconnect
                     raise TimeoutError()
             return original_urlopen(request, timeout=timeout)
 
-        monkeypatch.setattr(stream_loader, "urlopen", flaky_urlopen)
+        monkeypatch.setattr(stream_loader_http_hls, "urlopen", flaky_urlopen)
         slices = collect_api_stream_slices(loader, source)
 
     assert [slice_.window_index for slice_ in slices] == [0]
@@ -922,7 +927,7 @@ def test_http_hls_loader_cleans_temp_state_after_reconnect_budget_exhaustion(
     with _serve_local_hls(routes) as base_url:
         loader, source = _build_loader_source(base_url, session_id)
         temp_dir = build_api_stream_temp_session_dir(session_id)
-        original_urlopen = stream_loader.urlopen
+        original_urlopen = stream_loader_http_hls.urlopen
         playlist_fetch_count = 0
 
         def flaky_urlopen(request, timeout=None):
@@ -934,7 +939,7 @@ def test_http_hls_loader_cleans_temp_state_after_reconnect_budget_exhaustion(
                     raise TimeoutError()
             return original_urlopen(request, timeout=timeout)
 
-        monkeypatch.setattr(stream_loader, "urlopen", flaky_urlopen)
+        monkeypatch.setattr(stream_loader_http_hls, "urlopen", flaky_urlopen)
         iterator = iter_api_stream_slices(loader, source)
         first_slice = next(iterator)
         first_slice.file_path.unlink()
@@ -1051,7 +1056,7 @@ def test_http_hls_loader_restart_after_runtime_limit_preserves_persisted_dedup(
                 slice_.file_path.unlink()
 
         second_ticks = iter([0.0, 0.5, 1.0, 1.5])
-        monkeypatch.setattr(stream_loader.time, "monotonic", lambda: next(second_ticks))
+        monkeypatch.setattr(stream_loader_http_hls.time, "monotonic", lambda: next(second_ticks))
 
         second_loader = HttpHlsApiStreamLoader(session_id)
         second_indexes: list[int] = []
