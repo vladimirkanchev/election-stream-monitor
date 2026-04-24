@@ -65,7 +65,7 @@ It is now:
 3. Electron owns local runtime startup/readiness, talks to the local FastAPI
    backend for normal operation, and returns explicit success/error envelopes
    to the frontend transport layer.
-4. [`src/session_runner.py`](../src/session_runner.py) resolves files or slices for the chosen mode.
+4. [`src/session_runner.py`](../src/session_runner.py) coordinates session lifecycle and delegates local discovery/progress shaping to its focused helper modules.
 5. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which detectors are enabled for that mode.
 6. [`src/detectors.py`](../src/detectors.py) produces flat result rows.
 7. [`src/alert_rules.py`](../src/alert_rules.py) decides whether those result rows should create alerts.
@@ -178,18 +178,41 @@ Responsibilities:
 
 ### Session runner
 
-[`src/session_runner.py`](../src/session_runner.py)
+[`src/session_runner.py`](../src/session_runner.py),
+[`src/session_runner_discovery.py`](../src/session_runner_discovery.py),
+[`src/session_runner_progress.py`](../src/session_runner_progress.py)
 
 Responsibilities:
 
-- create and update session state
-- discover inputs for the chosen mode
-- run the processor item by item
-- persist progress, results, and alerts
-- reset rolling rule state at session boundaries
-- enforce the current source validation and local media trust limits
+- keep `src/session_runner.py` as the orchestration layer for validation,
+  lifecycle transitions, per-mode execution, and terminal outcome handling
+- keep local file discovery, playlist expansion, and video-file slice
+  expansion in `src/session_runner_discovery.py`
+- keep progress/status shaping and operator-facing terminal log context in
+  `src/session_runner_progress.py`
+- persist progress, results, and alerts incrementally while resetting rolling
+  rule state at session boundaries
 - route `api_stream` through the dedicated loader seam instead of treating it
   like local file discovery
+
+### API stream loader
+
+[`src/stream_loader.py`](../src/stream_loader.py),
+[`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py),
+[`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py),
+[`src/stream_loader_fakes.py`](../src/stream_loader_fakes.py)
+
+Responsibilities:
+
+- keep the stable, intentionally thin public `api_stream` facade and
+  loader-selection entry point
+- define the shared source/start/playback contract builders and identity helpers
+- own HLS playlist classification, master-variant selection, and media-playlist parsing
+- own retry/reconnect handling, temp-file lifecycle, and replay de-duplication for live chunks
+- keep deterministic seam loaders separate from the concrete HTTP/HLS transport
+
+This keeps live transport behavior explicit and separate from session
+orchestration in the runner.
 
 ### Session persistence
 
@@ -225,9 +248,31 @@ Important parts:
 
 - [`frontend/electron/main.mjs`](../frontend/electron/main.mjs)
   - thin Electron composition/wiring entrypoint
-  - owns high-level bootstrap order, bridge registration, and app lifecycle hooks
+  - owns high-level bootstrap order and app lifecycle hooks
   - delegates FastAPI startup/readiness and playback transport details to focused helpers
   - local media serving and remote HLS proxying for playback
+- [`frontend/electron/fastApiStartupOrchestrator.mjs`](../frontend/electron/fastApiStartupOrchestrator.mjs)
+  - composes backend process startup, readiness polling, and runtime policy
+- [`frontend/electron/fastApiProcessManager.mjs`](../frontend/electron/fastApiProcessManager.mjs)
+  - owns FastAPI process spawning, single-start behavior, and shutdown/reset
+- [`frontend/electron/fastApiRuntimePolicy.mjs`](../frontend/electron/fastApiRuntimePolicy.mjs)
+  - owns timeout, readiness, and unavailable-runtime policy decisions
+- [`frontend/electron/fastApiFallback.mjs`](../frontend/electron/fastApiFallback.mjs)
+  - keeps the older fallback seam explicit for unavailable-runtime scenarios
+- [`frontend/electron/bridgeHandlerRegistry.mjs`](../frontend/electron/bridgeHandlerRegistry.mjs)
+  - current IPC channel map and shared runtime-policy/error-envelope wiring
+- [`frontend/electron/bridgeResponses.mjs`](../frontend/electron/bridgeResponses.mjs)
+  - maps FastAPI/runtime failures into stable Electron bridge envelopes
+- [`frontend/electron/fastApiClient.mjs`](../frontend/electron/fastApiClient.mjs)
+  - thin JSON client for FastAPI bridge calls
+- [`frontend/electron/playbackSourcePolicy.mjs`](../frontend/electron/playbackSourcePolicy.mjs)
+  - renderer-safe playback URL adaptation
+- [`frontend/electron/localMediaRequestPolicy.mjs`](../frontend/electron/localMediaRequestPolicy.mjs)
+  - classifies `local-media://` requests before handing them to concrete responders
+- [`frontend/electron/localMediaResponses.mjs`](../frontend/electron/localMediaResponses.mjs)
+  - concrete local-media file/range responses and remote HLS proxy responses
+  - kept separate from `localMediaRequestPolicy.mjs`, which classifies requests
+    before response generation
 - [`frontend/src/hooks/useSetupState.ts`](../frontend/src/hooks/useSetupState.ts)
   - setup state
 - [`frontend/src/hooks/useMonitoringSession.ts`](../frontend/src/hooks/useMonitoringSession.ts)
@@ -235,10 +280,15 @@ Important parts:
 - [`frontend/src/hooks/usePlaybackSource.ts`](../frontend/src/hooks/usePlaybackSource.ts)
   - playback source and playback state
 - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
-  - explicit bridge envelopes
-  - normalization and typed transport errors
+  - stable public bridge-normalization entrypoint
+- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
+  - explicit bridge envelopes and typed transport errors
+- [`frontend/src/bridge/contractDetectors.ts`](../frontend/src/bridge/contractDetectors.ts)
+  - detector catalog normalization
+- [`frontend/src/bridge/contractSessionSnapshot.ts`](../frontend/src/bridge/contractSessionSnapshot.ts)
+  - session snapshot normalization
 - [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
-  - one swappable transport surface for Electron or demo mode
+  - transport selection and demo fallback before normalization
 
 This split is important because playback state and backend session state are related, but not the same thing.
 
@@ -252,10 +302,19 @@ If you are deciding where a change belongs:
   - `src/alert_rules.py`
 - session lifecycle / completion / cancel / failure behavior
   - `src/session_runner.py`
+  - `src/session_runner_discovery.py`
+  - `src/session_runner_progress.py`
 - `api_stream` transport, reconnect, playlist parsing, temp files
   - `src/stream_loader.py`
+  - `src/stream_loader_contracts.py`
+  - `src/stream_loader_http_hls.py`
+  - `src/stream_loader_fakes.py`
 - renderer playback routing and HLS proxy behavior
   - `frontend/electron/main.mjs`
+  - `frontend/electron/fastApiStartupOrchestrator.mjs`
+  - `frontend/electron/fastApiRuntimePolicy.mjs`
+  - `frontend/electron/fastApiProcessManager.mjs`
+  - `frontend/electron/bridgeResponses.mjs`
   - `frontend/electron/hlsProxy.mjs`
   - `frontend/src/components/VideoPlayerPanel.tsx`
 
@@ -362,6 +421,8 @@ If you change FastAPI request/response semantics, review these together:
 
 - `src/api/schemas.py`
 - `frontend/src/bridge/contract.ts`
+- `frontend/src/bridge/contractErrors.ts`
+- `frontend/src/bridge/transport.ts`
 - `frontend/src/types.ts`
 - `docs/contracts.md`
 - `tests/test_api_boundary_contracts.py`
@@ -369,3 +430,4 @@ If you change FastAPI request/response semantics, review these together:
 - `frontend/src/bridge/contract.success.test.ts`
 - `frontend/src/bridge/contract.errors.test.ts`
 - `frontend/src/bridge/contract.session-snapshot.test.ts`
+- `frontend/electron/bridgeResponses.test.mjs`

@@ -1,3 +1,8 @@
+/**
+ * Hook-level coverage for monitoring-session behavior after bridge-contract
+ * normalization, including typed failures and stable snapshot coercion.
+ */
+
 // @vitest-environment jsdom
 
 import React from "react";

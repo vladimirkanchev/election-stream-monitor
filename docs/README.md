@@ -21,9 +21,11 @@ Use this shortcut map before editing code:
 - changing session snapshot or polling behavior:
   - [session-model.md](./session-model.md)
   - [contracts.md](./contracts.md)
+  - [architecture.md](./architecture.md)
 - changing frontend bridge normalization or UI transport handling:
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
 - changing FastAPI endpoints or response semantics:
   - [fastapi-boundary.md](./fastapi-boundary.md)
   - [architecture-decision-fastapi.md](./architecture-decision-fastapi.md)
@@ -32,6 +34,45 @@ Use this shortcut map before editing code:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
 - adding an alert rule:
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+
+## Current High-Signal Code Areas
+
+If you want the shortest path into the current repo shape, start with these
+module families and the matching tests:
+
+- session lifecycle and persistence:
+  - `src/session_runner.py`
+  - `src/session_runner_discovery.py`
+  - `src/session_runner_progress.py`
+  - `tests/test_session_runner_local.py`
+  - `tests/test_session_runner_api_stream_basic.py`
+  - `tests/test_session_runner_api_stream_http_hls.py`
+- live `api_stream` loading:
+  - `src/stream_loader.py`
+  - `src/stream_loader_contracts.py`
+  - `src/stream_loader_http_hls.py`
+  - `src/stream_loader_fakes.py`
+  - `tests/test_stream_loader_contracts.py`
+  - `tests/test_stream_loader_http_hls_core.py`
+  - `tests/test_stream_loader_http_hls_reconnect.py`
+  - `tests/test_stream_loader_http_hls_limits.py`
+- Electron/FastAPI desktop runtime:
+  - `frontend/electron/main.mjs`
+  - `frontend/electron/fastApiStartupOrchestrator.mjs`
+  - `frontend/electron/fastApiRuntimePolicy.mjs`
+  - `frontend/electron/fastApiProcessManager.mjs`
+  - `frontend/electron/bridgeHandlerRegistry.mjs`
+  - `frontend/electron/localMediaRequestPolicy.mjs`
+  - `frontend/electron/localMediaResponses.mjs`
+- frontend bridge normalization:
+  - `frontend/src/bridge/contract.ts`
+  - `frontend/src/bridge/contractErrors.ts`
+  - `frontend/src/bridge/contractDetectors.ts`
+  - `frontend/src/bridge/contractSessionSnapshot.ts`
+  - `frontend/src/bridge/transport.ts`
+  - `frontend/src/bridge/contract.success.test.ts`
+  - `frontend/src/bridge/contract.errors.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.test.ts`
 
 ## Current Stable Contracts
 
@@ -105,11 +146,18 @@ If you are working on:
   - [contracts.md](./contracts.md)
   - [testing-and-validation.md](./testing-and-validation.md)
 - session lifecycle / persistence
+  - [architecture.md](./architecture.md)
   - [session-model.md](./session-model.md)
   - [contracts.md](./contracts.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
 - frontend playback / monitoring UX
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
+- Electron/FastAPI desktop runtime
+  - [frontend-architecture.md](./frontend-architecture.md)
+  - [architecture.md](./architecture.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
 - detector or alert extension
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)

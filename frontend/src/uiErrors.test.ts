@@ -1,3 +1,8 @@
+/**
+ * Operator-facing wording tests for typed bridge errors normalized by the
+ * frontend bridge contract.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import { BridgeTransportError } from "./bridge/contract";

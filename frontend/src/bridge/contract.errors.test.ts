@@ -1,3 +1,8 @@
+/**
+ * Error-path tests for the public bridge contract facade plus the typed error
+ * and transport-envelope behavior owned by `contractErrors`.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { LocalBridge } from "../types";

@@ -26,6 +26,8 @@ This inventory focuses on:
 Primary sources:
 
 - [`src/stream_loader.py`](../src/stream_loader.py)
+- [`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py)
+- [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py)
 - [`src/session_runner.py`](../src/session_runner.py)
 - [`tests/test_stream_loader_http_hls_reconnect.py`](../tests/test_stream_loader_http_hls_reconnect.py)
 - [`tests/test_stream_loader_http_hls_limits.py`](../tests/test_stream_loader_http_hls_limits.py)

@@ -1,3 +1,8 @@
+/**
+ * Hook-level coverage for playback-source behavior after bridge-contract
+ * normalization and playback-source resolution.
+ */
+
 // @vitest-environment jsdom
 
 import React from "react";

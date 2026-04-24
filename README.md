@@ -232,7 +232,7 @@ This starts:
 
 - the Vite frontend
 - the Electron shell
-- the local Python detector/session bridge used by the app
+- the local FastAPI-backed Python runtime used by the app
 
 For a quick first run:
 
@@ -258,6 +258,8 @@ If Electron startup behaves differently on your machine, start by checking:
 
 - [frontend/package.json](./frontend/package.json)
 - [frontend/electron/main.mjs](./frontend/electron/main.mjs)
+- [frontend/electron/fastApiStartupOrchestrator.mjs](./frontend/electron/fastApiStartupOrchestrator.mjs)
+- [docs/frontend-architecture.md](./docs/frontend-architecture.md)
 - [frontend-architecture.md](./docs/frontend-architecture.md)
 
 ## Example Inputs
@@ -298,13 +300,32 @@ npm run build
 What is already covered well:
 
 - backend unit and integration tests
-- frontend Vitest coverage for playback and session-status UX
+- frontend Vitest coverage for bridge normalization, playback, and session-status UX
+- extracted Electron runtime coverage for startup policy, FastAPI bridge wiring,
+  local-media routing, and playback URL adaptation
 - opt-in public-stream smoke tests and a documented local validation workflow
 
-Current branch validation baseline:
+The validation surface is intentionally split into a few high-signal families:
 
-- backend: `350 passed, 3 skipped`
-- frontend/Electron: `24 files passed, 203 tests passed`
+- backend lifecycle and persistence
+  - `tests/test_session_runner_local.py`
+  - `tests/test_session_runner_api_stream_basic.py`
+  - `tests/test_session_runner_api_stream_http_hls.py`
+  - `tests/test_session_io.py`
+- backend contract and loader seams
+  - `tests/test_api_boundary_*.py`
+  - `tests/test_stream_loader_contracts.py`
+  - `tests/test_stream_loader_http_hls_*.py`
+- frontend bridge and hook contract coverage
+  - `frontend/src/bridge/contract.*.test.ts`
+  - `frontend/src/hooks/useMonitoringSession.test.tsx`
+  - `frontend/src/hooks/usePlaybackSource.test.tsx`
+  - `frontend/src/uiErrors.test.ts`
+- Electron runtime and protocol seams
+  - `frontend/electron/bridgeHandlerRegistry.test.mjs`
+  - `frontend/electron/fastApi*.test.mjs`
+  - `frontend/electron/localMedia*.test.mjs`
+  - `frontend/electron/hlsProxy.test.mjs`
 
 If you want the deeper testing notes, start here:
 
@@ -319,6 +340,8 @@ For the most important system references, start with:
 - [docs/architecture.md](./docs/architecture.md)
 - [docs/contracts.md](./docs/contracts.md)
 - [docs/session-model.md](./docs/session-model.md)
+- [docs/frontend-architecture.md](./docs/frontend-architecture.md)
+- [docs/testing-and-validation.md](./docs/testing-and-validation.md)
 
 ## Versioning And Releases
 

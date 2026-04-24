@@ -29,7 +29,13 @@ For code-level truth, the closest sources are:
 
 - [`src/source_validation.py`](../src/source_validation.py)
 - [`src/stream_loader.py`](../src/stream_loader.py)
+- [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py)
+- [`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py)
 - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
+- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
+- [`frontend/src/bridge/contractDetectors.ts`](../frontend/src/bridge/contractDetectors.ts)
+- [`frontend/src/bridge/contractSessionSnapshot.ts`](../frontend/src/bridge/contractSessionSnapshot.ts)
+- [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
 - [`frontend/src/types.ts`](../frontend/src/types.ts)
 
 ## Current Source Of Truth
@@ -40,8 +46,14 @@ For the current project stage:
   - [`src/session_io.py`](../src/session_io.py)
   - [`src/session_models.py`](../src/session_models.py)
   - [`src/session_runner.py`](../src/session_runner.py)
+  - [`src/session_runner_progress.py`](../src/session_runner_progress.py)
 - frontend bridge normalization source of truth:
   - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
+  - [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
+  - [`frontend/src/bridge/contractDetectors.ts`](../frontend/src/bridge/contractDetectors.ts)
+  - [`frontend/src/bridge/contractSessionSnapshot.ts`](../frontend/src/bridge/contractSessionSnapshot.ts)
+  - [`frontend/src/bridge/contractShared.ts`](../frontend/src/bridge/contractShared.ts)
+  - [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
   - [`frontend/src/types.ts`](../frontend/src/types.ts)
 - FastAPI request/response contract source of truth:
   - [`src/api/schemas.py`](../src/api/schemas.py)
@@ -53,6 +65,8 @@ When changing one of these, review the others too:
 
 - [`src/api/schemas.py`](../src/api/schemas.py)
 - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
+- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
+- [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
 - [`frontend/src/types.ts`](../frontend/src/types.ts)
 - [`docs/session-model.md`](./session-model.md)
 - [`tests/test_api_boundary_contracts.py`](../tests/test_api_boundary_contracts.py)
@@ -60,6 +74,10 @@ When changing one of these, review the others too:
 - [`frontend/src/bridge/contract.success.test.ts`](../frontend/src/bridge/contract.success.test.ts)
 - [`frontend/src/bridge/contract.errors.test.ts`](../frontend/src/bridge/contract.errors.test.ts)
 - [`frontend/src/bridge/contract.session-snapshot.test.ts`](../frontend/src/bridge/contract.session-snapshot.test.ts)
+- [`frontend/src/bridge/transport.test.ts`](../frontend/src/bridge/transport.test.ts)
+- [`frontend/src/hooks/useMonitoringSession.test.tsx`](../frontend/src/hooks/useMonitoringSession.test.tsx)
+- [`frontend/src/hooks/usePlaybackSource.test.tsx`](../frontend/src/hooks/usePlaybackSource.test.tsx)
+- [`frontend/src/uiErrors.test.ts`](../frontend/src/uiErrors.test.ts)
 
 ## API Stream Source Contract v1
 
@@ -89,6 +107,24 @@ Current rules:
 - webpage URLs such as video platform pages are rejected early
 
 The backend is the source of truth for this validation.
+
+Implementation note:
+
+- [`src/stream_loader.py`](../src/stream_loader.py) remains the stable facade
+  for the live-loader surface and the default loader-selection entry point
+  while staying intentionally thin
+- [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py) keeps
+  the current `api_stream` source, start-session, and playback contract
+  builders and the detailed contract helpers on one shared validation path so
+  those three surfaces do not drift from each other
+- [`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py) owns the
+  concrete HTTP/HLS transport behavior, including playlist parsing,
+  reconnect handling, and temp-file materialization
+- [`src/stream_loader_fakes.py`](../src/stream_loader_fakes.py) keeps the
+  deterministic seam loaders used by tests and no-session contract-only paths
+- when no `session_id` is present, the facade returns an empty deterministic
+  seam loader rather than a separate placeholder class so test-time and
+  contract-only call paths stay simpler
 
 Trust-policy notes:
 
@@ -140,6 +176,8 @@ Notes:
 - remote URL validation happens before the detached session process is spawned
 - runtime loader failures later surface through normal session status and
   snapshot reads, not through a separate live-only session model
+- the same backend validation seam is reused for the playback-resolution
+  contract, so live start and live playback stay aligned on allowed input URLs
 
 ## Why version them now
 
@@ -526,14 +564,14 @@ Current snapshot semantics for `api_stream`:
 - `progress.current_item` is the latest live slice/chunk identity
 - `progress.processed_count` is the number of slices processed so far
 - `progress.total_count` is the loader-provided bounded slice count in current
-  tests and placeholder flows
+  tests and deterministic seam flows
 - `alerts`, `results`, and `latest_result` keep the same meaning as local modes
 
 Important current limitation:
 
 - the project does not implement an open-ended live session model yet
-- the placeholder loader and current tests use bounded, deterministic slice
-  sets so the existing snapshot contract stays stable
+- the current seam loaders and tests use bounded, deterministic slice sets so
+  the existing snapshot contract stays stable
 
 Open-ended live default for the upcoming real loader:
 
