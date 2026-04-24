@@ -1,7 +1,9 @@
-"""Tests for HTTP HLS retry, reconnect, and replay de-duplication behavior.
+"""Tests for HTTP/HLS retry, reconnect, and replay de-duplication behavior.
 
-This file keeps transport recovery and playlist-window movement cases isolated
-from ordinary core-loader semantics and hard-limit scenarios.
+This file isolates transport recovery and playlist-window movement cases from:
+
+- ordinary loader semantics in `test_stream_loader_http_hls_core.py`
+- hard-limit and cleanup scenarios in `test_stream_loader_http_hls_limits.py`
 """
 
 from pathlib import Path
@@ -9,7 +11,7 @@ from pathlib import Path
 import pytest
 
 import config
-import stream_loader
+import stream_loader_http_hls
 from session_io import read_api_stream_seen_chunk_keys, request_session_cancel
 from stream_loader import (
     HttpHlsApiStreamLoader,
@@ -30,11 +32,11 @@ def test_http_hls_loader_resumes_after_outage_when_playlist_window_moves(
     monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     info_logs: list[tuple[str, tuple[object, ...]]] = []
     monkeypatch.setattr(
-        stream_loader.logger,
+        stream_loader_http_hls.logger,
         "info",
         lambda message, *args: info_logs.append((message, args)),
     )
@@ -93,7 +95,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_just_after_recon
         if seconds == 1.0:
             request_session_cancel("session-http-cancel-reconnect")
 
-    monkeypatch.setattr(stream_loader.time, "sleep", maybe_cancel_on_sleep)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", maybe_cancel_on_sleep)
 
     first_playlist = "\n".join(
         [
@@ -131,7 +133,7 @@ def test_http_hls_loader_skips_replayed_segment_after_reconnect_and_keeps_new_wo
     monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     first_playlist = "\n".join(
         [
@@ -182,7 +184,7 @@ def test_http_hls_loader_skips_temporarily_unavailable_segment_and_continues(
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     playlist_text = "\n".join(
         [
@@ -224,7 +226,7 @@ def test_http_hls_loader_fails_when_reconnect_budget_is_exhausted(
     monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     routes = {
         "/live/index.m3u8": [
@@ -255,7 +257,7 @@ def test_http_hls_loader_recovers_after_multiple_retryable_playlist_failures(
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     playlist_text = "\n".join(
         [
@@ -338,7 +340,7 @@ def test_http_hls_loader_skips_duplicate_segment_replay_during_playlist_refresh(
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     first_playlist = "\n".join(
         [
@@ -389,11 +391,11 @@ def test_http_hls_loader_logs_selected_variant_refresh_stats_and_replay_skips(
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     info_logs: list[tuple[str, tuple[object, ...]]] = []
     monkeypatch.setattr(
-        stream_loader.logger,
+        stream_loader_http_hls.logger,
         "info",
         lambda message, *args: info_logs.append((message, args)),
     )

@@ -1,7 +1,12 @@
-"""Tests for core HTTP HLS playlist, variant, and progression behavior.
+"""Tests for core HTTP/HLS behavior in `stream_loader_http_hls`.
 
-These cases cover the concrete loader's ordinary fetch and playlist semantics
-without mixing in reconnect-budget or soak-style concerns.
+These cases cover the concrete loader's ordinary fetch, variant-selection, and
+playlist progression semantics without mixing in reconnect-budget or limit
+behavior. They complement:
+
+- `test_stream_loader_contracts.py` for facade/contract-level checks
+- `test_stream_loader_http_hls_reconnect.py` for recovery behavior
+- `test_stream_loader_http_hls_limits.py` for hard-limit and cleanup behavior
 """
 
 from contextlib import contextmanager
@@ -13,6 +18,7 @@ import pytest
 
 import config
 import stream_loader
+import stream_loader_http_hls
 from session_io import request_session_cancel
 from stream_loader import (
     HttpHlsApiStreamLoader,
@@ -43,7 +49,7 @@ def _configure_http_hls_loader_test(
             max_idle_playlist_polls,
         )
     if sleep is not None:
-        monkeypatch.setattr(stream_loader.time, "sleep", sleep)
+        monkeypatch.setattr(stream_loader_http_hls.time, "sleep", sleep)
 
 
 def _playlist(*lines: str) -> str:
@@ -479,7 +485,7 @@ def test_http_hls_loader_handles_longer_sliding_runs_without_replay_cache_growth
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     playlist_specs = [
         (300, 301, False),
@@ -525,7 +531,7 @@ def test_http_hls_loader_handles_longer_sliding_runs_without_replay_cache_growth
         try:
             slices = list(loader.iter_slices())
             assert [slice_.window_index for slice_ in slices] == list(range(300, 308))
-            assert loader._emitted_segment_keys == {
+            assert loader._state.emitted_segment_keys == {
                 (306, "segment_306.ts"),
                 (307, "segment_307.ts"),
             }
@@ -544,7 +550,7 @@ def test_http_hls_loader_resumes_after_window_advance_when_missed_segments_are_g
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     first_playlist = "\n".join(
         [
@@ -593,7 +599,7 @@ def test_http_hls_loader_tolerates_incomplete_refresh_and_keeps_progressing(
     monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
 
     first_playlist = "\n".join(
         [
@@ -687,7 +693,7 @@ def test_http_hls_loader_stops_after_repeated_no_new_live_refreshes(
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
     sleep_calls: list[float] = []
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: sleep_calls.append(seconds))
 
     playlist_text = "\n".join(
         [
@@ -727,7 +733,7 @@ def test_http_hls_loader_stops_immediately_after_endlist_segments_are_exhausted(
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
     monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
     sleep_calls: list[float] = []
-    monkeypatch.setattr(stream_loader.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: sleep_calls.append(seconds))
 
     playlist_text = "\n".join(
         [
@@ -769,7 +775,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_idle_poll
         sleep_calls.append(seconds)
         request_session_cancel("session-http-cancel-idle")
 
-    monkeypatch.setattr(stream_loader.time, "sleep", cancel_on_sleep)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", cancel_on_sleep)
 
     playlist_text = "\n".join(
         [
@@ -832,9 +838,9 @@ def test_http_hls_loader_prunes_replay_cache_when_playlist_window_slides(
         third = next(iterator)
 
         assert [first.window_index, second.window_index, third.window_index] == [10, 11, 12]
-        assert (10, "segment_010.ts") not in loader._emitted_segment_keys
-        assert (11, "segment_011.ts") not in loader._emitted_segment_keys
-        assert (12, "segment_012.ts") in loader._emitted_segment_keys
+        assert (10, "segment_010.ts") not in loader._state.emitted_segment_keys
+        assert (11, "segment_011.ts") not in loader._state.emitted_segment_keys
+        assert (12, "segment_012.ts") in loader._state.emitted_segment_keys
         loader.close()
 
     cleanup_api_stream_temp_session_dir("session-http-cache-prune")
