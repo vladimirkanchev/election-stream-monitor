@@ -1,7 +1,12 @@
-"""Tests for session-runner behavior over the real local HTTP HLS loader seam.
+"""Tests for `session_runner` over the real local HTTP/HLS loader seam.
 
-This file holds the heavier end-to-end transport cases so ordinary local and
-seam-based api_stream runner tests stay easier to scan and debug.
+This file keeps the heavier transport-backed `api_stream` cases separate from:
+
+- local-mode lifecycle/discovery tests in `tests/test_session_runner_local.py`
+- seam-loader lifecycle tests in `tests/test_session_runner_api_stream_basic.py`
+
+That split makes it easier to tell whether a failure belongs to orchestration
+or to the concrete HTTP/HLS transport path.
 """
 
 from pathlib import Path
@@ -9,6 +14,7 @@ from pathlib import Path
 import pytest
 from analyzer_contract import AnalyzerRegistration
 import session_runner
+import stream_loader_http_hls
 from session_io import read_session_snapshot
 from session_runner import run_local_session
 from tests.session_runner_api_stream_test_support import (
@@ -567,7 +573,7 @@ def test_run_local_session_http_hls_api_stream_preserves_partial_progress_before
         },
     )
     ticks = iter([0.0, 0.0, 6.0, 6.0, 6.0])
-    monkeypatch.setattr("stream_loader.time.monotonic", lambda: next(ticks))
+    monkeypatch.setattr(stream_loader_http_hls.time, "monotonic", lambda: next(ticks))
 
     _patch_processor_with_analyzer(
         monkeypatch,

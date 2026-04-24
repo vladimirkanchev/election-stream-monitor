@@ -1,7 +1,13 @@
-"""Shared helpers for api_stream session-runner tests.
+"""Shared helpers for the `api_stream` session-runner test family.
 
-This module keeps runner-specific analyzer and slice helpers local to the
-api_stream session-runner family, while reusing the shared local HLS server.
+This support module centralizes the seam setup used by:
+
+- `tests/test_session_runner_api_stream_basic.py`
+- `tests/test_session_runner_api_stream_http_hls.py`
+
+It keeps analyzer registration helpers, fake chunk builders, and local HLS
+fixture wiring in one place so the session-runner tests can stay focused on the
+behavior they are asserting.
 """
 
 from pathlib import Path
@@ -9,6 +15,7 @@ from pathlib import Path
 import config
 import processor
 import session_runner
+import stream_loader_http_hls
 from analyzer_contract import AnalysisSlice, AnalyzerRegistration
 from stream_loader import FakeApiStreamEvent
 from stream_loader import HttpHlsApiStreamLoader
@@ -62,7 +69,11 @@ def _configure_http_hls_runner_test(
             session_id or default_session_id
         ),
     )
-    monkeypatch.setattr("stream_loader.time.sleep", sleep or (lambda seconds: None))
+    monkeypatch.setattr(
+        stream_loader_http_hls.time,
+        "sleep",
+        sleep or (lambda seconds: None),
+    )
 
 
 def _install_api_stream_loader(monkeypatch, loader) -> None:

@@ -1,7 +1,12 @@
-"""Tests for local session lifecycle, validation, and discovery behavior.
+"""Tests for local `session_runner` lifecycle and discovery behavior.
 
-This file keeps the local-first runner contract explicit, separate from the
-api_stream and HTTP HLS runner scenarios that use different loader seams.
+These cases primarily exercise:
+
+- orchestration in `src/session_runner.py`
+- local file/slice expansion seams now owned by `src/session_runner_discovery.py`
+
+They intentionally stay separate from the `api_stream` runner files so the
+local-mode contract remains easy to scan.
 """
 
 import json
