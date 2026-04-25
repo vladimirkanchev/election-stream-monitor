@@ -50,3 +50,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Local helper files
+.codex
+frontend/check-electron*.cjs
+frontend/check-electron*.mjs
