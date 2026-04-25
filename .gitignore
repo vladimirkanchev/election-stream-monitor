@@ -53,5 +53,6 @@ Thumbs.db
 
 # Local helper files
 .codex
+frontend/.gitignore
 frontend/check-electron*.cjs
 frontend/check-electron*.mjs
