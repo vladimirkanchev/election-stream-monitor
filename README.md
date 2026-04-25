@@ -5,23 +5,31 @@
 Election Stream Monitor is a local-first AI video monitoring system for
 election-related media sources.
 
-It is built around a practical use case: reviewing polling-station streams,
-archived recordings, or segmented video feeds and surfacing quality alerts
-that matter during election monitoring. Today, the project is best understood
-as an advanced prototype with a clear local-first workflow rather than a
-finished service platform.
+The idea is simple: watch polling-station streams, archived recordings, or
+segmented video feeds and surface the quality problems that actually matter
+during monitoring.
 
-Right now the built-in checks focus on `Black Screen` and `Blur Check`
-detector rules.
-Supported sources are local `.mp4` video files, local `.ts` segment folders
-with `index.m3u8`, and direct remote `.m3u8` / `.mp4` `api_stream` inputs.
+Right now this repo is best understood as a well-structured desktop-first
+prototype moving toward MVP, not a finished platform.
 
-I’m trying to keep the project small enough to understand and structured
-enough to extend. The goal is to make detector, frontend, and rule changes
-feel manageable instead of messy. Over time, I’d like to grow it into an MVP
-with a stronger service/deployment story and eventually a cloud deployment
-path. Today, the local desktop runtime already uses a FastAPI-backed backend
-boundary with Electron as the desktop host.
+Current status:
+
+- desktop-first prototype
+- local-first workflow
+- three input modes
+- two built-in detectors
+
+What works today:
+
+- local `.mp4` video files
+- local `.ts` segment folders with `index.m3u8`
+- direct remote `.m3u8` / `.mp4` `api_stream` inputs
+- built-in `Black Screen` and `Blur Check` monitoring
+- Electron desktop UI with a local FastAPI-backed backend
+
+The project is intentionally still fairly small. The goal is to keep it easy
+to understand, easy to extend, and useful for real monitoring work without
+turning it into an overcomplicated platform too early.
 
 ## Why this project exists
 
@@ -40,21 +48,26 @@ and streaming systems while working on something with clear civic value.
 
 You do not need to read this repo front to back.
 
-Use this quick path:
+At the current stage, this is the short path:
 
-- overview: this README
-- architecture: [docs/architecture.md](./docs/architecture.md),
-  [docs/contracts.md](./docs/contracts.md), and
-  [docs/session-model.md](./docs/session-model.md)
-- setup and docs map: [docs/README.md](./docs/README.md)
-- frontend and transport: [docs/frontend-architecture.md](./docs/frontend-architecture.md)
-- FastAPI boundary and current API status: [docs/fastapi-boundary.md](./docs/fastapi-boundary.md)
+- start here for the big picture: this README
+- want the current system shape: [docs/architecture.md](./docs/architecture.md)
+- want the important contracts: [docs/contracts.md](./docs/contracts.md)
+- want the session model: [docs/session-model.md](./docs/session-model.md)
+- working on frontend or playback: [docs/frontend-architecture.md](./docs/frontend-architecture.md)
+- want the full docs map: [docs/README.md](./docs/README.md)
 
 ## Desktop Runtime Summary
 
-The Electron desktop app now uses the local FastAPI backend for normal runtime
-operation. Python CLI commands remain available for tooling/debugging and
-scripted inspection, but they are not the normal app transport.
+The Electron app now uses the local FastAPI backend as the normal runtime
+path. The app window, session controls, detector loading, and playback-source
+resolution all go through that local desktop flow.
+
+Electron still handles desktop-only jobs like app startup, local media
+serving, the HLS proxy path, and the UI bridge. Session state stays local and
+is polled by the UI while a run is active. The runtime is solid for local
+development and prototype use, but packaging and broader platform support are
+still early.
 
 ## Current Capabilities
 
@@ -92,11 +105,8 @@ The frontend gives you:
 - simple session status feedback with operator-friendly diagnostics and a
   `Show debug info` section for more detailed backend session state
 
-If you want a quick feel for how that looks in the real app, the screenshot
-below shows the same basic flow in UI form: setup on the left, live playback in
-the center/right, and session state and alerts underneath. The original image
-file is
-[Frontend.png](./docs/assets/Frontend.png).
+The screenshot below shows the basic flow in the UI form: setup on the left, playback in the
+center/right, and session state and alerts below.
 
 ![Frontend screenshot](./docs/assets/Frontend.png)
 
@@ -120,8 +130,8 @@ to extend.
 The project currently supports these input modes:
 
 - `video_segments`
-  - local `.ts` segment folders, typically organized around an `index.m3u8`
-    playlist
+  - local folders of `.ts` video chunks, usually organized around an
+    `index.m3u8` playlist
 - `video_files`
   - local `.mp4` files or folders containing `.mp4` files
 - `api_stream`
@@ -131,66 +141,55 @@ The project currently supports these input modes:
 
 ## Architecture At A Glance
 
-It is still one project and one local workflow, not a distributed platform,
-but the internal boundaries are deliberate. The detector and alert parts are
-also being shaped with explicit extension points, so the analysis layer is
-gradually moving toward a more plugin-friendly design.
+This is still one local-first project, not a distributed platform, but the
+internal boundaries are deliberate. The goal is to keep the flow simple to use
+while keeping the code structured enough to extend.
 
-From your point of view, the flow is pretty simple:
+In practice, the flow looks like this:
 
 1. You pick a source, choose the detectors you want, and hit `Start Monitoring`.
-2. The frontend handles the visible workflow: setup, playback, live status, and
-   the basic session controls.
+2. The frontend handles the visible workflow: setup, playback, live status,
+   and the basic session controls.
 3. Electron acts as the local bridge between the UI and the FastAPI-backed
-   Python runtime. It also handles playback-specific duties such as local media
-   serving and the HLS proxy path used when remote streams cannot be played
-   directly in the renderer.
+   Python runtime. It also handles desktop-only playback jobs like local media
+   serving and the HLS proxy path used for some remote streams.
 4. The backend session runner and stream loader do the monitoring work in the
    background: they open files or stream chunks, move through them step by
    step, and keep the session running.
-5. The analyzer registry keeps detector selection explicit, so only the
-   detectors that fit the current mode are used.
-6. Detectors produce structured results, and the alert-rule layer turns the
-   important ones into warnings that are easier to notice and understand.
+5. The detector list keeps selection explicit, so only detectors that fit the
+   current mode are used.
+6. Detectors produce structured results, and the alert rules turn the
+   important ones into warnings that are easier to notice.
 7. Session state is persisted locally, and the frontend polls snapshots through
    Electron and the local FastAPI backend so you can see progress, status, and
-   alerts in near real time instead of guessing whether the run is stuck.
+   alerts in near real time.
 
-The diagram below shows the runtime flow behind the app: source input,
-playback source resolution, the Electron/FastAPI boundary, backend monitoring,
-and session-state polling back into the UI. The editable file is
-[diagram_final.svg](./docs/assets/diagram_final.svg), and the PDF version is
-[diagram_final.pdf](./docs/assets/diagram_final.pdf).
+If you want the visual version, the diagram below shows the same runtime flow.
 
 ![Architecture outlook](./docs/assets/diagram_final.png)
 
 ## Installation
 
-Requirements:
+For now, installation is still developer-oriented rather than one-click.
+
+You will need:
 
 - Python `3.12+`
-- Node.js / npm for the frontend
+- Node.js and npm
 - `ffmpeg` and `ffprobe` on `PATH`
-- `uv` for Python package and environment management if you want the `uv`-based
-  setup flow
+- optionally `uv` if you prefer that Python setup flow
 
-Tested with:
-
-- React `19.1.0`
-- Node.js `20.20.0`
-- npm `10.8.2`
-- `ffmpeg` `6.1.1`
-- `ffprobe` `6.1.1`
-
-Python setup:
+Quick setup:
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
+cd frontend
+npm install
 ```
 
-If you use `uv`, the same setup can look like this:
+If you use `uv`, the Python part can look like this:
 
 ```bash
 uv venv
@@ -198,14 +197,7 @@ uv venv
 uv pip install -e .
 ```
 
-Frontend setup:
-
-```bash
-cd frontend
-npm install
-```
-
-Quick check after install:
+Quick check:
 
 ```bash
 python --version
@@ -215,10 +207,18 @@ ffmpeg -version | head -n 1
 
 Environment notes:
 
-- the project is currently tested only on Ubuntu `24.04`
+- the project is currently tested mainly on Ubuntu `24.04`
 - the desktop workflow is currently tuned for Linux/X11 development
 - Electron playback and media behavior may differ on Wayland, macOS, or
   Windows until those paths are tested more broadly
+
+Tested with:
+
+- React `19.1.0`
+- Node.js `20.20.0`
+- npm `10.8.2`
+- `ffmpeg` `6.1.1`
+- `ffprobe` `6.1.1`
 
 ## Running The Project
 
@@ -233,6 +233,8 @@ This starts:
 - the Vite frontend
 - the Electron shell
 - the local FastAPI-backed Python runtime used by the app
+
+The easiest first run is `video_files` mode with a local `.mp4`.
 
 For a quick first run:
 
@@ -260,35 +262,53 @@ If Electron startup behaves differently on your machine, start by checking:
 - [frontend/electron/main.mjs](./frontend/electron/main.mjs)
 - [frontend/electron/fastApiStartupOrchestrator.mjs](./frontend/electron/fastApiStartupOrchestrator.mjs)
 - [docs/frontend-architecture.md](./docs/frontend-architecture.md)
-- [frontend-architecture.md](./docs/frontend-architecture.md)
 
 ## Example Inputs
 
-Safe public HLS examples for local testing:
+If you are trying the app for the first time, start with `video_files`.
+
+For local examples, start with these fixture paths:
+
+- `tests/fixtures/media/video_files/`
+- `tests/fixtures/media/video_segments/`
+
+One simple local example is:
+
+- `tests/fixtures/media/video_files/clean_baseline_long.mp4`
+
+If you want to try `api_stream`, these public HLS examples are a good place to
+start:
 
 - `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`
 - `https://devimages-cdn.apple.com/samplecode/avfoundationMedia/AVFoundationQueuePlayer_HLS2/master.m3u8`
 - `https://tungsten.aaplimg.com/VOD/bipbop_adv_fmp4_example/master.m3u8`
 
-These are useful public test inputs for the `api_stream` mode. For local
-fixtures, use the paths listed in [Running The Project](#running-the-project).
-For provider quirks and blocked streams, see
-[Known Limitations](#known-limitations).
+Some public streams may play in a browser but still reject automated fetching.
+For provider quirks and blocked streams, see [Known Limitations](#known-limitations).
 
 ## Known Limitations
 
-- Not every provider is friendly to automated `.m3u8` fetching, so some public
-  streams still refuse to cooperate. The local Electron HLS proxy helps with
-  playback, but it cannot unlock a blocked upstream stream.
-- YouTube page URLs and other webpage-style player links are not supported.
+- Remote inputs are still limited. Some public `.m3u8` streams block
+  automated fetching.
 - Playback and monitoring are connected, but they are not the same thing, so
   one can fail while the other keeps going.
+- The desktop workflow is still tuned mainly for local Ubuntu/Linux
+  development, so other platforms may need extra work.
+- Packaging and installation are still early, so this is closer to a
+  developer-run app than a polished desktop release.
+- Detector coverage is still intentionally narrow. Right now the built-in focus
+  is on black-screen and blur-related issues.
 - This is still an advanced prototype, so the larger pilot and production
   hardening work is not finished yet.
 
 ## Tests And Validation
 
-If you want a quick local confidence check, these are the main commands:
+The test surface is already fairly solid for the current project stage. The
+main coverage is around backend lifecycle behavior, `api_stream` loading,
+FastAPI/API boundaries, frontend bridge normalization, and Electron runtime
+seams.
+
+If you want a quick local confidence check, start with:
 
 ```bash
 . .venv/bin/activate
@@ -300,32 +320,11 @@ npm run build
 What is already covered well:
 
 - backend unit and integration tests
-- frontend Vitest coverage for bridge normalization, playback, and session-status UX
-- extracted Electron runtime coverage for startup policy, FastAPI bridge wiring,
-  local-media routing, and playback URL adaptation
-- opt-in public-stream smoke tests and a documented local validation workflow
-
-The validation surface is intentionally split into a few high-signal families:
-
-- backend lifecycle and persistence
-  - `tests/test_session_runner_local.py`
-  - `tests/test_session_runner_api_stream_basic.py`
-  - `tests/test_session_runner_api_stream_http_hls.py`
-  - `tests/test_session_io.py`
-- backend contract and loader seams
-  - `tests/test_api_boundary_*.py`
-  - `tests/test_stream_loader_contracts.py`
-  - `tests/test_stream_loader_http_hls_*.py`
-- frontend bridge and hook contract coverage
-  - `frontend/src/bridge/contract.*.test.ts`
-  - `frontend/src/hooks/useMonitoringSession.test.tsx`
-  - `frontend/src/hooks/usePlaybackSource.test.tsx`
-  - `frontend/src/uiErrors.test.ts`
-- Electron runtime and protocol seams
-  - `frontend/electron/bridgeHandlerRegistry.test.mjs`
-  - `frontend/electron/fastApi*.test.mjs`
-  - `frontend/electron/localMedia*.test.mjs`
-  - `frontend/electron/hlsProxy.test.mjs`
+- targeted `api_stream` and HLS loader coverage
+- FastAPI boundary and contract checks
+- frontend bridge, hook, and UI error coverage
+- Electron startup, bridge, and local-media runtime coverage
+- opt-in public-stream smoke tests and local validation workflows
 
 If you want the deeper testing notes, start here:
 
@@ -334,23 +333,24 @@ If you want the deeper testing notes, start here:
 
 ## Docs
 
-If you want the broader docs map, start with [docs/README.md](./docs/README.md).
-For the most important system references, start with:
+For the full docs map, start with [docs/README.md](./docs/README.md). The main
+project references are:
 
-- [docs/architecture.md](./docs/architecture.md)
-- [docs/contracts.md](./docs/contracts.md)
-- [docs/session-model.md](./docs/session-model.md)
-- [docs/frontend-architecture.md](./docs/frontend-architecture.md)
-- [docs/testing-and-validation.md](./docs/testing-and-validation.md)
+- [docs/architecture.md](./docs/architecture.md) for the current system shape
+- [docs/contracts.md](./docs/contracts.md) for the important boundaries
+- [docs/session-model.md](./docs/session-model.md) for lifecycle and local session state
+- [docs/frontend-architecture.md](./docs/frontend-architecture.md) for the Electron/React side
+- [docs/testing-and-validation.md](./docs/testing-and-validation.md) for checks, commands, and test scope
 
 ## Versioning And Releases
 
-- the project is currently at version `0.1`
-- version changes should reflect active iteration rather than strong
-  backwards-compatibility guarantees
+- the project is still in an early `0.2.0` stage
+- expect active iteration rather than strict stability
+- features, docs, and internal structure should keep getting better as the project moves from structured prototype toward MVP
 - release and versioning notes live in
   [release-versioning.md](./docs/release-versioning.md) and
   [CHANGELOG.md](./CHANGELOG.md)
+- usable for local runs, but not yet a polished stable release
 
 ## Data And Outputs
 
@@ -359,80 +359,100 @@ Important repo-safe references:
 - [data/README.md](./data/README.md)
 - [tests/fixtures/](./tests/fixtures)
 
+After a run, the project gives you stored metrics, session progress, results,
+and alerts that can be reviewed locally.
+
 For now, persistence is file-based rather than database-backed.
 
-- detector result metrics are stored as CSV files in `data/metrics/`
+- detector result metrics are stored in CSV format in `data/metrics/`
 - per-session results, progress, and alerts are stored as local session data in
   `data/sessions/`
 
-This is good enough for local experimentation and review without introducing
-database or service complexity too early.
+This makes it easy to inspect runs locally without setting up a database or
+service stack. The current output model is meant for local review, debugging,
+and prototype workflows.
 
 ## Repo Layout
 
+If you are browsing the repo for the first time, this is the basic layout:
+
 - `src/`
-  - Python backend runtime, detectors, session runner, bridge-facing CLI, and
-    persistence/stores
+  - Python backend code for detectors, sessions, live stream loading, FastAPI
+    routes, and saved outputs
 - `frontend/`
-  - React/Electron UI, playback logic, local bridge integration, and frontend
-    tests
+  - React/Electron desktop app GUI, playback logic, local app integration, and
+    frontend tests
 - `tests/`
-  - backend tests plus checked-in deterministic media fixtures
+  - automated tests plus media fixtures (`.mp4`, `.ts`, `.m3u8`) and test
+    helpers
 - `docs/`
-  - architecture, contracts, reviewer guidance, and workflow references
+  - project docs, architecture notes, and workflow guides
 - `data/`
-  - local-only runtime artifacts such as session outputs and metrics, plus
-    local stream/video input data for development
+  - local output files, metrics, session data, and development input media;
+    outputs are mainly stored as CSV plus local session files such as JSON and
+    JSONL
 - `.github/`
-  - CI workflow and contribution templates
+  - CI and repo automation files
 
 ## Known Roadmap Areas
 
 The areas I would work on next are:
 
-- grow the detector set with rules for noise, stillness or frozen-feed
-  detection, and other stream artifacts
-- make alert rules easier to tune for different monitoring setups
-- improve backend and session diagnostics, so it is easier to see what failed,
-  what recovered, and what the system is doing right now
-- keep hardening `api_stream` handling around tricky providers, trust
-  boundaries, and longer runs
-- prepare a cleaner FastAPI-backed local deployment path that can later grow
-  into a more service-style MVP
+- grow the detector set beyond black-screen and blur
+  and make alert rules easier to tune for different monitoring setups
+- improve backend, session, and operator-facing diagnostics
+- add a lightweight database layer for metrics, session history, and better diagnostics
+- keep polishing the local FastAPI-backed desktop app runtime
+- move the project toward a stronger desktop-first MVP without rushing into cloud or service complexity too early
+- explore small MCP and agent-assisted features
+
 
 ## Feedback Welcome On
 
-The most valuable feedback right now is on the parts of the project that are
-still actively being shaped:
+The most helpful feedback right now is the kind that comes from real use:
 
-- streaming / transport architecture
-- backend session lifecycle and failure policy
-- frontend operator UX for playback vs monitoring state
-- FastAPI boundary and local service deployment shape
+- first-run usability and general clarity
+- runtime stability, including which public streams actually work and which ones still fail
+- what the strongest production direction for the project really is
+- how much AI or agent help is actually useful, and where it would help most
 
 ## CI
 
-A lightweight GitHub Actions workflow is included under
-`.github/workflows/ci.yml` to run backend tests plus frontend test/build checks
-on pushes and pull requests.
+CI is handled with a small GitHub Actions workflow in
+`.github/workflows/ci.yml`. It runs backend tests plus frontend test and build
+checks on pushes and pull requests, so the main desktop runtime path stays in
+good shape as the project grows.
+
+Over time, this can expand into packaging, platform, and release checks as the
+desktop app matures.
 
 The CI badge can be added after the first public push, once the final GitHub
 repository path is settled.
 
 ## Security Notes
 
-Remote media fetching is intentionally constrained:
+Remote media fetching is intentionally limited so the app only works with
+sources we can reason about clearly:
 
-- `api_stream` only accepts direct `.m3u8` and `.mp4` URLs
-- webpage-style player URLs are rejected early
-- service-mode trust policy is stricter than local mode
-- private or loopback targets are rejected by default unless they are
-  explicitly allowed
+- `api_stream` only accepts direct `.m3u8` and `.mp4` URLs such as a playlist
+  URL or direct media file URL
+- webpage-style player URLs are rejected early, including YouTube links and
+  embedded player pages
+- remote-input rules get stricter when the backend is used more like a
+  service than when you run the app locally
+- local or private-network targets are blocked by default unless they are
+  deliberately allowed, for example `localhost`, `127.0.0.1`, `192.168.x.x`,
+  or `10.x.x.x`
+- the current backend is designed for local desktop use, and local session
+  outputs stay on disk for review and debugging
+- the trust boundary around remote inputs and the local FastAPI path is
+  covered by targeted tests
 
-For the current trust model and future service-boundary guidance, start with:
+For the current rules and the longer-term service boundary, start with:
 
 - [contracts.md](./docs/contracts.md)
 - [fastapi-boundary.md](./docs/fastapi-boundary.md)
+- [testing-and-validation.md](./docs/testing-and-validation.md)
 
 ## Easy To Work On
 
@@ -442,6 +462,7 @@ why the design leans toward:
 - explicit detector registration
 - readable rule definitions
 - simple session contracts
+- split backend, Electron, and bridge responsibilities
 - testable pure functions where possible
 - no heavy plugin framework yet
 
@@ -451,6 +472,7 @@ If you want to jump in, the main extension points are straightforward:
 - register it
 - add or update a rule
 - expose it in the frontend detector catalog
+- follow the matching docs for sessions, contracts, frontend runtime, or tests
 
 ## Contributing
 
@@ -465,5 +487,5 @@ Useful contributions right now include:
 - improvements to alert rules
 - better examples and documentation
 - careful test additions
-- broader `api_stream` support for additional direct stream types and tricky
-  provider behavior
+- broader `api_stream` support for additional direct stream types and tricky provider behavior
+- small focused contributions are especially welcome
