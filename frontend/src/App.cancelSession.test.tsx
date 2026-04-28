@@ -270,7 +270,9 @@ describe("App cancel-session integration", () => {
       expect(mockBridge.cancelSession).toHaveBeenCalledTimes(1);
     });
 
-    resolveCancel?.({
+    const completeCancel = resolveCancel as ((value: SessionSummary | null) => void) | null;
+    expect(completeCancel).not.toBeNull();
+    completeCancel?.({
       ...RUNNING_SESSION,
       status: "cancelling",
     });

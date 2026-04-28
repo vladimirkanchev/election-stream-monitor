@@ -127,7 +127,9 @@ describe("useMonitoringSession lifecycle guards", () => {
       expect(screen.getByTestId("session-error").textContent).toBe("none");
     });
 
-    resolveCancel?.({
+    const completeCancel = resolveCancel as ((value: SessionSummary | null) => void) | null;
+    expect(completeCancel).not.toBeNull();
+    completeCancel?.({
       ...RUNNING_SESSION,
       status: "cancelling",
     });
