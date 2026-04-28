@@ -5,21 +5,20 @@
 Election Stream Monitor is a local-first AI video monitoring system for
 election-related media sources.
 
-The idea is simple: watch polling-station streams, archived recordings, or
-segmented video feeds and surface the quality problems that actually matter
-during monitoring.
+It watches polling-station streams, archived recordings, or segmented video
+feeds and surfaces the quality problems that matter during monitoring.
 
-Right now this repo is best understood as a well-structured desktop-first
-prototype moving toward MVP, not a finished platform.
+This repo is a desktop-first prototype moving toward MVP, not a finished
+platform.
 
-Current status:
+Status:
 
 - desktop-first prototype
 - local-first workflow
 - three input modes
 - two built-in detectors
 
-What works today:
+Works today:
 
 - local `.mp4` video files
 - local `.ts` segment folders with `index.m3u8`
@@ -27,30 +26,29 @@ What works today:
 - built-in `Black Screen` and `Blur Check` monitoring
 - Electron desktop UI with a local FastAPI-backed backend
 
-The project is intentionally still fairly small. The goal is to keep it easy
-to understand, easy to extend, and useful for real monitoring work without
-turning it into an overcomplicated platform too early.
+The project is still intentionally small. The goal is to keep it readable,
+easy to extend, and useful for real monitoring work without adding platform
+weight too early.
 
 ## Why this project exists
 
 This project exists to support more transparent election observation in
-Bulgaria in a practical, local-first way.
+Bulgaria with a practical local-first workflow.
 
 If a stream goes black, blurry, broken, or just becomes too low quality, that
 is not only a technical issue. It can stop people from following elections in
-real time and make it harder to take part in meaningful public oversight when
-it matters most.
+real time and make public oversight harder when it matters most.
 
-It is also a hands-on way to build skills in AI development, video analysis,
-and streaming systems while working on something with clear civic value.
+It also gives me a place to build the AI, video analysis, and streaming
+pieces behind something with clear civic value.
 
 ## Where To Start
 
 You do not need to read this repo front to back.
 
-At the current stage, this is the short path:
+Start here:
 
-- start here for the big picture: this README
+- this README for the big picture
 - want the current system shape: [docs/architecture.md](./docs/architecture.md)
 - want the important contracts: [docs/contracts.md](./docs/contracts.md)
 - want the session model: [docs/session-model.md](./docs/session-model.md)
@@ -61,9 +59,9 @@ At the current stage, this is the short path:
 
 The Electron app now uses the local FastAPI backend as the normal runtime
 path. The app window, session controls, detector loading, and playback-source
-resolution all go through that local desktop flow.
+resolution all go through that desktop flow.
 
-Electron still handles desktop-only jobs like app startup, local media
+Electron still handles the desktop-only jobs: app startup, local media
 serving, the HLS proxy path, and the UI bridge. Session state stays local and
 is polled by the UI while a run is active. The runtime is solid for local
 development and prototype use, but packaging and broader platform support are
@@ -73,25 +71,24 @@ still early.
 
 ### Backend
 
-The backend validates the input, starts the session, steps through the media,
-runs detectors, applies rules, and keeps writing local session state that the
+The backend validates input, starts the session, steps through the media, runs
+detectors, applies rules, and keeps writing local session state that the
 frontend can read.
 
 ### Detection
 
-The logic stays simple on purpose: detectors measure what is happening, then
-rules decide when that should turn into an alert.
+Detectors measure what is happening. Rules decide when that should turn into
+an alert.
 
 Right now it can catch:
 
 - `Black Screen`
   - mainly from frames sampled from video files, segment streams, and
     `api_stream` sources
-  - in simple terms: the picture goes fully black or almost black for long
-    enough to matter
+  - the picture goes fully black or almost black for long enough to matter
 - `Blur Check`
   - looks for frames that are too soft, smeared, or out of focus
-  - in simple terms: details disappear and the image stops looking sharp
+  - details disappear and the image stops looking sharp
 
 ### Frontend
 
@@ -112,8 +109,8 @@ center/right, and session state and alerts below.
 
 ### Session Model
 
-This layer creates the session, updates progress, stores alerts and results,
-and gives the UI something stable to poll.
+This layer writes the session files, updates progress, stores alerts and
+results, and gives the UI something stable to poll.
 
 Right now it works in a simple local-first way:
 
@@ -122,8 +119,7 @@ Right now it works in a simple local-first way:
 - the frontend polls those snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
-The current feature set is intentionally narrow, but it is designed to be easy
-to extend.
+The current feature set is narrow, but it is easy to extend.
 
 ## Input Modes
 
@@ -168,6 +164,17 @@ If you want the visual version, the diagram below shows the same runtime flow.
 
 ![Architecture outlook](./docs/assets/diagram_final.png)
 
+### Who Owns What
+
+Today:
+
+- **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
+- **FastAPI** owns the monitoring backend: session control, source validation, stream resolution, detector/rule execution, and session-state updates.
+- **Local session files** persist progress, results, and alerts for the local-first runtime, which the UI reads through the Electron/FastAPI flow.
+
+In short: **Electron** handles the desktop runtime and playback bridge, while
+FastAPI handles the monitoring backend.
+
 ## Installation
 
 For now, installation is still developer-oriented rather than one-click.
@@ -204,6 +211,12 @@ python --version
 node -v
 ffmpeg -version | head -n 1
 ```
+
+CI note:
+
+- feature branches get a quick frontend checkpoint and the full test/build job
+- pull requests into `main` also run a small integration smoke test and a
+  lightweight workflow/docs/contract consistency check
 
 Environment notes:
 
@@ -303,7 +316,7 @@ For provider quirks and blocked streams, see [Known Limitations](#known-limitati
 
 ## Tests And Validation
 
-The test surface is already fairly solid for the current project stage. The
+The test surface is strong for this stage. The
 main coverage is around backend lifecycle behavior, `api_stream` loading,
 FastAPI/API boundaries, frontend bridge normalization, and Electron runtime
 seams.
@@ -396,7 +409,7 @@ If you are browsing the repo for the first time, this is the basic layout:
 
 ## Known Roadmap Areas
 
-The areas I would work on next are:
+Next up, I would focus on:
 
 - grow the detector set beyond black-screen and blur
   and make alert rules easier to tune for different monitoring setups
@@ -405,6 +418,9 @@ The areas I would work on next are:
 - keep polishing the local FastAPI-backed desktop app runtime
 - move the project toward a stronger desktop-first MVP without rushing into cloud or service complexity too early
 - explore small MCP and agent-assisted features
+
+The first thing I would keep tightening is the FastAPI boundary and the local
+media/proxy path.
 
 
 ## Feedback Welcome On

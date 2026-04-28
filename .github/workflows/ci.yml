@@ -5,22 +5,76 @@ on:
   pull_request:
 
 jobs:
-  test-and-build:
+  main-pr-consistency:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-24.04
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run main PR consistency checks
+        run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
+
+  frontend-checkpoint:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend checkpoint
+        working-directory: frontend
+        run: npm run test:frontend-checkpoint
+
+  test-and-build:
+    runs-on: ubuntu-24.04
+    needs: frontend-checkpoint
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "npm"
@@ -46,9 +100,43 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Run frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
       - name: Run frontend tests
         working-directory: frontend
         run: npm run test
 
       - name: Build frontend
         run: npm run build
+
+  integration-smoke:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    needs:
+      - frontend-checkpoint
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg=7:6.1.1-3ubuntu5
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run integration smoke test
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_e2e_local_session.py

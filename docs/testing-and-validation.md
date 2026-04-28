@@ -8,6 +8,24 @@ Do not use it as a detailed architecture or contract doc.
 
 ## Routine Validation
 
+## CI Shape
+
+The current GitHub Actions workflow uses three practical layers:
+
+- `frontend-checkpoint`
+  - quick Electron/bridge/session-flow regression signal
+- `test-and-build`
+  - backend tests
+  - frontend typecheck
+  - full frontend tests
+  - frontend build
+- `main` pull-request guards
+  - a small integration smoke test
+  - a lightweight docs/contract consistency check
+
+This keeps ordinary branch feedback reasonably fast while giving `main` a
+stricter merge barrier.
+
 ### Backend
 
 The Python suite covers:
@@ -155,6 +173,13 @@ cd frontend
 npm run test:frontend-checkpoint
 ```
 
+Dedicated frontend typecheck:
+
+```bash
+cd frontend
+npm run typecheck
+```
+
 Cancel migration checkpoint:
 
 ```bash
@@ -211,6 +236,13 @@ npm run test
 If one side of the contract changes, do not rely on only backend tests or only
 frontend tests. Run at least one focused backend contract check and one focused
 frontend normalization check together.
+
+For a branch that is about to merge into `main`, also run a small composed
+smoke check:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_e2e_local_session.py -q
+```
 
 Note:
 
