@@ -95,9 +95,9 @@ function mockApiStreamPolling(args: {
   polls: Array<ReturnType<typeof makeSnapshot> | Error>;
 }) {
   const session = makeApiStreamSession(args.session);
-  (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(session);
+  vi.mocked(mockBridge.startSession).mockResolvedValue(session);
 
-  const readSession = mockBridge.readSession as ReturnType<typeof vi.fn>;
+  const readSession = vi.mocked(mockBridge.readSession);
   for (const poll of args.polls) {
     if (poll instanceof Error) {
       readSession.mockRejectedValueOnce(poll);
@@ -106,7 +106,7 @@ function mockApiStreamPolling(args: {
     }
   }
 
-  const finalPoll = args.polls.at(-1);
+  const finalPoll = args.polls[args.polls.length - 1];
   if (finalPoll && !(finalPoll instanceof Error)) {
     readSession.mockResolvedValue(finalPoll);
   }
@@ -162,8 +162,8 @@ describe("App polling and status integration", () => {
         last_updated_utc: "2026-04-02 10:00:04",
       },
     });
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockResolvedValueOnce(completedSnapshot)
       .mockResolvedValue(completedSnapshot);
@@ -178,8 +178,8 @@ describe("App polling and status integration", () => {
   });
 
   it("keeps the last good session state when a polling read fails", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockRejectedValueOnce(new Error("poll failed"))
       .mockResolvedValue(makeLocalSnapshot());
@@ -194,8 +194,8 @@ describe("App polling and status integration", () => {
   });
 
   it("shows a reconnecting message for api stream polling failures and clears it on recovery", async () => {
-    const liveSession = mockApiStreamPolling({
-      session_id: "session-api-reconnect",
+    mockApiStreamPolling({
+      session: { session_id: "session-api-reconnect" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-reconnect" },
@@ -224,7 +224,7 @@ describe("App polling and status integration", () => {
 
   it("keeps reconnecting as a warning-only state until an api stream actually becomes terminal", async () => {
     mockApiStreamPolling({
-      session_id: "session-api-reconnecting-only",
+      session: { session_id: "session-api-reconnecting-only" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-reconnecting-only" },
@@ -250,8 +250,8 @@ describe("App polling and status integration", () => {
   });
 
   it("shows a safety-limit message when a running api stream snapshot turns terminal", async () => {
-    const liveSession = mockApiStreamPolling({
-      session_id: "session-api-failed-runtime",
+    mockApiStreamPolling({
+      session: { session_id: "session-api-failed-runtime" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-failed-runtime" },
@@ -277,8 +277,8 @@ describe("App polling and status integration", () => {
   });
 
   it("switches from reconnecting to a terminal retry-budget message when api stream recovery finally fails", async () => {
-    const liveSession = mockApiStreamPolling({
-      session_id: "session-api-retry-exhausted",
+    mockApiStreamPolling({
+      session: { session_id: "session-api-retry-exhausted" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-retry-exhausted" },
@@ -314,8 +314,8 @@ describe("App polling and status integration", () => {
   });
 
   it("shows an idle-budget warning when a bounded api stream run completes after going quiet", async () => {
-    const liveSession = mockApiStreamPolling({
-      session_id: "session-api-idle-completed",
+    mockApiStreamPolling({
+      session: { session_id: "session-api-idle-completed" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-idle-completed" },
@@ -369,8 +369,8 @@ describe("App polling and status integration", () => {
       },
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(liveSession);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(liveSession);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(
         makeApiStreamSnapshot({
           session: { session_id: "session-api-idle-terminal" },
@@ -406,7 +406,7 @@ describe("App polling and status integration", () => {
 
   it("replaces reconnecting with the idle-complete warning when a recovering api stream settles after going quiet", async () => {
     mockApiStreamPolling({
-      session_id: "session-api-reconnect-then-idle-complete",
+      session: { session_id: "session-api-reconnect-then-idle-complete" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-reconnect-then-idle-complete" },
@@ -453,7 +453,7 @@ describe("App polling and status integration", () => {
 
   it("can recover from reconnecting and still later settle on a terminal failure without stale recovery cues", async () => {
     mockApiStreamPolling({
-      session_id: "session-api-recover-then-fail",
+      session: { session_id: "session-api-recover-then-fail" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-recover-then-fail" },
@@ -511,7 +511,7 @@ describe("App polling and status integration", () => {
 
   it("keeps a running api stream without progress in a neutral state until real warnings appear", async () => {
     mockApiStreamPolling({
-      session_id: "session-api-no-progress-yet",
+      session: { session_id: "session-api-no-progress-yet" },
       polls: [
         makeApiStreamSnapshot({
           session: { session_id: "session-api-no-progress-yet" },
@@ -548,11 +548,11 @@ describe("App polling and status integration", () => {
         status_detail: "Cancellation requested by client",
       },
     });
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockResolvedValue(cancelledSnapshot);
-    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
       ...RUNNING_SESSION,
       status: "cancelling",
     });
@@ -586,8 +586,8 @@ describe("App polling and status integration", () => {
       },
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockResolvedValueOnce(cancelledSnapshot)
       .mockResolvedValueOnce(staleRunningSnapshot)
@@ -610,10 +610,12 @@ describe("App polling and status integration", () => {
   });
 
   it("keeps ending state coherent when cancel is requested while a poll is still in flight", async () => {
-    let resolvePoll: ((value: ReturnType<typeof makeSnapshot>) => void) | null = null;
+    let resolvePoll:
+      | ((value: ReturnType<typeof makeSnapshot>) => void)
+      | null = null;
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockImplementationOnce(
         () =>
@@ -621,7 +623,7 @@ describe("App polling and status integration", () => {
             resolvePoll = resolve;
           }),
       );
-    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
       ...RUNNING_SESSION,
       status: "cancelling",
     });
@@ -636,7 +638,10 @@ describe("App polling and status integration", () => {
       expect(mockBridge.cancelSession).toHaveBeenCalledTimes(1);
     });
 
-    resolvePoll?.(
+    const completePoll =
+      resolvePoll as ((value: ReturnType<typeof makeSnapshot>) => void) | null;
+    expect(completePoll).not.toBeNull();
+    completePoll?.(
       makeLocalSnapshot({
         session: { status: "cancelled" },
         progress: {
@@ -667,8 +672,8 @@ describe("App polling and status integration", () => {
       },
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockResolvedValueOnce(failedSnapshot)
       .mockResolvedValueOnce(staleRunningSnapshot)
@@ -691,21 +696,21 @@ describe("App polling and status integration", () => {
   });
 
   it("keeps the last good session state when polling returns a missing-session bridge failure", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    const missingSessionFailure = fail(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      "No persisted session snapshot found for session_id=session-1",
+      {
+        backend_error_code: "session_not_found",
+        status_reason: "session_not_found",
+        status_detail: "No persisted session snapshot found for session_id=session-1",
+      },
+    ) as unknown as ReturnType<typeof makeSnapshot>;
+
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(
-        fail(
-          "SESSION_READ_FAILED",
-          "Session read request failed",
-          "No persisted session snapshot found for session_id=session-1",
-          {
-            backend_error_code: "session_not_found",
-            status_reason: "session_not_found",
-            status_detail: "No persisted session snapshot found for session_id=session-1",
-          },
-        ),
-      )
+      .mockResolvedValueOnce(missingSessionFailure)
       .mockResolvedValue(makeSnapshot());
 
     await startLocalMonitoringFlow();
@@ -731,12 +736,12 @@ describe("App polling and status integration", () => {
       },
     });
 
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
       .mockRejectedValueOnce(new Error("poll failed during cancel"))
       .mockResolvedValue(cancelledSnapshot);
-    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
       ...RUNNING_SESSION,
       status: "cancelling",
     });
@@ -757,22 +762,22 @@ describe("App polling and status integration", () => {
   });
 
   it("keeps the last good ending state when a post-cancel poll reports session_not_found", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+    const missingSessionFailure = fail(
+      "SESSION_READ_FAILED",
+      "Session read request failed",
+      "No persisted session snapshot found for session_id=session-1",
+      {
+        backend_error_code: "session_not_found",
+        status_reason: "session_not_found",
+        status_detail: "No persisted session snapshot found for session_id=session-1",
+      },
+    ) as unknown as ReturnType<typeof makeSnapshot>;
+
+    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
       .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(
-        fail(
-          "SESSION_READ_FAILED",
-          "Session read request failed",
-          "No persisted session snapshot found for session_id=session-1",
-          {
-            backend_error_code: "session_not_found",
-            status_reason: "session_not_found",
-            status_detail: "No persisted session snapshot found for session_id=session-1",
-          },
-        ),
-      );
-    (mockBridge.cancelSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+      .mockResolvedValueOnce(missingSessionFailure);
+    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
       ...RUNNING_SESSION,
       status: "cancelling",
     });
