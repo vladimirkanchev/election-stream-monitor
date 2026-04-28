@@ -16,6 +16,7 @@
     "test:startup-milestone": "npm run test:startup-runtime && npm run test:frontend-checkpoint",
     "test:frontend-checkpoint": "npm run test:electron-bridge && npm run test:session-flow",
     "test:watch": "vitest",
+    "typecheck": "tsc -b --incremental false",
     "build:web": "npm run sync:detectors && tsc -b --incremental false && vite build",
     "build": "npm run build:web",
     "start:electron": "env -u ELECTRON_RUN_AS_NODE ELECTRON_ENABLE_LOGGING=1 ELECTRON_OZONE_PLATFORM_HINT=x11 XDG_SESSION_TYPE=x11 ./node_modules/electron/dist/electron electron/main.mjs",
