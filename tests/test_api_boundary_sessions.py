@@ -9,11 +9,12 @@ These cases keep the HTTP boundary explicit:
 
 import pytest
 
-from session_models import SessionMetadata
-from session_service import (
+from api.routers.sessions import (
     SessionServiceCancelFailedError,
     SessionServiceNotFoundError,
+    SessionServiceStartFailedError,
 )
+from session_models import SessionMetadata
 from tests.api_boundary_test_support import request
 
 
@@ -459,8 +460,6 @@ def test_session_adapter_error_mapping(
 
 
 def test_sessions_start_failure(monkeypatch) -> None:
-    from session_service import SessionServiceStartFailedError
-
     monkeypatch.setattr(
         "api.routers.sessions.start_session_service",
         lambda **kwargs: (_ for _ in ()).throw(SessionServiceStartFailedError("spawn failed")),
