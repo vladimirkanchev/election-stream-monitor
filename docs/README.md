@@ -41,12 +41,29 @@ If you want the shortest path into the current repo shape, start with these
 module families and the matching tests:
 
 - session lifecycle and persistence:
+  - `src/session_service.py`
+  - `src/api/routers/sessions.py`
+  - `src/session_cli.py`
   - `src/session_runner.py`
+  - `src/session_runner_lifecycle.py`
+  - `src/session_runner_execution.py`
+  - `src/session_runner_terminal.py`
   - `src/session_runner_discovery.py`
   - `src/session_runner_progress.py`
+  - `tests/test_session_service.py`
+  - `tests/test_api_boundary_sessions.py`
+  - `tests/test_session_cli_tooling.py`
+  - `tests/test_session_runner_lifecycle.py`
+  - `tests/test_session_runner_execution.py`
+  - `tests/test_session_runner_terminal.py`
   - `tests/test_session_runner_local.py`
-  - `tests/test_session_runner_api_stream_basic.py`
+  - `tests/test_session_runner_api_stream_completion.py`
+  - `tests/test_session_runner_api_stream_cancellation.py`
+  - `tests/test_session_runner_api_stream_failures.py`
+  - `tests/test_session_runner_api_stream_progress.py`
   - `tests/test_session_runner_api_stream_http_hls.py`
+  - read the session-service files first, then the runner files, if you want
+    the shortest path into the current session lifecycle split
 - live `api_stream` loading:
   - `src/stream_loader.py`
   - `src/stream_loader_contracts.py`
