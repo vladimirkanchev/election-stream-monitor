@@ -2,7 +2,9 @@
 
 The canonical runtime path is Electron -> FastAPI -> session service ->
 session runner. These tests only protect the leftover `main.py` wiring so it
-does not break accidentally while the legacy path still exists.
+does not break accidentally while the legacy local-only harness still exists.
+Keep this suite intentionally small; it should only guard the leftover wrapper
+shape and should not grow into a second runtime-behavior suite.
 """
 
 from functools import partial
@@ -28,3 +30,11 @@ def test_main_keeps_legacy_local_routing_shape(monkeypatch, mode: str) -> None:
     assert isinstance(recorded["on_segment"], partial)
     assert recorded["on_segment"].func is main.process_video_file
     assert recorded["on_segment"].keywords == {"mode": mode}
+
+
+def test_main_rejects_non_local_modes_with_legacy_harness_guidance(monkeypatch) -> None:
+    """Unsupported modes should point callers back to the canonical runtime."""
+    monkeypatch.setattr(main.config, "DATA_SOURCE", "api_stream")
+
+    with pytest.raises(ValueError, match="legacy local analysis harness"):
+        main.main()

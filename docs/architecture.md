@@ -65,12 +65,25 @@ It is now:
 3. Electron owns local runtime startup/readiness, talks to the local FastAPI
    backend for normal operation, and returns explicit success/error envelopes
    to the frontend transport layer.
-4. [`src/session_runner.py`](../src/session_runner.py) coordinates session lifecycle and delegates local discovery/progress shaping to its focused helper modules.
-5. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which detectors are enabled for that mode.
-6. [`src/detectors.py`](../src/detectors.py) produces flat result rows.
-7. [`src/alert_rules.py`](../src/alert_rules.py) decides whether those result rows should create alerts.
-8. Session files are written under `data/sessions/`.
-9. The frontend polls the session snapshot and updates playback and alerts.
+4. [`src/api/routers/sessions.py`](../src/api/routers/sessions.py) adapts HTTP session requests into the shared application service in [`src/session_service.py`](../src/session_service.py).
+5. [`src/session_runner.py`](../src/session_runner.py) coordinates the actual monitoring run and delegates local discovery/progress shaping to its focused helper modules.
+6. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which detectors are enabled for that mode.
+7. [`src/detectors.py`](../src/detectors.py) produces flat result rows.
+8. [`src/alert_rules.py`](../src/alert_rules.py) decides whether those result rows should create alerts.
+9. Session files are written under `data/sessions/`, including backend-owned
+   diagnostic artifacts such as `worker.log`.
+10. The frontend polls the session snapshot and updates playback and alerts.
+
+## Legacy Tooling
+
+[`src/main.py`](../src/main.py) is a legacy local developer harness for the
+older file-based path only.
+
+- It is non-canonical and not part of the supported session/runtime
+  architecture described above.
+- It is kept temporarily for narrow local debugging/smoke use.
+- It is slated for removal once the accepted replacement is focused pytest
+  coverage for the older local-file path.
 
 ## Input modes
 
@@ -179,13 +192,26 @@ Responsibilities:
 ### Session runner
 
 [`src/session_runner.py`](../src/session_runner.py),
+[`src/session_runner_lifecycle.py`](../src/session_runner_lifecycle.py),
+[`src/session_runner_execution.py`](../src/session_runner_execution.py),
+[`src/session_runner_terminal.py`](../src/session_runner_terminal.py),
 [`src/session_runner_discovery.py`](../src/session_runner_discovery.py),
 [`src/session_runner_progress.py`](../src/session_runner_progress.py)
 
 Responsibilities:
 
-- keep `src/session_runner.py` as the orchestration layer for validation,
-  lifecycle transitions, per-mode execution, and terminal outcome handling
+- keep `src/session_runner.py` as the orchestration layer:
+  - validate the source
+  - choose local vs `api_stream` execution
+  - coordinate helper modules
+  - reset rule state and perform final runtime cleanup
+- keep pending-session setup and pending-to-running transitions in
+  `src/session_runner_lifecycle.py`
+- keep finite local-loop execution, live `api_stream` execution, analyzer-bundle
+  invocation, and bundle-event persistence in
+  `src/session_runner_execution.py`
+- keep terminal outcome persistence, api-stream cleanup accounting, and
+  operator-facing terminal logging in `src/session_runner_terminal.py`
 - keep local file discovery, playlist expansion, and video-file slice
   expansion in `src/session_runner_discovery.py`
 - keep progress/status shaping and operator-facing terminal log context in
@@ -194,6 +220,43 @@ Responsibilities:
   rule state at session boundaries
 - route `api_stream` through the dedicated loader seam instead of treating it
   like local file discovery
+
+### Session service
+
+[`src/session_service.py`](../src/session_service.py),
+[`src/api/routers/sessions.py`](../src/api/routers/sessions.py),
+[`src/session_cli.py`](../src/session_cli.py)
+
+Responsibilities:
+
+- keep `src/session_service.py` as the shared start/read/cancel application seam
+- keep detached worker diagnostics session-scoped under
+  `data/sessions/<session_id>/worker.log` without making them a frontend/API
+  contract yet
+- keep `src/api/routers/sessions.py` as the FastAPI adapter for the canonical desktop runtime path
+- keep `src/session_cli.py` as the tooling/debugging adapter over the same shared service
+- keep `run-session` in `src/session_cli.py` as the internal worker command used by the detached session process
+
+Reading order for this module family:
+
+1. `src/session_service.py`
+2. `src/api/routers/sessions.py`
+3. `src/session_cli.py`
+
+That order is the shortest path for understanding where session lifecycle
+request ownership ends and actual session execution begins.
+
+Reading order for this module family:
+
+1. `src/session_runner.py`
+2. `src/session_runner_lifecycle.py`
+3. `src/session_runner_execution.py`
+4. `src/session_runner_terminal.py`
+5. `src/session_runner_discovery.py`
+6. `src/session_runner_progress.py`
+
+That order mirrors the current ownership split and is the shortest path for a
+mid-to-senior contributor who wants to follow one session from start to finish.
 
 ### API stream loader
 
