@@ -1,5 +1,6 @@
 import pytest
 
+from api.routers.sessions import SessionServiceCancelFailedError
 from tests.api_boundary_test_support import request
 
 
@@ -25,13 +26,19 @@ def test_basic_read_only_routes_return_expected_smoke_shapes(
 
 
 def test_sessions_unexpected_failure_returns_structured_payload(monkeypatch) -> None:
+    class DummyMetadata:
+        def to_dict(self) -> dict[str, object]:
+            return {
+                "session_id": "test-session-123",
+                "mode": "video_files",
+                "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
+                "selected_detectors": ["video_metrics"],
+                "status": "pending",
+            }
+
     monkeypatch.setattr(
-        "api.routers.sessions.validate_source_input",
-        lambda mode, input_path: input_path,
-    )
-    monkeypatch.setattr(
-        "api.routers.sessions.create_session_id",
-        lambda: "test-session-123",
+        "api.routers.sessions.start_session_service",
+        lambda mode, input_path, selected_detectors: DummyMetadata(),
     )
 
     def fake_model_validate(*args, **kwargs) -> None:
@@ -42,12 +49,6 @@ def test_sessions_unexpected_failure_returns_structured_payload(monkeypatch) -> 
         "api.routers.sessions.SessionSummaryResponse.model_validate",
         fake_model_validate,
     )
-
-    class DummyPopen:
-        def __init__(self, *args, **kwargs) -> None:
-            pass
-
-    monkeypatch.setattr("api.routers.sessions.subprocess.Popen", DummyPopen)
 
     response = request(
         "POST",
@@ -92,7 +93,7 @@ def test_detectors_unexpected_failure_returns_structured_payload(monkeypatch) ->
 def test_read_session_malformed_nested_payload_fails_closed_with_structured_error(
     monkeypatch,
 ) -> None:
-    def fake_read_session_snapshot(session_id: str) -> dict[str, object]:
+    def fake_read_session_snapshot_or_none(session_id: str) -> dict[str, object]:
         return {
             "session": {
                 "session_id": session_id,
@@ -120,8 +121,8 @@ def test_read_session_malformed_nested_payload_fails_closed_with_structured_erro
         }
 
     monkeypatch.setattr(
-        "api.routers.sessions.read_session_snapshot",
-        fake_read_session_snapshot,
+        "api.routers.sessions.read_session_snapshot_or_none",
+        fake_read_session_snapshot_or_none,
     )
 
     response = request("GET", "/sessions/test-session-123")
@@ -136,7 +137,7 @@ def test_read_session_malformed_nested_payload_fails_closed_with_structured_erro
 def test_read_session_malformed_alert_and_result_payloads_fail_closed_with_structured_error(
     monkeypatch,
 ) -> None:
-    def fake_read_session_snapshot(session_id: str) -> dict[str, object]:
+    def fake_read_session_snapshot_or_none(session_id: str) -> dict[str, object]:
         return {
             "session": {
                 "session_id": session_id,
@@ -184,8 +185,8 @@ def test_read_session_malformed_alert_and_result_payloads_fail_closed_with_struc
         }
 
     monkeypatch.setattr(
-        "api.routers.sessions.read_session_snapshot",
-        fake_read_session_snapshot,
+        "api.routers.sessions.read_session_snapshot_or_none",
+        fake_read_session_snapshot_or_none,
     )
 
     response = request("GET", "/sessions/test-session-broken-alerts")
@@ -234,24 +235,14 @@ def test_error_responses_keep_consistent_envelope_keys(
     expected_status: int,
 ) -> None:
     if expected_status == 409:
-        def fake_read_session_snapshot(session_id: str) -> dict[str, object]:
-            return {
-                "session": {
-                    "session_id": session_id,
-                    "mode": "video_files",
-                    "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
-                    "selected_detectors": ["video_metrics"],
-                    "status": "completed",
-                },
-                "progress": None,
-                "alerts": [],
-                "results": [],
-                "latest_result": None,
-            }
-
         monkeypatch.setattr(
-            "api.routers.sessions.read_session_snapshot",
-            fake_read_session_snapshot,
+            "api.routers.sessions.cancel_session_service",
+            lambda session_id: (_ for _ in ()).throw(
+                SessionServiceCancelFailedError(
+                    session_id,
+                    "completed",
+                )
+            ),
         )
 
     response = request(method, path, json=payload)
