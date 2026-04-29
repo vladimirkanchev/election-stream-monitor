@@ -27,6 +27,26 @@ Instead, the backend writes session data to disk and the frontend reads it
 through the local bridge. That keeps the current project simple while still
 giving a clear session lifecycle and a stable read model.
 
+For start/read/cancel ownership, the shared application-service seam now lives
+in [`src/session_service.py`](../src/session_service.py).
+
+In practice:
+
+- FastAPI is the canonical runtime entrypoint for desktop session lifecycle work
+- the CLI is tooling/debugging over the same shared session service
+- session lifecycle mechanics should be changed once in that shared service,
+  not reimplemented separately in route and CLI layers
+
+Recommended reading order for start/read/cancel work:
+
+1. [`src/session_service.py`](../src/session_service.py)
+2. [`src/api/routers/sessions.py`](../src/api/routers/sessions.py)
+3. [`src/session_cli.py`](../src/session_cli.py)
+4. [`src/session_runner.py`](../src/session_runner.py)
+
+That order separates request ownership from the worker-side session execution
+that actually produces the persisted session artifacts described below.
+
 ## Session files
 
 Each session currently writes:
@@ -36,6 +56,7 @@ Each session currently writes:
 - `alerts.jsonl`
 - `results.jsonl`
 - `api_stream_seen_chunks.jsonl` for `api_stream` de-duplication state
+- `worker.log` as a backend-owned detached worker diagnostic trace
 
 These files live under the configured session output folder in `data/sessions/`.
 
@@ -86,6 +107,34 @@ Append-only detector result events for the session.
 
 These are the structured outputs of detectors before or alongside alert interpretation.
 
+### `worker.log`
+
+Append-style worker process diagnostics for the detached `run-session`
+background process.
+
+This file is intentionally:
+
+- backend-owned
+- session-scoped
+- useful for debugging startup/runtime failures
+- not part of the frontend polling snapshot contract
+- not currently returned by FastAPI as a public API field
+
+That means the current session payload contract intentionally excludes
+`worker_log_path`-style metadata. If the product later needs UI-facing
+diagnostics, add that through a deliberate diagnostics field or endpoint
+rather than growing the core session snapshot ad hoc.
+
+For this milestone, keep the file after success, failure, or cancel.
+Do not auto-delete it as part of normal session cleanup.
+
+The current runtime split is:
+
+- FastAPI owns start/read/cancel request handling
+- the detached `run-session` worker owns actual monitoring execution
+- `worker.log` is the per-session backend trace left by that worker-side
+  execution path
+
 ## Persistence contract
 
 The current persistence layer is intentionally simple, but it still has a
@@ -99,6 +148,7 @@ These files belong to one session directory:
 - `progress.json`
 - `alerts.jsonl`
 - `results.jsonl`
+- optional `worker.log`
 - optional `api_stream_seen_chunks.jsonl`
 
 That means the frontend and local tooling should treat them as the canonical
