@@ -5,6 +5,8 @@ These cases keep the HTTP boundary explicit:
 - request/response mapping
 - structured API error behavior
 - wiring into the shared `session_service` seam
+- the current rule that worker diagnostics stay backend-owned unless a later
+  milestone adds a public diagnostics surface
 """
 
 import pytest
@@ -482,6 +484,32 @@ def test_sessions_start_failure(monkeypatch) -> None:
         "status_reason": "session_start_failed",
         "status_detail": "spawn failed",
     }
+
+
+def test_start_session_does_not_surface_worker_log_metadata(monkeypatch) -> None:
+    """Worker diagnostics should stay backend-owned until a later milestone exposes them."""
+    monkeypatch.setattr(
+        "api.routers.sessions.start_session_service",
+        lambda **kwargs: _pending_metadata(
+            session_id="session-no-log-path",
+            mode="video_files",
+            input_path="tests/fixtures/media/video_files/black_trigger.mp4",
+            selected_detectors=["video_metrics"],
+        ),
+    )
+
+    response = request(
+        "POST",
+        "/sessions",
+        json={
+            "mode": "video_files",
+            "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
+            "selected_detectors": ["video_metrics"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert "worker_log_path" not in response.json()
 
 
 def test_cancel_session_happy_path(monkeypatch) -> None:

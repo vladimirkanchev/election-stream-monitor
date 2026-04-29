@@ -3,6 +3,10 @@
 These cases treat the CLI as a thin adapter over `session_service.py`.
 They keep the supported command surface explicit without duplicating the
 shared start/read/cancel business logic tests.
+
+For the worker-observability milestone, this suite also checks that
+`run-session` emits one useful parent-side failure record before an uncaught
+worker exception is re-raised into the redirected worker log path.
 """
 
 import json
@@ -226,6 +230,47 @@ def test_read_session_returns_existing_snapshot_shape(monkeypatch, capsys) -> No
         "results": [],
         "latest_result": None,
     }
+
+
+def test_run_session_logs_useful_failure_context_before_reraising(monkeypatch) -> None:
+    """Uncaught run-session failures should log redacted worker context before bubbling up."""
+    calls: list[tuple[object, ...]] = []
+
+    _set_argv(
+        monkeypatch,
+        "run-session",
+        "--mode",
+        "video_files",
+        "--input-path",
+        "/tmp/input.mp4",
+        "--session-id",
+        "session-123",
+        "--detector",
+        "video_metrics",
+    )
+    monkeypatch.setattr(session_cli, "validate_source_input", lambda mode, input_path: input_path)
+    monkeypatch.setattr(
+        session_cli,
+        "run_local_session",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("detector crashed")),
+    )
+    monkeypatch.setattr(
+        session_cli.logger,
+        "exception",
+        lambda message, context: calls.append((message, context)),
+    )
+
+    with pytest.raises(RuntimeError, match="detector crashed"):
+        session_cli.main()
+
+    assert calls == [
+        (
+            "run-session worker failed [%s]",
+            "session_id='session-123' "
+            "mode='video_files' "
+            "input_path='<path:input.mp4>'",
+        )
+    ]
 
 
 def test_resolve_playback_source_returns_remote_url_for_api_stream(monkeypatch, capsys) -> None:

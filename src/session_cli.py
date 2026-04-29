@@ -1,41 +1,40 @@
-"""Tooling/debugging CLI for local session inspection and manual workflows.
+"""Tooling/debugging CLI for local session workflows.
 
-The Electron desktop runtime now talks to the local FastAPI backend for normal
-operation. This CLI remains available for explicit tooling/debugging tasks and
-scripted inspection.
+For normal desktop use, Electron talks to the local FastAPI backend.
+This CLI remains useful for:
 
-Supported tooling commands:
-- list-detectors
-- start-session
-- read-session
-- cancel-session
-- resolve-playback-source
+- scripted inspection
+- manual debugging
+- internal worker execution through `run-session`
 
-The `run-session` command is an internal helper used by `start-session` to
-spawn the detached worker process. It is not the normal frontend runtime
-transport.
+Keep shared start/read/cancel mechanics in `session_service.py`.
+Keep this file focused on argparse, command dispatch, and JSON printing.
 """
 
 import argparse
 import json
-import subprocess
-import sys
-from pathlib import Path
 
 from analyzer_registry import list_available_detectors
+from logger import format_log_context, get_logger
 from playback_sources import resolve_playback_source
-from session_io import read_session_snapshot, request_session_cancel
-from session_models import SessionMetadata
-from session_runner import create_session_id, run_local_session
+from session_runner import run_local_session
+from session_service import (
+    SessionServiceNotFoundError,
+    build_empty_session_snapshot,
+    cancel_session as cancel_session_service,
+    read_session_snapshot_or_none,
+    start_session as start_session_service,
+)
 from source_validation import validate_source_input
 from stream_loader import (
     build_api_stream_playback_contract,
-    build_api_stream_start_session_contract,
 )
+
+logger = get_logger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Create the CLI parser for tooling/debugging commands."""
+    """Create the parser for the supported tooling commands."""
     parser = argparse.ArgumentParser(
         description="Tooling/debugging helpers for local session workflows"
     )
@@ -70,14 +69,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Parse one bridge command and print its JSON response."""
+    """Parse one command and print its JSON response."""
     parser = build_parser()
     args = parser.parse_args()
     _dispatch_command(args)
 
 
 def _dispatch_command(args: argparse.Namespace) -> None:
-    """Run one parsed subcommand and print its JSON payload."""
+    """Dispatch one parsed subcommand and print its JSON payload."""
     handlers = {
         "list-detectors": _handle_list_detectors,
         "run-session": _handle_run_session,
@@ -97,25 +96,26 @@ def _handle_list_detectors(args: argparse.Namespace) -> list[dict[str, object]]:
 
 def _handle_read_session(args: argparse.Namespace) -> dict[str, object]:
     """Return the current persisted session snapshot."""
-    return read_session_snapshot(args.session_id)
+    snapshot = read_session_snapshot_or_none(args.session_id)
+    return snapshot if snapshot is not None else build_empty_session_snapshot()
 
 
 def _handle_cancel_session(args: argparse.Namespace) -> dict[str, object]:
-    """Persist a cancel request and return a frontend-friendly session summary."""
-    request_session_cancel(args.session_id)
-    snapshot = read_session_snapshot(args.session_id)
-    session = snapshot.get("session") or {}
-    return {
-        "session_id": args.session_id,
-        "mode": session.get("mode"),
-        "input_path": session.get("input_path"),
-        "selected_detectors": session.get("selected_detectors", []),
-        "status": "cancelling",
-    }
+    """Request cancellation and return the CLI-compatible summary."""
+    try:
+        return cancel_session_service(args.session_id)
+    except SessionServiceNotFoundError:
+        return {
+            "session_id": args.session_id,
+            "mode": None,
+            "input_path": None,
+            "selected_detectors": [],
+            "status": "cancelling",
+        }
 
 
 def _handle_resolve_playback_source(args: argparse.Namespace) -> dict[str, str | None]:
-    """Resolve one frontend playback source from validated backend inputs."""
+    """Resolve one playback source from validated backend inputs."""
     validated_input_path = validate_source_input(args.mode, args.input_path)
     if args.mode == "api_stream":
         return {
@@ -130,85 +130,35 @@ def _handle_resolve_playback_source(args: argparse.Namespace) -> dict[str, str |
 
 
 def _handle_start_session(args: argparse.Namespace) -> dict[str, object]:
-    """Spawn a detached local session process and return the pending metadata."""
-    validated_input_path = validate_source_input(args.mode, args.input_path)
-    if args.mode == "api_stream":
-        build_api_stream_start_session_contract(
-            input_path=validated_input_path,
-            selected_detectors=args.detector,
-        )
-    session_id = create_session_id()
-    subprocess.Popen(  # noqa: S603
-        _build_run_session_command(
-            mode=args.mode,
-            input_path=validated_input_path,
-            session_id=session_id,
-            detectors=args.detector,
-        ),
-        cwd=str(Path(__file__).resolve().parent),
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    return _build_pending_session_metadata(
+    """Spawn a detached session worker and return pending metadata."""
+    metadata = start_session_service(
         mode=args.mode,
-        input_path=validated_input_path,
-        session_id=session_id,
-        detectors=args.detector,
-    )
-
-
-def _handle_run_session(args: argparse.Namespace) -> dict[str, object]:
-    """Execute one session synchronously and return the final metadata summary."""
-    validated_input_path = validate_source_input(args.mode, args.input_path)
-    metadata = run_local_session(
-        mode=args.mode,
-        input_path=validated_input_path,
+        input_path=args.input_path,
         selected_detectors=args.detector,
-        session_id=args.session_id,
     )
     return metadata.to_dict()
 
 
-def _build_run_session_command(
-    *,
-    mode: str,
-    input_path: str,
-    session_id: str,
-    detectors: list[str],
-) -> list[str]:
-    """Build the detached child-process command used by `start-session`."""
-    command = [
-        sys.executable,
-        str(Path(__file__).resolve()),
-        "run-session",
-        "--mode",
-        mode,
-        "--input-path",
-        input_path,
-        "--session-id",
-        session_id,
-    ]
-    for detector in detectors:
-        command.extend(["--detector", detector])
-    return command
-
-
-def _build_pending_session_metadata(
-    *,
-    mode: str,
-    input_path: str,
-    session_id: str,
-    detectors: list[str],
-) -> dict[str, object]:
-    """Return the pending session summary shape expected by the bridge."""
-    metadata = SessionMetadata(
-        session_id=session_id,
-        mode=mode,
-        input_path=input_path,
-        selected_detectors=list(detectors),
-        status="pending",
-    )
+def _handle_run_session(args: argparse.Namespace) -> dict[str, object]:
+    """Execute one session synchronously and return final metadata."""
+    validated_input_path = validate_source_input(args.mode, args.input_path)
+    try:
+        metadata = run_local_session(
+            mode=args.mode,
+            input_path=validated_input_path,
+            selected_detectors=args.detector,
+            session_id=args.session_id,
+        )
+    except Exception:
+        logger.exception(
+            "run-session worker failed [%s]",
+            format_log_context(
+                session_id=args.session_id,
+                mode=args.mode,
+                input_path=validated_input_path,
+            ),
+        )
+        raise
     return metadata.to_dict()
 
 

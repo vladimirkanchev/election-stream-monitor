@@ -1,4 +1,8 @@
-"""Tests for session file helpers."""
+"""Tests for session file helpers.
+
+This suite owns the persisted session-artifact contract, including the
+session-scoped location of backend-only diagnostics such as `worker.log`.
+"""
 
 import json
 from pathlib import Path
@@ -8,6 +12,7 @@ import pytest
 from session_io import (
     append_alert,
     append_result,
+    get_worker_log_path,
     initialize_session,
     is_session_cancel_requested,
     read_session_snapshot,
@@ -72,6 +77,13 @@ def test_session_io_records_cancel_request(monkeypatch, tmp_path: Path) -> None:
     request_session_cancel("session-456")
 
     assert is_session_cancel_requested("session-456") is True
+
+
+def test_get_worker_log_path_is_session_scoped(monkeypatch, tmp_path: Path) -> None:
+    """Worker logs should live beside other session artifacts in the session directory."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    assert get_worker_log_path("session-456") == tmp_path / "session-456" / "worker.log"
 
 
 def test_request_session_cancel_is_idempotent_for_repeated_requests(

@@ -41,6 +41,49 @@ session lifecycle and playback-resolution bridge operations.
 Python CLI commands remain available as tooling/debugging commands, not as the
 normal Electron runtime backend path.
 
+## Session Ownership
+
+Session start/read/cancel orchestration is now owned by the shared application
+service in [`src/session_service.py`](../src/session_service.py).
+
+That means:
+
+- FastAPI is the canonical runtime path for session lifecycle work in the
+  desktop app
+- [`src/api/routers/sessions.py`](../src/api/routers/sessions.py) is an HTTP
+  adapter over that shared service
+- [`src/session_cli.py`](../src/session_cli.py) is a tooling/debugging adapter
+  over the same shared service
+- `run-session` remains the internal worker command used to execute the actual
+  detached monitoring run
+- detached worker diagnostics belong to a backend-owned
+  `data/sessions/<session_id>/worker.log` artifact, not a FastAPI response field
+- worker-log capture is intentionally separate from the current API/session
+  payload contract; if the product needs UI-visible diagnostics later, add a
+  dedicated diagnostics field or endpoint in a follow-up milestone
+
+Operationally, that means FastAPI owns session start, but the actual
+monitoring work happens in a detached worker process that now leaves a
+session-scoped backend trace in `worker.log`.
+
+The important current rule is:
+
+- do not duplicate session-start orchestration in FastAPI and CLI separately
+- change shared session lifecycle mechanics in
+  [`src/session_service.py`](../src/session_service.py)
+- keep FastAPI-specific error mapping in
+  [`src/api/routers/sessions.py`](../src/api/routers/sessions.py)
+- keep CLI parsing/printing behavior in [`src/session_cli.py`](../src/session_cli.py)
+
+Recommended reading order for this boundary:
+
+1. [`src/session_service.py`](../src/session_service.py)
+2. [`src/api/routers/sessions.py`](../src/api/routers/sessions.py)
+3. [`src/session_cli.py`](../src/session_cli.py)
+
+That order mirrors the current ownership split:
+shared session mechanics first, then the FastAPI and CLI adapters.
+
 ## Current Startup Model
 
 Electron now:
@@ -174,6 +217,15 @@ Use them like this:
 That separation is important. A request can succeed while the session itself is
 already failed, completed, or cancelled.
 
+Current observability rule:
+
+- session snapshots and start/cancel responses do not surface `worker.log`
+  paths yet
+- worker diagnostics remain backend-owned until a later milestone deliberately
+  adds a public diagnostics surface
+- parent-side launch logging and worker-side failure output are both expected
+  to land in backend-owned traces rather than in API payloads
+
 ## Input Modes
 
 The FastAPI layer currently accepts these monitoring modes:
@@ -190,8 +242,12 @@ This is still a migration-stage backend layer.
 
 Today that means:
 
-- FastAPI wraps the current local-first backend logic
+- FastAPI wraps the current local-first backend logic and is the owned runtime
+  path for session lifecycle work
 - CLI entry points still exist for tooling/debugging and scripted inspection
+  over the shared session service
+- detached worker logs remain backend diagnostics and are not yet surfaced as
+  an API or frontend contract
 - Electron integration is still partial
 - renderer-facing playback concerns still belong to Electron
 

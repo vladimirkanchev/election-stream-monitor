@@ -73,6 +73,10 @@ Backend/API contract checks:
   - playback-resolution behavior
 - `tests/test_api_boundary_sessions.py`
   - session start/read/cancel behavior
+- `tests/test_session_service.py`
+  - shared start/read/cancel service behavior
+- `tests/test_session_cli_tooling.py`
+  - CLI adapter behavior over the shared session service
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - populated session snapshot response shape
@@ -137,6 +141,8 @@ Frontend contract checks:
 
 Use these focused checks when changing:
 
+- shared session start/read/cancel mechanics
+- detached worker launch, `worker.log` capture, or parent/worker observability
 - FastAPI request/response schemas
 - session snapshot fields
 - bridge error payloads
@@ -151,6 +157,16 @@ Use these focused checks when changing:
 - concrete HTTP/HLS reconnect, cleanup, or limit behavior
 
 Useful focused commands:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_session_service.py tests/test_api_boundary_sessions.py tests/test_session_cli_tooling.py -q
+```
+
+Use that command first for worker-observability changes. It covers:
+
+- shared worker-launch behavior in `session_service.py`
+- the current API rule that diagnostics stay backend-owned
+- CLI-side worker failure logging behavior
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_api_boundary_*.py -q
@@ -250,23 +266,48 @@ Note:
 - those cases may fail inside stricter sandboxes even when the code is healthy
 - if that happens, rerun the same targeted suite in a normal local shell
 
+Recommended backend order for session-runner work:
+
+1. `tests/test_session_runner_lifecycle.py`
+2. `tests/test_session_runner_execution.py`
+3. `tests/test_session_runner_terminal.py`
+4. `tests/test_session_runner_local.py`
+5. `tests/test_session_runner_api_stream_basic.py`
+6. `tests/test_session_runner_api_stream_http_hls.py` in a normal local shell when loopback sockets are available
+
 ## Lifecycle Coverage Audit
 
 Current lifecycle coverage is already spread across the main layers:
 
 - backend tests
+  - `tests/test_session_runner_lifecycle.py`
+    - pending-session setup
+    - pending-to-running transition semantics
+    - smallest helper-level seam for session setup and status transitions
+  - `tests/test_session_runner_execution.py`
+    - extracted local execution-loop helper behavior
+    - extracted live `api_stream` execution-loop helper behavior
+    - analyzer-bundle invocation and event-persistence seams
+    - first stop when a refactor changes slice-processing flow
+  - `tests/test_session_runner_terminal.py`
+    - terminal outcome persistence
+    - validation-failure persistence
+    - api-stream cleanup accounting and terminal log-field shaping
+    - first stop when a refactor changes status mapping, cleanup, or terminal logs
   - `tests/test_session_runner_local.py`
     - start-to-completed flow
     - mid-run cancel leading to `cancelled`
     - runtime failure persistence
     - validation failure persistence
+    - stable black-box local lifecycle coverage
     - local discovery and slice-expansion behavior now owned by
       `session_runner_discovery`
   - `tests/test_session_runner_api_stream_basic.py`
     - seam-loader `api_stream` completion, cancel, cleanup, and failure paths
-    - runner-owned live progress and summary logging behavior
+    - stable black-box live progress and summary logging behavior
   - `tests/test_session_runner_api_stream_http_hls.py`
     - real HTTP/HLS-backed `api_stream` transport and lifecycle integration
+    - keep this as the signoff suite when a change touches real HTTP/HLS behavior
   - `tests/test_session_io.py`
     - invalid terminal transitions
     - completed-progress consistency checks
