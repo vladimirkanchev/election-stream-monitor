@@ -19,18 +19,27 @@ from analyzer_contract import AnalysisSlice
 from session_io import read_session_snapshot
 from session_runner import run_local_session
 from stream_loader import StaticApiStreamLoader, build_api_stream_source_contract
+from tests.session_runner_api_stream_test_support import (
+    _configure_runner_output_paths,
+    _patch_runner_bundle,
+    _patch_runner_store_flushes,
+)
+
+
+def _make_segment_input_dir(tmp_path: Path, *names: str) -> Path:
+    input_dir = tmp_path / "segments"
+    input_dir.mkdir()
+    for name in names:
+        (input_dir / name).write_bytes(b"aa")
+    return input_dir
 
 
 def test_run_local_session_writes_incremental_files(
     monkeypatch, tmp_path: Path
 ) -> None:
     """A normal session should persist metadata, progress, and result events incrementally."""
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-
-    input_dir = tmp_path / "segments"
-    input_dir.mkdir()
-    (input_dir / "segment_0001.ts").write_bytes(b"aa")
-    (input_dir / "segment_0002.ts").write_bytes(b"bb")
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts", "segment_0002.ts")
 
     def fake_run_enabled_analyzers_bundle(
         file_path: Path,
@@ -52,11 +61,7 @@ def test_run_local_session_writes_incremental_files(
             "alerts": [],
         }
 
-    monkeypatch.setattr(
-        "session_runner.run_enabled_analyzers_bundle",
-        fake_run_enabled_analyzers_bundle,
-    )
-    monkeypatch.setattr("session_runner.black_frame_store.flush", lambda: None)
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle)
 
     metadata = run_local_session(
         mode="video_segments",
@@ -82,12 +87,8 @@ def test_run_local_session_stops_when_cancel_is_requested(
     monkeypatch, tmp_path: Path
 ) -> None:
     """A cancel request observed mid-run should stop the session cleanly."""
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-
-    input_dir = tmp_path / "segments"
-    input_dir.mkdir()
-    (input_dir / "segment_0001.ts").write_bytes(b"aa")
-    (input_dir / "segment_0002.ts").write_bytes(b"bb")
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts", "segment_0002.ts")
 
     cancel_requested = {"done": False}
 
@@ -116,12 +117,7 @@ def test_run_local_session_stops_when_cancel_is_requested(
             "alerts": [],
         }
 
-    monkeypatch.setattr(
-        "session_runner.run_enabled_analyzers_bundle",
-        fake_run_enabled_analyzers_bundle,
-    )
-    monkeypatch.setattr("session_runner.black_frame_store.flush", lambda: None)
-    monkeypatch.setattr("session_runner.blur_metrics_store.flush", lambda: None)
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle)
 
     metadata = run_local_session(
         mode="video_segments",
@@ -147,11 +143,8 @@ def test_run_local_session_persists_runtime_failure_progress_details(
     monkeypatch, tmp_path: Path
 ) -> None:
     """A detector/runtime failure should persist failed progress diagnostics."""
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-
-    input_dir = tmp_path / "segments"
-    input_dir.mkdir()
-    (input_dir / "segment_0001.ts").write_bytes(b"aa")
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts")
 
     def fake_run_enabled_analyzers_bundle(
         file_path: Path,
@@ -171,10 +164,7 @@ def test_run_local_session_persists_runtime_failure_progress_details(
         )
         raise ValueError("simulated analyzer failure")
 
-    monkeypatch.setattr(
-        "session_runner.run_enabled_analyzers_bundle",
-        fake_run_enabled_analyzers_bundle,
-    )
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle, patch_flushes=False)
 
     with pytest.raises(ValueError, match="simulated analyzer failure"):
         run_local_session(
@@ -196,7 +186,7 @@ def test_run_local_session_persists_validation_failure_progress_details(
     monkeypatch, tmp_path: Path
 ) -> None:
     """A source validation failure should still persist failed session progress."""
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    _configure_runner_output_paths(monkeypatch, tmp_path)
     missing_input = tmp_path / "missing-segments"
 
     with pytest.raises(OSError, match="Input path does not exist"):
@@ -219,11 +209,8 @@ def test_run_local_session_with_no_selected_detectors_runs_none(
     monkeypatch, tmp_path: Path
 ) -> None:
     """An explicit empty detector selection should mean "run none", not "run all"."""
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-
-    input_dir = tmp_path / "segments"
-    input_dir.mkdir()
-    (input_dir / "segment_0001.ts").write_bytes(b"aa")
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts")
 
     observed: dict[str, object] = {}
 
@@ -239,12 +226,7 @@ def test_run_local_session_with_no_selected_detectors_runs_none(
         observed["selected_analyzers"] = selected_analyzers
         return {"results": [], "alerts": []}
 
-    monkeypatch.setattr(
-        "session_runner.run_enabled_analyzers_bundle",
-        fake_run_enabled_analyzers_bundle,
-    )
-    monkeypatch.setattr("session_runner.black_frame_store.flush", lambda: None)
-    monkeypatch.setattr("session_runner.blur_metrics_store.flush", lambda: None)
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle)
 
     metadata = run_local_session(
         mode="video_segments",
@@ -437,16 +419,48 @@ def test_discover_input_slices_routes_api_streams_through_loader_seam(
     assert observed["closed"] is True
 
 
+def test_get_api_stream_loader_delegates_to_public_loader_factory(monkeypatch) -> None:
+    """The stable runner wrapper should delegate loader creation unchanged."""
+    sentinel_loader = object()
+    observed: dict[str, object] = {}
+
+    def fake_create_api_stream_loader(*, session_id=None):
+        observed["session_id"] = session_id
+        return sentinel_loader
+
+    monkeypatch.setattr(
+        session_runner,
+        "create_api_stream_loader",
+        fake_create_api_stream_loader,
+    )
+
+    loader = session_runner.get_api_stream_loader(session_id="session-loader-wrapper")
+
+    assert loader is sentinel_loader
+    assert observed["session_id"] == "session-loader-wrapper"
+
+
+def test_create_session_id_keeps_runner_owned_stable_prefix() -> None:
+    """The public session id helper should keep the stable runner-owned format."""
+    session_id = session_runner.create_session_id()
+
+    assert session_id.startswith("session-")
+    assert len(session_id.split("-")) >= 4
+    assert len(session_id.rsplit("-", 1)[-1]) == 8
+
+
 def test_run_local_session_ignores_playlist_corruption_after_slice_discovery(
     monkeypatch, tmp_path: Path
 ) -> None:
     """Playlist corruption after startup should not destabilize the already discovered run."""
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-
-    input_dir = tmp_path / "segments"
-    input_dir.mkdir()
-    for index in range(4):
-        (input_dir / f"segment_{index:04d}.ts").write_bytes(b"video")
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(
+        tmp_path,
+        "segment_0000.ts",
+        "segment_0001.ts",
+        "segment_0002.ts",
+        "segment_0003.ts",
+    )
     playlist_path = input_dir / "index.m3u8"
     playlist_path.write_text(
         "\n".join(
@@ -495,12 +509,7 @@ def test_run_local_session_ignores_playlist_corruption_after_slice_discovery(
             "alerts": [],
         }
 
-    monkeypatch.setattr(
-        "session_runner.run_enabled_analyzers_bundle",
-        fake_run_enabled_analyzers_bundle,
-    )
-    monkeypatch.setattr("session_runner.black_frame_store.flush", lambda: None)
-    monkeypatch.setattr("session_runner.blur_metrics_store.flush", lambda: None)
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle)
 
     metadata = run_local_session(
         mode="video_segments",

@@ -13,22 +13,18 @@ from session_io import read_session_snapshot
 from session_runner import run_local_session
 from stores import BufferedCsvStore
 from stream_loader import FakeApiStreamEvent, FakeApiStreamLoader
+from tests.session_runner_api_stream_test_support import (
+    DummyStore,
+    _make_live_loader_events,
+    _make_live_slices,
+    _patch_runner_store_flushes,
+)
 
 
 GROUND_TRUTH_PATH = Path(__file__).parent / "fixtures" / "media" / "ground_truth.json"
 GROUND_TRUTH = json.loads(GROUND_TRUTH_PATH.read_text(encoding="utf-8"))
 LOCAL_SESSION_CASES = GROUND_TRUTH["local_session_cases"]
 SIMULATED_API_STREAM_CASES = GROUND_TRUTH["simulated_api_stream_cases"]
-
-
-class DummyStore:
-    """Minimal in-memory store for synthetic api-stream contract tests."""
-
-    def __init__(self) -> None:
-        self.rows: list[dict[str, object]] = []
-
-    def add_row(self, row: dict[str, object]) -> None:
-        self.rows.append(row)
 
 
 def _install_isolated_csv_stores(monkeypatch, tmp_path: Path) -> None:
@@ -66,8 +62,7 @@ def _install_dummy_stores(monkeypatch) -> None:
             "blur_metrics": DummyStore(),
         },
     )
-    monkeypatch.setattr("session_runner.black_frame_store.flush", lambda: None)
-    monkeypatch.setattr("session_runner.blur_metrics_store.flush", lambda: None)
+    _patch_runner_store_flushes(monkeypatch)
 
 
 def _resolve_fixture_path(
@@ -229,46 +224,6 @@ def _assert_snapshot_matches_ground_truth(
             assert projected_alerts == expected_alerts
 
     _assert_key_results(snapshot, expected.get("key_results", []))
-
-
-def _make_live_slices(
-    tmp_path: Path,
-    *,
-    source_group: str,
-    names: list[str],
-) -> list[AnalysisSlice]:
-    live_dir = tmp_path / source_group
-    live_dir.mkdir(parents=True, exist_ok=True)
-    slices: list[AnalysisSlice] = []
-    for index, name in enumerate(names):
-        file_path = live_dir / name
-        file_path.write_bytes(b"chunk")
-        slices.append(
-            AnalysisSlice(
-                file_path=file_path,
-                source_group=source_group,
-                source_name=name,
-                window_index=index,
-                window_start_sec=float(index),
-                window_duration_sec=1.0,
-            )
-        )
-    return slices
-
-
-def _make_live_loader_events(slices: list[AnalysisSlice]) -> list[FakeApiStreamEvent]:
-    """Translate synthetic slices into fake-loader chunk events."""
-    return [
-        FakeApiStreamEvent(
-            kind="chunk",
-            chunk_index=analysis_slice.window_index,
-            current_item=analysis_slice.source_name,
-            file_path=analysis_slice.file_path,
-            window_start_sec=analysis_slice.window_start_sec,
-            window_duration_sec=analysis_slice.window_duration_sec,
-        )
-        for analysis_slice in slices
-    ]
 
 
 def _build_api_stream_row(
