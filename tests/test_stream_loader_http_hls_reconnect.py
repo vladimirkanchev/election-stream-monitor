@@ -19,7 +19,7 @@ from stream_loader import (
     cleanup_api_stream_temp_session_dir,
     collect_api_stream_slices,
 )
-from tests.stream_loader_http_hls_test_support import _serve_local_hls
+from tests.local_hls_test_support import _serve_local_hls
 
 
 def test_http_hls_loader_resumes_after_outage_when_playlist_window_moves(

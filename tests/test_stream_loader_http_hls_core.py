@@ -27,7 +27,7 @@ from stream_loader import (
     collect_api_stream_slices,
     iter_api_stream_slices,
 )
-from tests.stream_loader_http_hls_test_support import _serve_local_hls
+from tests.local_hls_test_support import _serve_local_hls
 
 
 def _configure_http_hls_loader_test(
