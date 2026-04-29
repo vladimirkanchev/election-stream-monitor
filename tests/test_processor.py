@@ -10,6 +10,7 @@ boundary:
 - persistence failures remain session-fatal
 """
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import processor
@@ -17,15 +18,23 @@ from analyzer_contract import AnalysisSlice, AnalyzerRegistration
 from session_models import AlertEvent
 
 
+@dataclass(slots=True)
 class DummyStore:
     """Minimal in-memory store used to observe processor write behavior."""
 
-    def __init__(self) -> None:
-        self.rows: list[dict] = []
+    rows: list[dict] = field(default_factory=list)
 
     def add_row(self, row: dict) -> None:
         """Record the added row."""
         self.rows.append(row)
+
+
+class FailingStore:
+    """Store double that fails on every write."""
+
+    def add_row(self, row: dict) -> None:
+        _ = row
+        raise OSError("disk full")
 
 
 def _write_video_file(tmp_path: Path, name: str = "sample.ts") -> Path:
@@ -142,6 +151,23 @@ def _patch_store_registry(
     )
 
 
+def _run_bundle(
+    file_path: Path,
+    *,
+    session_id: str = "session-1",
+    prefix: str = "segments",
+    mode: str = "video_segments",
+    analysis_slice: AnalysisSlice | None = None,
+) -> dict[str, list[dict[str, object]]]:
+    return processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix=prefix,
+        mode=mode,
+        session_id=session_id,
+        analysis_slice=analysis_slice,
+    )
+
+
 def test_run_enabled_analyzers_routes_result_to_matching_store(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -238,12 +264,7 @@ def test_run_enabled_analyzers_bundle_isolates_detector_failures(
     dummy_store = DummyStore()
     _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
-    bundle = processor.run_enabled_analyzers_bundle(
-        file_path=file_path,
-        prefix="segments",
-        mode="video_segments",
-        session_id="session-1",
-    )
+    bundle = _run_bundle(file_path)
 
     assert [result["detector_id"] for result in bundle["results"]] == ["video_metrics"]
     assert bundle["alerts"] == []
@@ -277,10 +298,8 @@ def test_run_enabled_analyzers_bundle_logs_failure_context(
         lambda message, *args: logged.append((message, args)),
     )
 
-    processor.run_enabled_analyzers_bundle(
-        file_path=file_path,
-        prefix="segments",
-        mode="video_segments",
+    _run_bundle(
+        file_path,
         session_id="session-log-ctx",
         analysis_slice=AnalysisSlice(
             file_path=file_path,
@@ -350,12 +369,7 @@ def test_run_enabled_analyzers_bundle_keeps_healthy_results_when_other_detectors
     blur_store = DummyStore()
     _patch_store_registry(monkeypatch, blur_metrics=blur_store)
 
-    bundle = processor.run_enabled_analyzers_bundle(
-        file_path=file_path,
-        prefix="segments",
-        mode="video_segments",
-        session_id="session-1",
-    )
+    bundle = _run_bundle(file_path)
 
     assert [result["detector_id"] for result in bundle["results"]] == ["video_blur"]
     assert blur_store.rows == [bundle["results"][0]["payload"]]
@@ -388,12 +402,7 @@ def test_run_enabled_analyzers_bundle_skips_malformed_rows(
     dummy_store = DummyStore()
     _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
-    bundle = processor.run_enabled_analyzers_bundle(
-        file_path=file_path,
-        prefix="segments",
-        mode="video_segments",
-        session_id="session-1",
-    )
+    bundle = _run_bundle(file_path)
 
     assert bundle == {"results": [], "alerts": []}
     assert dummy_store.rows == []
@@ -432,12 +441,7 @@ def test_run_enabled_analyzers_bundle_skips_unexpected_payload_types(
     dummy_store = DummyStore()
     _patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
-    bundle = processor.run_enabled_analyzers_bundle(
-        file_path=file_path,
-        prefix="segments",
-        mode="video_segments",
-        session_id="session-1",
-    )
+    bundle = _run_bundle(file_path)
 
     assert bundle == {"results": [], "alerts": []}
     assert dummy_store.rows == []
@@ -453,11 +457,6 @@ def test_run_enabled_analyzers_bundle_propagates_store_write_failures(
         _ = prefix
         return _video_metrics_row(source_name=file_path.name)
 
-    class FailingStore:
-        def add_row(self, row: dict) -> None:
-            _ = row
-            raise OSError("disk full")
-
     _patch_registrations(
         monkeypatch,
         _registration(
@@ -471,12 +470,7 @@ def test_run_enabled_analyzers_bundle_propagates_store_write_failures(
     _patch_store_registry(monkeypatch, video_metrics=FailingStore())
 
     try:
-        processor.run_enabled_analyzers_bundle(
-            file_path=file_path,
-            prefix="segments",
-            mode="video_segments",
-            session_id="session-1",
-        )
+        _run_bundle(file_path)
     except processor.ProcessorPersistenceError as error:
         assert error.detector_id == "video_metrics"
         assert error.store_name == "video_metrics"
@@ -496,11 +490,6 @@ def test_run_enabled_analyzers_bundle_logs_store_failure_context(
     def healthy_analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
         return _video_metrics_row(source_name=file_path.name)
-
-    class FailingStore:
-        def add_row(self, row: dict) -> None:
-            _ = row
-            raise OSError("disk full")
 
     _patch_registrations(
         monkeypatch,
