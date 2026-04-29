@@ -168,6 +168,16 @@ Use that command first for worker-observability changes. It covers:
 - the current API rule that diagnostics stay backend-owned
 - CLI-side worker failure logging behavior
 
+### Legacy Seam Replacement
+
+For the demoted legacy `src/main.py` seam, the intended replacement is focused
+pytest coverage rather than a new manual tooling script. The main local
+confidence replacements are:
+
+- `tests/test_processor.py`
+- `tests/test_session_runner_local.py`
+- `tests/test_e2e_local_session.py`
+
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_api_boundary_*.py -q
 ```
