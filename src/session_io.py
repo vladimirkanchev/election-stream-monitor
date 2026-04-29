@@ -8,6 +8,7 @@ session contract:
 - `progress.json` for the latest progress snapshot
 - `alerts.jsonl` for append-only alert events
 - `results.jsonl` for append-only detector result events
+- optional `worker.log` for backend-owned detached worker diagnostics
 
 These helpers keep the snapshot shape stable even when persisted files are
 missing, malformed, or only partially written.
@@ -65,6 +66,16 @@ def get_cancel_request_path(session_id: str) -> Path:
 def get_api_stream_seen_chunk_keys_path(session_id: str) -> Path:
     """Return the persisted de-duplication log for one live session."""
     return get_session_dir(session_id) / "api_stream_seen_chunks.jsonl"
+
+
+def get_worker_log_path(session_id: str) -> Path:
+    """Return the backend-owned worker log path for one session.
+
+    This log is intentionally an internal diagnostic artifact for the detached
+    worker process. It is not part of the frontend polling snapshot and is not
+    currently surfaced by FastAPI as a public contract.
+    """
+    return get_session_dir(session_id) / "worker.log"
 
 
 def write_session_metadata(metadata: SessionMetadata) -> None:
