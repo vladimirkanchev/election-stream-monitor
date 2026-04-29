@@ -1,20 +1,24 @@
-"""Tests for top-level mode routing in the application entrypoint."""
+"""Tiny legacy smoke checks for the old `main.py` entrypoint.
+
+The canonical runtime path is Electron -> FastAPI -> session service ->
+session runner. These tests only protect the leftover `main.py` wiring so it
+does not break accidentally while the legacy path still exists.
+"""
 
 from functools import partial
+
+import pytest
 
 import main
 
 
-def test_main_routes_video_segments_mode(monkeypatch) -> None:
-    """Main should wire segment mode to the video processor with the right prefix."""
-    recorded: dict = {}
+@pytest.mark.parametrize("mode", ["video_segments", "video_files"])
+def test_main_keeps_legacy_local_routing_shape(monkeypatch, mode: str) -> None:
+    """The legacy entrypoint should still dispatch through `stream_local_prefix`."""
+    recorded: dict[str, object] = {}
 
-    monkeypatch.setattr(main.config, "DATA_SOURCE", "video_segments")
-    monkeypatch.setattr(
-        main,
-        "stream_local_prefix",
-        lambda **kwargs: recorded.update(kwargs),
-    )
+    monkeypatch.setattr(main.config, "DATA_SOURCE", mode)
+    monkeypatch.setattr(main, "stream_local_prefix", lambda **kwargs: recorded.update(kwargs))
     monkeypatch.setattr(main.black_frame_store, "flush", lambda: None)
     monkeypatch.setattr(main.blur_metrics_store, "flush", lambda: None)
 
@@ -23,25 +27,4 @@ def test_main_routes_video_segments_mode(monkeypatch) -> None:
     assert recorded["prefix"] == "segments"
     assert isinstance(recorded["on_segment"], partial)
     assert recorded["on_segment"].func is main.process_video_file
-    assert recorded["on_segment"].keywords == {"mode": "video_segments"}
-
-
-def test_main_routes_video_files_mode(monkeypatch) -> None:
-    """Main should wire video file mode to the video processor with the right mode."""
-    recorded: dict = {}
-
-    monkeypatch.setattr(main.config, "DATA_SOURCE", "video_files")
-    monkeypatch.setattr(
-        main,
-        "stream_local_prefix",
-        lambda **kwargs: recorded.update(kwargs),
-    )
-    monkeypatch.setattr(main.black_frame_store, "flush", lambda: None)
-    monkeypatch.setattr(main.blur_metrics_store, "flush", lambda: None)
-
-    main.main()
-
-    assert recorded["prefix"] == "segments"
-    assert isinstance(recorded["on_segment"], partial)
-    assert recorded["on_segment"].func is main.process_video_file
-    assert recorded["on_segment"].keywords == {"mode": "video_files"}
+    assert recorded["on_segment"].keywords == {"mode": mode}
