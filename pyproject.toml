@@ -111,3 +111,9 @@ include = ["api", "api.*"]
 [tool.pylint.main]
 init-hook = "import sys; from pathlib import Path; sys.path.insert(0, str(Path().resolve() / 'src'))"
 persistent = false
+
+[tool.pytest.ini_options]
+markers = [
+    "e2e: end-to-end session and integration coverage",
+    "slow: slower real-media or matrix-backed integration coverage",
+]
