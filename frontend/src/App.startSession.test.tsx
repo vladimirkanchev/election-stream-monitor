@@ -1,108 +1,28 @@
+/**
+ * App-level coverage for start-session behavior that still needs the full UI
+ * shell.
+ *
+ * These tests intentionally stay narrow: one happy-path integration check and
+ * one operator-facing start-error contract. Broader validation lives in the
+ * bridge and hook suites.
+ */
+
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
 import { fail } from "./bridge/contract";
-import type { RunSessionInput, SessionSnapshot, SessionSummary } from "./types";
+import type { RunSessionInput } from "./types";
 import {
   enterApiStreamSource,
-  enterLocalSource,
   mockBridge,
   renderApp,
-  RUNNING_SESSION,
   startMonitoring,
   toggleFirstDetector,
 } from "./testing/appHarness";
 
 describe("App start-session integration", () => {
-  it("shows a start error message when monitoring cannot be started", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("boom"));
-
-    await renderApp();
-
-    await enterLocalSource();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Monitoring could not be started. Check the selected source and try again.")).toBeTruthy();
-    });
-  });
-
-  it("shows a start error message when the initial session read fails after start", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("read failed"));
-
-    await renderApp();
-
-    await enterLocalSource();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Monitoring could not be started. Check the selected source and try again.")).toBeTruthy();
-    });
-  });
-
-  it("shows a start error message when the bridge returns a malformed start payload", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue({
-      mode: "video_segments",
-      input_path: "/data/streams/segments",
-      selected_detectors: ["video_blur"],
-      status: "running",
-    } as unknown as SessionSummary);
-
-    await renderApp();
-
-    await enterLocalSource();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Monitoring could not be started. The local bridge returned an invalid response.",
-        ),
-      ).toBeTruthy();
-    });
-  });
-
-  it("shows a bridge-specific start error message for typed transport failures", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(
-      fail("SESSION_START_FAILED", "Session start request failed", "cli crashed"),
-    );
-
-    await renderApp();
-
-    await enterLocalSource();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Monitoring could not be started. The local monitoring bridge reported a request failure.",
-        ),
-      ).toBeTruthy();
-    });
-  });
-
-  it("normalizes missing snapshot collections from backend reads", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(RUNNING_SESSION);
-    (mockBridge.readSession as ReturnType<typeof vi.fn>).mockResolvedValue({
-      session: null,
-      progress: null,
-    } as unknown as SessionSnapshot);
-
-    await renderApp();
-
-    await enterLocalSource();
-    await toggleFirstDetector();
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-      expect(screen.getByText("Mock Player")).toBeTruthy();
-    });
-  });
-
   it("starts api stream sessions with remote source payloads", async () => {
     (mockBridge.startSession as ReturnType<typeof vi.fn>).mockImplementation(
       async (input: RunSessionInput) => ({
@@ -158,54 +78,6 @@ describe("App start-session integration", () => {
       expect(screen.getByText("Running")).toBeTruthy();
       expect(screen.getByText("API stream")).toBeTruthy();
       expect(screen.getByText("Mock Player")).toBeTruthy();
-    });
-  });
-
-  it("shows a remote-source start error when the api stream cannot be reached", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error("remote source unreachable"),
-    );
-
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/unreachable.m3u8");
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(mockBridge.startSession).toHaveBeenCalledWith({
-        source: {
-          kind: "api_stream",
-          path: "https://example.com/live/unreachable.m3u8",
-          access: "api_stream",
-        },
-        selectedDetectors: [],
-      });
-      expect(
-        screen.getByText("Monitoring could not be started. Check the selected live stream and try again."),
-      ).toBeTruthy();
-    });
-  });
-
-  it("shows a retry-budget-exhausted start message for typed api stream bridge failures", async () => {
-    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(
-      fail(
-        "SESSION_START_FAILED",
-        "Session start request failed",
-        "api_stream reconnect budget exhausted",
-      ),
-    );
-
-    await renderApp();
-
-    await enterApiStreamSource("https://example.com/live/playlist.m3u8");
-    startMonitoring();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          "Monitoring could not reconnect to the live stream, so it has ended.",
-        ),
-      ).toBeTruthy();
     });
   });
 
