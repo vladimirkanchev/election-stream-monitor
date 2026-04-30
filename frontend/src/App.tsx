@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
 import { localBridge } from "./bridge";
-import { AlertDetailsDrawer } from "./components/AlertDetailsDrawer";
 import { AlertFeed } from "./components/AlertFeed";
 import { DetectorCatalog } from "./components/DetectorCatalog";
 import { PathInput } from "./components/PathInput";
@@ -9,7 +8,6 @@ import { RunButton } from "./components/RunButton";
 import { SessionStatusPanel } from "./components/SessionStatusPanel";
 import { SourceModeSelector } from "./components/SourceModeSelector";
 import { StartupPreviewPanel } from "./components/StartupPreviewPanel";
-import { VideoPlayerPanel } from "./components/VideoPlayerPanel";
 import { useMonitoringSession } from "./hooks/useMonitoringSession";
 import { useSetupState } from "./hooks/useSetupState";
 import { buildAlertFeedItems, filterAlertsForPlayback } from "./presenters/alertFeed";
@@ -21,6 +19,11 @@ import type {
   PlaybackStatus,
 } from "./types";
 import { getMonitoringControlState, isSetupFrozen } from "./viewModels/monitoringControls";
+
+const VideoPlayerPanel = lazy(async () => import("./components/VideoPlayerPanel")
+  .then((module) => ({ default: module.VideoPlayerPanel })));
+const AlertDetailsDrawer = lazy(async () => import("./components/AlertDetailsDrawer")
+  .then((module) => ({ default: module.AlertDetailsDrawer })));
 
 export default function App() {
   const [detectors, setDetectors] = useState<DetectorOption[]>([]);
@@ -192,19 +195,21 @@ export default function App() {
 
         <div className="setup-side">
           {controlState.showPlayback ? (
-            <VideoPlayerPanel
-              source={displaySource}
-              currentItem={sessionSnapshot.progress?.current_item ?? null}
-              playbackRequested={playbackRequested}
-              onPlaybackStatusChange={setPlaybackStatus}
-              onPlaybackMetricsChange={({ time, duration, isLive }) => {
-                setPlaybackTime(time);
-                setPlaybackDuration(duration);
-                setPlaybackLive(isLive);
-              }}
-              onPlaybackItemChange={setCurrentPlaybackItem}
-              onPlaybackSegmentMapChange={setSegmentStartTimes}
-            />
+            <Suspense fallback={<PlaybackPanelFallback />}>
+              <VideoPlayerPanel
+                source={displaySource}
+                currentItem={sessionSnapshot.progress?.current_item ?? null}
+                playbackRequested={playbackRequested}
+                onPlaybackStatusChange={setPlaybackStatus}
+                onPlaybackMetricsChange={({ time, duration, isLive }) => {
+                  setPlaybackTime(time);
+                  setPlaybackDuration(duration);
+                  setPlaybackLive(isLive);
+                }}
+                onPlaybackItemChange={setCurrentPlaybackItem}
+                onPlaybackSegmentMapChange={setSegmentStartTimes}
+              />
+            </Suspense>
           ) : (
             <StartupPreviewPanel source={setupMonitorSource} />
           )}
@@ -217,13 +222,15 @@ export default function App() {
         </div>
       </main>
 
-      <AlertDetailsDrawer
-        alert={selectedAlert}
-        detectors={detectors}
-        sourceKind={displaySource.kind}
-        segmentStartTimes={segmentStartTimes}
-        onClose={() => setSelectedAlert(null)}
-      />
+      <Suspense fallback={null}>
+        <AlertDetailsDrawer
+          alert={selectedAlert}
+          detectors={detectors}
+          sourceKind={displaySource.kind}
+          segmentStartTimes={segmentStartTimes}
+          onClose={() => setSelectedAlert(null)}
+        />
+      </Suspense>
     </>
   );
 }
@@ -241,4 +248,21 @@ function getDisplaySource(
 
 function getControlState(args: Parameters<typeof getMonitoringControlState>[0]) {
   return getMonitoringControlState(args);
+}
+
+function PlaybackPanelFallback() {
+  return (
+    <section className="monitor-card video-panel">
+      <div className="monitor-card__header">
+        <h2>Live View</h2>
+        <span>Loading player</span>
+      </div>
+      <div className="video-panel__surface">
+        <div className="video-panel__placeholder">
+          <strong>Preparing playback</strong>
+          <p>Loading the playback panel for the current monitoring session.</p>
+        </div>
+      </div>
+    </section>
+  );
 }

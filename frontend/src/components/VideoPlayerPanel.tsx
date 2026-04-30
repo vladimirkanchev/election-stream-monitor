@@ -1,4 +1,3 @@
-import Hls from "hls.js";
 import { useEffect, useEffectEvent } from "react";
 
 import { usePlaybackSource } from "../hooks/usePlaybackSource";
@@ -21,6 +20,42 @@ interface VideoPlayerPanelProps {
   }) => void;
   onPlaybackItemChange?: (item: string | null) => void;
   onPlaybackSegmentMapChange?: (segmentStarts: Record<string, number>) => void;
+}
+
+interface HlsErrorPayload {
+  type: string;
+  details: string;
+  fatal: boolean;
+  response?: { code?: number | null; text?: string | null };
+}
+
+interface HlsLevelPayload {
+  details?: {
+    totalduration?: number;
+    fragments?: Array<{ relurl?: string; url?: string; start: number }>;
+  };
+}
+
+interface HlsFragmentPayload {
+  frag?: { relurl?: string; url?: string } | null;
+}
+
+interface HlsInstance {
+  loadSource(source: string): void;
+  attachMedia(media: HTMLVideoElement): void;
+  on(event: string, handler: (event: unknown, data: unknown) => void): void;
+  destroy(): void;
+}
+
+interface HlsConstructor {
+  new (config: { enableWorker: boolean }): HlsInstance;
+  isSupported(): boolean;
+  Events: {
+    MANIFEST_PARSED: string;
+    LEVEL_LOADED: string;
+    FRAG_CHANGED: string;
+    ERROR: string;
+  };
 }
 
 export function VideoPlayerPanel({
@@ -101,34 +136,41 @@ export function VideoPlayerPanel({
       return undefined;
     }
 
+    let cleanupPlayback: (() => void) | undefined;
+    let isCancelled = false;
+
     // HLS segment playback needs extra wiring so we can keep playback aligned
     // with segment names and start times. Direct file playback can stay simple.
     if (mediaSource.endsWith(".m3u8")) {
-      if (Hls.isSupported()) {
-        return attachHlsPlayback({
+      if (videoElement.canPlayType("application/vnd.apple.mpegurl")) {
+        console.info("[playback] using native HLS playback", mediaSource);
+        videoElement.src = mediaSource;
+        videoElement.load();
+        void play(videoElement);
+      } else {
+        void attachHlsPlayback({
           videoElement,
           mediaSource,
           play,
           onPlaybackItemChange: emitPlaybackItemChange,
           onPlaybackSegmentMapChange: emitPlaybackSegmentMapChange,
           handlePlaybackError,
+        }).then((nextCleanup) => {
+          if (isCancelled) {
+            nextCleanup?.();
+            return;
+          }
+          cleanupPlayback = nextCleanup;
         });
       }
-
-      if (videoElement.canPlayType("application/vnd.apple.mpegurl")) {
-        console.info("[playback] using native HLS playback", mediaSource);
-        videoElement.src = mediaSource;
-        videoElement.load();
-        void play(videoElement);
-        return undefined;
-      }
-
-      handlePlaybackError(getPlaybackErrorMessage("hlsUnsupported"));
-      return undefined;
+    } else {
+      loadDirectVideoSource(videoElement, mediaSource, play);
     }
 
-    loadDirectVideoSource(videoElement, mediaSource, play);
-    return undefined;
+    return () => {
+      isCancelled = true;
+      cleanupPlayback?.();
+    };
   }, [
     handlePlaybackError,
     mediaSource,
@@ -222,14 +264,14 @@ export function VideoPlayerPanel({
   );
 }
 
-function attachHlsPlayback(args: {
+async function attachHlsPlayback(args: {
   videoElement: HTMLVideoElement;
   mediaSource: string;
   play: (element?: HTMLVideoElement) => Promise<void>;
   onPlaybackItemChange?: (item: string | null) => void;
   onPlaybackSegmentMapChange?: (segmentStarts: Record<string, number>) => void;
   handlePlaybackError: (message: string) => void;
-}): () => void {
+}): Promise<(() => void) | undefined> {
   // Hls.js is only attached when the resolved playback source is an HLS
   // playlist. Direct files stay on the browser's native media stack.
   const {
@@ -240,6 +282,13 @@ function attachHlsPlayback(args: {
     onPlaybackSegmentMapChange,
     handlePlaybackError,
   } = args;
+  const module = await import("hls.js");
+  const Hls = module.default as HlsConstructor;
+
+  if (!Hls.isSupported()) {
+    handlePlaybackError(getPlaybackErrorMessage("hlsUnsupported"));
+    return undefined;
+  }
 
   console.info("[playback] attaching Hls.js", mediaSource);
   const hls = new Hls({
@@ -252,34 +301,37 @@ function attachHlsPlayback(args: {
     void play(videoElement);
   });
   hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+    const levelData = data as HlsLevelPayload;
     console.info(
       "[playback] HLS level loaded",
       mediaSource,
-      data.details?.totalduration,
-      data.details?.fragments?.length,
+      levelData.details?.totalduration,
+      levelData.details?.fragments?.length,
     );
-    onPlaybackSegmentMapChange?.(buildSegmentStartMap(data.details?.fragments ?? []));
+    onPlaybackSegmentMapChange?.(buildSegmentStartMap(levelData.details?.fragments ?? []));
   });
   hls.on(Hls.Events.FRAG_CHANGED, (_event, data) => {
-    onPlaybackItemChange?.(getFragmentName(data.frag));
+    const fragmentData = data as HlsFragmentPayload;
+    onPlaybackItemChange?.(getFragmentName(fragmentData.frag));
   });
   hls.on(Hls.Events.ERROR, (_event, data) => {
+    const errorData = data as HlsErrorPayload;
     console.error(
       "[playback] HLS error",
       JSON.stringify({
-        type: data.type,
-        details: data.details,
-        fatal: data.fatal,
-        responseCode: data.response?.code ?? null,
-        responseText: data.response?.text ?? null,
+        type: errorData.type,
+        details: errorData.details,
+        fatal: errorData.fatal,
+        responseCode: errorData.response?.code ?? null,
+        responseText: errorData.response?.text ?? null,
       }),
     );
-    if (data.fatal) {
+    if (errorData.fatal) {
       handlePlaybackError(
         getHlsPlaybackErrorMessage({
-          details: data.details,
-          responseCode: data.response?.code ?? null,
-          responseText: data.response?.text ?? null,
+          details: errorData.details,
+          responseCode: errorData.response?.code ?? null,
+          responseText: errorData.response?.text ?? null,
         }),
       );
     }
