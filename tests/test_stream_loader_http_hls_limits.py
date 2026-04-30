@@ -28,10 +28,15 @@ from stream_loader import (
     collect_api_stream_slices,
     iter_api_stream_slices,
 )
+from tests.http_hls_test_support import (
+    _HLS_CONTENT_TYPE,
+    _TS_CONTENT_TYPE,
+    build_http_hls_source,
+    configure_http_hls_loader_test,
+    media_playlist,
+    no_sleep,
+)
 from tests.local_hls_test_support import _serve_local_hls
-
-_HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
-_TS_CONTENT_TYPE = "video/mp2t"
 
 
 def _configure_http_hls_limits_test(
@@ -49,16 +54,14 @@ def _configure_http_hls_limits_test(
     sleep=None,
     monotonic=None,
 ) -> None:
-    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
-    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", poll_interval_sec)
-    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
-    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
-    if max_idle_playlist_polls is not None:
-        monkeypatch.setattr(
-            config,
-            "API_STREAM_MAX_IDLE_PLAYLIST_POLLS",
-            max_idle_playlist_polls,
-        )
+    """Apply the shared HLS test environment plus the limit-specific runtime knobs."""
+    configure_http_hls_loader_test(
+        monkeypatch,
+        tmp_path,
+        poll_interval_sec=poll_interval_sec,
+        max_idle_playlist_polls=max_idle_playlist_polls,
+        sleep=sleep,
+    )
     if max_playlist_refreshes is not None:
         monkeypatch.setattr(
             config,
@@ -93,27 +96,6 @@ def _configure_http_hls_limits_test(
         monkeypatch.setattr(stream_loader_http_hls.time, "monotonic", monotonic)
 
 
-def _playlist(*lines: str) -> str:
-    return "\n".join(["#EXTM3U", *lines])
-
-
-def _media_playlist(
-    media_sequence: int,
-    *segments: str,
-    target_duration: int = 1,
-    endlist: bool = True,
-) -> str:
-    lines = [
-        f"#EXT-X-TARGETDURATION:{target_duration}",
-        f"#EXT-X-MEDIA-SEQUENCE:{media_sequence}",
-    ]
-    for segment in segments:
-        lines.extend(["#EXTINF:1.0,", segment])
-    if endlist:
-        lines.append("#EXT-X-ENDLIST")
-    return _playlist(*lines)
-
-
 def _segment_routes(
     *indexes: int,
     prefix: str = "/live",
@@ -135,9 +117,23 @@ def _build_loader_source(
     *,
     playlist_path: str = "/live/index.m3u8",
 ) -> tuple[HttpHlsApiStreamLoader, object]:
+    """Build one real loader plus a validated source contract for a served playlist."""
     loader = HttpHlsApiStreamLoader(session_id)
-    source = build_api_stream_source_contract(f"{base_url}{playlist_path}")
+    source = build_http_hls_source(base_url, playlist_path)
     return loader, source
+
+
+def _seen_segment_keys(source_path: str, *indexes: int) -> set[tuple[str, int, str]]:
+    """Build the persisted dedup keys expected for a sequence of accepted segments."""
+    return {
+        (source_path, index, f"segment_{index}.ts")
+        for index in indexes
+    }
+
+
+def _request_url(request) -> str:
+    """Read a request URL from either urllib Request objects or lightweight stand-ins."""
+    return request.full_url if hasattr(request, "full_url") else request.get_full_url()
 
 
 def test_http_hls_loader_enforces_playlist_refresh_limit(
@@ -150,13 +146,13 @@ def test_http_hls_loader_enforces_playlist_refresh_limit(
         tmp_path,
         max_playlist_refreshes=1,
         max_idle_playlist_polls=10,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     routes = {
         "/live/index.m3u8": [
-            (200, _media_playlist(0, "segment_000.ts", endlist=False), _HLS_CONTENT_TYPE),
-            (200, _media_playlist(0, "segment_000.ts", endlist=False), _HLS_CONTENT_TYPE),
+            (200, media_playlist(0, "segment_000.ts", endlist=False), _HLS_CONTENT_TYPE),
+            (200, media_playlist(0, "segment_000.ts", endlist=False), _HLS_CONTENT_TYPE),
         ],
         **_segment_routes(0),
     }
@@ -185,13 +181,13 @@ def test_http_hls_loader_closes_once_after_endlist_terminal_completion(
         monkeypatch,
         tmp_path,
         max_idle_playlist_polls=10,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts"),
+            media_playlist(0, "segment_000.ts"),
             _HLS_CONTENT_TYPE,
         ),
         "/live/segment_000.ts": (200, b"000", _TS_CONTENT_TYPE),
@@ -233,7 +229,7 @@ def test_http_hls_loader_enforces_session_runtime_limit(
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts"),
+            media_playlist(0, "segment_000.ts"),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(0),
@@ -266,14 +262,14 @@ def test_http_hls_loader_keeps_session_temp_dirs_isolated_under_concurrent_runs(
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts"),
+            media_playlist(0, "segment_000.ts"),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(0),
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
 
         def run_loader(session_id: str) -> tuple[list[AnalysisSlice], Path]:
             loader = HttpHlsApiStreamLoader(session_id)
@@ -307,7 +303,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_segment_d
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(82, "segment_082.ts"),
+            media_playlist(82, "segment_082.ts"),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(82),
@@ -364,7 +360,7 @@ def test_http_hls_loader_semi_soak_run_keeps_temp_cleanup_and_dedup_stable(
     playlist_responses = [
         (
             200,
-            _media_playlist(first_index, f"segment_{first_index}.ts", f"segment_{second_index}.ts", endlist=False),
+            media_playlist(first_index, f"segment_{first_index}.ts", f"segment_{second_index}.ts", endlist=False),
             _HLS_CONTENT_TYPE,
         )
         for first_index, second_index in playlist_specs
@@ -387,10 +383,10 @@ def test_http_hls_loader_semi_soak_run_keeps_temp_cleanup_and_dedup_stable(
 
         assert collected_indexes == list(range(600, 612))
         assert len(collected_indexes) == len(set(collected_indexes))
-        assert read_api_stream_seen_chunk_keys("session-http-semi-soak") == {
-            (source.input_path, index, f"segment_{index}.ts")
-            for index in range(600, 612)
-        }
+        assert read_api_stream_seen_chunk_keys("session-http-semi-soak") == _seen_segment_keys(
+            source.input_path,
+            *range(600, 612),
+        )
         assert temp_dir.exists()
         assert not any(temp_dir.iterdir())
 
@@ -408,34 +404,34 @@ def test_http_hls_loader_semi_soak_restart_keeps_persisted_dedup_and_temp_state_
         monkeypatch,
         tmp_path,
         max_idle_playlist_polls=1,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     routes = {
         "/live/index.m3u8": [
             (
                 200,
-                _media_playlist(700, "segment_700.ts", "segment_701.ts", endlist=False),
+                media_playlist(700, "segment_700.ts", "segment_701.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(701, "segment_701.ts", "segment_702.ts", endlist=False),
+                media_playlist(701, "segment_701.ts", "segment_702.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(702, "segment_702.ts", "segment_703.ts", endlist=False),
+                media_playlist(702, "segment_702.ts", "segment_703.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(703, "segment_703.ts", "segment_704.ts", endlist=False),
+                media_playlist(703, "segment_703.ts", "segment_704.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(703, "segment_703.ts", "segment_704.ts", endlist=False),
+                media_playlist(703, "segment_703.ts", "segment_704.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
         ],
@@ -443,7 +439,7 @@ def test_http_hls_loader_semi_soak_restart_keeps_persisted_dedup_and_temp_state_
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
         temp_dir = build_api_stream_temp_session_dir("session-http-semi-soak-restart")
 
         first_loader = HttpHlsApiStreamLoader("session-http-semi-soak-restart")
@@ -459,10 +455,10 @@ def test_http_hls_loader_semi_soak_restart_keeps_persisted_dedup_and_temp_state_
         assert first_indexes == [700, 701, 702]
         assert temp_dir.exists()
         assert not any(temp_dir.iterdir())
-        assert read_api_stream_seen_chunk_keys("session-http-semi-soak-restart") == {
-            (source.input_path, index, f"segment_{index}.ts")
-            for index in range(700, 703)
-        }
+        assert read_api_stream_seen_chunk_keys("session-http-semi-soak-restart") == _seen_segment_keys(
+            source.input_path,
+            *range(700, 703),
+        )
 
         second_loader = HttpHlsApiStreamLoader("session-http-semi-soak-restart")
         second_indexes: list[int] = []
@@ -474,10 +470,10 @@ def test_http_hls_loader_semi_soak_restart_keeps_persisted_dedup_and_temp_state_
 
         assert second_indexes == [703, 704]
         assert not any(temp_dir.iterdir())
-        assert read_api_stream_seen_chunk_keys("session-http-semi-soak-restart") == {
-            (source.input_path, index, f"segment_{index}.ts")
-            for index in range(700, 705)
-        }
+        assert read_api_stream_seen_chunk_keys("session-http-semi-soak-restart") == _seen_segment_keys(
+            source.input_path,
+            *range(700, 705),
+        )
 
     cleanup_api_stream_temp_session_dir("session-http-semi-soak-restart")
 
@@ -492,14 +488,14 @@ def test_http_hls_loader_recovers_from_interrupted_run_by_clearing_stale_temp_me
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts", "segment_001.ts"),
+            media_playlist(0, "segment_000.ts", "segment_001.ts"),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(0, 1),
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
         session_id = "session-http-interrupted-recovery"
         temp_dir = build_api_stream_temp_session_dir(session_id)
         temp_dir.mkdir(parents=True, exist_ok=True)
@@ -532,7 +528,7 @@ def test_http_hls_loader_enforces_temp_storage_budget(
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts"),
+            media_playlist(0, "segment_000.ts"),
             _HLS_CONTENT_TYPE,
         ),
         "/live/segment_000.ts": (200, b"toolarge", _TS_CONTENT_TYPE),
@@ -559,7 +555,7 @@ def test_http_hls_loader_enforces_fetch_timeout_budget_cleanly(
         tmp_path,
         max_reconnect_attempts=1,
         reconnect_backoff_sec=0.0,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     monkeypatch.setattr(
@@ -594,7 +590,7 @@ def test_http_hls_loader_enforces_max_fetch_byte_budget_on_large_segments(
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts"),
+            media_playlist(0, "segment_000.ts"),
             _HLS_CONTENT_TYPE,
         ),
         "/live/segment_000.ts": (200, b"toolarge", _TS_CONTENT_TYPE),
@@ -622,7 +618,7 @@ def test_http_hls_loader_enforces_runtime_limit_after_several_successful_refresh
         tmp_path,
         max_idle_playlist_polls=10,
         max_session_runtime_sec=5.0,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
         monotonic=lambda: next(ticks),
     )
 
@@ -630,12 +626,12 @@ def test_http_hls_loader_enforces_runtime_limit_after_several_successful_refresh
         "/live/index.m3u8": [
             (
                 200,
-                _media_playlist(800, "segment_800.ts", "segment_801.ts", endlist=False),
+                media_playlist(800, "segment_800.ts", "segment_801.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(801, "segment_801.ts", "segment_802.ts", endlist=False),
+                media_playlist(801, "segment_801.ts", "segment_802.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
         ],
@@ -658,10 +654,10 @@ def test_http_hls_loader_enforces_runtime_limit_after_several_successful_refresh
                 slice_.file_path.unlink()
 
     assert collected_indexes == [800, 801, 802]
-    assert read_api_stream_seen_chunk_keys("session-http-runtime-late-limit") == {
-        (source.input_path, index, f"segment_{index}.ts")
-        for index in range(800, 803)
-    }
+    assert read_api_stream_seen_chunk_keys("session-http-runtime-late-limit") == _seen_segment_keys(
+        source.input_path,
+        *range(800, 803),
+    )
     cleanup_api_stream_temp_session_dir("session-http-runtime-late-limit")
 
 
@@ -679,7 +675,7 @@ def test_http_hls_loader_enforces_temp_storage_budget_after_earlier_accepted_seg
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts", "segment_001.ts"),
+            media_playlist(0, "segment_000.ts", "segment_001.ts"),
             _HLS_CONTENT_TYPE,
         ),
         "/live/segment_000.ts": (200, b"abc", _TS_CONTENT_TYPE),
@@ -713,7 +709,7 @@ def test_http_hls_loader_enforces_fetch_byte_budget_after_one_accepted_segment(
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts", "segment_001.ts"),
+            media_playlist(0, "segment_000.ts", "segment_001.ts"),
             _HLS_CONTENT_TYPE,
         ),
         "/live/segment_000.ts": (200, b"abc", _TS_CONTENT_TYPE),
@@ -762,7 +758,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_reconnect
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts", endlist=False),
+            media_playlist(0, "segment_000.ts", endlist=False),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(0),
@@ -775,7 +771,7 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_reconnect
 
         def flaky_urlopen(request, timeout=None):
             nonlocal playlist_fetch_count
-            request_url = request.full_url if hasattr(request, "full_url") else request.get_full_url()
+            request_url = _request_url(request)
             if request_url.endswith("/live/index.m3u8"):
                 playlist_fetch_count += 1
                 if playlist_fetch_count >= 2:
@@ -803,39 +799,39 @@ def test_http_hls_loader_restart_after_idle_budget_completion_preserves_persiste
         monkeypatch,
         tmp_path,
         max_idle_playlist_polls=1,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     routes = {
         "/live/index.m3u8": [
             (
                 200,
-                _media_playlist(900, "segment_900.ts", "segment_901.ts", endlist=False),
+                media_playlist(900, "segment_900.ts", "segment_901.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(901, "segment_901.ts", "segment_902.ts", endlist=False),
+                media_playlist(901, "segment_901.ts", "segment_902.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(902, "segment_902.ts", endlist=False),
+                media_playlist(902, "segment_902.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(902, "segment_902.ts", "segment_903.ts", endlist=False),
+                media_playlist(902, "segment_902.ts", "segment_903.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(903, "segment_903.ts", "segment_904.ts", endlist=False),
+                media_playlist(903, "segment_903.ts", "segment_904.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(904, "segment_904.ts", endlist=False),
+                media_playlist(904, "segment_904.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
         ],
@@ -843,7 +839,7 @@ def test_http_hls_loader_restart_after_idle_budget_completion_preserves_persiste
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
 
         first_loader = HttpHlsApiStreamLoader(session_id)
         first_indexes: list[int] = []
@@ -863,10 +859,10 @@ def test_http_hls_loader_restart_after_idle_budget_completion_preserves_persiste
 
     assert first_indexes == [900, 901, 902]
     assert second_indexes == [903, 904]
-    assert read_api_stream_seen_chunk_keys(session_id) == {
-        (source.input_path, index, f"segment_{index}.ts")
-        for index in range(900, 905)
-    }
+    assert read_api_stream_seen_chunk_keys(session_id) == _seen_segment_keys(
+        source.input_path,
+        *range(900, 905),
+    )
     cleanup_api_stream_temp_session_dir(session_id)
 
 
@@ -880,24 +876,24 @@ def test_http_hls_loader_restart_after_partial_progress_terminal_failure_preserv
         monkeypatch,
         tmp_path,
         max_idle_playlist_polls=1,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     routes = {
         "/live/index.m3u8": [
             (
                 200,
-                _media_playlist(1000, "segment_1000.ts", "segment_1001.ts", endlist=False),
+                media_playlist(1000, "segment_1000.ts", "segment_1001.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(1001, "segment_1001.ts", "segment_1002.ts", endlist=False),
+                media_playlist(1001, "segment_1001.ts", "segment_1002.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(1002, "segment_1002.ts", "segment_1003.ts"),
+                media_playlist(1002, "segment_1002.ts", "segment_1003.ts"),
                 _HLS_CONTENT_TYPE,
             ),
         ],
@@ -911,7 +907,7 @@ def test_http_hls_loader_restart_after_partial_progress_terminal_failure_preserv
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
         temp_dir = build_api_stream_temp_session_dir(session_id)
 
         first_loader = HttpHlsApiStreamLoader(session_id)
@@ -935,10 +931,10 @@ def test_http_hls_loader_restart_after_partial_progress_terminal_failure_preserv
         second_loader.close()
 
     assert second_indexes == [1002, 1003]
-    assert read_api_stream_seen_chunk_keys(session_id) == {
-        (source.input_path, index, f"segment_{index}.ts")
-        for index in range(1000, 1004)
-    }
+    assert read_api_stream_seen_chunk_keys(session_id) == _seen_segment_keys(
+        source.input_path,
+        *range(1000, 1004),
+    )
     cleanup_api_stream_temp_session_dir(session_id)
 
 
@@ -960,7 +956,7 @@ def test_http_hls_loader_cleans_temp_state_after_reconnect_budget_exhaustion(
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(0, "segment_000.ts", endlist=False),
+            media_playlist(0, "segment_000.ts", endlist=False),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(0),
@@ -974,7 +970,7 @@ def test_http_hls_loader_cleans_temp_state_after_reconnect_budget_exhaustion(
 
         def flaky_urlopen(request, timeout=None):
             nonlocal playlist_fetch_count
-            request_url = request.full_url if hasattr(request, "full_url") else request.get_full_url()
+            request_url = _request_url(request)
             if request_url.endswith("/live/index.m3u8"):
                 playlist_fetch_count += 1
                 if playlist_fetch_count >= 2:
@@ -1012,13 +1008,13 @@ def test_http_hls_loader_enforces_playlist_refresh_limit_after_earlier_progress(
         tmp_path,
         max_playlist_refreshes=1,
         max_idle_playlist_polls=10,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
     )
 
     routes = {
         "/live/index.m3u8": (
             200,
-            _media_playlist(1100, "segment_1100.ts", "segment_1101.ts", endlist=False),
+            media_playlist(1100, "segment_1100.ts", "segment_1101.ts", endlist=False),
             _HLS_CONTENT_TYPE,
         ),
         **_segment_routes(1100, 1101),
@@ -1044,10 +1040,10 @@ def test_http_hls_loader_enforces_playlist_refresh_limit_after_earlier_progress(
             next(iterator)
 
     assert collected_indexes == [1100, 1101]
-    assert read_api_stream_seen_chunk_keys(session_id) == {
-        (source.input_path, index, f"segment_{index}.ts")
-        for index in range(1100, 1102)
-    }
+    assert read_api_stream_seen_chunk_keys(session_id) == _seen_segment_keys(
+        source.input_path,
+        *range(1100, 1102),
+    )
     cleanup_api_stream_temp_session_dir(session_id)
 
 
@@ -1063,7 +1059,7 @@ def test_http_hls_loader_restart_after_runtime_limit_preserves_persisted_dedup(
         tmp_path,
         max_idle_playlist_polls=10,
         max_session_runtime_sec=5.0,
-        sleep=lambda seconds: None,
+        sleep=no_sleep,
         monotonic=lambda: next(first_ticks),
     )
 
@@ -1071,12 +1067,12 @@ def test_http_hls_loader_restart_after_runtime_limit_preserves_persisted_dedup(
         "/live/index.m3u8": [
             (
                 200,
-                _media_playlist(1200, "segment_1200.ts", "segment_1201.ts", endlist=False),
+                media_playlist(1200, "segment_1200.ts", "segment_1201.ts", endlist=False),
                 _HLS_CONTENT_TYPE,
             ),
             (
                 200,
-                _media_playlist(1201, "segment_1201.ts", "segment_1202.ts", "segment_1203.ts"),
+                media_playlist(1201, "segment_1201.ts", "segment_1202.ts", "segment_1203.ts"),
                 _HLS_CONTENT_TYPE,
             ),
         ],
@@ -1084,7 +1080,7 @@ def test_http_hls_loader_restart_after_runtime_limit_preserves_persisted_dedup(
     }
 
     with _serve_local_hls(routes) as base_url:
-        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
 
         first_loader = HttpHlsApiStreamLoader(session_id)
         first_iterator = iter_api_stream_slices(first_loader, source)
@@ -1110,8 +1106,8 @@ def test_http_hls_loader_restart_after_runtime_limit_preserves_persisted_dedup(
 
     assert first_indexes == [1200, 1201]
     assert second_indexes == [1202, 1203]
-    assert read_api_stream_seen_chunk_keys(session_id) == {
-        (source.input_path, index, f"segment_{index}.ts")
-        for index in range(1200, 1204)
-    }
+    assert read_api_stream_seen_chunk_keys(session_id) == _seen_segment_keys(
+        source.input_path,
+        *range(1200, 1204),
+    )
     cleanup_api_stream_temp_session_dir(session_id)
