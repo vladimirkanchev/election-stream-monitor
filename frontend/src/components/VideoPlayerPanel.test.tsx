@@ -1,3 +1,11 @@
+/**
+ * Component-level coverage for playback error mapping and transport choice.
+ *
+ * The real HLS/runtime stack is replaced with small fakes so this suite can
+ * stay focused on the player panel's user-facing behavior: which path is used
+ * for HLS vs direct media, and which message appears when playback fails.
+ */
+
 // @vitest-environment jsdom
 
 import React from "react";
@@ -5,6 +13,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { VideoPlayerPanel } from "./VideoPlayerPanel";
+
+const HLS_SOURCE = "local-media://proxy/test-playlist.m3u8";
+const DIRECT_MP4_SOURCE = "https://cdn.example.com/archive/recording.mp4";
 
 const hlsState = vi.hoisted(() => ({
   attachCount: 0,
@@ -95,11 +106,39 @@ vi.mock("../hooks/usePlaybackSource", () => ({
   },
 }));
 
+type HlsFailure = NonNullable<typeof hlsState.failure>;
+
+function setHlsFailure(failure: HlsFailure) {
+  hlsState.failure = failure;
+}
+
+// Most cases exercise the api_stream player path, so keep the source builder
+// local to this suite instead of repeating the object literal.
+function makeApiStreamSource(path = HLS_SOURCE) {
+  return {
+    kind: "api_stream" as const,
+    path,
+    access: "api_stream" as const,
+  };
+}
+
+// Direct remote media tests need the actual <video> element before asserting
+// load/error behavior.
+function expectRemoteMp4Playback(view: ReturnType<typeof renderPanel>) {
+  const video = view.container.querySelector("video") as HTMLVideoElement | null;
+  expect(video).toBeTruthy();
+  if (!video) {
+    throw new Error("Expected remote mp4 playback to render a video element");
+  }
+  expect(video.src).toBe(DIRECT_MP4_SOURCE);
+  return video;
+}
+
 describe("VideoPlayerPanel playback failures", () => {
   beforeEach(() => {
     hlsState.attachCount = 0;
     hlsState.failure = null;
-    playbackState.mediaSource = "local-media://proxy/test-playlist.m3u8";
+    playbackState.mediaSource = HLS_SOURCE;
     playbackState.playbackStatus = "loading";
     playbackState.playbackError = null;
     playbackState.play.mockClear();
@@ -107,6 +146,8 @@ describe("VideoPlayerPanel playback failures", () => {
     playbackState.handlePlaybackReady.mockClear();
     playbackState.handlePlaybackTimeChange.mockClear();
     playbackState.handlePlaybackMetadataChange.mockClear();
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
   });
@@ -116,63 +157,53 @@ describe("VideoPlayerPanel playback failures", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows a 404 playlist message for HLS manifest load failures", async () => {
-    hlsState.failure = {
-      type: "networkError",
-      details: "manifestLoadError",
-      fatal: true,
-      response: {
-        code: 404,
-        text: "Not Found",
-      },
-    };
+  it.each([
+    [
+      "shows a 404 playlist message for HLS manifest load failures",
+      {
+        type: "networkError",
+        details: "manifestLoadError",
+        fatal: true,
+        response: {
+          code: 404,
+          text: "Not Found",
+        },
+      } satisfies HlsFailure,
+      "The selected HLS playlist could not be found for playback.",
+    ],
+    [
+      "shows a 403 blocked-source message for HLS manifest load failures",
+      {
+        type: "networkError",
+        details: "manifestLoadError",
+        fatal: true,
+        response: {
+          code: 403,
+          text: "Forbidden",
+        },
+      } satisfies HlsFailure,
+      "The selected HLS stream blocked playback access.",
+    ],
+    [
+      "shows an invalid-playlist message when the source body is not a valid HLS manifest",
+      {
+        type: "networkError",
+        details: "manifestParsingError",
+        fatal: true,
+        response: {
+          code: 502,
+          text: "Remote HLS source returned html instead of a playlist",
+        },
+      } satisfies HlsFailure,
+      "The selected HLS source did not return a valid playlist.",
+    ],
+  ])("%s", async (_label, failure, expectedMessage) => {
+    setHlsFailure(failure);
 
     renderPanel();
 
     await waitFor(() => {
-      expect(
-        screen.getByText("The selected HLS playlist could not be found for playback."),
-      ).toBeTruthy();
-    });
-  });
-
-  it("shows a 403 blocked-source message for HLS manifest load failures", async () => {
-    hlsState.failure = {
-      type: "networkError",
-      details: "manifestLoadError",
-      fatal: true,
-      response: {
-        code: 403,
-        text: "Forbidden",
-      },
-    };
-
-    renderPanel();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("The selected HLS stream blocked playback access."),
-      ).toBeTruthy();
-    });
-  });
-
-  it("shows an invalid-playlist message when the source body is not a valid HLS manifest", async () => {
-    hlsState.failure = {
-      type: "networkError",
-      details: "manifestParsingError",
-      fatal: true,
-      response: {
-        code: 502,
-        text: "Remote HLS source returned html instead of a playlist",
-      },
-    };
-
-    renderPanel();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText("The selected HLS source did not return a valid playlist."),
-      ).toBeTruthy();
+      expect(screen.getByText(expectedMessage)).toBeTruthy();
     });
   });
 
@@ -193,11 +224,7 @@ describe("VideoPlayerPanel playback failures", () => {
 
     const { rerender } = render(
       <VideoPlayerPanel
-        source={{
-          kind: "api_stream",
-          path: "local-media://proxy/test-playlist.m3u8",
-          access: "api_stream",
-        }}
+        source={makeApiStreamSource()}
         currentItem={null}
         playbackRequested
         onPlaybackStatusChange={firstStatusChange}
@@ -210,11 +237,7 @@ describe("VideoPlayerPanel playback failures", () => {
 
     rerender(
       <VideoPlayerPanel
-        source={{
-          kind: "api_stream",
-          path: "local-media://proxy/test-playlist.m3u8",
-          access: "api_stream",
-        }}
+        source={makeApiStreamSource()}
         currentItem={null}
         playbackRequested
         onPlaybackStatusChange={secondStatusChange}
@@ -227,21 +250,12 @@ describe("VideoPlayerPanel playback failures", () => {
   });
 
   it("loads a direct remote mp4 source without attaching HLS", async () => {
-    playbackState.mediaSource = "https://cdn.example.com/archive/recording.mp4";
+    playbackState.mediaSource = DIRECT_MP4_SOURCE;
 
-    const view = renderPanel({
-      kind: "api_stream",
-      path: "https://cdn.example.com/archive/recording.mp4",
-      access: "api_stream",
-    });
+    const view = renderPanel(makeApiStreamSource(DIRECT_MP4_SOURCE));
 
     await waitFor(() => {
-      const video = view.container.querySelector("video") as HTMLVideoElement | null;
-      expect(video).toBeTruthy();
-      if (!video) {
-        throw new Error("Expected remote mp4 playback to render a video element");
-      }
-      expect(video.src).toBe("https://cdn.example.com/archive/recording.mp4");
+      expectRemoteMp4Playback(view);
       expect(hlsState.attachCount).toBe(0);
       expect(HTMLMediaElement.prototype.load).toHaveBeenCalled();
       expect(screen.getByText("Direct remote media")).toBeTruthy();
@@ -250,19 +264,11 @@ describe("VideoPlayerPanel playback failures", () => {
   });
 
   it("shows a clean error when a direct remote mp4 source fails to open", async () => {
-    playbackState.mediaSource = "https://cdn.example.com/archive/recording.mp4";
+    playbackState.mediaSource = DIRECT_MP4_SOURCE;
 
-    const view = renderPanel({
-      kind: "api_stream",
-      path: "https://cdn.example.com/archive/recording.mp4",
-      access: "api_stream",
-    });
+    const view = renderPanel(makeApiStreamSource(DIRECT_MP4_SOURCE));
 
-    const video = view.container.querySelector("video") as HTMLVideoElement | null;
-    expect(video).toBeTruthy();
-    if (!video) {
-      throw new Error("Expected remote mp4 playback to render a video element");
-    }
+    const video = expectRemoteMp4Playback(view);
     fireEvent.error(video);
 
     await waitFor(() => {

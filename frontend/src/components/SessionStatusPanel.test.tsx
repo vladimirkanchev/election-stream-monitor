@@ -1,3 +1,11 @@
+/**
+ * Component-level coverage for operator-facing session and playback wording.
+ *
+ * The goal here is not to re-test the monitoring hooks. These checks protect
+ * the copy and ordering that turn normalized backend state into the status
+ * panel the operator actually reads.
+ */
+
 // @vitest-environment jsdom
 
 import React from "react";
@@ -32,6 +40,10 @@ const BASE_PROGRESS: SessionProgress = {
   status_reason: null,
   status_detail: null,
 };
+const RECONNECTING_MESSAGE =
+  "The live stream dropped for a moment. Monitoring is trying to reconnect.";
+const SOURCE_UNREACHABLE_DETAIL =
+  "api_stream reconnect budget exhausted: upstream returned HTTP 503";
 
 type RenderPanelArgs = {
   progress?: SessionProgress | null;
@@ -63,74 +75,68 @@ function renderPanel(args: RenderPanelArgs = {}) {
   return render(<SessionStatusPanel {...buildPanelProps(args)} />);
 }
 
+// Exact UI copy is a first-class contract here, so keep the repeated lookup
+// terse and let the behavior cases stay easy to scan.
+function expectVisibleText(text: string) {
+  expect(screen.getByText(text)).toBeTruthy();
+}
+
+// Some diagnostics are easier to validate by rendered ordering than by a
+// single exact text node.
+function getDiagnosticItems(container: HTMLElement) {
+  return Array.from(container.querySelectorAll(".session-diagnostics__item")).map((item) =>
+    item.textContent?.trim(),
+  );
+}
+
 afterEach(() => {
   cleanup();
 });
 
 describe("SessionStatusPanel monitoring UX", () => {
   it("keeps live stop and terminal summaries distinct", () => {
-    const { rerender } = render(
-      <SessionStatusPanel
-        source={API_STREAM_SOURCE}
-        sessionStatus="cancelling"
-        progress={{ ...BASE_PROGRESS, status: "cancelling" }}
-        selectedDetectorCount={1}
-        visibleAlertCount={0}
-        playbackTime={5}
-        playbackDuration={null}
-        playbackLive
-        playbackStatus="playing"
-        sessionError={null}
-      />,
-    );
+    const { rerender } = renderPanel({
+      sessionStatus: "cancelling",
+      progress: { ...BASE_PROGRESS, status: "cancelling" },
+    });
 
-    expect(screen.getByText("Stopping now")).toBeTruthy();
-    expect(screen.getByText("The current monitoring run is settling a stop request.")).toBeTruthy();
-    expect(screen.getByText("A stop request is settling for the current live stream.")).toBeTruthy();
+    expectVisibleText("Stopping now");
+    expectVisibleText("The current monitoring run is settling a stop request.");
+    expectVisibleText("A stop request is settling for the current live stream.");
 
     rerender(
       <SessionStatusPanel
-        source={API_STREAM_SOURCE}
-        sessionStatus="cancelled"
-        progress={{ ...BASE_PROGRESS, status: "cancelled", current_item: null }}
-        selectedDetectorCount={1}
-        visibleAlertCount={0}
-        playbackTime={5}
-        playbackDuration={null}
-        playbackLive
-        playbackStatus="stopped"
-        sessionError={null}
+        {...buildPanelProps({
+          sessionStatus: "cancelled",
+          progress: { ...BASE_PROGRESS, status: "cancelled", current_item: null },
+          playbackStatus: "stopped",
+        })}
       />,
     );
 
-    expect(screen.getByText("Stopped by user")).toBeTruthy();
-    expect(screen.getByText("Monitoring was ended by the user.")).toBeTruthy();
+    expectVisibleText("Stopped by user");
+    expectVisibleText("Monitoring was ended by the user.");
     expect(
       screen.getByText("Live monitoring was stopped by the user before the current stream completed."),
     ).toBeTruthy();
 
     rerender(
       <SessionStatusPanel
-        source={API_STREAM_SOURCE}
-        sessionStatus="failed"
-        progress={{
-          ...BASE_PROGRESS,
-          status: "failed",
-          status_reason: "source_unreachable",
-          status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
-        }}
-        selectedDetectorCount={1}
-        visibleAlertCount={0}
-        playbackTime={5}
-        playbackDuration={null}
-        playbackLive
-        playbackStatus="stopped"
-        sessionError={null}
+        {...buildPanelProps({
+          sessionStatus: "failed",
+          progress: {
+            ...BASE_PROGRESS,
+            status: "failed",
+            status_reason: "source_unreachable",
+            status_detail: SOURCE_UNREACHABLE_DETAIL,
+          },
+          playbackStatus: "stopped",
+        })}
       />,
     );
 
-    expect(screen.getByText("Needs attention")).toBeTruthy();
-    expect(screen.getByText("Monitoring ended with a problem that needs review.")).toBeTruthy();
+    expectVisibleText("Needs attention");
+    expectVisibleText("Monitoring ended with a problem that needs review.");
     expect(
       screen.getByText(
         "Live monitoring ended before this stream finished. Check the details below for more information.",
@@ -149,11 +155,11 @@ describe("SessionStatusPanel monitoring UX", () => {
       },
     });
 
-    expect(screen.getByText("Ended after going quiet")).toBeTruthy();
+    expectVisibleText("Ended after going quiet");
     expect(
       screen.getByText("Monitoring stopped after the live stream stopped sending new video."),
     ).toBeTruthy();
-    expect(screen.getByText("The bounded live monitoring run completed for the current stream.")).toBeTruthy();
+    expectVisibleText("The bounded live monitoring run completed for the current stream.");
     expect(
       screen.getByText(
         "The live stream stopped sending new video, so monitoring has ended.",
@@ -173,27 +179,23 @@ describe("SessionStatusPanel monitoring UX", () => {
       },
     });
 
-    expect(screen.getByText("Finished cleanly")).toBeTruthy();
+    expectVisibleText("Finished cleanly");
     expect(
       screen.getByText("The live monitoring run reached a normal completion point."),
     ).toBeTruthy();
-    expect(
-      screen.getByText("The bounded live monitoring run completed for the current stream."),
-    ).toBeTruthy();
+    expectVisibleText("The bounded live monitoring run completed for the current stream.");
     expect(screen.queryByText("Ended after going quiet")).toBeNull();
   });
 
   it("renders a reconnecting cue separately from terminal diagnostics", () => {
     renderPanel({
-      sessionError: "The live stream dropped for a moment. Monitoring is trying to reconnect.",
+      sessionError: RECONNECTING_MESSAGE,
     });
 
-    expect(screen.getByText("Recovering")).toBeTruthy();
-    expect(screen.getByText("Trying to reconnect to the live stream.")).toBeTruthy();
-    expect(screen.getByText("Monitoring")).toBeTruthy();
-    expect(
-      screen.getByText("The live stream dropped for a moment. Monitoring is trying to reconnect."),
-    ).toBeTruthy();
+    expectVisibleText("Recovering");
+    expectVisibleText("Trying to reconnect to the live stream.");
+    expectVisibleText("Monitoring");
+    expectVisibleText(RECONNECTING_MESSAGE);
   });
 
   it("does not show a reconnecting cue while a live session is running normally", () => {
@@ -220,7 +222,7 @@ describe("SessionStatusPanel monitoring UX", () => {
         ...BASE_PROGRESS,
         status: "failed",
         status_reason: "terminal_failure",
-        status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+        status_detail: SOURCE_UNREACHABLE_DETAIL,
       },
     });
 
@@ -305,16 +307,12 @@ describe("SessionStatusPanel monitoring UX", () => {
         ...BASE_PROGRESS,
         status: "failed",
         status_reason: "source_unreachable",
-        status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+        status_detail: SOURCE_UNREACHABLE_DETAIL,
       },
       playbackStatus: "error",
     });
 
-    const diagnosticItems = Array.from(
-      container.querySelectorAll(".session-diagnostics__item"),
-    ).map((item) => item.textContent?.trim());
-
-    expect(diagnosticItems).toEqual([
+    expect(getDiagnosticItems(container)).toEqual([
       "Monitoring Monitoring could not reconnect to the live stream, so it has ended.",
       "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
     ]);
@@ -332,11 +330,7 @@ describe("SessionStatusPanel monitoring UX", () => {
       playbackStatus: "error",
     });
 
-    const diagnosticItems = Array.from(
-      container.querySelectorAll(".session-diagnostics__item"),
-    ).map((item) => item.textContent?.trim());
-
-    expect(diagnosticItems).toEqual([
+    expect(getDiagnosticItems(container)).toEqual([
       "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
     ]);
   });
@@ -348,18 +342,16 @@ describe("SessionStatusPanel monitoring UX", () => {
         ...BASE_PROGRESS,
         status: "failed",
         status_reason: "source_unreachable",
-        status_detail: "api_stream reconnect budget exhausted: upstream returned HTTP 503",
+        status_detail: SOURCE_UNREACHABLE_DETAIL,
       },
     });
 
-    expect(screen.getByText("Show debug info")).toBeTruthy();
-    expect(screen.getByText("Raw session status")).toBeTruthy();
-    expect(screen.getByText("failed")).toBeTruthy();
-    expect(screen.getByText("source_unreachable")).toBeTruthy();
-    expect(
-      screen.getByText("api_stream reconnect budget exhausted: upstream returned HTTP 503"),
-    ).toBeTruthy();
-    expect(screen.getByText("video_blur")).toBeTruthy();
+    expectVisibleText("Show debug info");
+    expectVisibleText("Raw session status");
+    expectVisibleText("failed");
+    expectVisibleText("source_unreachable");
+    expectVisibleText(SOURCE_UNREACHABLE_DETAIL);
+    expectVisibleText("video_blur");
   });
 
   it("shows discovered live chunks separately in the debug section", () => {
@@ -371,7 +363,7 @@ describe("SessionStatusPanel monitoring UX", () => {
       },
     });
 
-    expect(screen.getByText("Processed live chunks")).toBeTruthy();
-    expect(screen.getByText("2 chunks analyzed, 5 discovered")).toBeTruthy();
+    expectVisibleText("Processed live chunks");
+    expectVisibleText("2 chunks analyzed, 5 discovered");
   });
 });
