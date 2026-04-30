@@ -7,7 +7,9 @@ dedicated helper test files.
 
 It isolates these cases from:
 
-- ordinary loader semantics in `test_stream_loader_http_hls_core.py`
+- playlist-resolution coverage in `test_stream_loader_http_hls_core_playlist.py`
+- progression/window coverage in `test_stream_loader_http_hls_core_progression.py`
+- provider/refresh oddities in `test_stream_loader_http_hls_core_provider.py`
 - hard-limit and cleanup scenarios in `test_stream_loader_http_hls_limits.py`
 """
 
