@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 
-import { createMonitorSource, updateMonitorSourcePath } from "../sourceModel";
+import {
+  createMonitorSource,
+  updateMonitorSourceKind,
+  updateMonitorSourcePath,
+} from "../sourceModel";
 import type { DetectorOption, InputMode, MonitorSource } from "../types";
 import {
   getNextSelectedDetectors,
@@ -22,6 +26,12 @@ interface UseSetupStateResult {
   setSelectedDetectors: (selectedIds: string[]) => void;
 }
 
+/**
+ * Own the setup-screen source and detector selection state.
+ *
+ * Source updates always go through the source-model helpers so `kind`, `path`,
+ * and `access` stay in sync when the user edits the path or switches modes.
+ */
 export function useSetupState({
   detectors,
   frozen,
@@ -44,7 +54,7 @@ export function useSetupState({
   }, [frozen, visibleDetectors]);
 
   const setSourceKind = (kind: InputMode) => {
-    setSource((current) => ({ ...current, kind }));
+    setSource((current) => updateMonitorSourceKind(current, kind));
   };
 
   const setSourcePath = (path: string) => {
