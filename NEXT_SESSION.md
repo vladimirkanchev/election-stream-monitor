@@ -4,13 +4,18 @@ Use this file as the quick restart note if you come back after a break.
 
 ## Current Snapshot
 
-- project stage: advanced prototype moving toward pre-pilot
-- architecture shape: local-first modular monolith with plugin-style extension
-  points around detectors and alert rules
+- project stage: advanced prototype with a stable FastAPI-backed desktop
+  runtime
+- architecture shape: local-first modular monolith with explicit detector and
+  alert-rule extension points
 - main supported source modes:
   - `video_segments`
   - `video_files`
   - `api_stream` with direct `.m3u8` / `.mp4`
+- FastAPI is the owned runtime backend for the main Electron session flow
+- session service / CLI share the same backend session mechanics
+- the HTTP/HLS loader is split into focused helper modules
+- `src/main.py` is a legacy local developer harness, not a normal runtime path
 - image mode was removed because it was not tested
 
 ## Good Re-Entry Points
@@ -40,15 +45,19 @@ Then jump to the area you want:
 
 - remote HLS playback now goes through the local Electron HLS proxy
 - `api_stream` got stricter source validation and clearer failure semantics
+- the HTTP/HLS loader was split into focused playlist, fetch, materialize, and
+  policy helpers
+- `main.py` was demoted to a legacy local developer harness
 - observability, trust policy, operator UX, and transport/session tests were
   expanded
-- README and docs were cleaned up for public-repo friendliness
+- README, docs, and milestone notes were cleaned up for public-repo
+  friendliness
 - local image input support was removed
 
 ## Repo State To Remember
 
-- the repo is still in a heavy pre-commit / first-baseline state with many
-  staged files
+- the repo has some staged work plus unrelated local changes; check `git status`
+  before committing anything new
 - local runtime data under `data/` should stay local; do not clean your input
   video/stream folders by accident
 - docs assets such as screenshots and architecture files live in
@@ -74,12 +83,11 @@ pytest -q
 
 ## Best Next Steps
 
-- review the current git state before the first public push
-- decide what should be included from `docs/assets/`
+- review the current git state before the next commit
 - if you continue code work, focus first on:
   - detector growth
   - `api_stream` hardening
-  - FastAPI boundary preparation
+  - FastAPI boundary polish
   - operator UX polish
 
 ## Do Not Forget

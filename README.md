@@ -8,8 +8,8 @@ election-related media sources.
 It watches polling-station streams, archived recordings, or segmented video
 feeds and surfaces the quality problems that matter during monitoring.
 
-This repo is a desktop-first prototype moving toward MVP, not a finished
-platform.
+This repo is a desktop-first prototype with an owned FastAPI-backed desktop
+runtime, not a finished platform.
 
 Status:
 
@@ -57,15 +57,14 @@ Start here:
 
 ## Desktop Runtime Summary
 
-The Electron app now uses the local FastAPI backend as the normal runtime
+The Electron app uses the local FastAPI backend as the normal runtime
 path. The app window, session controls, detector loading, and playback-source
 resolution all go through that desktop flow.
 
 Electron still handles the desktop-only jobs: app startup, local media
 serving, the HLS proxy path, and the UI bridge. Session state stays local and
-is polled by the UI while a run is active. The runtime is solid for local
-development and prototype use, but packaging and broader platform support are
-still early.
+is polled by the UI while a run is active. Packaging and broader platform
+support remain separate concerns.
 
 ## Current Capabilities
 
