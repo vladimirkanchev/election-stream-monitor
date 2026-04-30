@@ -90,6 +90,14 @@ Backend/API contract checks:
   - reconnect, replay de-duplication, and moving-window recovery behavior
 - `tests/test_stream_loader_http_hls_limits.py`
   - runtime/fetch/temp-budget enforcement and cleanup guarantees
+- `tests/test_stream_loader_http_hls_playlist.py`
+  - direct playlist parsing helper coverage
+- `tests/test_stream_loader_http_hls_fetch.py`
+  - direct transport helper coverage
+- `tests/test_stream_loader_http_hls_materialize.py`
+  - direct temp-file materialization helper coverage
+- `tests/test_stream_loader_http_hls_policy.py`
+  - direct replay/window/policy helper coverage
 
 Frontend contract checks:
 
@@ -155,6 +163,17 @@ Use these focused checks when changing:
 - `local-media://` protocol routing/response behavior
 - `api_stream` contract builders or loader helper semantics
 - concrete HTTP/HLS reconnect, cleanup, or limit behavior
+- the new direct HLS helper modules or their helper-level invariants
+
+Focused HLS helper command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider \
+  tests/test_stream_loader_http_hls_playlist.py \
+  tests/test_stream_loader_http_hls_fetch.py \
+  tests/test_stream_loader_http_hls_materialize.py \
+  tests/test_stream_loader_http_hls_policy.py -q
+```
 
 Useful focused commands:
 

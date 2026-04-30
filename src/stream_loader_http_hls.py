@@ -4,6 +4,24 @@ The loader keeps one persistent shell object per session and resets the mutable
 live-run state on each connect/close cycle. Grouping that state in one internal
 dataclass makes the bounded live loop easier to follow than scattering many
 peer attributes across the class.
+
+This module is intentionally the only public concrete HTTP/HLS loader shell.
+As the file is split, keep these ownership boundaries:
+
+- `stream_loader_http_hls.py`
+  - `HttpHlsApiStreamLoader`
+  - `_HttpHlsRuntimeState`
+- `stream_loader_http_hls_playlist.py`
+  - playlist-kind detection and HLS playlist parsing helpers
+- `stream_loader_http_hls_fetch.py`
+  - request building, bounded response reads, and transport-failure mapping
+- `stream_loader_http_hls_materialize.py`
+  - temp-file writes and temp-storage byte accounting
+- `stream_loader_http_hls_policy.py`
+  - dedup/reconnect/live-run policy helpers that operate on loader state
+
+Keep `HttpHlsApiStreamLoader` as the only public concrete loader entrypoint for
+callers. Helper modules should stay implementation details.
 """
 
 from __future__ import annotations
@@ -11,10 +29,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import time
-from typing import Iterator, Literal
+from typing import Iterator
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from analyzer_contract import AnalysisSlice
 import config
@@ -25,16 +43,12 @@ from session_io import (
     read_api_stream_seen_chunk_keys,
 )
 from stream_loader_contracts import (
-    ApiStreamFailure,
-    ApiStreamFailureKind,
     ApiStreamHttpLoaderContract,
     ApiStreamLoaderError,
-    ApiStreamMediaPlaylistSnapshot,
     ApiStreamPlaylistSegment,
     ApiStreamSourceContract,
     ApiStreamTelemetrySnapshot,
     _api_stream_loader_error,
-    _build_api_stream_failure,
     _classify_api_stream_source_url,
     build_api_stream_analysis_slice,
     build_api_stream_http_loader_contract,
@@ -44,12 +58,32 @@ from stream_loader_contracts import (
     cleanup_api_stream_temp_session_dir,
     select_api_stream_master_playlist_variant,
 )
+from stream_loader_http_hls_fetch import (
+    _build_api_stream_request,
+    _classify_api_stream_fetch_exception,
+    _read_api_stream_response_bytes,
+)
+from stream_loader_http_hls_materialize import (
+    _count_file_bytes_in_directory,
+    _write_api_stream_temp_file,
+)
+from stream_loader_http_hls_policy import (
+    _calculate_window_advance_gap,
+    _finalize_pending_segment_state,
+    _prune_emitted_segment_keys,
+    _queue_unseen_playlist_segments,
+)
+from stream_loader_http_hls_playlist import (
+    _build_playlist_segment_key,
+    _derive_api_stream_poll_interval,
+    _detect_hls_playlist_kind,
+    _parse_master_playlist_variants,
+    _parse_media_playlist,
+)
 from source_validation import validate_api_stream_url
 
 
 logger = get_logger(__name__)
-_API_STREAM_FETCH_READ_CHUNK_BYTES = 64 * 1024
-_API_STREAM_USER_AGENT = "election-stream-monitor/1.0"
 _API_STREAM_MASTER_PLAYLIST_MAX_DEPTH = 3
 _API_STREAM_TEMPORARY_MALFORMED_PLAYLIST_MESSAGE = (
     "api_stream playlist refresh was temporarily malformed"
@@ -80,14 +114,6 @@ class _HttpHlsRuntimeState:
     last_seen_max_sequence: int | None = None
 
 
-def _build_http_hls_runtime_state(
-    *,
-    poll_interval_sec: float,
-) -> _HttpHlsRuntimeState:
-    """Return a clean mutable state container for one live loader run."""
-    return _HttpHlsRuntimeState(current_poll_interval_sec=poll_interval_sec)
-
-
 class HttpHlsApiStreamLoader:
     """Concrete HTTP/HLS loader for bounded local-first live-stream runs."""
 
@@ -104,8 +130,8 @@ class HttpHlsApiStreamLoader:
         self._persisted_identity_keys: set[tuple[str, int, str]] = set()
         self._closed = False
         self._last_telemetry_snapshot = ApiStreamTelemetrySnapshot()
-        self._state = _build_http_hls_runtime_state(
-            poll_interval_sec=self._http_loader_contract.playlist_poll_interval_sec,
+        self._state = _HttpHlsRuntimeState(
+            current_poll_interval_sec=self._http_loader_contract.playlist_poll_interval_sec,
         )
         self._reset_runtime_state()
 
@@ -125,11 +151,13 @@ class HttpHlsApiStreamLoader:
             log_direct_media=True,
         )
         self._media_playlist_url = media_playlist_url
-        self._refresh_playlist_from_text_or_raise(
-            playlist_text,
-            self._media_playlist_url,
-            malformed_failure_kind="terminal_failure",
-        )
+        try:
+            self._refresh_playlist_from_text(playlist_text, self._media_playlist_url)
+        except ValueError as error:
+            raise _api_stream_loader_error(
+                "terminal_failure",
+                str(error),
+            ) from error
         self._connected = True
         logger.info(
             "Connected api_stream source [%s]",
@@ -196,9 +224,23 @@ class HttpHlsApiStreamLoader:
                     slice_ = self._materialize_segment_slice(segment)
                 except ApiStreamLoaderError as error:
                     if error.failure.kind == "temporary_failure":
-                        self._finalize_pending_segment(segment_key, mark_emitted=True)
+                        _finalize_pending_segment_state(
+                            pending_segments=self._state.pending_segments,
+                            queued_segment_keys=self._state.queued_segment_keys,
+                            emitted_segment_keys=self._state.emitted_segment_keys,
+                            segment_start_offsets=self._state.segment_start_offsets,
+                            segment_key=segment_key,
+                            mark_emitted=True,
+                        )
                     raise
-                self._finalize_pending_segment(segment_key, mark_emitted=True)
+                _finalize_pending_segment_state(
+                    pending_segments=self._state.pending_segments,
+                    queued_segment_keys=self._state.queued_segment_keys,
+                    emitted_segment_keys=self._state.emitted_segment_keys,
+                    segment_start_offsets=self._state.segment_start_offsets,
+                    segment_key=segment_key,
+                    mark_emitted=True,
+                )
                 return slice_
 
             if self._state.saw_endlist:
@@ -231,47 +273,44 @@ class HttpHlsApiStreamLoader:
     def _refresh_playlist_from_text(self, playlist_text: str, playlist_url: str) -> None:
         """Merge one parsed playlist refresh into the loader's live state."""
         parsed = _parse_media_playlist(playlist_text, playlist_url)
+        source_url = self._source.input_path if self._source else playlist_url
         self._state.playlist_refresh_count += 1
         self._state.saw_endlist = parsed.is_endlist
         self._state.current_poll_interval_sec = _derive_api_stream_poll_interval(
             configured_poll_interval_sec=self._http_loader_contract.playlist_poll_interval_sec,
             target_duration_sec=parsed.target_duration_sec,
         )
-        new_segments_discovered = 0
-        skipped_replays_this_refresh = 0
         if parsed.segments:
             first_visible_sequence = min(segment.sequence for segment in parsed.segments)
-            self._prune_replay_cache(first_visible_sequence)
-            if (
-                self._state.last_seen_max_sequence is not None
-                and first_visible_sequence > self._state.last_seen_max_sequence + 1
-            ):
+            self._state.emitted_segment_keys = _prune_emitted_segment_keys(
+                self._state.emitted_segment_keys,
+                first_visible_sequence=first_visible_sequence,
+            )
+            missed_segment_count = _calculate_window_advance_gap(
+                last_seen_max_sequence=self._state.last_seen_max_sequence,
+                first_visible_sequence=first_visible_sequence,
+            )
+            if missed_segment_count is not None:
                 logger.info(
                     "api_stream playlist window advanced [%s]",
                     self._log_context(
-                        source_url=self._source.input_path if self._source else playlist_url,
+                        source_url=source_url,
                         playlist_refresh_count=self._state.playlist_refresh_count,
-                        missed_segment_count=
-                            first_visible_sequence - self._state.last_seen_max_sequence - 1,
+                        missed_segment_count=missed_segment_count,
                         resume_from_sequence=first_visible_sequence,
                     ),
                 )
 
-        for segment in parsed.segments:
-            segment_key = _build_playlist_segment_key(segment)
-            if (
-                segment_key in self._state.queued_segment_keys
-                or segment_key in self._state.emitted_segment_keys
-            ):
-                skipped_replays_this_refresh += 1
-                continue
-            self._state.segment_start_offsets[segment_key] = self._state.next_window_start_sec
-            self._state.next_window_start_sec += max(segment.duration_sec, 0.1)
-            self._state.pending_segments.append(segment)
-            self._state.queued_segment_keys.add(segment_key)
-            new_segments_discovered += 1
-
-        self._state.skipped_replay_count += skipped_replays_this_refresh
+        queue_update = _queue_unseen_playlist_segments(
+            segments=parsed.segments,
+            pending_segments=self._state.pending_segments,
+            queued_segment_keys=self._state.queued_segment_keys,
+            emitted_segment_keys=self._state.emitted_segment_keys,
+            segment_start_offsets=self._state.segment_start_offsets,
+            next_window_start_sec=self._state.next_window_start_sec,
+        )
+        self._state.next_window_start_sec = queue_update.next_window_start_sec
+        self._state.skipped_replay_count += queue_update.skipped_replay_count
         if parsed.segments:
             parsed_max_sequence = max(segment.sequence for segment in parsed.segments)
             if self._state.last_seen_max_sequence is None:
@@ -282,7 +321,7 @@ class HttpHlsApiStreamLoader:
                     parsed_max_sequence,
                 )
 
-        if new_segments_discovered > 0:
+        if queue_update.new_segment_count > 0:
             self._state.idle_playlist_polls = 0
         elif not self._state.saw_endlist:
             self._state.idle_playlist_polls += 1
@@ -290,11 +329,11 @@ class HttpHlsApiStreamLoader:
         logger.info(
             "Refreshed api_stream playlist [%s]",
             self._log_context(
-                source_url=self._source.input_path if self._source else playlist_url,
+                source_url=source_url,
                 source_url_class=self._state.source_url_class,
                 playlist_refresh_count=self._state.playlist_refresh_count,
-                new_segment_count=new_segments_discovered,
-                skipped_replay_count=skipped_replays_this_refresh,
+                new_segment_count=queue_update.new_segment_count,
+                skipped_replay_count=queue_update.skipped_replay_count,
                 skipped_replay_total=self._state.skipped_replay_count,
                 target_duration_sec=parsed.target_duration_sec,
                 idle_polls=self._state.idle_playlist_polls,
@@ -358,33 +397,14 @@ class HttpHlsApiStreamLoader:
             media_playlist_url,
             allow_temporary_malformed=True,
         )
-        self._refresh_playlist_from_text_or_raise(
-            playlist_text,
-            refreshed_media_url,
-            malformed_failure_kind="retryable_failure",
-            malformed_message_prefix=_API_STREAM_TEMPORARY_MALFORMED_PLAYLIST_MESSAGE,
-        )
-        self._media_playlist_url = refreshed_media_url
-
-    def _refresh_playlist_from_text_or_raise(
-        self,
-        playlist_text: str,
-        playlist_url: str,
-        *,
-        malformed_failure_kind: ApiStreamFailureKind,
-        malformed_message_prefix: str | None = None,
-    ) -> None:
-        """Refresh loader state or raise one normalized malformed-playlist error."""
         try:
-            self._refresh_playlist_from_text(playlist_text, playlist_url)
+            self._refresh_playlist_from_text(playlist_text, refreshed_media_url)
         except ValueError as error:
-            message = str(error)
-            if malformed_message_prefix is not None:
-                message = f"{malformed_message_prefix}: {error}"
             raise _api_stream_loader_error(
-                malformed_failure_kind,
-                message,
+                "retryable_failure",
+                f"{_API_STREAM_TEMPORARY_MALFORMED_PLAYLIST_MESSAGE}: {error}",
             ) from error
+        self._media_playlist_url = refreshed_media_url
 
     def _resolve_media_playlist_url(
         self,
@@ -517,30 +537,10 @@ class HttpHlsApiStreamLoader:
                 "api_stream temp storage exceeded max byte budget",
             )
 
-    def _finalize_pending_segment(
-        self,
-        segment_key: tuple[int, str],
-        *,
-        mark_emitted: bool,
-    ) -> None:
-        """Remove the current pending segment from queue state after one attempt."""
-        self._state.pending_segments.pop(0)
-        self._state.queued_segment_keys.discard(segment_key)
-        if mark_emitted:
-            self._state.emitted_segment_keys.add(segment_key)
-        self._state.segment_start_offsets.pop(segment_key, None)
-
     def _reset_runtime_state(self) -> None:
-        self._state = _build_http_hls_runtime_state(
-            poll_interval_sec=self._http_loader_contract.playlist_poll_interval_sec,
+        self._state = _HttpHlsRuntimeState(
+            current_poll_interval_sec=self._http_loader_contract.playlist_poll_interval_sec,
         )
-
-    def _prune_replay_cache(self, first_visible_sequence: int) -> None:
-        self._state.emitted_segment_keys = {
-            key
-            for key in self._state.emitted_segment_keys
-            if key[0] >= first_visible_sequence
-        }
 
     def _raise_if_cancel_requested(self) -> None:
         if is_session_cancel_requested(self._session_id):
@@ -589,191 +589,8 @@ class HttpHlsApiStreamLoader:
         return format_log_context(session_id=self._session_id, **kwargs)
 
 
-def _build_api_stream_request(url: str) -> Request:
-    """Return the normalized outbound request for one upstream fetch."""
-    return Request(url, headers={"User-Agent": _API_STREAM_USER_AGENT})
-
-
-def _read_api_stream_response_bytes(
-    response: object,
-    *,
-    max_fetch_bytes: int,
-    on_chunk_read,
-) -> bytes:
-    """Read one upstream response body while enforcing byte and cancel budgets."""
-    chunks: list[bytes] = []
-    total_bytes = 0
-    while True:
-        on_chunk_read()
-        chunk = response.read(_API_STREAM_FETCH_READ_CHUNK_BYTES)
-        if not chunk:
-            break
-        total_bytes += len(chunk)
-        if total_bytes > max_fetch_bytes:
-            raise _api_stream_loader_error(
-                "terminal_failure",
-                "api_stream fetch exceeded max byte budget",
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-def _classify_api_stream_fetch_exception(
-    error: TimeoutError | HTTPError | URLError,
-) -> ApiStreamFailure:
-    """Map low-level transport exceptions into loader-facing failure semantics."""
-    if isinstance(error, TimeoutError):
-        return _build_api_stream_failure(
-            "retryable_failure",
-            "api_stream fetch timed out",
-        )
-    if isinstance(error, HTTPError):
-        failure_kind: ApiStreamFailureKind = (
-            "retryable_failure" if error.code in {408, 429, 500, 502, 503, 504}
-            else "terminal_failure"
-        )
-        return _build_api_stream_failure(
-            failure_kind,
-            f"api_stream upstream returned HTTP {error.code}",
-        )
-    return _build_api_stream_failure(
-        "retryable_failure",
-        f"api_stream upstream connection failed: {error.reason}",
-    )
-
-
-def _write_api_stream_temp_file(temp_path: Path, payload: bytes) -> None:
-    """Atomically materialize one fetched segment into the session temp directory."""
-    partial_path = temp_path.with_suffix(f"{temp_path.suffix}.part")
-    try:
-        if partial_path.exists():
-            partial_path.unlink()
-        if temp_path.exists():
-            temp_path.unlink()
-        partial_path.write_bytes(payload)
-        partial_path.replace(temp_path)
-    except OSError:
-        partial_path.unlink(missing_ok=True)
-        temp_path.unlink(missing_ok=True)
-        raise
-
-
-def _count_file_bytes_in_directory(directory: Path) -> int:
-    """Return the current byte footprint of regular files in one temp directory."""
-    return sum(candidate.stat().st_size for candidate in directory.glob("*") if candidate.is_file())
-
-
-def _detect_hls_playlist_kind(playlist_text: str) -> Literal["master", "media", "unknown"]:
-    if "#EXTM3U" not in playlist_text:
-        return "unknown"
-    if "#EXT-X-STREAM-INF" in playlist_text:
-        return "master"
-    if "#EXTINF" in playlist_text or "#EXT-X-TARGETDURATION" in playlist_text:
-        return "media"
-    return "unknown"
-
-
-def _parse_master_playlist_variants(playlist_text: str, base_url: str) -> list[str]:
-    variants: list[str] = []
-    expect_uri = False
-    for raw_line in playlist_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("#EXT-X-STREAM-INF"):
-            expect_uri = True
-            continue
-        if line.startswith("#"):
-            continue
-        if expect_uri:
-            variants.append(urljoin(base_url, line))
-            expect_uri = False
-    return variants
-
-
-def _parse_media_playlist(
-    playlist_text: str,
-    base_url: str,
-) -> ApiStreamMediaPlaylistSnapshot:
-    if "#EXTM3U" not in playlist_text:
-        raise ValueError("api_stream media playlist is missing EXTM3U header")
-
-    media_sequence = 0
-    target_duration_sec: float | None = None
-    current_duration: float | None = None
-    next_sequence_offset = 0
-    is_endlist = False
-    segments: list[ApiStreamPlaylistSegment] = []
-
-    for raw_line in playlist_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if line.startswith("#EXT-X-MEDIA-SEQUENCE:"):
-            value = line.split(":", 1)[1].strip()
-            try:
-                media_sequence = int(value or 0)
-            except ValueError as error:
-                raise ValueError("api_stream media playlist has invalid MEDIA-SEQUENCE") from error
-            next_sequence_offset = 0
-            continue
-        if line.startswith("#EXT-X-TARGETDURATION:"):
-            value = line.split(":", 1)[1].strip()
-            try:
-                target_duration_sec = float(value or 0.0)
-            except ValueError as error:
-                raise ValueError("api_stream media playlist has invalid TARGETDURATION") from error
-            continue
-        if line.startswith("#EXTINF:"):
-            value = line.split(":", 1)[1].split(",", 1)[0].strip()
-            try:
-                current_duration = float(value or 0.0)
-            except ValueError as error:
-                raise ValueError("api_stream media playlist has invalid EXTINF duration") from error
-            continue
-        if line == "#EXT-X-ENDLIST":
-            is_endlist = True
-            continue
-        if line.startswith("#"):
-            continue
-
-        duration_sec = current_duration if current_duration is not None else 1.0
-        segments.append(
-            ApiStreamPlaylistSegment(
-                sequence=media_sequence + next_sequence_offset,
-                uri=urljoin(base_url, line),
-                duration_sec=max(duration_sec, 0.1),
-            )
-        )
-        next_sequence_offset += 1
-        current_duration = None
-
-    return ApiStreamMediaPlaylistSnapshot(
-        segments=segments,
-        is_endlist=is_endlist,
-        target_duration_sec=target_duration_sec if target_duration_sec and target_duration_sec > 0 else None,
-    )
-
-
-def _build_playlist_segment_key(segment: ApiStreamPlaylistSegment) -> tuple[int, str]:
-    return (segment.sequence, Path(urlparse(segment.uri).path).name)
-
-
-def _derive_api_stream_poll_interval(
-    *,
-    configured_poll_interval_sec: float,
-    target_duration_sec: float | None,
-) -> float:
-    """Return the next playlist-poll delay while tolerating target-duration drift."""
-    configured = max(configured_poll_interval_sec, 0.0)
-    if target_duration_sec is None:
-        return configured
-    safe_target_duration = max(target_duration_sec, 0.1)
-    return min(configured, safe_target_duration)
-
-
 class _HttpHlsApiStreamIterator:
-    """Iterator wrapper that lets the concrete HTTP/HLS loader resumably fail."""
+    """Stateful iterator wrapper that preserves retryable live-loader failures."""
 
     def __init__(self, loader: HttpHlsApiStreamLoader) -> None:
         self._loader = loader

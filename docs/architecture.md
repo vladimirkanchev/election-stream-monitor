@@ -270,8 +270,11 @@ Responsibilities:
 - keep the stable, intentionally thin public `api_stream` facade and
   loader-selection entry point
 - define the shared source/start/playback contract builders and identity helpers
-- own HLS playlist classification, master-variant selection, and media-playlist parsing
-- own retry/reconnect handling, temp-file lifecycle, and replay de-duplication for live chunks
+- keep `src/stream_loader_http_hls.py` as the orchestration shell and runtime-state owner
+- keep `src/stream_loader_http_hls_playlist.py` for playlist-kind detection and HLS playlist parsing helpers
+- keep `src/stream_loader_http_hls_fetch.py` for request building, bounded response reads, and transport-failure mapping
+- keep `src/stream_loader_http_hls_materialize.py` for temp-file writes and temp-storage byte accounting
+- keep `src/stream_loader_http_hls_policy.py` for dedup/replay/window-gap helpers that operate on loader state
 - keep deterministic seam loaders separate from the concrete HTTP/HLS transport
 
 This keeps live transport behavior explicit and separate from session
@@ -371,6 +374,10 @@ If you are deciding where a change belongs:
   - `src/stream_loader.py`
   - `src/stream_loader_contracts.py`
   - `src/stream_loader_http_hls.py`
+  - `src/stream_loader_http_hls_playlist.py`
+  - `src/stream_loader_http_hls_fetch.py`
+  - `src/stream_loader_http_hls_materialize.py`
+  - `src/stream_loader_http_hls_policy.py`
   - `src/stream_loader_fakes.py`
 - renderer playback routing and HLS proxy behavior
   - `frontend/electron/main.mjs`

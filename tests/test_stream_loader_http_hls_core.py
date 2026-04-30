@@ -1,8 +1,10 @@
 """Tests for core HTTP/HLS behavior in `stream_loader_http_hls`.
 
-These cases cover the concrete loader's ordinary fetch, variant-selection, and
-playlist progression semantics without mixing in reconnect-budget or limit
-behavior. They complement:
+These cases exercise the orchestration shell's ordinary fetch,
+variant-selection, and playlist-progression semantics without mixing in
+reconnect-budget or limit behavior. Direct helper coverage for parsing,
+fetch, materialization, and policy lives in the dedicated helper test files.
+They complement:
 
 - `test_stream_loader_contracts.py` for facade/contract-level checks
 - `test_stream_loader_http_hls_reconnect.py` for recovery behavior
@@ -331,6 +333,53 @@ def test_http_hls_loader_resolves_parent_relative_segment_paths_from_nested_medi
     ]
     assert [slice_.window_index for slice_ in slices] == [50, 51]
     cleanup_api_stream_temp_session_dir("session-http-parent-relative-segments")
+
+
+def test_http_hls_loader_rejects_master_playlist_that_exceeds_supported_nesting_depth(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Master playlists nested beyond the supported depth should fail clearly."""
+    _configure_http_hls_loader_test(monkeypatch, tmp_path)
+
+    master_level_1 = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=300000,RESOLUTION=426x240',
+        "level-2/master.m3u8",
+    )
+    master_level_2 = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=500000,RESOLUTION=640x360',
+        "level-3/master.m3u8",
+    )
+    master_level_3 = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=750000,RESOLUTION=960x540',
+        "level-4/master.m3u8",
+    )
+    master_level_4 = _playlist(
+        '#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=1280x720',
+        "level-5/index.m3u8",
+    )
+    routes = {
+        "/master.m3u8": (200, master_level_1, "application/vnd.apple.mpegurl"),
+        "/level-2/master.m3u8": (200, master_level_2, "application/vnd.apple.mpegurl"),
+        "/level-2/level-3/master.m3u8": (
+            200,
+            master_level_3,
+            "application/vnd.apple.mpegurl",
+        ),
+        "/level-2/level-3/level-4/master.m3u8": (
+            200,
+            master_level_4,
+            "application/vnd.apple.mpegurl",
+        ),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        source = build_api_stream_source_contract(f"{base_url}/master.m3u8")
+        loader = HttpHlsApiStreamLoader("session-http-master-depth")
+        with pytest.raises(ValueError, match="nesting exceeded supported depth"):
+            collect_api_stream_slices(loader, source)
+
+    cleanup_api_stream_temp_session_dir("session-http-master-depth")
 
 
 def test_http_hls_loader_rejects_master_playlist_without_any_usable_variant_uri(
