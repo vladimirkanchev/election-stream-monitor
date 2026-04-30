@@ -1,28 +1,112 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "election-stream-monitor"
 version = "0.1.0"
 description = "Local-first AI video monitoring system for election-related media sources."
 readme = "README.md"
 requires-python = ">=3.12"
+license = {text = "MIT"}
+keywords = [
+    "election-monitoring",
+    "fastapi",
+    "electron",
+    "video-analysis",
+    "local-first",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 dependencies = [
     "fastapi>=0.116.0",
     "uvicorn>=0.35.0",
-    "black>=26.3.1",
-    "dotenv>=0.9.9",
     "pandas>=3.0.1",
-    "pycodestyle>=2.14.0",
-    "pytest>=8.4.2",
-    "pylint>=4.0.5",
     "python-ffmpeg>=2.0.12",
     "m3u8>=6.0.0",
+    "pydantic>=2.13.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "httpx>=0.28.1",
+    "pytest>=8.4.2",
+]
+lint = [
+    "bandit>=1.9.4",
+    "black>=26.3.1",
+    "pycodestyle>=2.14.0",
     "pydocstyle>=6.3.0",
     "pylama>=8.4.1",
-    "bandit>=1.9.4",
+    "pylint>=4.0.5",
+]
+typecheck = [
     "mypy>=1.19.1",
     "pyright>=1.1.408",
-    "pydantic>=2.13.1",
-    "httpx>=0.28.1",
 ]
+dev = [
+    "bandit>=1.9.4",
+    "black>=26.3.1",
+    "httpx>=0.28.1",
+    "mypy>=1.19.1",
+    "pycodestyle>=2.14.0",
+    "pydocstyle>=6.3.0",
+    "pylama>=8.4.1",
+    "pylint>=4.0.5",
+    "pyright>=1.1.408",
+    "pytest>=8.4.2",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = [
+    "alert_rules",
+    "analyzer_contract",
+    "analyzer_registry",
+    "config",
+    "data_io",
+    "detector_generation_notes",
+    "detectors",
+    "export_detector_catalog",
+    "logger",
+    "main",
+    "path_utils",
+    "playback_sources",
+    "playlist_collector",
+    "playlist_utils",
+    "processor",
+    "session_cli",
+    "session_io",
+    "session_models",
+    "session_runner",
+    "session_runner_discovery",
+    "session_runner_execution",
+    "session_runner_lifecycle",
+    "session_runner_progress",
+    "session_runner_terminal",
+    "session_service",
+    "source_validation",
+    "stores",
+    "stream_loader",
+    "stream_loader_contracts",
+    "stream_loader_fakes",
+    "stream_loader_http_hls",
+    "stream_loader_http_hls_fetch",
+    "stream_loader_http_hls_materialize",
+    "stream_loader_http_hls_playlist",
+    "stream_loader_http_hls_policy",
+    "time_utils",
+    "video_to_ts_segments",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["api", "api.*"]
 
 [tool.pylint.main]
 init-hook = "import sys; from pathlib import Path; sys.path.insert(0, str(Path().resolve() / 'src'))"

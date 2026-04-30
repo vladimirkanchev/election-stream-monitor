@@ -177,6 +177,8 @@ FastAPI handles the monitoring backend.
 ## Installation
 
 For now, installation is still developer-oriented rather than one-click.
+The Python package is installable for local backend/runtime work, but this repo
+is still not presented as a polished published desktop or backend distribution.
 
 You will need:
 
@@ -185,7 +187,7 @@ You will need:
 - `ffmpeg` and `ffprobe` on `PATH`
 - optionally `uv` if you prefer that Python setup flow
 
-Quick setup:
+Quick setup for the backend runtime plus the desktop app:
 
 ```bash
 python3 -m venv .venv
@@ -202,6 +204,47 @@ uv venv
 . .venv/bin/activate
 uv pip install -e .
 ```
+
+If you also want backend test tooling locally, install the `test` extra:
+
+```bash
+pip install -e .[test]
+```
+
+If you want the fuller contributor toolchain, including linting and type-check
+tools, install the `dev` extra:
+
+```bash
+pip install -e .[dev]
+```
+
+The current split is deliberate:
+
+- `pip install -e .`
+  - backend runtime dependencies only
+- `pip install -e .[test]`
+  - backend runtime plus backend test tooling
+- `pip install -e .[dev]`
+  - backend runtime plus test, lint, and type-check tooling
+
+That installability is mainly for:
+
+- local backend development
+- FastAPI/session debugging
+- CI and future container-friendly backend setup
+
+The normal desktop startup path is still Electron, not a standalone Python app
+entrypoint.
+
+Current backend import/run expectations:
+
+- use `npm run dev` for the normal desktop application path
+- use `pip install -e .` or `pip install -e .[test]` when you want the backend
+  import surface available through an editable install
+- use `PYTHONPATH=src` for backend-only import/debug work from a raw checkout
+  when you are intentionally not relying on an editable install
+- use `uvicorn api.app:app --app-dir src --reload` for backend HTTP startup
+  from the current flat `src/` layout
 
 Quick check:
 
@@ -245,6 +288,28 @@ This starts:
 - the Vite frontend
 - the Electron shell
 - the local FastAPI-backed Python runtime used by the app
+
+This is still the normal way to run the project as an application.
+
+If you only want the backend for development or debugging, you can start
+FastAPI directly instead:
+
+```bash
+. .venv/bin/activate
+uvicorn api.app:app --app-dir src --reload
+```
+
+That backend-only path is mainly for API-focused development, contract
+inspection, and troubleshooting. It is not the primary desktop-app startup
+experience.
+
+If you are debugging backend imports directly from a raw checkout rather than
+through an editable install, use `PYTHONPATH=src` so the current flat `src/`
+module layout is on `sys.path`.
+
+The CLI remains available for session tooling and debugging, but it is not a
+normal application startup path. It is an adapter over the same shared backend
+session logic used by FastAPI.
 
 The easiest first run is `video_files` mode with a local `.mp4`.
 
@@ -324,6 +389,7 @@ If you want a quick local confidence check, start with:
 
 ```bash
 . .venv/bin/activate
+pip install -e .[test]
 pytest -q
 npm --prefix frontend run test
 npm run build

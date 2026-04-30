@@ -15,6 +15,7 @@ The current GitHub Actions workflow uses three practical layers:
 - `frontend-checkpoint`
   - quick Electron/bridge/session-flow regression signal
 - `test-and-build`
+  - packaging/import smoke check after editable install
   - backend tests
   - frontend typecheck
   - full frontend tests
@@ -41,8 +42,58 @@ Common local command:
 
 ```bash
 . .venv/bin/activate
+pip install -e .[test]
 pytest -q
 ```
+
+The current backend packaging split is:
+
+- `pip install -e .`
+  - runtime dependencies only
+- `pip install -e .[test]`
+  - runtime plus backend test tooling
+- `pip install -e .[dev]`
+  - runtime plus test, lint, and type-check tooling
+
+Current backend import/run expectations:
+
+- `npm run dev`
+  - canonical desktop runtime path
+- `pip install -e .` or `pip install -e .[test]`
+  - editable-install path for backend runtime and test work
+- `PYTHONPATH=src`
+  - raw-checkout backend import/debug path when you are not relying on an
+    editable install
+- `uvicorn api.app:app --app-dir src --reload`
+  - backend-only HTTP startup path for the current flat `src/` layout
+
+Packaging sanity check:
+
+```bash
+python3 -m venv /tmp/esm-packaging-check
+/tmp/esm-packaging-check/bin/python -m pip install --upgrade pip
+/tmp/esm-packaging-check/bin/python -m pip install --no-deps --no-build-isolation -e .
+```
+
+Runtime import smoke check:
+
+```bash
+. .venv/bin/activate
+pip install -e .[test]
+python -c "import api.app, api.routers.sessions, session_service, session_cli"
+```
+
+Raw-checkout import/debug check:
+
+```bash
+PYTHONPATH=src .venv/bin/python -c "import api.app, api.routers.sessions, session_service, session_cli"
+```
+
+The first check confirms that editable installs still build cleanly with the
+current package metadata. The second confirms that the backend import surface
+still works in a runtime-capable environment after packaging changes. The
+third is useful when you want to confirm raw-checkout backend imports still
+work with the current `src/` layout.
 
 ### Frontend
 
@@ -451,7 +502,7 @@ path for real-stream confidence checks.
 
 The current GitHub Actions workflow is intentionally lightweight:
 
-- backend install and test run
+- backend runtime install plus `test` extra for pytest jobs
 - frontend install
 - frontend test run
 - frontend build
