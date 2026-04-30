@@ -3,7 +3,7 @@
 These helpers intentionally sit close to the backend entrypoints so source
 validation stays consistent across the CLI, session runner, and playback
 resolution. The goal is to reject unsupported or risky inputs early, before
-they reach detector execution or future remote-stream fetching logic.
+they reach detector execution or remote-stream loading.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def validate_source_input(mode: InputMode, input_path: str | Path) -> str:
 
 
 def validate_api_stream_url(url: str | Path) -> str:
-    """Validate one future `api_stream` URL against the current trust policy.
+    """Validate one `api_stream` URL against the current trust policy.
 
     The current policy is intentionally conservative:
 
@@ -66,6 +66,8 @@ def validate_api_stream_url(url: str | Path) -> str:
     - embedded credentials are rejected
     - optional host allowlists can narrow accepted domains
     - obvious local-network targets are rejected by default in local mode
+    - optional DNS-backed host checks may resolve the hostname when
+      `API_STREAM_VALIDATE_DNS_HOSTS` is enabled
     """
     normalized = normalize_source_input(url)
     if not normalized:
@@ -131,7 +133,17 @@ def _looks_like_url(value: str) -> bool:
 
 
 def _validate_api_stream_host(hostname: str) -> None:
-    """Apply host-level `api_stream` restrictions without performing network I/O."""
+    """Apply host-level `api_stream` restrictions under the current trust policy.
+
+    Most checks are local and policy-based:
+
+    - blank hosts are rejected
+    - optional allowlists are enforced
+    - obvious local/private targets are rejected when private hosts are disabled
+
+    When `API_STREAM_VALIDATE_DNS_HOSTS` is enabled, this helper may also
+    resolve the hostname to reject names that land on local/private addresses.
+    """
     normalized_host = hostname.strip().lower()
     if not normalized_host:
         raise InvalidSourceInputError("api_stream URL must include a host.")
@@ -169,7 +181,11 @@ def _validate_api_stream_host(hostname: str) -> None:
 
 
 def _get_api_stream_host_policy() -> dict[str, object]:
-    """Return the current trust policy for remote api_stream host validation."""
+    """Return the current trust policy for remote api_stream host validation.
+
+    The returned policy controls whether host validation stays purely local or
+    also performs DNS-backed local/private-address checks.
+    """
     trust_mode = str(getattr(config, "API_STREAM_TRUST_MODE", "local")).strip().lower()
     if trust_mode == "service":
         return {

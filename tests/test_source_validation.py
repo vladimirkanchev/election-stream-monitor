@@ -1,11 +1,11 @@
 """Tests for centralized source trust-boundary validation.
 
-This suite documents the current source policy before full `api_stream`
-implementation exists:
+This suite documents the current source policy:
 
 - only explicitly allowed remote schemes are accepted
 - local modes reject URL-like inputs
 - obvious local-network targets are rejected by default for remote sources
+- optional DNS-backed checks remain opt-in
 - local path joins must stay inside the declared input root
 """
 
@@ -65,6 +65,17 @@ def test_validate_source_input_rejects_url_like_values_for_local_modes() -> None
         validate_source_input("video_files", "ftp://example.com/video.mp4")
     with pytest.raises(ValueError, match="Unsupported local input scheme"):
         validate_source_input("video_files", "javascript:alert(1)")
+    with pytest.raises(ValueError, match="Unsupported local input scheme"):
+        validate_source_input("video_files", "https://example.com/live/playlist.m3u8")
+    with pytest.raises(ValueError, match="Unsupported local input scheme"):
+        validate_source_input("video_segments", "http://streams.example.com/live.m3u8")
+
+
+def test_validate_source_input_uses_api_stream_policy_for_api_stream_mode() -> None:
+    """`api_stream` mode should delegate to the remote URL validation policy."""
+    assert validate_source_input("api_stream", "https://example.com/live/playlist.m3u8") == (
+        "https://example.com/live/playlist.m3u8"
+    )
 
 
 @pytest.mark.parametrize(
@@ -118,6 +129,19 @@ def test_validate_api_stream_url_enforces_service_mode_allowlist_and_private_hos
 
     with pytest.raises(ValueError, match="not allowed in service mode"):
         validate_api_stream_url("http://localhost/live.m3u8")
+
+
+def test_validate_api_stream_url_allows_private_hosts_when_service_policy_explicitly_enables_them(
+    monkeypatch,
+) -> None:
+    """Service mode may opt into private hosts when the trust policy allows them explicitly."""
+    monkeypatch.setattr("config.API_STREAM_TRUST_MODE", "service")
+    monkeypatch.setattr("config.API_STREAM_SERVICE_ALLOWED_HOSTS", ("localhost",))
+    monkeypatch.setattr("config.API_STREAM_SERVICE_ALLOW_PRIVATE_HOSTS", True)
+
+    assert validate_api_stream_url("http://localhost/live.m3u8") == (
+        "http://localhost/live.m3u8"
+    )
 
 
 def test_validate_api_stream_url_requires_allowed_host_when_allowlist_is_configured(
@@ -178,6 +202,22 @@ def test_validate_api_stream_url_accepts_hosts_that_resolve_to_public_ips_when_d
         "source_validation._resolve_api_stream_host_ips",
         lambda hostname: {"93.184.216.34"},
     )
+
+    assert validate_api_stream_url("https://streams.example.com/live.m3u8") == (
+        "https://streams.example.com/live.m3u8"
+    )
+
+
+def test_validate_api_stream_url_skips_dns_resolution_when_dns_checks_are_disabled(
+    monkeypatch,
+) -> None:
+    """DNS-backed host resolution should stay disabled unless the explicit flag is enabled."""
+    monkeypatch.setattr("config.API_STREAM_VALIDATE_DNS_HOSTS", False)
+
+    def fail_if_called(hostname: str) -> set[str]:
+        raise AssertionError(f"unexpected DNS lookup for {hostname}")
+
+    monkeypatch.setattr("source_validation._resolve_api_stream_host_ips", fail_if_called)
 
     assert validate_api_stream_url("https://streams.example.com/live.m3u8") == (
         "https://streams.example.com/live.m3u8"
