@@ -38,6 +38,15 @@ The Python suite covers:
 - loader contract helpers and deterministic seam behavior
 - HLS/provider edge cases and soak-oriented scenarios
 
+Alert-rule coverage is now split so the ownership is easier to scan:
+
+- `tests/test_alert_rules.py`
+  - metadata, failure wrapping, malformed payload tolerance, and detector isolation
+- `tests/test_alert_rules_black.py`
+  - `video_metrics` black-screen rule state transitions
+- `tests/test_alert_rules_blur.py`
+  - `video_blur` rolling/recovery rule state transitions
+
 Common local command:
 
 ```bash
@@ -135,8 +144,12 @@ Backend/API contract checks:
   - `api_stream` contract-builder consistency
   - loader seam helper invariants
   - replay/identity helper behavior
-- `tests/test_stream_loader_http_hls_core.py`
-  - ordinary playlist parsing, variant resolution, and progression behavior
+- `tests/test_stream_loader_http_hls_core_playlist.py`
+  - ordinary playlist parsing, variant resolution, and segment-path resolution
+- `tests/test_stream_loader_http_hls_core_progression.py`
+  - live progression, moving-window, cancel, and idle-refresh behavior
+- `tests/test_stream_loader_http_hls_core_provider.py`
+  - malformed refresh recovery and provider/transport edge behavior
 - `tests/test_stream_loader_http_hls_reconnect.py`
   - reconnect, replay de-duplication, and moving-window recovery behavior
 - `tests/test_stream_loader_http_hls_limits.py`
@@ -164,8 +177,10 @@ Frontend contract checks:
   - fail-closed nested payload handling
 - `frontend/src/bridge/transport.test.ts`
   - transport selection and demo fallback behavior
-- `frontend/src/hooks/useMonitoringSession.test.tsx`
-  - hook behavior on top of normalized bridge snapshots and typed failures
+- `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
+  - hook behavior for local lifecycle polling, cancel-state transitions, and typed failures
+- `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
+  - hook behavior for `api_stream` reconnect, recovery, and terminal polling semantics
 - `frontend/src/hooks/usePlaybackSource.test.tsx`
   - hook behavior on top of normalized playback-source resolution
 - `frontend/src/uiErrors.test.ts`
@@ -312,6 +327,24 @@ npm run test:electron-bridge
 npm run test:session-flow
 ```
 
+For faster local feedback loops, use the narrower frontend aliases:
+
+```bash
+cd frontend
+npm run test:app-runtime
+```
+
+Runs the heavier App integration checks for start/cancel/polling behavior
+without paying for the full frontend suite.
+
+```bash
+cd frontend
+npm run test:ui-fast
+```
+
+Runs the cheap bridge/view-model/presenter/source-model slices that are useful
+when iterating on contracts or UI state logic without touching the App shell.
+
 ## Lifecycle Slice Validation
 
 After each lifecycle-hardening slice, run:
@@ -338,6 +371,37 @@ smoke check:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_e2e_local_session.py -q
+```
+
+For the backend E2E suites, the current split is:
+
+- `tests/test_e2e_local_session.py`
+  - small snapshot-contract smoke check
+- `tests/test_e2e_local_session_real_media.py`
+  - curated real-media local-session coverage
+- `tests/test_e2e_session_ground_truth_api_stream.py`
+  - synthetic `api_stream` ground-truth contract cases
+- `tests/test_e2e_session_ground_truth_local.py`
+  - slower real-media ground-truth matrix
+
+Use markers to keep local feedback tight:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "e2e and not slow" tests/test_e2e_*.py -q
+```
+
+That command keeps:
+
+- the small local-session smoke test
+- the synthetic `api_stream` ground-truth cases
+
+and skips the heavier real-media suites until you actually need them.
+
+Run the fuller real-media E2E pass when changing detector behavior, windowing,
+or persisted snapshot expectations for checked-in media fixtures:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "e2e and slow" tests/test_e2e_*.py -q
 ```
 
 Note:

@@ -75,7 +75,8 @@ When changing one of these, review the others too:
 - [`frontend/src/bridge/contract.errors.test.ts`](../frontend/src/bridge/contract.errors.test.ts)
 - [`frontend/src/bridge/contract.session-snapshot.test.ts`](../frontend/src/bridge/contract.session-snapshot.test.ts)
 - [`frontend/src/bridge/transport.test.ts`](../frontend/src/bridge/transport.test.ts)
-- [`frontend/src/hooks/useMonitoringSession.test.tsx`](../frontend/src/hooks/useMonitoringSession.test.tsx)
+- [`frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`](../frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx)
+- [`frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`](../frontend/src/hooks/useMonitoringSession.apiStream.test.tsx)
 - [`frontend/src/hooks/usePlaybackSource.test.tsx`](../frontend/src/hooks/usePlaybackSource.test.tsx)
 - [`frontend/src/uiErrors.test.ts`](../frontend/src/uiErrors.test.ts)
 

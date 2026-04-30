@@ -70,7 +70,9 @@ module families and the matching tests:
   - `src/stream_loader_http_hls.py`
   - `src/stream_loader_fakes.py`
   - `tests/test_stream_loader_contracts.py`
-  - `tests/test_stream_loader_http_hls_core.py`
+  - `tests/test_stream_loader_http_hls_core_playlist.py`
+  - `tests/test_stream_loader_http_hls_core_progression.py`
+  - `tests/test_stream_loader_http_hls_core_provider.py`
   - `tests/test_stream_loader_http_hls_reconnect.py`
   - `tests/test_stream_loader_http_hls_limits.py`
 - Electron/FastAPI desktop runtime:
