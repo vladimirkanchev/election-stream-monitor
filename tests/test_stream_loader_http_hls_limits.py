@@ -1,8 +1,10 @@
 """Tests for HTTP/HLS limits, temp cleanup, and longer-running stability.
 
 These cases isolate budget exhaustion, cleanup guarantees, and soak/restart
-coverage from the loader's ordinary fetch and reconnect paths so failures can
-be attributed to one concern more quickly.
+coverage from the loader shell's ordinary fetch and reconnect paths so
+failures can be attributed to one concern more quickly. Direct helper coverage
+for temp-file writes and byte accounting lives in the dedicated helper test
+files.
 """
 
 from dataclasses import replace
@@ -172,6 +174,46 @@ def test_http_hls_loader_enforces_playlist_refresh_limit(
         == "api_stream playlist refresh limit exceeded"
     )
     cleanup_api_stream_temp_session_dir("session-http-refresh-limit")
+
+
+def test_http_hls_loader_closes_once_after_endlist_terminal_completion(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The terminal loader path should close exactly once and leave cleanup to session ownership."""
+    _configure_http_hls_limits_test(
+        monkeypatch,
+        tmp_path,
+        max_idle_playlist_polls=10,
+        sleep=lambda seconds: None,
+    )
+
+    routes = {
+        "/live/index.m3u8": (
+            200,
+            _media_playlist(0, "segment_000.ts"),
+            _HLS_CONTENT_TYPE,
+        ),
+        "/live/segment_000.ts": (200, b"000", _TS_CONTENT_TYPE),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        loader, source = _build_loader_source(base_url, "session-http-close-on-endlist")
+        close_calls: list[int] = []
+        original_close = loader.close
+
+        def counting_close() -> None:
+            close_calls.append(1)
+            original_close()
+
+        monkeypatch.setattr(loader, "close", counting_close)
+        slices = collect_api_stream_slices(loader, source)
+        temp_dir = build_api_stream_temp_session_dir("session-http-close-on-endlist")
+
+    assert [slice_.window_index for slice_ in slices] == [0]
+    assert close_calls == [1]
+    assert temp_dir.exists()
+    cleanup_api_stream_temp_session_dir("session-http-close-on-endlist")
 
 
 def test_http_hls_loader_enforces_session_runtime_limit(

@@ -1,6 +1,11 @@
 """Tests for HTTP/HLS retry, reconnect, and replay de-duplication behavior.
 
-This file isolates transport recovery and playlist-window movement cases from:
+This file isolates the loader shell's transport recovery and playlist-window
+movement cases from the core behavior suites and the hard-limit/cleanup
+scenarios. Direct helper coverage for the fetch and policy seams lives in the
+dedicated helper test files.
+
+It isolates these cases from:
 
 - ordinary loader semantics in `test_stream_loader_http_hls_core.py`
 - hard-limit and cleanup scenarios in `test_stream_loader_http_hls_limits.py`
@@ -78,6 +83,74 @@ def test_http_hls_loader_resumes_after_outage_when_playlist_window_moves(
     assert [slice_.window_index for slice_ in slices] == [100, 102]
     assert any(message == "api_stream playlist window advanced [%s]" for message, _ in info_logs)
     cleanup_api_stream_temp_session_dir("session-http-resume-gap")
+
+
+def test_http_hls_loader_resumes_after_larger_playlist_window_jump_and_prunes_replays(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A larger window jump should still prune replayed segments and keep newer work flowing."""
+    monkeypatch.setattr(config, "API_STREAM_ALLOW_PRIVATE_HOSTS", True)
+    monkeypatch.setattr(config, "API_STREAM_POLL_INTERVAL_SEC", 0.0)
+    monkeypatch.setattr(config, "API_STREAM_RECONNECT_BACKOFF_SEC", 0.0)
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    monkeypatch.setattr(config, "API_STREAM_TEMP_ROOT", tmp_path / "api-temp")
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda seconds: None)
+
+    info_logs: list[tuple[str, tuple[object, ...]]] = []
+    monkeypatch.setattr(
+        stream_loader_http_hls.logger,
+        "info",
+        lambda message, *args: info_logs.append((message, args)),
+    )
+
+    first_playlist = "\n".join(
+        [
+            "#EXTM3U",
+            "#EXT-X-TARGETDURATION:1",
+            "#EXT-X-MEDIA-SEQUENCE:100",
+            "#EXTINF:1.0,",
+            "segment_100.ts",
+            "#EXTINF:1.0,",
+            "segment_101.ts",
+        ]
+    )
+    advanced_playlist = "\n".join(
+        [
+            "#EXTM3U",
+            "#EXT-X-TARGETDURATION:1",
+            "#EXT-X-MEDIA-SEQUENCE:104",
+            "#EXTINF:1.0,",
+            "segment_104.ts",
+            "#EXTINF:1.0,",
+            "segment_105.ts",
+            "#EXT-X-ENDLIST",
+        ]
+    )
+    routes = {
+        "/live/index.m3u8": [
+            (200, first_playlist, "application/vnd.apple.mpegurl"),
+            (503, "busy", "text/plain"),
+            (200, advanced_playlist, "application/vnd.apple.mpegurl"),
+        ],
+        "/live/segment_100.ts": (200, b"100", "video/mp2t"),
+        "/live/segment_101.ts": (200, b"101", "video/mp2t"),
+        "/live/segment_104.ts": (200, b"104", "video/mp2t"),
+        "/live/segment_105.ts": (200, b"105", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        source = build_api_stream_source_contract(f"{base_url}/live/index.m3u8")
+        loader = HttpHlsApiStreamLoader("session-http-large-gap")
+        slices = collect_api_stream_slices(loader, source)
+
+    assert [slice_.window_index for slice_ in slices] == [100, 101, 104, 105]
+    assert any(
+        "missed_segment_count=2" in str(args[0])
+        for message, args in info_logs
+        if message == "api_stream playlist window advanced [%s]"
+    )
+    cleanup_api_stream_temp_session_dir("session-http-large-gap")
 
 
 def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_just_after_reconnect(
