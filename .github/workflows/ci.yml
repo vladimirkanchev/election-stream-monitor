@@ -88,10 +88,20 @@ jobs:
       - name: Show ffmpeg version
         run: ffmpeg -version | head -n 1
 
+      - name: Run editable-install packaging check
+        run: |
+          python -m venv /tmp/esm-packaging-check
+          /tmp/esm-packaging-check/bin/python -m pip install --upgrade pip setuptools wheel
+          /tmp/esm-packaging-check/bin/python -m pip install --no-deps --no-build-isolation -e .
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e .[test]
+
+      - name: Run packaging smoke check
+        run: |
+          python -c "import api.app, api.routers.sessions, session_service, session_cli"
 
       - name: Run backend tests
         run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
@@ -136,7 +146,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e .[test]
 
       - name: Run integration smoke test
         run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_e2e_local_session.py

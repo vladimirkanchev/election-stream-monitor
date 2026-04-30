@@ -8,6 +8,10 @@ bridge. It is still a thin HTTP boundary over the existing local-first
 session/domain code, and it does not replace Electron-specific playback or
 other desktop/runtime host responsibilities.
 
+The backend is installable for local runtime and development work, but this
+repo is still not presented as a polished standalone Python product
+distribution.
+
 ## Current Status
 
 The FastAPI layer currently provides:
@@ -103,6 +107,14 @@ That means:
 
 ## Run Locally
 
+This backend-only startup path is mainly for development and debugging. The
+normal desktop application path is still Electron startup, which owns FastAPI
+process launch and readiness for ordinary local use.
+
+For ordinary application use, treat `npm run dev` as the canonical runtime
+path. Use direct backend startup only when you intentionally want the backend
+without the Electron shell around it.
+
 From the repository root:
 
 ```bash
@@ -110,9 +122,17 @@ From the repository root:
 uvicorn api.app:app --app-dir src --reload
 ```
 
+The explicit `--app-dir src` is intentional here because the backend still uses
+the current flat `src/` module layout. For raw-checkout backend import/debug
+work outside an editable install, use `PYTHONPATH=src`.
+
 The Electron desktop runtime can also start the local FastAPI process as part
 of its owned startup/readiness flow. Running `uvicorn` manually is mainly
 useful for backend-focused development and debugging.
+
+[`src/session_cli.py`](../src/session_cli.py) also remains available for
+tooling and debugging, but it is not a peer startup path to Electron. It is a
+shared-service adapter for backend-focused workflows.
 
 Open the interactive docs at:
 
