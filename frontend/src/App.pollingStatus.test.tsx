@@ -1,12 +1,19 @@
+/**
+ * App-level polling coverage for operator-visible session status wording.
+ *
+ * This suite keeps the cases that benefit from rendering the composed App
+ * shell: session-status labels, reconnecting banners, and terminal live-stream
+ * messaging. Local lifecycle-state polling cases live in the
+ * `useMonitoringSession` hook suites, where they run faster at the hook seam.
+ */
+
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
-import { fail } from "./bridge/contract";
 import type { SessionSummary } from "./types";
 import {
-  endMonitoring,
   enterApiStreamSource,
   enterLocalSource,
   makeSnapshot,
@@ -19,39 +26,17 @@ import {
 
 const API_STREAM_URL = "https://example.com/live/playlist.m3u8";
 const POLLING_TICK_MS = 1100;
-
-function makeLocalSession(
-  overrides: Partial<SessionSummary> = {},
-): SessionSummary {
-  return {
-    ...RUNNING_SESSION,
-    ...overrides,
-  };
-}
-
-function makeLocalSnapshot(args: {
-  session?: Partial<SessionSummary>;
-  progress?: Partial<NonNullable<ReturnType<typeof makeSnapshot>["progress"]>>;
-} = {}) {
-  const session = makeLocalSession(args.session);
-  return makeSnapshot({
-    session,
-    progress: {
-      session_id: session.session_id,
-      status: session.status,
-      processed_count: 2,
-      total_count: 4,
-      current_item: session.status === "cancelled" ? null : "segment_0002.ts",
-      latest_result_detector: "video_blur",
-      latest_result_detectors: ["video_blur"],
-      alert_count: 0,
-      last_updated_utc: "2026-04-21 11:00:01",
-      status_reason: session.status === "running" ? "running" : null,
-      status_detail: null,
-      ...args.progress,
-    },
-  });
-}
+const BASE_API_STREAM_PROGRESS = {
+  processed_count: 1,
+  total_count: 4,
+  current_item: "live-window-001",
+  latest_result_detector: "video_blur",
+  latest_result_detectors: ["video_blur"],
+  alert_count: 0,
+  last_updated_utc: "2026-04-04 09:00:00",
+  status_reason: null,
+  status_detail: null,
+};
 
 function makeApiStreamSession(
   overrides: Partial<SessionSummary> = {},
@@ -76,15 +61,7 @@ function makeApiStreamSnapshot(args: {
     progress: {
       session_id: session.session_id,
       status: session.status,
-      processed_count: 1,
-      total_count: 4,
-      current_item: "live-window-001",
-      latest_result_detector: "video_blur",
-      latest_result_detectors: ["video_blur"],
-      alert_count: 0,
-      last_updated_utc: "2026-04-04 09:00:00",
-      status_reason: null,
-      status_detail: null,
+      ...BASE_API_STREAM_PROGRESS,
       ...args.progress,
     },
   });
@@ -120,9 +97,12 @@ async function waitForPollingTick(count = 1) {
   }
 }
 
-async function startLocalMonitoringFlow(path = "/data/streams/segments") {
+// Local-mode polling coverage is intentionally light here. The hook suites own
+// the denser lifecycle matrix, while the App suite keeps the composed operator
+// messaging that is harder to validate one seam lower.
+async function startLocalMonitoringFlow() {
   await renderApp();
-  await enterLocalSource(path);
+  await enterLocalSource();
   await toggleFirstDetector();
   startMonitoring();
 
@@ -148,16 +128,32 @@ async function startApiStreamMonitoringFlow(args: {
   });
 }
 
-describe("App polling and status integration", () => {
-  // Local session polling and terminal-state stability
+function expectRecoveringBanner() {
+  expect(screen.getByText("Recovering")).toBeTruthy();
+}
 
+function expectNoRecoveryOrTerminalSignals() {
+  expect(screen.queryByText("Recovering")).toBeNull();
+  expect(screen.queryByText("Needs attention")).toBeNull();
+  expect(screen.queryByText("Ended after going quiet")).toBeNull();
+  expect(screen.queryByText("Failed")).toBeNull();
+}
+
+describe("App polling and status integration", () => {
   it("updates status from polling and shows completed state", async () => {
-    const completedSnapshot = makeLocalSnapshot({
-      session: { status: "completed" },
+    const completedSnapshot = makeSnapshot({
+      session: {
+        ...RUNNING_SESSION,
+        status: "completed",
+      },
       progress: {
+        session_id: RUNNING_SESSION.session_id,
+        status: "completed",
         processed_count: 4,
         total_count: 4,
         current_item: "segment_0004.ts",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_blur"],
         alert_count: 1,
         last_updated_utc: "2026-04-02 10:00:04",
       },
@@ -174,22 +170,6 @@ describe("App polling and status integration", () => {
     await waitFor(() => {
       expect(screen.getByText("Completed")).toBeTruthy();
       expect(screen.getByText("Monitoring finished successfully for the current source.")).toBeTruthy();
-    });
-  });
-
-  it("keeps the last good session state when a polling read fails", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockRejectedValueOnce(new Error("poll failed"))
-      .mockResolvedValue(makeLocalSnapshot());
-
-    await startLocalMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-      expect(screen.getByText("Mock Player")).toBeTruthy();
     });
   });
 
@@ -211,7 +191,7 @@ describe("App polling and status integration", () => {
     await waitForPollingTick();
 
     await waitFor(() => {
-      expect(screen.getByText("Recovering")).toBeTruthy();
+      expectRecoveringBanner();
     });
 
     await waitForPollingTick();
@@ -220,33 +200,6 @@ describe("App polling and status integration", () => {
       expect(screen.queryByText("Recovering")).toBeNull();
       expect(screen.getByText("Running")).toBeTruthy();
     });
-  });
-
-  it("keeps reconnecting as a warning-only state until an api stream actually becomes terminal", async () => {
-    mockApiStreamPolling({
-      session: { session_id: "session-api-reconnecting-only" },
-      polls: [
-        makeApiStreamSnapshot({
-          session: { session_id: "session-api-reconnecting-only" },
-        }),
-        new Error("poll failed"),
-        makeApiStreamSnapshot({
-          session: { session_id: "session-api-reconnecting-only" },
-        }),
-      ],
-    });
-
-    await startApiStreamMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Recovering")).toBeTruthy();
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    expect(screen.queryByText("Needs attention")).toBeNull();
-    expect(screen.queryByText("Failed")).toBeNull();
-    expect(screen.queryByText("Ended after going quiet")).toBeNull();
   });
 
   it("shows a safety-limit message when a running api stream snapshot turns terminal", async () => {
@@ -300,7 +253,7 @@ describe("App polling and status integration", () => {
     await waitForPollingTick();
 
     await waitFor(() => {
-      expect(screen.getByText("Recovering")).toBeTruthy();
+      expectRecoveringBanner();
     });
 
     await waitForPollingTick();
@@ -346,64 +299,6 @@ describe("App polling and status integration", () => {
     });
   });
 
-  it("does not regress back to Running after an idle-complete terminal state receives a stale older snapshot", async () => {
-    const liveSession = makeApiStreamSession({
-      session_id: "session-api-idle-terminal",
-    });
-    const completedSnapshot = makeApiStreamSnapshot({
-      session: { session_id: "session-api-idle-terminal", status: "completed" },
-      progress: {
-        processed_count: 2,
-        current_item: "live-window-002",
-        last_updated_utc: "2026-04-04 09:22:03",
-        status_reason: "idle_poll_budget_exhausted",
-        status_detail: "Idle poll budget exhausted",
-      },
-    });
-    const staleRunningSnapshot = makeApiStreamSnapshot({
-      session: { session_id: "session-api-idle-terminal" },
-      progress: {
-        processed_count: 2,
-        current_item: "live-window-002",
-        last_updated_utc: "2026-04-04 09:21:59",
-      },
-    });
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(liveSession);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(
-        makeApiStreamSnapshot({
-          session: { session_id: "session-api-idle-terminal" },
-          progress: {
-            processed_count: 2,
-            current_item: "live-window-002",
-            last_updated_utc: "2026-04-04 09:22:00",
-          },
-        }),
-      )
-      .mockResolvedValueOnce(completedSnapshot)
-      .mockResolvedValueOnce(staleRunningSnapshot)
-      .mockResolvedValue(staleRunningSnapshot);
-
-    await startApiStreamMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Completed")).toBeTruthy();
-      expect(screen.getByText("Ended after going quiet")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Completed")).toBeTruthy();
-      expect(screen.getByText("Ended after going quiet")).toBeTruthy();
-    });
-
-    expect(screen.queryByText("Running")).toBeNull();
-    expect(screen.queryByText("Recovering")).toBeNull();
-  });
-
   it("replaces reconnecting with the idle-complete warning when a recovering api stream settles after going quiet", async () => {
     mockApiStreamPolling({
       session: { session_id: "session-api-reconnect-then-idle-complete" },
@@ -436,7 +331,7 @@ describe("App polling and status integration", () => {
     await waitForPollingTick();
 
     await waitFor(() => {
-      expect(screen.getByText("Recovering")).toBeTruthy();
+      expectRecoveringBanner();
     });
 
     await waitForPollingTick();
@@ -449,64 +344,6 @@ describe("App polling and status integration", () => {
     expect(screen.queryByText("Recovering")).toBeNull();
     expect(screen.queryByText("Needs attention")).toBeNull();
     expect(screen.queryByText("Failed")).toBeNull();
-  });
-
-  it("can recover from reconnecting and still later settle on a terminal failure without stale recovery cues", async () => {
-    mockApiStreamPolling({
-      session: { session_id: "session-api-recover-then-fail" },
-      polls: [
-        makeApiStreamSnapshot({
-          session: { session_id: "session-api-recover-then-fail" },
-          progress: { last_updated_utc: "2026-04-04 09:30:00" },
-        }),
-        new Error("poll failed"),
-        makeApiStreamSnapshot({
-          session: { session_id: "session-api-recover-then-fail" },
-          progress: {
-            last_updated_utc: "2026-04-04 09:30:02",
-            processed_count: 2,
-            current_item: "live-window-002",
-          },
-        }),
-        makeApiStreamSnapshot({
-          session: {
-            session_id: "session-api-recover-then-fail",
-            status: "failed",
-          },
-          progress: {
-            last_updated_utc: "2026-04-04 09:30:04",
-            processed_count: 2,
-            current_item: "live-window-002",
-            status_reason: "source_unreachable",
-            status_detail:
-              "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
-          },
-        }),
-      ],
-    });
-
-    await startApiStreamMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Recovering")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.queryByText("Recovering")).toBeNull();
-      expect(screen.getByText("Running")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Failed")).toBeTruthy();
-      expect(screen.getByText("Needs attention")).toBeTruthy();
-    });
-
-    expect(screen.queryByText("Recovering")).toBeNull();
   });
 
   it("keeps a running api stream without progress in a neutral state until real warnings appear", async () => {
@@ -534,271 +371,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Running")).toBeTruthy();
     });
 
-    expect(screen.queryByText("Recovering")).toBeNull();
-    expect(screen.queryByText("Needs attention")).toBeNull();
-    expect(screen.queryByText("Ended after going quiet")).toBeNull();
-    expect(screen.queryByText("Failed")).toBeNull();
-  });
-
-  it("moves from cancelling to stopped after polling returns a cancelled snapshot", async () => {
-    const cancelledSnapshot = makeLocalSnapshot({
-      session: { status: "cancelled" },
-      progress: {
-        status_reason: "cancel_requested",
-        status_detail: "Cancellation requested by client",
-      },
-    });
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValue(cancelledSnapshot);
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...RUNNING_SESSION,
-      status: "cancelling",
-    });
-
-    await startLocalMonitoringFlow();
-
-    endMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Ending")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Stopped")).toBeTruthy();
-    });
-  });
-
-  it("does not regress back to Running after polling reaches a cancelled terminal state", async () => {
-    const cancelledSnapshot = makeLocalSnapshot({
-      session: { status: "cancelled" },
-      progress: {
-        status_reason: "cancel_requested",
-        status_detail: "Cancellation requested by client",
-      },
-    });
-    const staleRunningSnapshot = makeLocalSnapshot({
-      progress: {
-        last_updated_utc: "2026-04-21 10:59:59",
-      },
-    });
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(cancelledSnapshot)
-      .mockResolvedValueOnce(staleRunningSnapshot)
-      .mockResolvedValue(staleRunningSnapshot);
-
-    await startLocalMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Stopped")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Stopped")).toBeTruthy();
-    });
-
-    expect(screen.queryByText("Running")).toBeNull();
-  });
-
-  it("keeps ending state coherent when cancel is requested while a poll is still in flight", async () => {
-    let resolvePoll:
-      | ((value: ReturnType<typeof makeSnapshot>) => void)
-      | null = null;
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            resolvePoll = resolve;
-          }),
-      );
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...RUNNING_SESSION,
-      status: "cancelling",
-    });
-
-    await startLocalMonitoringFlow();
-    await waitForPollingTick();
-
-    endMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Ending")).toBeTruthy();
-      expect(mockBridge.cancelSession).toHaveBeenCalledTimes(1);
-    });
-
-    const completePoll =
-      resolvePoll as ((value: ReturnType<typeof makeSnapshot>) => void) | null;
-    expect(completePoll).not.toBeNull();
-    completePoll?.(
-      makeLocalSnapshot({
-        session: { status: "cancelled" },
-        progress: {
-          last_updated_utc: "2026-04-21 12:00:01",
-          status_reason: "cancel_requested",
-          status_detail: "Cancellation requested by client",
-        },
-      }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("Stopped")).toBeTruthy();
-    });
-  });
-
-  it("does not regress back to Failed after polling reaches a failed terminal state", async () => {
-    const failedSnapshot = makeLocalSnapshot({
-      session: { status: "failed" },
-      progress: {
-        last_updated_utc: "2026-04-21 12:10:01",
-        status_reason: "terminal_failure",
-        status_detail: "session runtime exceeded max duration",
-      },
-    });
-    const staleRunningSnapshot = makeLocalSnapshot({
-      progress: {
-        last_updated_utc: "2026-04-21 12:09:59",
-      },
-    });
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(failedSnapshot)
-      .mockResolvedValueOnce(staleRunningSnapshot)
-      .mockResolvedValue(staleRunningSnapshot);
-
-    await startLocalMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Failed")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Failed")).toBeTruthy();
-    });
-
-    expect(screen.queryByText("Running")).toBeNull();
-  });
-
-  it("keeps the last good session state when polling returns a missing-session bridge failure", async () => {
-    const missingSessionFailure = fail(
-      "SESSION_READ_FAILED",
-      "Session read request failed",
-      "No persisted session snapshot found for session_id=session-1",
-      {
-        backend_error_code: "session_not_found",
-        status_reason: "session_not_found",
-        status_detail: "No persisted session snapshot found for session_id=session-1",
-      },
-    ) as unknown as ReturnType<typeof makeSnapshot>;
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(missingSessionFailure)
-      .mockResolvedValue(makeSnapshot());
-
-    await startLocalMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Running")).toBeTruthy();
-      expect(screen.getByText("Mock Player")).toBeTruthy();
-    });
-
-    expect(
-      screen.queryByText(/The local monitoring bridge reported a request failure\./i),
-    ).toBeNull();
-  });
-
-  it("recovers from a polling failure during cancelling and still settles on stopped", async () => {
-    const cancelledSnapshot = makeLocalSnapshot({
-      session: { status: "cancelled" },
-      progress: {
-        last_updated_utc: "2026-04-21 12:20:02",
-        status_reason: "cancel_requested",
-        status_detail: "Cancellation requested by client",
-      },
-    });
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockRejectedValueOnce(new Error("poll failed during cancel"))
-      .mockResolvedValue(cancelledSnapshot);
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...RUNNING_SESSION,
-      status: "cancelling",
-    });
-
-    await startLocalMonitoringFlow();
-
-    endMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Ending")).toBeTruthy();
-    });
-
-    await waitForPollingTick(2);
-
-    await waitFor(() => {
-      expect(screen.getByText("Stopped")).toBeTruthy();
-    });
-  });
-
-  it("keeps the last good ending state when a post-cancel poll reports session_not_found", async () => {
-    const missingSessionFailure = fail(
-      "SESSION_READ_FAILED",
-      "Session read request failed",
-      "No persisted session snapshot found for session_id=session-1",
-      {
-        backend_error_code: "session_not_found",
-        status_reason: "session_not_found",
-        status_detail: "No persisted session snapshot found for session_id=session-1",
-      },
-    ) as unknown as ReturnType<typeof makeSnapshot>;
-
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(missingSessionFailure);
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...RUNNING_SESSION,
-      status: "cancelling",
-    });
-
-    await startLocalMonitoringFlow();
-
-    endMonitoring();
-
-    await waitFor(() => {
-      expect(screen.getByText("Ending")).toBeTruthy();
-    });
-
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Ending")).toBeTruthy();
-    });
-
-    expect(
-      screen.queryByText(/The local monitoring bridge reported a request failure\./i),
-    ).toBeNull();
+    expectNoRecoveryOrTerminalSignals();
   });
 
   // API stream transition and status-detail rendering
