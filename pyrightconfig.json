@@ -1,0 +1,8 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": ["src"],
+  "include": ["src"],
+  "exclude": ["frontend", "tests", "data", "docs", ".venv", "build", "dist"],
+  "typeCheckingMode": "basic"
+}

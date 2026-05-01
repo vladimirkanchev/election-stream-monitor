@@ -225,7 +225,7 @@ The current split is deliberate:
 - `pip install -e .[test]`
   - backend runtime plus backend test tooling
 - `pip install -e .[dev]`
-  - backend runtime plus test, lint, and type-check tooling
+  - backend runtime plus test, Ruff lint, and type-check tooling
 
 That installability is mainly for:
 
