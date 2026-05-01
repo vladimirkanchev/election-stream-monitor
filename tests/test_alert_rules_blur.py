@@ -182,6 +182,106 @@ def test_video_blur_rule_does_not_repeat_until_recovery_then_alerts_again() -> N
     assert reenter_alert_counts == [0, 1, 0]
 
 
+def test_video_blur_rule_emits_separate_alerts_before_and_after_recovery() -> None:
+    """A blur episode should ring once, recover, and ring again later in the timeline."""
+    reset_session_rule_state("session-blur-separated-alerts")
+
+    first_episode = evaluate_detector_rows(
+        session_id="session-blur-separated-alerts",
+        detector_id="video_blur",
+        rows=[
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:00",
+                source_group="playlist-separated",
+                source_name="segment_001.ts",
+                blur_score=0.82,
+                threshold_used=0.72,
+            ),
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:01",
+                source_group="playlist-separated",
+                source_name="segment_002.ts",
+                blur_score=0.79,
+                threshold_used=0.72,
+            ),
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:02",
+                source_group="playlist-separated",
+                source_name="segment_003.ts",
+                blur_score=0.60,
+                threshold_used=0.72,
+            ),
+        ],
+    )
+    assert_no_alerts(first_episode[0], first_episode[1])
+    assert len(first_episode[2]) == 1
+    assert first_episode[2][0].timestamp_utc == "2026-03-31 10:00:02"
+
+    recovery_batches = evaluate_detector_rows(
+        session_id="session-blur-separated-alerts",
+        detector_id="video_blur",
+        rows=[
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:03",
+                source_group="playlist-separated",
+                source_name="segment_004.ts",
+                blur_detected=False,
+                blur_score=0.40,
+                threshold_used=0.72,
+            ),
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:04",
+                source_group="playlist-separated",
+                source_name="segment_005.ts",
+                blur_detected=False,
+                blur_score=0.42,
+                threshold_used=0.72,
+            ),
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:05",
+                source_group="playlist-separated",
+                source_name="segment_006.ts",
+                blur_detected=False,
+                blur_score=0.45,
+                threshold_used=0.72,
+            ),
+        ],
+    )
+    assert_no_alerts(*recovery_batches)
+
+    second_episode = evaluate_detector_rows(
+        session_id="session-blur-separated-alerts",
+        detector_id="video_blur",
+        rows=[
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:08",
+                source_group="playlist-separated",
+                source_name="segment_008.ts",
+                blur_score=0.81,
+                threshold_used=0.72,
+            ),
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:09",
+                source_group="playlist-separated",
+                source_name="segment_009.ts",
+                blur_score=0.77,
+                threshold_used=0.72,
+            ),
+            blur_row(
+                timestamp_utc="2026-03-31 10:00:10",
+                source_group="playlist-separated",
+                source_name="segment_010.ts",
+                blur_score=0.78,
+                threshold_used=0.72,
+            ),
+        ],
+    )
+    assert_no_alerts(second_episode[0])
+    assert len(second_episode[1]) == 1
+    assert second_episode[1][0].timestamp_utc == "2026-03-31 10:00:09"
+    assert_no_alerts(second_episode[2])
+
+
 def test_video_blur_rule_resets_between_sessions() -> None:
     """Per-session blur rolling state should not leak into a fresh session id."""
     reset_session_rule_state("session-blur-a")
