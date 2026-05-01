@@ -154,6 +154,91 @@ def test_video_black_rule_does_not_repeat_until_recovery_then_alerts_again() -> 
         ),
     )
     assert len(second_alert) == 1
+    assert second_alert[0].timestamp_utc == "2026-03-31 10:00:05"
+
+
+def test_video_black_rule_emits_separate_alerts_before_and_after_recovery() -> None:
+    """A black episode should ring once, recover, and ring again later in the timeline."""
+    reset_session_rule_state("session-black-separated-alerts")
+
+    first_episode = evaluate_detector_rows(
+        session_id="session-black-separated-alerts",
+        detector_id="video_metrics",
+        rows=[
+            black_row(
+                timestamp_utc="2026-03-31 10:00:00",
+                source_group="playlist-separated",
+                source_name="segment_001.ts",
+                black_ratio=0.95,
+                longest_black_sec=1.2,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:01",
+                source_group="playlist-separated",
+                source_name="segment_002.ts",
+                black_ratio=0.95,
+                longest_black_sec=1.2,
+            ),
+        ],
+    )
+    assert len(first_episode[0]) == 1
+    assert_no_alerts(first_episode[1])
+
+    recovery_batches = evaluate_detector_rows(
+        session_id="session-black-separated-alerts",
+        detector_id="video_metrics",
+        rows=[
+            black_row(
+                timestamp_utc="2026-03-31 10:00:02",
+                source_group="playlist-separated",
+                source_name="segment_003.ts",
+                black_detected=False,
+                black_ratio=0.0,
+                longest_black_sec=0.0,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:03",
+                source_group="playlist-separated",
+                source_name="segment_004.ts",
+                black_detected=False,
+                black_ratio=0.0,
+                longest_black_sec=0.0,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:04",
+                source_group="playlist-separated",
+                source_name="segment_005.ts",
+                black_detected=False,
+                black_ratio=0.0,
+                longest_black_sec=0.0,
+            ),
+        ],
+    )
+    assert_no_alerts(*recovery_batches)
+
+    second_episode = evaluate_detector_rows(
+        session_id="session-black-separated-alerts",
+        detector_id="video_metrics",
+        rows=[
+            black_row(
+                timestamp_utc="2026-03-31 10:00:08",
+                source_group="playlist-separated",
+                source_name="segment_008.ts",
+                black_ratio=0.95,
+                longest_black_sec=1.2,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:09",
+                source_group="playlist-separated",
+                source_name="segment_009.ts",
+                black_ratio=0.95,
+                longest_black_sec=1.2,
+            ),
+        ],
+    )
+    assert len(second_episode[0]) == 1
+    assert second_episode[0][0].timestamp_utc == "2026-03-31 10:00:08"
+    assert_no_alerts(second_episode[1])
 
 
 def test_video_black_rule_respects_continuous_duration_boundary() -> None:
