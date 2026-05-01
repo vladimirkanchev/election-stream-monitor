@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import tempfile
+from typing import Literal
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VIDEO_METRICS_PATH = PROJECT_ROOT / "./data/metrics/video_metrics.csv"
@@ -26,7 +27,7 @@ API_STREAM_FETCH_TIMEOUT_SEC = 15.0
 API_STREAM_MAX_FETCH_BYTES = 50_000_000
 API_STREAM_MAX_SESSION_RUNTIME_SEC = 1_800.0
 API_STREAM_MAX_PLAYLIST_REFRESHES = 1_000
-API_STREAM_MASTER_PLAYLIST_POLICY = "first_variant"
+API_STREAM_MASTER_PLAYLIST_POLICY: Literal["first_variant"] = "first_variant"
 API_STREAM_ACCEPTED_PLAYLIST_TYPES = ("media", "master")
 API_STREAM_TEMP_ROOT = Path(tempfile.gettempdir()) / "election-stream-monitor" / "api_stream"
 API_STREAM_TEMP_MAX_BYTES = 500_000_000

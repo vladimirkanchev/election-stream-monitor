@@ -33,7 +33,7 @@ from session_models import (
 )
 
 logger = get_logger(__name__)
-EMPTY_SESSION_SNAPSHOT = {
+EMPTY_SESSION_SNAPSHOT: dict[str, object] = {
     "session": None,
     "progress": None,
     "alerts": [],
@@ -232,7 +232,7 @@ def _build_session_snapshot(
     results: list[dict[str, object]],
 ) -> dict[str, object]:
     """Build the stable frontend snapshot shape from persisted session artifacts."""
-    snapshot = dict(EMPTY_SESSION_SNAPSHOT)
+    snapshot: dict[str, object] = dict(EMPTY_SESSION_SNAPSHOT)
     snapshot.update(
         {
             "session": metadata,

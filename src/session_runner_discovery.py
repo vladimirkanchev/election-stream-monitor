@@ -13,7 +13,7 @@ It does not own session lifecycle transitions or persistence.
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
 
 from analyzer_contract import AnalysisSlice, InputMode
@@ -140,8 +140,9 @@ def probe_video_duration(file_path: Path) -> float:
             stdout=subprocess.PIPE,
             text=True,
             check=False,
+            shell=False,
             timeout=config.FFPROBE_TIMEOUT_SEC,
-        )
+        )  # nosec B603
     except subprocess.TimeoutExpired:
         logger.warning("ffprobe timed out while probing %s", file_path.name)
         return 0.0

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from io import TextIOWrapper
 from pathlib import Path
-import subprocess
+import subprocess  # nosec B404
 import sys
 
 from analyzer_contract import InputMode
@@ -29,7 +29,7 @@ from source_validation import validate_source_input
 from stream_loader import build_api_stream_start_session_contract
 
 TERMINAL_SESSION_STATUSES = {"completed", "cancelled", "failed"}
-EMPTY_SESSION_SNAPSHOT = {
+EMPTY_SESSION_SNAPSHOT: dict[str, object] = {
     "session": None,
     "progress": None,
     "alerts": [],
@@ -109,6 +109,8 @@ def cancel_session(session_id: str) -> dict[str, object]:
         raise SessionServiceNotFoundError(session_id)
 
     session = snapshot["session"]
+    if not isinstance(session, dict):
+        raise SessionServiceNotFoundError(session_id)
     session_status = session.get("status")
     if session_status in TERMINAL_SESSION_STATUSES:
         raise SessionServiceCancelFailedError(session_id, str(session_status))
@@ -185,8 +187,9 @@ def _spawn_detached_session_worker(
         cwd=str(Path(__file__).resolve().parent),
         stdout=log_handle,
         stderr=log_handle,
+        shell=False,
         start_new_session=True,
-    )
+    )  # nosec B603
 
 
 def _spawn_session_worker(

@@ -11,15 +11,36 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
+from typing import TypedDict, cast
 
 from analyzer_contract import AnalysisSlice, InputMode
 from session_io import append_alert, append_result, is_session_cancel_requested, write_session_progress
-from session_models import AlertEvent, ResultEvent, SessionMetadata, SessionProgress
+from session_models import AlertEvent, EventSeverity, ResultEvent, SessionMetadata, SessionProgress
 import session_runner_progress
 import session_runner_terminal
 from stream_loader import ApiStreamLoader, iter_api_stream_slices
 
+class BundleResultEntry(TypedDict):
+    session_id: str
+    detector_id: str
+    payload: dict[str, object]
+
+
+class BundleAlertEntry(TypedDict):
+    session_id: str
+    timestamp_utc: str
+    detector_id: str
+    title: str
+    message: str
+    severity: EventSeverity
+    source_name: str
+    window_index: int | None
+    window_start_sec: float | None
+
+
 BundlePayload = dict[str, list[dict[str, object]]]
+
+
 BundleRunner = Callable[..., BundlePayload]
 ProgressBuilder = Callable[..., SessionProgress]
 Finalizer = Callable[..., tuple[SessionMetadata, SessionProgress]]
@@ -60,10 +81,13 @@ def run_analyzers_for_slice(
 
 def persist_bundle_events(bundle: BundlePayload) -> None:
     """Persist one analyzer bundle into the results and alerts logs."""
-    for result_payload in bundle["results"]:
+    result_payloads = cast(list[BundleResultEntry], bundle["results"])
+    alert_payloads = cast(list[BundleAlertEntry], bundle["alerts"])
+
+    for result_payload in result_payloads:
         append_result(ResultEvent(**result_payload))
 
-    for alert_payload in bundle["alerts"]:
+    for alert_payload in alert_payloads:
         append_alert(AlertEvent(**alert_payload))
 
 

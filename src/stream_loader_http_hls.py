@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import time
-from typing import Iterator
+from typing import Iterator, overload
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
@@ -501,6 +501,24 @@ class HttpHlsApiStreamLoader:
                 source_name=segment_name,
             ) from error
 
+    @overload
+    def _fetch_url_bytes(
+        self,
+        url: str,
+        *,
+        include_final_url: bool,
+    ) -> tuple[bytes, str]:
+        ...
+
+    @overload
+    def _fetch_url_bytes(
+        self,
+        url: str,
+        *,
+        include_final_url: bool = False,
+    ) -> bytes:
+        ...
+
     def _fetch_url_bytes(
         self,
         url: str,
@@ -510,7 +528,7 @@ class HttpHlsApiStreamLoader:
         self._raise_if_cancel_requested()
         request = _build_api_stream_request(url)
         try:
-            with urlopen(
+            with urlopen(  # nosec B310
                 request,
                 timeout=self._runtime_policy.fetch_timeout_sec,
             ) as response:

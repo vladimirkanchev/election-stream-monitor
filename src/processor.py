@@ -12,6 +12,7 @@ runner. It is intentionally responsible for only a few things:
 
 import inspect
 from pathlib import Path
+from typing import cast
 
 from analyzer_contract import AnalysisSlice, InputMode
 from alert_rules import evaluate_alerts
@@ -126,14 +127,17 @@ def run_enabled_analyzers_bundle(
             )
 
         results.append(
-            ResultEvent(
-                session_id=session_id,
-                detector_id=registration.name,
-                payload=row,
-            ).to_dict()
+            cast(
+                dict[str, object],
+                ResultEvent(
+                    session_id=session_id,
+                    detector_id=registration.name,
+                    payload=row,
+                ).to_dict(),
+            )
         )
         alerts.extend(
-            alert.to_dict()
+            cast(dict[str, object], alert.to_dict())
             for alert in evaluate_alerts(session_id, registration.name, row)
         )
 
@@ -283,7 +287,7 @@ def run_enabled_analyzers(
         session_id="standalone-run",
         persist_to_store=True,
     )
-    return [dict(event["payload"]) for event in bundle["results"]]
+    return [dict(cast(dict[str, object], event["payload"])) for event in bundle["results"]]
 
 
 def process_video_file(file_path: Path, prefix: str, mode: InputMode) -> list[dict]:

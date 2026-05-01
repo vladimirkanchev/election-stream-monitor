@@ -13,6 +13,7 @@ Loader-owned retry loops and reconnect state updates stay in
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
@@ -28,13 +29,19 @@ _API_STREAM_FETCH_READ_CHUNK_BYTES = 64 * 1024
 _API_STREAM_USER_AGENT = "election-stream-monitor/1.0"
 
 
+class _ReadableResponse(Protocol):
+    def read(self, n: int = -1) -> bytes: ...
+
+    def geturl(self) -> str: ...
+
+
 def _build_api_stream_request(url: str) -> Request:
     """Return the normalized outbound request for one upstream fetch."""
     return Request(url, headers={"User-Agent": _API_STREAM_USER_AGENT})
 
 
 def _read_api_stream_response_bytes(
-    response: object,
+    response: _ReadableResponse,
     *,
     max_fetch_bytes: int,
     on_chunk_read: Callable[[], None],
