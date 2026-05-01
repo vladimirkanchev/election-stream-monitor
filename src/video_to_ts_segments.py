@@ -1,7 +1,7 @@
 """Developer utility to generate `.ts` segments from a local video file."""
 
 import argparse
-import subprocess
+import subprocess  # nosec B404
 from pathlib import Path
 
 import config
@@ -71,7 +71,7 @@ def split_video_to_ts(
     ]
 
     logger.info("Generating HLS segments from %s into %s", input_file, output_dir)
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, shell=False)  # nosec B603
     logger.info("Created playlist %s", playlist_path)
 
 

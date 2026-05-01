@@ -9,6 +9,7 @@ This module supports two lightweight use cases:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import tempfile
 from pathlib import Path
 from typing import Iterator, Literal
 
@@ -154,7 +155,7 @@ def _build_fake_chunk_slice(
 ) -> AnalysisSlice:
     if event.chunk_index is None:
         raise ValueError("Fake chunk event requires chunk_index")
-    file_path = event.file_path or Path(f"/tmp/live-chunk-{event.chunk_index:06d}.ts")
+    file_path = event.file_path or Path(tempfile.gettempdir()) / f"live-chunk-{event.chunk_index:06d}.ts"
     return build_api_stream_analysis_slice(
         source=source,
         file_path=file_path,
@@ -172,7 +173,7 @@ def _build_fake_malformed_slice(
     """Return one intentionally invalid slice for malformed-loader tests."""
     if event.chunk_index is None:
         raise ValueError("Fake malformed chunk event requires chunk_index")
-    file_path = event.file_path or Path(f"/tmp/live-chunk-{event.chunk_index:06d}.ts")
+    file_path = event.file_path or Path(tempfile.gettempdir()) / f"live-chunk-{event.chunk_index:06d}.ts"
     return AnalysisSlice(
         file_path=file_path,
         source_group="malformed-source-group",

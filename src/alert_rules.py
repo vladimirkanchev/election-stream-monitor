@@ -3,7 +3,7 @@
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from statistics import median
-from typing import Callable
+from typing import Any, Callable
 
 from analyzer_contract import AlertRuleCatalogEntry, DetectorOrigin, DetectorStatus
 import config
@@ -277,8 +277,12 @@ def _source_group_from_row(row: dict[str, object]) -> str:
 
 
 def _coerce_float(value: object, default: float) -> float:
+    if value is None:
+        return default
     try:
-        return float(value or default)
+        if isinstance(value, (int, float, str)):
+            return float(value)
+        return default
     except (TypeError, ValueError):
         return default
 
@@ -441,7 +445,7 @@ def _has_blur_rule_recovered(
 
 def _clear_session_state(
     session_id: str,
-    windows: dict[RuleStateKey, deque[object]],
+    windows: dict[RuleStateKey, Any],
     active_states: dict[RuleStateKey, bool],
 ) -> None:
     stale_keys = [key for key in windows if key[0] == session_id]
@@ -514,7 +518,11 @@ def _maybe_int(value: object) -> int | None:
     if value is None:
         return None
     try:
-        return int(value)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, (float, str)):
+            return int(value)
+        return None
     except (TypeError, ValueError):
         return None
 
@@ -524,6 +532,8 @@ def _maybe_float(value: object) -> float | None:
     if value is None:
         return None
     try:
-        return float(value)
+        if isinstance(value, (int, float, str)):
+            return float(value)
+        return None
     except (TypeError, ValueError):
         return None

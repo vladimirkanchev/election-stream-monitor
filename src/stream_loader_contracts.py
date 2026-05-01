@@ -178,21 +178,27 @@ class ApiStreamLoader(Protocol):
 
     def iter_slices(self) -> Iterator[AnalysisSlice]:
         """Yield normalized analysis slices for one live source."""
+        ...
 
     def close(self) -> None:
         """Release loader resources after iteration finishes."""
+        ...
 
     def load_persisted_identity_keys(self) -> set[tuple[str, int, str]]:
         """Return reconnect de-dup keys already persisted for this session."""
+        ...
 
     def persist_identity_key(self, key: tuple[str, int, str]) -> None:
         """Persist one accepted reconnect de-dup key for this session."""
+        ...
 
     def accepted_slice_count(self) -> int:
         """Return the number of accepted slices discovered so far."""
+        ...
 
     def telemetry_snapshot(self) -> ApiStreamTelemetrySnapshot:
         """Return compact transport counters and end-state context for one run."""
+        ...
 
 
 def build_api_stream_runtime_policy() -> ApiStreamRuntimePolicy:

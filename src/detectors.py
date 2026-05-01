@@ -2,7 +2,7 @@
 
 import json
 import re
-import subprocess
+import subprocess  # nosec B404
 import time
 from pathlib import Path
 from statistics import median
@@ -303,9 +303,10 @@ def _run_media_command(
         return subprocess.run(
             cmd,
             check=False,
+            shell=False,
             timeout=timeout,
             **kwargs,
-        )
+        )  # nosec B603
     except subprocess.TimeoutExpired:
         logger.warning("%s timed out after %.1f sec", failure_label, timeout)
         return None
