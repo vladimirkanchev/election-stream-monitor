@@ -21,8 +21,8 @@ import session_runner
 import stream_loader_http_hls
 from analyzer_contract import AnalysisSlice, AnalyzerRegistration
 from session_io import request_session_cancel
+from tests.local_hls_test_support import _serve_local_hls  # noqa: F401
 from stream_loader import FakeApiStreamEvent, HttpHlsApiStreamLoader, StaticApiStreamLoader
-from tests.local_hls_test_support import _serve_local_hls
 
 
 @dataclass(slots=True)
