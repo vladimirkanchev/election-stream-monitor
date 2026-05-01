@@ -12,20 +12,65 @@ Do not use it as a detailed architecture or contract doc.
 
 The current GitHub Actions workflow uses three practical layers:
 
+- `changes`
+  - path filter job that classifies backend, frontend, docs, workflow, and contract-sensitive edits
 - `frontend-checkpoint`
   - quick Electron/bridge/session-flow regression signal
-- `test-and-build`
+- `backend-tests`
   - packaging/import smoke check after editable install
   - backend tests
-  - frontend typecheck
+- `backend-ruff`
+  - primary Python lint check with Ruff
+- `frontend-typecheck`
+  - frontend TypeScript typecheck
+- `frontend-lint`
+  - advisory frontend ESLint signal on `src` TypeScript files
+- `contract-checks`
+  - boundary-focused backend and frontend contract checks for PRs
+- `backend-typecheck`
+  - targeted type defense for the contract-sensitive Python boundary modules
+- `backend-pyright`
+  - advisory VSCode-aligned type signal for the same Python boundary modules
+- `test-and-build`
   - full frontend tests
   - frontend build
 - `main` pull-request guards
   - a small integration smoke test
   - a lightweight docs/contract consistency check
+  - contract-sensitive changes must move with nearby tests and owning docs
+- `docs-consistency`
+  - path-aware docs and workflow consistency checks for non-`main` pull requests
+- `weekly-validation`
+  - scheduled slow e2e media tests
+  - lifecycle-focused backend test coverage
+  - deeper `api_stream` validation
+  - Bandit security audit
+  - `pip-audit` Python dependency scan
+  - `npm audit` frontend dependency scan
+  - dependency consistency check
+  - packaging smoke check
+
+Failure-only artifacts are now uploaded for the heaviest backend PR lane, the
+weekly lifecycle lane, the slow e2e lane, and the weekly `api_stream`
+deep-validation lane, starting with plain test logs.
+The weekly lifecycle lane also uploads the persisted session files that most
+often explain runner state, cancel behavior, and terminal outcomes.
 
 This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier.
+
+The workflow is now path-aware:
+
+- backend-heavy work runs only when backend or contract files change
+- frontend-heavy work runs only when frontend or contract files change
+- docs/workflow consistency checks run on docs-oriented pull requests
+- PRs into `main` still receive the full validation set
+- contract-boundary edits on `main` PRs are expected to come with matching
+  tests and the owning docs update
+
+The slower confidence-building checks run weekly instead of on every PR, so
+the repo gets a broader safety net without turning normal branch work into a
+long queue.
 
 ### Backend
 
@@ -62,7 +107,7 @@ The current backend packaging split is:
 - `pip install -e .[test]`
   - runtime plus backend test tooling
 - `pip install -e .[dev]`
-  - runtime plus test, lint, and type-check tooling
+  - runtime plus test, Ruff lint, and type-check tooling
 
 Current backend import/run expectations:
 
@@ -104,6 +149,45 @@ still works in a runtime-capable environment after packaging changes. The
 third is useful when you want to confirm raw-checkout backend imports still
 work with the current `src/` layout.
 
+Dedicated backend typecheck:
+
+```bash
+uv sync --extra typecheck
+MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+```
+
+Use `uv sync --extra typecheck` to make sure the local typecheck env has the
+required checker deps.
+Use `MYPYPATH=src` so mypy resolves the flat `src/` modules as source files
+rather than treating them like installed third-party packages.
+Use this after changing the Python contracts that sit closest to the frontend
+bridge, session lifecycle, or alert-rule boundary.
+
+Primary backend lint check:
+
+```bash
+python -m pip install -e .[lint]
+ruff check src tests
+```
+
+Use this as the main Python lint gate now that Ruff is the standardized
+linter. Keep Bandit separate for security-focused checks.
+
+CI currently runs the Ruff job as a fast backend gate on backend or contract
+changes, and on `main` pull requests.
+
+Advisory backend pyright check:
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/pip install -e .[typecheck]
+.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+```
+
+Use this as a non-blocking editor-aligned signal if you want pyright feedback
+without making it the required branch gate yet.
+
 ### Frontend
 
 The frontend suite covers:
@@ -114,11 +198,29 @@ The frontend suite covers:
 - playback error messaging
 - bridge contract normalization
 
+Frontend type safety is intentionally strict:
+
+- `tsc -b --incremental false`
+- `noUncheckedIndexedAccess`
+- `exactOptionalPropertyTypes`
+- `noPropertyAccessFromIndexSignature`
+- `noImplicitReturns`
+- `noFallthroughCasesInSwitch`
+
 Common local command:
 
 ```bash
 npm --prefix frontend run test
 ```
+
+Advisory frontend lint check:
+
+```bash
+npm --prefix frontend run lint:frontend
+```
+
+Use this as a lightweight frontend quality signal. It is not yet part of the
+required merge gate, but it is already wired into CI as a non-blocking job.
 
 ## FastAPI And Bridge Contract Checks
 
@@ -140,6 +242,12 @@ Backend/API contract checks:
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - populated session snapshot response shape
+- `tests/test_api_boundary_sessions.py`
+  - session start/read/cancel contract behavior
+- `tests/test_session_service.py`
+  - shared start/read/cancel service behavior
+- `tests/test_session_cli_tooling.py`
+  - CLI adapter behavior over the shared session service
 - `tests/test_stream_loader_contracts.py`
   - `api_stream` contract-builder consistency
   - loader seam helper invariants
@@ -177,6 +285,9 @@ Frontend contract checks:
   - fail-closed nested payload handling
 - `frontend/src/bridge/transport.test.ts`
   - transport selection and demo fallback behavior
+- `frontend/src/uiErrors.test.ts`
+  - operator-facing error wording
+  - `api_stream` status/error interpretation
 - `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
   - hook behavior for local lifecycle polling, cancel-state transitions, and typed failures
 - `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
