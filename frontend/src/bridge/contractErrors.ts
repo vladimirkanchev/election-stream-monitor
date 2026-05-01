@@ -111,22 +111,22 @@ export function normalizeBridgeErrorPayload(value: unknown): BridgeErrorPayload 
   }
 
   return {
-    code: isBridgeErrorCode(value.code) ? value.code : "INVALID_BRIDGE_RESPONSE",
+    code: isBridgeErrorCode(value["code"]) ? value["code"] : "INVALID_BRIDGE_RESPONSE",
     message:
-      typeof value.message === "string" && value.message.trim().length > 0
-        ? value.message
+      typeof value["message"] === "string" && value["message"].trim().length > 0
+        ? value["message"]
         : "invalid bridge error response",
-    details: normalizeNullableString(value.details),
-    backend_error_code: normalizeNullableString(value.backend_error_code),
-    status_reason: normalizeNullableString(value.status_reason),
-    status_detail: normalizeNullableString(value.status_detail),
+    details: normalizeNullableString(value["details"]),
+    backend_error_code: normalizeNullableString(value["backend_error_code"]),
+    status_reason: normalizeNullableString(value["status_reason"]),
+    status_detail: normalizeNullableString(value["status_detail"]),
   };
 }
 
 export function isBridgeResponse<T>(
   value: T | BridgeResponse<T>,
 ): value is BridgeResponse<T> {
-  return isRecord(value) && typeof value.ok === "boolean";
+  return isRecord(value) && typeof value["ok"] === "boolean";
 }
 
 export function isBridgeErrorCode(value: unknown): value is BridgeErrorCode {

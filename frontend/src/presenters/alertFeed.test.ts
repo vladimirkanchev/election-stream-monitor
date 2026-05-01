@@ -310,6 +310,10 @@ describe("filterAlertsForPlayback", () => {
       {},
     )[0];
 
+    if (!segmentItem || !fileItem) {
+      throw new Error("Expected alert feed items to be present");
+    }
+
     expect(segmentItem.timestampLabel).toBe("03:26");
     expect(fileItem.timestampLabel).toBe("00:12");
   });

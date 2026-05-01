@@ -16,6 +16,8 @@ import { fail } from "./bridge/contract";
 import type { RunSessionInput } from "./types";
 import {
   enterApiStreamSource,
+  enterLocalSource,
+  makeSnapshot,
   mockBridge,
   renderApp,
   startMonitoring,
@@ -101,6 +103,44 @@ describe("App start-session integration", () => {
           "This link opens a webpage, not the video stream itself. Paste the direct video link (.m3u8 or .mp4) instead.",
         ),
       ).toBeTruthy();
+    });
+  });
+
+  it("keeps monitoring active when the first local snapshot read is briefly missing", async () => {
+    const delayedStartSession = {
+      session_id: "session-1",
+      mode: "video_segments" as const,
+      input_path: "/data/streams/segments",
+      selected_detectors: ["video_blur"],
+      status: "running" as const,
+    };
+
+    (mockBridge.startSession as ReturnType<typeof vi.fn>).mockResolvedValue(delayedStartSession);
+    (mockBridge.readSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(
+        fail(
+          "SESSION_READ_FAILED",
+          "Session read request failed",
+          "No persisted session snapshot found for session_id=session-1",
+          {
+            backend_error_code: "session_not_found",
+            status_reason: "session_not_found",
+            status_detail: "No persisted session snapshot found for session_id=session-1",
+          },
+        ),
+      )
+      .mockResolvedValue(makeSnapshot());
+
+    await renderApp();
+
+    await enterLocalSource();
+    await toggleFirstDetector();
+    startMonitoring();
+
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "End Monitoring" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
     });
   });
 });

@@ -74,5 +74,5 @@ function extractSegmentNumber(sourceName: string): number | null {
   if (!match) {
     return null;
   }
-  return Number.parseInt(match[1], 10);
+  return Number.parseInt(match[1] ?? "", 10);
 }

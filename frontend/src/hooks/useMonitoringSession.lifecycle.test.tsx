@@ -173,6 +173,37 @@ describe("useMonitoringSession local polling stability", () => {
     });
   });
 
+  it("keeps the started session active when the first read is temporarily missing", async () => {
+    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
+    vi.mocked(mockBridge.readSession)
+      .mockResolvedValueOnce(makeMissingSessionFailure())
+      .mockResolvedValue(makeLocalSnapshot());
+
+    renderHookProbe();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Start" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getProbeState()).toMatchObject({
+      monitoringStatus: "running",
+      sessionStatus: "running",
+      snapshotStatus: "none",
+      sessionError: "none",
+    });
+
+    await advancePollingTick();
+
+    expect(getProbeState()).toMatchObject({
+      monitoringStatus: "running",
+      sessionStatus: "running",
+      snapshotStatus: "running",
+      sessionError: "none",
+    });
+  });
+
   it("recovers from a polling failure during cancelling and still settles on stopped", async () => {
     vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
     vi.mocked(mockBridge.readSession)
