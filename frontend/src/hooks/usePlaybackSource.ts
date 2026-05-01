@@ -32,7 +32,7 @@ interface UsePlaybackSourceResult {
 
 export function usePlaybackSource({
   source,
-  currentItem,
+  currentItem: _currentItem,
   playbackRequested,
 }: UsePlaybackSourceArgs): UsePlaybackSourceResult {
   const { kind: sourceKind, path: sourcePath, access: sourceAccess } = source;

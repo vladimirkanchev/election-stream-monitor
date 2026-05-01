@@ -26,9 +26,7 @@ import {
   isBridgeTransportError,
   ok,
   unwrapBridgeValue,
-  type BridgeFailure,
   type BridgeResponse,
-  type BridgeSuccess,
 } from "./contractErrors";
 import { normalizeDetectorOptions } from "./contractDetectors";
 import {
