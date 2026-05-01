@@ -11,7 +11,7 @@ user extensions, and transport layers should agree on.
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, NotRequired, Protocol, TypedDict
 
 
 class AnalyzerResult(TypedDict):
@@ -23,9 +23,30 @@ class AnalyzerResult(TypedDict):
 
     analyzer: str
     source_type: str
+    source_group: NotRequired[str]
     source_name: str
+    window_index: NotRequired[int | None]
+    window_start_sec: NotRequired[float | None]
+    window_duration_sec: NotRequired[float | None]
     timestamp_utc: str
     processing_sec: float
+    duration_sec: NotRequired[float]
+    sample_count: NotRequired[int]
+    sharpness_p10: NotRequired[float]
+    sharpness_p90: NotRequired[float]
+    blur_score: NotRequired[float]
+    blur_detected: NotRequired[bool]
+    threshold_used: NotRequired[float]
+    window_size: NotRequired[int]
+    consecutive_blurry_windows: NotRequired[int]
+    black_detected: NotRequired[bool]
+    black_segment_count: NotRequired[int]
+    total_black_sec: NotRequired[float]
+    longest_black_sec: NotRequired[float]
+    black_ratio: NotRequired[float]
+    picture_threshold_used: NotRequired[float]
+    pixel_threshold_used: NotRequired[float]
+    min_duration_sec: NotRequired[float]
 
 
 class DetectorCatalogEntry(TypedDict):

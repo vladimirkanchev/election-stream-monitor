@@ -12,6 +12,7 @@ import ipaddress
 import socket
 from pathlib import Path
 from urllib.parse import urlparse
+from typing import cast
 
 import config
 from analyzer_contract import InputMode
@@ -173,7 +174,7 @@ def _validate_api_stream_host(hostname: str) -> None:
 
     if policy["allowed_hosts"] and not _host_matches_allowlist(
         normalized_host,
-        policy["allowed_hosts"],
+        cast(tuple[str, ...], policy["allowed_hosts"]),
     ):
         raise InvalidSourceInputError(
             f"api_stream host is not in the allowed host list: {normalized_host}"
