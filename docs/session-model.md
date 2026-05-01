@@ -319,6 +319,7 @@ responses, Electron bridge mapping, and frontend session UX.
 | Situation | Expected result | Notes |
 | --- | --- | --- |
 | start-session succeeds | return pending `SessionSummary` | The frontend may transition into active monitoring after later reads/polls. |
+| start-session succeeds but the first read reports `session_not_found` | keep the started session active and retry on the next poll | The detached worker can lag briefly behind the accepted start request before the first persisted snapshot appears. |
 | read/poll for an active session | return current persisted session snapshot | Persisted session files are the source of truth, not inferred frontend state. |
 | cancel-session for a running session | accept request and return `SessionSummary` or `null` | `null` is still a valid success when no updated summary is returned immediately. |
 | cancel-session for a session already in a terminal state | return a structured failure | Do not silently treat an invalid cancel state as a normal success. |

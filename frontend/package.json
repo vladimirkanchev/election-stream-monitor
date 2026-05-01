@@ -1,6 +1,6 @@
 {
   "name": "election-stream-monitor-frontend",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,6 +18,7 @@
     "test:startup-milestone": "npm run test:startup-runtime && npm run test:frontend-checkpoint",
     "test:frontend-checkpoint": "npm run test:electron-bridge && npm run test:session-flow",
     "test:watch": "vitest",
+    "lint:frontend": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc -b --incremental false",
     "build:web": "npm run sync:detectors && tsc -b --incremental false && vite build",
     "build": "npm run build:web",
@@ -30,6 +31,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.1.2",
@@ -37,8 +39,11 @@
     "@vitejs/plugin-react": "^5.0.4",
     "concurrently": "^9.2.1",
     "electron": "^41.1.0",
+    "eslint": "^9.39.4",
+    "globals": "^16.5.0",
     "jsdom": "^29.0.1",
     "typescript": "^5.8.3",
+    "typescript-eslint": "^8.59.1",
     "vite": "^8.0.8",
     "vitest": "^3.2.4",
     "wait-on": "^9.0.5"

@@ -80,6 +80,10 @@ When changing one of these, review the others too:
 - [`frontend/src/hooks/usePlaybackSource.test.tsx`](../frontend/src/hooks/usePlaybackSource.test.tsx)
 - [`frontend/src/uiErrors.test.ts`](../frontend/src/uiErrors.test.ts)
 
+For `main` pull requests, the CI drift gate expects contract changes to move
+with nearby tests and the owning docs update rather than landing as silent
+shape changes.
+
 ## API Stream Source Contract v1
 
 Purpose:
