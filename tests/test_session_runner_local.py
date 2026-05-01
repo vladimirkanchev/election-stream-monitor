@@ -22,7 +22,6 @@ from stream_loader import StaticApiStreamLoader, build_api_stream_source_contrac
 from tests.session_runner_api_stream_test_support import (
     _configure_runner_output_paths,
     _patch_runner_bundle,
-    _patch_runner_store_flushes,
 )
 
 

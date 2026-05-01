@@ -417,6 +417,7 @@ def test_spawn_detached_session_worker_preserves_detached_process_settings(monke
         "cwd": str(Path(session_service.__file__).resolve().parent),
         "stdout": log_handle,
         "stderr": log_handle,
+        "shell": False,
         "start_new_session": True,
     }
     assert recorded["kwargs"]["stdout"] is not session_service.subprocess.DEVNULL

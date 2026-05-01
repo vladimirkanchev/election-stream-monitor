@@ -21,8 +21,8 @@ def test_analyze_video_metrics_returns_expected_schema(
     video_path = tmp_path / "sample.mp4"
     video_path.write_bytes(b"video-bytes")
 
-    def fake_run(cmd, stdout=None, stderr=None, text=None, check=None, timeout=None):  # noqa: ANN001
-        _ = (stdout, stderr, text, check, timeout)
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = kwargs
         if cmd[0] == "ffprobe":
             return SimpleNamespace(stdout=json.dumps({"format": {"duration": "2.0"}}))
         return SimpleNamespace(
@@ -55,8 +55,8 @@ def test_analyze_video_metrics_handles_invalid_ffprobe_output(
     video_path = tmp_path / "sample.mp4"
     video_path.write_bytes(b"video-bytes")
 
-    def fake_run(cmd, stdout=None, stderr=None, text=None, check=None, timeout=None):  # noqa: ANN001
-        _ = (stdout, stderr, text, check, timeout)
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = kwargs
         if cmd[0] == "ffprobe":
             return SimpleNamespace(stdout="not-json")
         return SimpleNamespace(stderr="")
@@ -81,8 +81,8 @@ def test_analyze_video_blur_returns_expected_schema(
     flat_frame = bytes([0] * frame_size)
     raw_frames = flat_frame * 3
 
-    def fake_run(cmd, stdout=None, stderr=None, text=None, check=None, timeout=None):  # noqa: ANN001
-        _ = (cmd, stdout, stderr, text, check, timeout)
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = (cmd, kwargs)
         return SimpleNamespace(returncode=0, stdout=raw_frames, stderr=b"")
 
     monkeypatch.setattr("detectors.subprocess.run", fake_run)
@@ -109,10 +109,10 @@ def test_analyze_video_metrics_handles_ffprobe_timeout(
     video_path = tmp_path / "sample.mp4"
     video_path.write_bytes(b"video-bytes")
 
-    def fake_run(cmd, stdout=None, stderr=None, text=None, check=None, timeout=None):  # noqa: ANN001
-        _ = (stdout, stderr, text, check, timeout)
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = kwargs
         if cmd[0] == "ffprobe":
-            raise subprocess.TimeoutExpired(cmd, timeout=timeout or 10)
+            raise subprocess.TimeoutExpired(cmd, timeout=kwargs.get("timeout") or 10)
         return SimpleNamespace(stderr="")
 
     monkeypatch.setattr("detectors.subprocess.run", fake_run)
@@ -130,9 +130,9 @@ def test_analyze_video_blur_handles_ffmpeg_timeout(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    def fake_run(cmd, stdout=None, stderr=None, text=None, check=None, timeout=None):  # noqa: ANN001
-        _ = (stdout, stderr, text, check, timeout)
-        raise subprocess.TimeoutExpired(cmd, timeout=timeout or 20)
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = kwargs
+        raise subprocess.TimeoutExpired(cmd, timeout=kwargs.get("timeout") or 20)
 
     monkeypatch.setattr("detectors.subprocess.run", fake_run)
 
@@ -150,8 +150,8 @@ def test_analyze_video_blur_handles_ffmpeg_non_zero_exit(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    def fake_run(cmd, stdout=None, stderr=None, text=None, check=None, timeout=None):  # noqa: ANN001
-        _ = (cmd, stderr, text, check, timeout)
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = (cmd, kwargs)
         return SimpleNamespace(returncode=1, stdout=b"", stderr=b"decode failed")
 
     monkeypatch.setattr("detectors.subprocess.run", fake_run)

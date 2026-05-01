@@ -7,7 +7,6 @@ safety net.
 
 import pytest
 
-from stream_loader_contracts import ApiStreamPlaylistSegment
 from stream_loader_http_hls_playlist import (
     _derive_api_stream_poll_interval,
     _detect_hls_playlist_kind,
