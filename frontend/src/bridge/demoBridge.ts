@@ -56,7 +56,7 @@ export async function listDetectors(): Promise<DetectorOption[]> {
     if (response.ok) {
       return (await response.json()) as DetectorOption[];
     }
-  } catch (_error) {
+  } catch {
     // Keep the demo bridge self-contained when the generated detector catalog
     // is missing, for example in isolated frontend tests or lightweight UI demos.
   }
@@ -202,7 +202,7 @@ function simulateProgress(sessionId: string, input: RunSessionInput, items: stri
 
       const detectorId =
         input.selectedDetectors.length > 0
-          ? input.selectedDetectors[index % input.selectedDetectors.length]
+          ? input.selectedDetectors[index % input.selectedDetectors.length] ?? null
           : null;
 
       const resultPayload =

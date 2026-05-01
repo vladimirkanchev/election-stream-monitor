@@ -34,11 +34,11 @@ export function normalizeSessionSnapshot(value: unknown): SessionSnapshot {
   }
 
   return {
-    session: normalizeSessionSummary(value.session),
-    progress: normalizeSessionProgress(value.progress),
-    alerts: Array.isArray(value.alerts) ? value.alerts.filter(isAlertEvent) : [],
-    results: Array.isArray(value.results) ? value.results.filter(isResultEvent) : [],
-    latest_result: isResultEvent(value.latest_result) ? value.latest_result : null,
+    session: normalizeSessionSummary(value["session"]),
+    progress: normalizeSessionProgress(value["progress"]),
+    alerts: Array.isArray(value["alerts"]) ? value["alerts"].filter(isAlertEvent) : [],
+    results: Array.isArray(value["results"]) ? value["results"].filter(isResultEvent) : [],
+    latest_result: isResultEvent(value["latest_result"]) ? value["latest_result"] : null,
   };
 }
 
@@ -48,22 +48,22 @@ export function normalizeSessionSummary(value: unknown): SessionSummary | null {
   }
 
   if (
-    !isNonEmptyString(value.session_id) ||
-    !isInputMode(value.mode) ||
-    typeof value.input_path !== "string" ||
-    !Array.isArray(value.selected_detectors) ||
-    !value.selected_detectors.every((item) => typeof item === "string") ||
-    !isSessionStatus(value.status)
+    !isNonEmptyString(value["session_id"]) ||
+    !isInputMode(value["mode"]) ||
+    typeof value["input_path"] !== "string" ||
+    !Array.isArray(value["selected_detectors"]) ||
+    !value["selected_detectors"].every((item) => typeof item === "string") ||
+    !isSessionStatus(value["status"])
   ) {
     return null;
   }
 
   return {
-    session_id: value.session_id,
-    mode: value.mode,
-    input_path: value.input_path,
-    selected_detectors: value.selected_detectors,
-    status: value.status,
+    session_id: value["session_id"],
+    mode: value["mode"],
+    input_path: value["input_path"],
+    selected_detectors: value["selected_detectors"],
+    status: value["status"],
   };
 }
 
@@ -75,31 +75,31 @@ function normalizeSessionProgress(
   }
 
   if (
-    !isNonEmptyString(value.session_id) ||
-    !isSessionStatus(value.status) ||
-    typeof value.processed_count !== "number" ||
-    typeof value.total_count !== "number" ||
-    typeof value.alert_count !== "number" ||
-    typeof value.last_updated_utc !== "string" ||
-    !isOptionalNullableString(value.current_item) ||
-    !isOptionalNullableString(value.latest_result_detector) ||
-    !isStringArray(value.latest_result_detectors)
+    !isNonEmptyString(value["session_id"]) ||
+    !isSessionStatus(value["status"]) ||
+    typeof value["processed_count"] !== "number" ||
+    typeof value["total_count"] !== "number" ||
+    typeof value["alert_count"] !== "number" ||
+    typeof value["last_updated_utc"] !== "string" ||
+    !isOptionalNullableString(value["current_item"]) ||
+    !isOptionalNullableString(value["latest_result_detector"]) ||
+    !isStringArray(value["latest_result_detectors"])
   ) {
     return null;
   }
 
   return {
-    session_id: value.session_id,
-    status: value.status,
-    processed_count: value.processed_count,
-    total_count: value.total_count,
-    current_item: normalizeNullableString(value.current_item),
-    latest_result_detector: normalizeNullableString(value.latest_result_detector),
-    alert_count: value.alert_count,
-    last_updated_utc: value.last_updated_utc,
-    latest_result_detectors: value.latest_result_detectors,
-    status_reason: normalizeNullableString(value.status_reason),
-    status_detail: normalizeNullableString(value.status_detail),
+    session_id: value["session_id"],
+    status: value["status"],
+    processed_count: value["processed_count"],
+    total_count: value["total_count"],
+    current_item: normalizeNullableString(value["current_item"]),
+    latest_result_detector: normalizeNullableString(value["latest_result_detector"]),
+    alert_count: value["alert_count"],
+    last_updated_utc: value["last_updated_utc"],
+    latest_result_detectors: value["latest_result_detectors"],
+    status_reason: normalizeNullableString(value["status_reason"]),
+    status_detail: normalizeNullableString(value["status_detail"]),
   };
 }
 
@@ -109,19 +109,19 @@ function isAlertEvent(value: unknown): value is AlertEvent {
   }
 
   return (
-    isNonEmptyString(value.session_id) &&
-    typeof value.timestamp_utc === "string" &&
-    isNonEmptyString(value.detector_id) &&
-    typeof value.title === "string" &&
-    typeof value.message === "string" &&
-    (value.severity === "info" || value.severity === "warning") &&
-    typeof value.source_name === "string" &&
-    (typeof value.window_index === "number" ||
-      value.window_index === null ||
-      value.window_index === undefined) &&
-    (typeof value.window_start_sec === "number" ||
-      value.window_start_sec === null ||
-      value.window_start_sec === undefined)
+    isNonEmptyString(value["session_id"]) &&
+    typeof value["timestamp_utc"] === "string" &&
+    isNonEmptyString(value["detector_id"]) &&
+    typeof value["title"] === "string" &&
+    typeof value["message"] === "string" &&
+    (value["severity"] === "info" || value["severity"] === "warning") &&
+    typeof value["source_name"] === "string" &&
+    (typeof value["window_index"] === "number" ||
+      value["window_index"] === null ||
+      value["window_index"] === undefined) &&
+    (typeof value["window_start_sec"] === "number" ||
+      value["window_start_sec"] === null ||
+      value["window_start_sec"] === undefined)
   );
 }
 
@@ -131,9 +131,9 @@ function isResultEvent(value: unknown): value is ResultEvent {
   }
 
   return (
-    isNonEmptyString(value.session_id) &&
-    isNonEmptyString(value.detector_id) &&
-    isRecord(value.payload)
+    isNonEmptyString(value["session_id"]) &&
+    isNonEmptyString(value["detector_id"]) &&
+    isRecord(value["payload"])
   );
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { localBridge } from "../bridge";
+import { isBridgeTransportError } from "../bridge/contract";
 import type {
   MonitoringSessionState,
   MonitorSource,
@@ -105,8 +106,18 @@ export function useMonitoringSession({
         selectedDetectors,
       });
       setSession(nextSession);
-      const nextSnapshot = await localBridge.readSession(nextSession.session_id);
-      applySnapshot(nextSnapshot, nextSession, setSnapshot, setSession);
+      try {
+        const nextSnapshot = await localBridge.readSession(nextSession.session_id);
+        applySnapshot(nextSnapshot, nextSession, setSnapshot, setSession);
+      } catch (caughtError) {
+        if (isTransientStartupReadFailure(caughtError)) {
+          // The worker can briefly lag behind the successful start response.
+          // Keep the started session alive and let polling recover the first
+          // persisted snapshot instead of dropping the UI back to idle.
+          return true;
+        }
+        throw caughtError;
+      }
       return true;
     } catch (caughtError) {
       setError(getSessionStartErrorMessage(caughtError, source.kind));
@@ -185,4 +196,12 @@ function updateSnapshotSession(
       ? { ...snapshot.progress, status: session.status }
       : snapshot.progress,
     };
+}
+
+function isTransientStartupReadFailure(error: unknown): boolean {
+  return (
+    isBridgeTransportError(error)
+    && error.code === "SESSION_READ_FAILED"
+    && (error.backendErrorCode === "session_not_found" || error.statusReason === "session_not_found")
+  );
 }
