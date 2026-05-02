@@ -378,6 +378,42 @@ jobs:
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
         run: echo "No backend or contract changes detected; skipping backend pyright."
 
+  feature-gate:
+    runs-on: ubuntu-24.04
+    if: always()
+    needs:
+      - frontend-checkpoint
+      - backend-tests
+      - frontend-typecheck
+      - backend-typecheck
+      - backend-ruff
+
+    steps:
+      - name: Verify required feature checks
+        env:
+          FRONTEND_CHECKPOINT_RESULT: ${{ needs.frontend-checkpoint.result }}
+          BACKEND_TESTS_RESULT: ${{ needs.backend-tests.result }}
+          FRONTEND_TYPECHECK_RESULT: ${{ needs.frontend-typecheck.result }}
+          BACKEND_TYPECHECK_RESULT: ${{ needs.backend-typecheck.result }}
+          BACKEND_RUFF_RESULT: ${{ needs.backend-ruff.result }}
+        run: |
+          set -eu
+          for check in \
+            "frontend-checkpoint:${FRONTEND_CHECKPOINT_RESULT}" \
+            "backend-tests:${BACKEND_TESTS_RESULT}" \
+            "frontend-typecheck:${FRONTEND_TYPECHECK_RESULT}" \
+            "backend-typecheck:${BACKEND_TYPECHECK_RESULT}" \
+            "backend-ruff:${BACKEND_RUFF_RESULT}"
+          do
+            name=${check%%:*}
+            result=${check#*:}
+            if [ "$result" != "success" ]; then
+              echo "::error::Required feature check '$name' finished as '$result'"
+              exit 1
+            fi
+          done
+          echo "Feature branch gate passed."
+
   test-and-build:
     runs-on: ubuntu-24.04
     needs:
