@@ -258,6 +258,8 @@ CI note:
 
 - feature branches get a quick frontend checkpoint, the full test/build job,
   and a single feature-branch merge gate
+- protected merge checks are reported from pull-request CI runs, not duplicated
+  across both push and pull-request runs
 - pull requests into `main` also run a small integration smoke test and a
   lightweight workflow/docs/contract consistency check
 
