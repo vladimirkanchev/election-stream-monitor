@@ -29,6 +29,10 @@ The current GitHub Actions workflow uses three practical layers:
   - summary job for the fast backend/frontend checks on pull requests
   - useful as a single CI signal, even though feature branches are no longer
     protected merge targets
+- `main-gate`
+  - summary job for the full `main` pull-request validation set
+  - keeps `main` defended with one required context instead of seven separate
+    merge blockers
 - `contract-checks`
   - boundary-focused backend and frontend contract checks for PRs
 - `backend-typecheck`
@@ -66,6 +70,11 @@ stricter merge barrier.
 Feature branches now rely on CI feedback rather than required branch
 protection. The underlying fast jobs still run, and the `feature-gate` job
 provides one easy-to-scan summary context for pull requests.
+The `main` branch now uses a repository ruleset for a single required summary
+gate. The `main-gate` job depends on the fast feature gate, the main PR
+consistency check, integration smoke, contract checks, and the full frontend
+test/build job. That keeps the branch defended without forcing GitHub to
+reconcile seven separate required contexts at once.
 The protected CI workflow now runs on pull requests rather than both pushes
 and pull requests, which avoids duplicate status contexts on the same PR head.
 Stale PR runs are also canceled automatically with GitHub Actions concurrency.
