@@ -256,7 +256,8 @@ ffmpeg -version | head -n 1
 
 CI note:
 
-- feature branches get a quick frontend checkpoint and the full test/build job
+- feature branches get a quick frontend checkpoint, the full test/build job,
+  and a single feature-branch merge gate
 - pull requests into `main` also run a small integration smoke test and a
   lightweight workflow/docs/contract consistency check
 
