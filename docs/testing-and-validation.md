@@ -65,6 +65,9 @@ stricter merge barrier.
 Feature branches now use a single required merge gate instead of five separate
 required status checks. The underlying fast jobs still run, but the protected
 branch policy only needs to evaluate one deterministic status context.
+The protected CI workflow now runs on pull requests rather than both pushes
+and pull requests, which avoids duplicate status contexts on the same PR head.
+Stale PR runs are also canceled automatically with GitHub Actions concurrency.
 
 The workflow is now path-aware:
 
