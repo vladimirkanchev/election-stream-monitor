@@ -26,8 +26,9 @@ The current GitHub Actions workflow uses three practical layers:
 - `frontend-lint`
   - advisory frontend ESLint signal on `src` TypeScript files
 - `feature-gate`
-  - single required feature-branch merge gate
-  - verifies the fast backend/frontend jobs all reported success
+  - summary job for the fast backend/frontend checks on pull requests
+  - useful as a single CI signal, even though feature branches are no longer
+    protected merge targets
 - `contract-checks`
   - boundary-focused backend and frontend contract checks for PRs
 - `backend-typecheck`
@@ -62,9 +63,9 @@ often explain runner state, cancel behavior, and terminal outcomes.
 This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier.
 
-Feature branches now use a single required merge gate instead of five separate
-required status checks. The underlying fast jobs still run, but the protected
-branch policy only needs to evaluate one deterministic status context.
+Feature branches now rely on CI feedback rather than required branch
+protection. The underlying fast jobs still run, and the `feature-gate` job
+provides one easy-to-scan summary context for pull requests.
 The protected CI workflow now runs on pull requests rather than both pushes
 and pull requests, which avoids duplicate status contexts on the same PR head.
 Stale PR runs are also canceled automatically with GitHub Actions concurrency.
