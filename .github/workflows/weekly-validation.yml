@@ -1,0 +1,229 @@
+name: Weekly Validation
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+jobs:
+  slow-e2e:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run slow e2e media tests
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "e2e and slow" tests/test_e2e_*.py -q 2>&1 | tee ci-artifacts/slow-e2e.log
+
+      - name: Upload slow e2e log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slow-e2e-${{ github.run_id }}
+          path: ci-artifacts/slow-e2e.log
+          retention-days: 7
+
+  api-stream-deep:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run deeper api_stream validation
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_stream_loader_http_hls_*.py tests/test_session_runner_api_stream_*.py tests/test_api_stream_local_validation.py -q 2>&1 | tee ci-artifacts/api-stream-deep.log
+
+      - name: Upload api_stream deep validation log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-stream-deep-${{ github.run_id }}
+          path: ci-artifacts/api-stream-deep.log
+          retention-days: 7
+
+  lifecycle-deep:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run lifecycle-focused backend tests
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_session_runner_lifecycle.py tests/test_session_runner_execution.py tests/test_session_runner_terminal.py tests/test_session_runner_local.py tests/test_session_runner_api_stream_basic.py tests/test_session_io.py -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
+
+      - name: Upload lifecycle deep validation log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifecycle-deep-${{ github.run_id }}
+          path: ci-artifacts/lifecycle-deep.log
+          retention-days: 7
+
+      - name: Upload lifecycle session artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifecycle-session-artifacts-${{ github.run_id }}
+          path: |
+            data/sessions/**/session.json
+            data/sessions/**/progress.json
+            data/sessions/**/worker.log
+            data/sessions/**/results.jsonl
+            data/sessions/**/alerts.jsonl
+          retention-days: 7
+
+  security-audit:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install security lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[lint]
+
+      - name: Run Bandit
+        run: bandit -r src -x tests,frontend
+
+  python-security-audit:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install audit tool
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Run pip-audit
+        run: pip-audit
+
+  npm-security-audit:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  dependency-audit:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Check dependency consistency
+        run: python -m pip check
+
+  packaging-smoke:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run editable-install packaging smoke
+        run: |
+          python -m venv /tmp/esm-packaging-weekly
+          /tmp/esm-packaging-weekly/bin/python -m pip install --upgrade pip setuptools wheel
+          /tmp/esm-packaging-weekly/bin/python -m pip install --no-deps --no-build-isolation -e .
