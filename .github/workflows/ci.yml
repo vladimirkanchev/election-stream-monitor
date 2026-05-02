@@ -413,9 +413,45 @@ jobs:
             if [ "$result" != "success" ]; then
               echo "::error::Required feature check '$name' finished as '$result'"
               exit 1
-            fi
+          fi
           done
           echo "Feature branch gate passed."
+
+  main-gate:
+    runs-on: ubuntu-24.04
+    if: always() && github.event_name == 'pull_request' && github.base_ref == 'main'
+    needs:
+      - feature-gate
+      - main-pr-consistency
+      - integration-smoke
+      - contract-checks
+      - test-and-build
+
+    steps:
+      - name: Verify required main checks
+        env:
+          FEATURE_GATE_RESULT: ${{ needs.feature-gate.result }}
+          MAIN_PR_CONSISTENCY_RESULT: ${{ needs.main-pr-consistency.result }}
+          INTEGRATION_SMOKE_RESULT: ${{ needs.integration-smoke.result }}
+          CONTRACT_CHECKS_RESULT: ${{ needs.contract-checks.result }}
+          TEST_AND_BUILD_RESULT: ${{ needs.test-and-build.result }}
+        run: |
+          set -eu
+          for check in \
+            "feature-gate:${FEATURE_GATE_RESULT}" \
+            "main-pr-consistency:${MAIN_PR_CONSISTENCY_RESULT}" \
+            "integration-smoke:${INTEGRATION_SMOKE_RESULT}" \
+            "contract-checks:${CONTRACT_CHECKS_RESULT}" \
+            "test-and-build:${TEST_AND_BUILD_RESULT}"
+          do
+            name=${check%%:*}
+            result=${check#*:}
+            if [ "$result" != "success" ]; then
+              echo "::error::Required main check '$name' finished as '$result'"
+              exit 1
+            fi
+          done
+          echo "Main branch gate passed."
 
   test-and-build:
     runs-on: ubuntu-24.04
