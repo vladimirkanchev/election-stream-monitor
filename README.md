@@ -258,6 +258,31 @@ CI note:
 
 - feature branches still run the fast checkpoint and full validation jobs, but
   they are no longer protected merge targets
+
+## Repo-Local Codex Skills
+
+The repo now keeps a small set of repo-local Codex skills under
+[`./.agents/skills/`](./.agents/skills) for diagnostic and review-style work.
+
+Current skills:
+
+- `summarization`
+- `incident-timeline`
+- `test-coverage-gaps`
+- `root-cause-suggestion`
+
+These are intentionally lightweight text-first skills, not a separate plugin
+framework. They are meant to help with current project work such as:
+
+- reconstructing session or CI incidents
+- summarizing subsystem state
+- identifying the cheapest missing tests
+- narrowing likely causes before code changes
+
+The deterministic tests for those skills live in:
+
+- [`tests/test_repo_skills.py`](./tests/test_repo_skills.py)
+- [`tests/skill_test_support.py`](./tests/skill_test_support.py)
 - protected merge checks are reported from pull-request CI runs, not duplicated
   across both push and pull-request runs
 - pull requests into `main` also run a small integration smoke test and a

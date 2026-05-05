@@ -17,6 +17,12 @@ If you are adding detectors or rules, also read:
 - [`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md)
 - [`docs/adding-an-alert-rule.md`](./docs/adding-an-alert-rule.md)
 
+If you are changing repo-local Codex skills or their deterministic tests, also read:
+
+- [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
+- `./.agents/skills/`
+- `tests/test_repo_skills.py`
+
 ## Source Of Truth Order
 
 When docs and code disagree, use this order:
@@ -98,6 +104,7 @@ If you change:
 - a lifecycle meaning
 - a trust boundary
 - a playback/monitoring responsibility split
+- or repo-local skill behavior or test expectations
 
 update the matching doc in the same change. Avoid copying the same guidance
 into multiple files; point to the owning doc instead.

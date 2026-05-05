@@ -34,6 +34,10 @@ Use this shortcut map before editing code:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
 - adding an alert rule:
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+- working on repo-local Codex skills or their tests:
+  - [testing-and-validation.md](./testing-and-validation.md)
+  - `./.agents/skills/`
+  - `tests/test_repo_skills.py`
 
 ## Current High-Signal Code Areas
 
@@ -103,6 +107,25 @@ coordinated contract change:
 - FastAPI structured error payload shape
 - detector catalog shape
 
+## Repo-Local Codex Skills
+
+The repo also carries a small local skill set for AI-assisted diagnostic work:
+
+- `./.agents/skills/summarization/`
+- `./.agents/skills/incident-timeline/`
+- `./.agents/skills/test-coverage-gaps/`
+- `./.agents/skills/root-cause-suggestion/`
+
+Treat these as lightweight workflow helpers for the current project stage.
+They are intentionally small, text-first, and easy to extend without adding a
+separate automation framework.
+
+The deterministic tests for them live in:
+
+- `tests/test_repo_skills.py`
+- `tests/skill_test_support.py`
+- `tests/fixtures/skill_output_snapshots/`
+
 ## Document Ownership
 
 Use each doc for one main question:
@@ -139,6 +162,8 @@ Use each doc for one main question:
   - best feedback targets for the current project stage
 - [release-versioning.md](./release-versioning.md)
   - `0.x` release expectations
+- repo-local skill files under `./.agents/skills/`
+  - concise AI workflow helpers for summarization, incident review, test-gap analysis, and root-cause narrowing
 
 ## Extension Guides
 

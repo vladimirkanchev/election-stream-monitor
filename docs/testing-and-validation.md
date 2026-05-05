@@ -111,6 +111,22 @@ pip install -e .[test]
 pytest -q
 ```
 
+Focused repo-local skill validation:
+
+```bash
+.venv/bin/pytest -q tests/test_repo_skills.py
+```
+
+This skill-focused test slice is intentionally no-key and deterministic.
+It currently covers:
+
+- skill frontmatter and required section structure
+- readable section ordering
+- explicit hand-off boundaries between the skills
+- golden scenario coverage for current repo use cases
+- snapshot-style expected outputs for selected fixed prompts
+- lightweight regression coverage for real repo incidents
+
 The current backend packaging split is:
 
 - `pip install -e .`
@@ -198,6 +214,23 @@ python -m venv .venv
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback
 without making it the required branch gate yet.
+
+### Repo-Local Skill Tests
+
+The repo-local Codex skills under `./.agents/skills/` are validated with a
+small deterministic Python slice rather than live model calls.
+
+Current test files:
+
+- `tests/test_repo_skills.py`
+  - structure, skill-boundary, scenario, and snapshot checks
+- `tests/skill_test_support.py`
+  - parsing and reusable test helpers
+- `tests/fixtures/skill_output_snapshots/`
+  - saved expected output templates for selected prompts
+
+This keeps the skill layer cheap to validate and easy to evolve while the
+project is still in a local-first pre-pilot stage.
 
 ### Frontend
 
