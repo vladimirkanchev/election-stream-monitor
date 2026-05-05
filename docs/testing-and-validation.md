@@ -29,10 +29,6 @@ The current GitHub Actions workflow uses three practical layers:
   - summary job for the fast backend/frontend checks on pull requests
   - useful as a single CI signal, even though feature branches are no longer
     protected merge targets
-- `main-gate`
-  - summary job for the full `main` pull-request validation set
-  - keeps `main` defended with one required context instead of seven separate
-    merge blockers
 - `contract-checks`
   - boundary-focused backend and frontend contract checks for PRs
 - `backend-typecheck`
@@ -70,11 +66,6 @@ stricter merge barrier.
 Feature branches now rely on CI feedback rather than required branch
 protection. The underlying fast jobs still run, and the `feature-gate` job
 provides one easy-to-scan summary context for pull requests.
-The `main` branch now uses a repository ruleset for a single required summary
-gate. The `main-gate` job depends on the fast feature gate, the main PR
-consistency check, integration smoke, contract checks, and the full frontend
-test/build job. That keeps the branch defended without forcing GitHub to
-reconcile seven separate required contexts at once.
 The protected CI workflow now runs on pull requests rather than both pushes
 and pull requests, which avoids duplicate status contexts on the same PR head.
 Stale PR runs are also canceled automatically with GitHub Actions concurrency.
@@ -119,6 +110,22 @@ Common local command:
 pip install -e .[test]
 pytest -q
 ```
+
+Focused repo-local skill validation:
+
+```bash
+.venv/bin/pytest -q tests/test_repo_skills.py
+```
+
+This skill-focused test slice is intentionally no-key and deterministic.
+It currently covers:
+
+- skill frontmatter and required section structure
+- readable section ordering
+- explicit hand-off boundaries between the skills
+- golden scenario coverage for current repo use cases
+- snapshot-style expected outputs for selected fixed prompts
+- lightweight regression coverage for real repo incidents
 
 The current backend packaging split is:
 
@@ -207,6 +214,23 @@ python -m venv .venv
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback
 without making it the required branch gate yet.
+
+### Repo-Local Skill Tests
+
+The repo-local Codex skills under `./.agents/skills/` are validated with a
+small deterministic Python slice rather than live model calls.
+
+Current test files:
+
+- `tests/test_repo_skills.py`
+  - structure, skill-boundary, scenario, and snapshot checks
+- `tests/skill_test_support.py`
+  - parsing and reusable test helpers
+- `tests/fixtures/skill_output_snapshots/`
+  - saved expected output templates for selected prompts
+
+This keeps the skill layer cheap to validate and easy to evolve while the
+project is still in a local-first pre-pilot stage.
 
 ### Frontend
 
