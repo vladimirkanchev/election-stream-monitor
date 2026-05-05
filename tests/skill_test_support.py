@@ -4,10 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Sequence
 
 
 SKILLS_ROOT = Path(__file__).resolve().parent.parent / ".agents" / "skills"
 SNAPSHOTS_ROOT = Path(__file__).resolve().parent / "fixtures" / "skill_output_snapshots"
+SKILL_SECTION_ORDER = (
+    "## Default approach",
+    "## Output shape",
+    "## Skill boundaries",
+    "## Avoid",
+)
 
 
 @dataclass(frozen=True)
@@ -95,7 +102,7 @@ def extract_colon_headings(text: str) -> list[str]:
     ]
 
 
-def assert_contains_in_order(text: str, snippets: list[str]) -> bool:
+def assert_contains_in_order(text: str, snippets: Sequence[str]) -> bool:
     """Return whether all snippets appear in the given order."""
     start_index = 0
     for snippet in snippets:
@@ -104,6 +111,15 @@ def assert_contains_in_order(text: str, snippets: list[str]) -> bool:
             return False
         start_index = found_index + len(snippet)
     return True
+
+
+def snapshot_heading_matches_skill_text(skill_text: str, heading: str) -> bool:
+    """Return whether one snapshot heading is represented by the skill text."""
+    normalized = heading.removesuffix(":")
+    if " or " in normalized:
+        options = [part.strip() for part in normalized.split(" or ")]
+        return any(option in skill_text for option in options)
+    return normalized in skill_text or heading in skill_text
 
 
 def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:

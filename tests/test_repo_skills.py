@@ -11,6 +11,7 @@ import pytest
 
 from tests.skill_test_support import (
     SKILLS_ROOT,
+    SKILL_SECTION_ORDER,
     ScenarioExpectation,
     SnapshotExpectation,
     assert_contains_in_order,
@@ -20,6 +21,7 @@ from tests.skill_test_support import (
     load_all_skills,
     load_snapshot,
     load_skill,
+    snapshot_heading_matches_skill_text,
 )
 
 
@@ -153,33 +155,10 @@ def test_each_skill_has_required_frontmatter_and_sections(skill_name: str) -> No
         assert required_heading in headings
 
 
-@pytest.mark.parametrize(
-    ("skill_name", "ordered_sections"),
-    [
-        (
-            "summarization",
-            ["## Default approach", "## Output shape", "## Skill boundaries", "## Avoid"],
-        ),
-        (
-            "incident-timeline",
-            ["## Default approach", "## Output shape", "## Skill boundaries", "## Avoid"],
-        ),
-        (
-            "test-coverage-gaps",
-            ["## Default approach", "## Output shape", "## Skill boundaries", "## Avoid"],
-        ),
-        (
-            "root-cause-suggestion",
-            ["## Default approach", "## Output shape", "## Skill boundaries", "## Avoid"],
-        ),
-    ],
-)
-def test_skill_sections_stay_in_readable_order(
-    skill_name: str,
-    ordered_sections: list[str],
-) -> None:
+@pytest.mark.parametrize("skill_name", sorted(EXPECTED_SKILLS))
+def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
     skill = load_skill(skill_name)
-    assert assert_contains_in_order(skill.body, ordered_sections)
+    assert assert_contains_in_order(skill.body, SKILL_SECTION_ORDER)
 
 
 @pytest.mark.parametrize(
@@ -261,12 +240,7 @@ def test_snapshot_outputs_match_skill_intent(
     snapshot_text = load_snapshot(expectation.snapshot_name)
 
     for heading in extract_colon_headings(snapshot_text):
-        normalized = heading.removesuffix(":")
-        if " or " in normalized:
-            options = [part.strip() for part in normalized.split(" or ")]
-            assert any(option in skill.text for option in options)
-            continue
-        assert normalized in skill.text or heading in skill.text
+        assert snapshot_heading_matches_skill_text(skill.text, heading)
 
 
 def test_skill_root_stays_small_and_repo_local() -> None:
