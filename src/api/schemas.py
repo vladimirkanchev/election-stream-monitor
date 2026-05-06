@@ -104,6 +104,20 @@ class AlertEventResponse(BaseModel):
     window_start_sec: float | None = None
 
 
+class SessionAlertQueryResponse(BaseModel):
+    session_id: str
+    alerts: list[AlertEventResponse] = Field(default_factory=list)
+
+
+class SessionAlertSummaryResponse(BaseModel):
+    session_id: str
+    total_alerts: int
+    counts_by_detector: dict[str, int] = Field(default_factory=dict)
+    counts_by_severity: dict[str, int] = Field(default_factory=dict)
+    first_alert_timestamp_utc: str | None = None
+    last_alert_timestamp_utc: str | None = None
+
+
 class SessionSnapshotResponse(BaseModel):
     session: SessionSummaryResponse | None = None
     progress: SessionProgressResponse | None = None

@@ -50,6 +50,16 @@ def get_session_dir(session_id: str) -> Path:
     )
 
 
+def session_exists(session_id: str) -> bool:
+    """Return whether one session has persisted metadata ownership on disk.
+
+    This helper is intentionally narrow: a session becomes "known" once
+    `session.json` exists, even if some append-only artifacts such as
+    `alerts.jsonl` or `results.jsonl` have not been written yet.
+    """
+    return (get_session_dir(session_id) / "session.json").exists()
+
+
 def initialize_session(metadata: SessionMetadata) -> Path:
     """Create the session directory and persist the initial metadata snapshot."""
     session_dir = get_session_dir(metadata.session_id)
