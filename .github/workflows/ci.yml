@@ -489,7 +489,7 @@ jobs:
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e .[test]
 
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
