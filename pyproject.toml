@@ -33,6 +33,7 @@ dependencies = [
     "bandit>=1.9.4",
     "cffi>=2.0.0",
     "pynacl==1.5.0",
+    "mcp>=1.27.0",
 ]
 
 [project.optional-dependencies]
@@ -59,6 +60,9 @@ dev = [
     "pytest>=8.4.2",
 ]
 
+[project.scripts]
+esm-mcp = "esm_mcp.server:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 py-modules = [
@@ -79,6 +83,7 @@ py-modules = [
     "processor",
     "session_cli",
     "session_io",
+    "session_alerts",
     "session_models",
     "session_runner",
     "session_runner_discovery",
@@ -103,7 +108,7 @@ py-modules = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["api", "api.*"]
+include = ["api", "api.*", "esm_mcp", "esm_mcp.*"]
 
 [tool.ruff]
 line-length = 88
