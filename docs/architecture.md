@@ -74,6 +74,13 @@ It is now:
    diagnostic artifacts such as `worker.log`.
 10. The frontend polls the session snapshot and updates playback and alerts.
 
+The new MCP surface follows the same adapter pattern:
+
+- [`src/esm_mcp/server.py`](../src/esm_mcp/server.py) is a read-only MCP adapter
+- [`src/session_alerts.py`](../src/session_alerts.py) owns persisted alert
+  query/filter/summary logic
+- MCP tools call the shared service directly rather than routing through HTTP
+
 ## Legacy Tooling
 
 [`src/main.py`](../src/main.py) is a legacy local developer harness for the

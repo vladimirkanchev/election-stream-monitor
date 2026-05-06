@@ -20,6 +20,8 @@ The FastAPI layer currently provides:
 - `GET /detectors`
 - `POST /sessions`
 - `GET /sessions/{session_id}`
+- `GET /sessions/{session_id}/alerts`
+- `GET /sessions/{session_id}/alerts/summary`
 - `POST /sessions/{session_id}/cancel`
 - `POST /playback/resolve`
 
@@ -177,6 +179,34 @@ Starts a monitoring session and returns the pending session metadata.
 ### `GET /sessions/{session_id}`
 
 Returns the current persisted session snapshot.
+
+### `GET /sessions/{session_id}/alerts`
+
+Returns persisted alert events for one session. Current optional filters are:
+
+- `detector_id`
+- `severity`
+- `start_time_utc`
+- `end_time_utc`
+
+This route is intentionally a read-only HTTP adapter over the shared
+`src/session_alerts.py` service rather than an independent query
+implementation.
+
+### `GET /sessions/{session_id}/alerts/summary`
+
+Returns a deterministic summary of one session's persisted alerts, including:
+
+- total alert count
+- counts by detector
+- counts by severity
+- first alert timestamp
+- last alert timestamp
+
+The summary remains numeric and deterministic by design. If a later milestone
+needs prose or operator-facing explanation, that should be added in a higher
+layer such as an MCP or agent workflow rather than changing the core alert
+query contract.
 
 ### `POST /sessions/{session_id}/cancel`
 

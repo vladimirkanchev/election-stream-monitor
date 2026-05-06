@@ -1261,6 +1261,83 @@ Current bridge normalization:
 - malformed top-level payloads become the stable empty snapshot shape
 - explicit transport failures are raised with `SESSION_READ_FAILED`
 
+### Session Alert Query Surfaces
+
+The backend now exposes a read-only, session-scoped alert query surface through
+both FastAPI and MCP adapters over the same shared service seam.
+
+Ownership split:
+
+- `src/session_alerts.py`
+  - read, filter, and summarize persisted alert events
+- `src/api/routers/alerts.py`
+  - HTTP binding and API error mapping
+- `src/esm_mcp/`
+  - MCP tool registration and MCP-facing error mapping
+
+Current HTTP routes:
+
+- `GET /sessions/{session_id}/alerts`
+- `GET /sessions/{session_id}/alerts/summary`
+
+Current MCP tools:
+
+- `query_session_alerts`
+- `summarize_session_alerts`
+
+Shared filter inputs:
+
+- `session_id`
+- optional `detector_id`
+- optional `severity`
+- optional `start_time_utc`
+- optional `end_time_utc`
+
+Current alert query response shape:
+
+```json
+{
+  "session_id": "session-20260402-abc123",
+  "alerts": [
+    {
+      "session_id": "session-20260402-abc123",
+      "timestamp_utc": "2026-04-02 12:34:56",
+      "detector_id": "video_blur",
+      "title": "Blur increased",
+      "message": "Blur threshold exceeded.",
+      "severity": "warning",
+      "source_name": "segment_0012.ts",
+      "window_index": 12,
+      "window_start_sec": 12.0
+    }
+  ]
+}
+```
+
+Current alert summary response shape:
+
+```json
+{
+  "session_id": "session-20260402-abc123",
+  "total_alerts": 2,
+  "counts_by_detector": {
+    "video_blur": 2
+  },
+  "counts_by_severity": {
+    "warning": 2
+  },
+  "first_alert_timestamp_utc": "2026-04-02 12:34:56",
+  "last_alert_timestamp_utc": "2026-04-02 12:35:12"
+}
+```
+
+Current query semantics:
+
+- missing `session.json` means the session is treated as not found
+- missing `alerts.jsonl` for a known session means `[]`
+- malformed alert rows are ignored rather than failing the whole query
+- time filters use the existing persisted UTC timestamp format
+
 ### `cancelSession`
 
 Request:

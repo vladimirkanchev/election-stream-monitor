@@ -30,6 +30,12 @@ Use this shortcut map before editing code:
   - [fastapi-boundary.md](./fastapi-boundary.md)
   - [architecture-decision-fastapi.md](./architecture-decision-fastapi.md)
   - [contracts.md](./contracts.md)
+- changing MCP alert-query tools or local MCP launch wiring:
+  - [architecture.md](./architecture.md)
+  - [contracts.md](./contracts.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
+  - `src/esm_mcp/`
+  - `src/session_alerts.py`
 - adding a detector:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
 - adding an alert rule:
@@ -96,6 +102,16 @@ module families and the matching tests:
   - `frontend/src/bridge/contract.success.test.ts`
   - `frontend/src/bridge/contract.errors.test.ts`
   - `frontend/src/bridge/contract.session-snapshot.test.ts`
+- MCP alert-query surface:
+  - `src/session_alerts.py`
+  - `src/api/routers/alerts.py`
+  - `src/esm_mcp/server.py`
+  - `src/esm_mcp/alert_tools.py`
+  - `tests/session_alert_test_support.py`
+  - `tests/test_alert_query_service.py`
+  - `tests/test_api_session_alerts.py`
+  - `tests/test_mcp_server_contracts.py`
+  - `tests/test_mcp_server_alerts.py`
 
 ## Current Stable Contracts
 

@@ -66,6 +66,11 @@ serving, the HLS proxy path, and the UI bridge. Session state stays local and
 is polled by the UI while a run is active. Packaging and broader platform
 support remain separate concerns.
 
+The repo also now includes a small local MCP surface for read-only alert
+querying. It is intentionally narrow and currently exposes persisted session
+alerts through stdio-oriented MCP tools rather than through a separate hosted
+service layer.
+
 ## Current Capabilities
 
 ### Backend

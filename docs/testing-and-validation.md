@@ -127,6 +127,52 @@ It currently covers:
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents
 
+Focused alert-query and MCP validation:
+
+```bash
+.venv/bin/pytest -q tests/test_alert_query_service.py tests/test_api_session_alerts.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py
+```
+
+This slice covers the shared read-only alert query service, the FastAPI alert
+boundary, and the MCP tool adapter over the same service seam.
+If you change only one of those layers, this command is still the best quick
+confidence check because it proves the ownership split still lines up.
+
+The current test split is:
+
+- `tests/session_alert_test_support.py`
+  - shared file-backed session/alert setup helpers for this slice
+- `tests/test_alert_query_service.py`
+  - service-level read, filter, and summary semantics
+- `tests/test_api_session_alerts.py`
+  - FastAPI adapter and API error-mapping behavior
+- `tests/test_mcp_server_contracts.py`
+  - MCP tool registration, schema basics, and stdio launch wiring
+- `tests/test_mcp_server_alerts.py`
+  - MCP tool behavior through the real in-memory MCP session
+
+Keep new tests near those ownership boundaries instead of adding a larger
+"catch-all" alert-query suite.
+
+Focused MCP launch wiring:
+
+```bash
+.venv/bin/esm-mcp
+```
+
+Raw-checkout equivalent:
+
+```bash
+PYTHONPATH=src .venv/bin/python -m esm_mcp
+```
+
+Both start the current MCP server over `stdio`, which is the intended local
+client transport for the current project stage.
+The installed `esm-mcp` entrypoint is available after refreshing the editable
+environment (for example with `uv sync` or a fresh editable install). Use the
+module form when you want a raw-checkout path that does not depend on the
+console script already existing in `.venv/bin/`.
+
 The current backend packaging split is:
 
 - `pip install -e .`
@@ -175,6 +221,20 @@ current package metadata. The second confirms that the backend import surface
 still works in a runtime-capable environment after packaging changes. The
 third is useful when you want to confirm raw-checkout backend imports still
 work with the current `src/` layout.
+
+If you are validating the MCP slice specifically, include the new shared
+service and MCP adapter in the import smoke check:
+
+```bash
+PYTHONPATH=src .venv/bin/python -c "import api.app, session_alerts, esm_mcp.server"
+```
+
+For a slightly stronger launch-path smoke check, verify the installed console
+entrypoint resolves:
+
+```bash
+.venv/bin/python -c "import esm_mcp.server; print(callable(esm_mcp.server.main))"
+```
 
 Dedicated backend typecheck:
 
