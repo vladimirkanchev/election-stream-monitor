@@ -66,9 +66,11 @@ stricter merge barrier.
 Feature branches now rely on CI feedback rather than required branch
 protection. The underlying fast jobs still run, and the `feature-gate` job
 provides one easy-to-scan summary context for pull requests.
-The protected CI workflow now runs on pull requests rather than both pushes
-and pull requests, which avoids duplicate status contexts on the same PR head.
-Stale PR runs are also canceled automatically with GitHub Actions concurrency.
+The protected CI workflow runs on pull requests, and feature-branch pushes now
+also trigger it so branch work gets feedback before a PR exists. `main` stays
+out of the push trigger, which avoids duplicate status contexts on the protected
+branch. Stale PR runs are also canceled automatically with GitHub Actions
+concurrency.
 
 The workflow is now path-aware:
 
