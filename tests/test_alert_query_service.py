@@ -1,7 +1,15 @@
-"""Focused service tests for the shared session alert query layer.
+"""Focused service tests for raw session alert read, filter, and summary behavior.
 
-These tests stay below FastAPI and MCP so they can prove the persistence and
-filtering semantics once, close to the real file-backed service seam.
+This file owns the low-level alert-query contract:
+
+- reading persisted alert rows from one known session
+- tolerating malformed or unreadable alert-log input
+- applying detector, severity, and time filters
+- producing the raw numeric alert summary used by both FastAPI and MCP
+
+Grouped incident behavior lives in ``test_alert_timeline_service.py`` and
+``test_alert_incident_summary_service.py`` so the raw alert seam stays easy to
+scan on its own.
 """
 
 from pathlib import Path
@@ -15,12 +23,16 @@ from session_alerts import (
     summarize_session_alert_events,
 )
 from tests.session_alert_test_support import (
+    build_alert_summary_payload,
     build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
     write_alert_log,
     write_known_session,
 )
+
+
+# Read semantics
 
 
 def test_read_session_alert_events_returns_valid_rows_and_ignores_corrupt_lines(
@@ -137,6 +149,9 @@ def test_read_session_alert_events_rejects_directory_without_session_metadata(
 
     with pytest.raises(SessionAlertsNotFoundError):
         read_session_alert_events("orphaned-session-dir")
+
+
+# Filter semantics
 
 
 def test_filter_session_alert_events_applies_detector_severity_and_time_filters(
@@ -266,6 +281,9 @@ def test_filter_session_alert_events_rejects_inverted_time_range(
         )
 
 
+# Raw summary semantics
+
+
 def test_summarize_session_alert_events_returns_counts_and_time_bounds(
     monkeypatch,
     tmp_path: Path,
@@ -308,20 +326,14 @@ def test_summarize_session_alert_events_returns_counts_and_time_bounds(
 
     summary = summarize_session_alert_events("session-summary")
 
-    assert summary == {
-        "session_id": "session-summary",
-        "total_alerts": 3,
-        "counts_by_detector": {
-            "video_metrics": 2,
-            "video_blur": 1,
-        },
-        "counts_by_severity": {
-            "warning": 2,
-            "info": 1,
-        },
-        "first_alert_timestamp_utc": "2026-05-06 10:00:00",
-        "last_alert_timestamp_utc": "2026-05-06 10:00:20",
-    }
+    assert summary == build_alert_summary_payload(
+        "session-summary",
+        total_alerts=3,
+        counts_by_detector={"video_metrics": 2, "video_blur": 1},
+        counts_by_severity={"warning": 2, "info": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:00:20",
+    )
 
 
 def test_summarize_session_alert_events_ignores_bad_timestamps_for_time_bounds(
@@ -357,20 +369,14 @@ def test_summarize_session_alert_events_ignores_bad_timestamps_for_time_bounds(
 
     summary = summarize_session_alert_events("session-summary-bad-time")
 
-    assert summary == {
-        "session_id": "session-summary-bad-time",
-        "total_alerts": 2,
-        "counts_by_detector": {
-            "video_metrics": 1,
-            "video_blur": 1,
-        },
-        "counts_by_severity": {
-            "warning": 1,
-            "info": 1,
-        },
-        "first_alert_timestamp_utc": "2026-05-06 10:00:00",
-        "last_alert_timestamp_utc": "2026-05-06 10:00:00",
-    }
+    assert summary == build_alert_summary_payload(
+        "session-summary-bad-time",
+        total_alerts=2,
+        counts_by_detector={"video_metrics": 1, "video_blur": 1},
+        counts_by_severity={"warning": 1, "info": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:00:00",
+    )
 
 
 def test_summarize_session_alert_events_returns_empty_summary_when_filters_match_nothing(
@@ -400,11 +406,11 @@ def test_summarize_session_alert_events_returns_empty_summary_when_filters_match
         severity="info",
     )
 
-    assert summary == {
-        "session_id": "session-summary-empty",
-        "total_alerts": 0,
-        "counts_by_detector": {},
-        "counts_by_severity": {},
-        "first_alert_timestamp_utc": None,
-        "last_alert_timestamp_utc": None,
-    }
+    assert summary == build_alert_summary_payload(
+        "session-summary-empty",
+        total_alerts=0,
+        counts_by_detector={},
+        counts_by_severity={},
+        first_alert_timestamp_utc=None,
+        last_alert_timestamp_utc=None,
+    )

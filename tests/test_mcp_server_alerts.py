@@ -1,29 +1,22 @@
-"""Behavior tests for MCP alert tools over the real in-memory MCP session.
+"""Behavior tests for raw MCP alert-query tools.
 
 These tests complement the MCP contract file by proving that the registered
-tools call the shared alert-query service correctly and surface operator-meaningful
-success and error results.
+tools call the shared raw alert-query service correctly and surface readable
+success and error results through the real in-memory MCP transport seam.
+
+Incident-oriented MCP behavior lives in ``test_mcp_server_incidents.py``.
 """
 
 from pathlib import Path
 
-import anyio
-
-from esm_mcp.server import build_mcp_server
-from mcp.shared.memory import create_connected_server_and_client_session
+from tests.mcp_alert_test_support import call_mcp_tool, list_mcp_tools, tool_error_text
 from tests.session_alert_test_support import (
+    build_alert_summary_payload,
     build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
     write_known_session,
 )
-
-
-def _text_content(result) -> str:
-    """Flatten MCP text content blocks for concise error assertions."""
-    return "\n".join(
-        content.text for content in result.content if hasattr(content, "text")
-    )
 
 
 def test_list_tools_then_call_query_session_alerts_end_to_end_with_filters(
@@ -66,39 +59,35 @@ def test_list_tools_then_call_query_session_alerts_end_to_end_with_filters(
         ],
     )
 
-    async def run() -> None:
-        async with create_connected_server_and_client_session(build_mcp_server()) as session:
-            tools = await session.list_tools()
-            assert any(tool.name == "query_session_alerts" for tool in tools.tools)
+    tools = list_mcp_tools()
+    assert any(tool.name == "query_session_alerts" for tool in tools.tools)
 
-            result = await session.call_tool(
-                "query_session_alerts",
-                {
-                    "session_id": "session-mcp-e2e",
-                    "detector_id": "video_metrics",
-                    "severity": "warning",
-                    "start_time_utc": "2026-05-06 10:00:05",
-                    "end_time_utc": "2026-05-06 10:00:15",
-                },
+    result = call_mcp_tool(
+        "query_session_alerts",
+        {
+            "session_id": "session-mcp-e2e",
+            "detector_id": "video_metrics",
+            "severity": "warning",
+            "start_time_utc": "2026-05-06 10:00:05",
+            "end_time_utc": "2026-05-06 10:00:15",
+        },
+    )
+
+    assert result.isError is False
+    assert result.structuredContent == {
+        "session_id": "session-mcp-e2e",
+        "alerts": [
+            build_normalized_alert(
+                "session-mcp-e2e",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Black segment again.",
+                severity="warning",
+                source_name="segment_0002.ts",
             )
-
-            assert result.isError is False
-            assert result.structuredContent == {
-                "session_id": "session-mcp-e2e",
-                "alerts": [
-                    build_normalized_alert(
-                        "session-mcp-e2e",
-                        timestamp_utc="2026-05-06 10:00:10",
-                        detector_id="video_metrics",
-                        title="Black screen detected",
-                        message="Black segment again.",
-                        severity="warning",
-                        source_name="segment_0002.ts",
-                    )
-                ],
-            }
-
-    anyio.run(run)
+        ],
+    }
 
 
 def test_summarize_session_alerts_tool_returns_structured_summary(
@@ -132,31 +121,20 @@ def test_summarize_session_alerts_tool_returns_structured_summary(
         ],
     )
 
-    async def run() -> None:
-        async with create_connected_server_and_client_session(build_mcp_server()) as session:
-            result = await session.call_tool(
-                "summarize_session_alerts",
-                {
-                    "session_id": "session-mcp-summary",
-                },
-            )
-            assert result.isError is False
-            assert result.structuredContent == {
-                "session_id": "session-mcp-summary",
-                "total_alerts": 2,
-                "counts_by_detector": {
-                    "video_metrics": 1,
-                    "video_blur": 1,
-                },
-                "counts_by_severity": {
-                    "warning": 1,
-                    "info": 1,
-                },
-                "first_alert_timestamp_utc": "2026-05-06 10:00:00",
-                "last_alert_timestamp_utc": "2026-05-06 10:00:20",
-            }
+    result = call_mcp_tool(
+        "summarize_session_alerts",
+        {"session_id": "session-mcp-summary"},
+    )
 
-    anyio.run(run)
+    assert result.isError is False
+    assert result.structuredContent == build_alert_summary_payload(
+        "session-mcp-summary",
+        total_alerts=2,
+        counts_by_detector={"video_metrics": 1, "video_blur": 1},
+        counts_by_severity={"warning": 1, "info": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:00:20",
+    )
 
 
 def test_summarize_session_alerts_tool_applies_filters(
@@ -199,47 +177,37 @@ def test_summarize_session_alerts_tool_applies_filters(
         ],
     )
 
-    async def run() -> None:
-        async with create_connected_server_and_client_session(build_mcp_server()) as session:
-            result = await session.call_tool(
-                "summarize_session_alerts",
-                {
-                    "session_id": "session-mcp-summary-filtered",
-                    "detector_id": "video_metrics",
-                    "severity": "warning",
-                    "start_time_utc": "2026-05-06 10:00:05",
-                    "end_time_utc": "2026-05-06 10:00:15",
-                },
-            )
-            assert result.isError is False
-            assert result.structuredContent == {
-                "session_id": "session-mcp-summary-filtered",
-                "total_alerts": 1,
-                "counts_by_detector": {
-                    "video_metrics": 1,
-                },
-                "counts_by_severity": {
-                    "warning": 1,
-                },
-                "first_alert_timestamp_utc": "2026-05-06 10:00:10",
-                "last_alert_timestamp_utc": "2026-05-06 10:00:10",
-            }
+    result = call_mcp_tool(
+        "summarize_session_alerts",
+        {
+            "session_id": "session-mcp-summary-filtered",
+            "detector_id": "video_metrics",
+            "severity": "warning",
+            "start_time_utc": "2026-05-06 10:00:05",
+            "end_time_utc": "2026-05-06 10:00:15",
+        },
+    )
 
-    anyio.run(run)
+    assert result.isError is False
+    assert result.structuredContent == build_alert_summary_payload(
+        "session-mcp-summary-filtered",
+        total_alerts=1,
+        counts_by_detector={"video_metrics": 1},
+        counts_by_severity={"warning": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:10",
+        last_alert_timestamp_utc="2026-05-06 10:00:10",
+    )
 
 
 def test_query_session_alerts_tool_reports_missing_session_as_tool_error() -> None:
     """Unknown sessions should become MCP tool errors, not transport crashes."""
-    async def run() -> None:
-        async with create_connected_server_and_client_session(build_mcp_server()) as session:
-            result = await session.call_tool(
-                "query_session_alerts",
-                {"session_id": "missing-session"},
-            )
-            assert result.isError is True
-            assert "Session not found: missing-session" in _text_content(result)
+    result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": "missing-session"},
+    )
 
-    anyio.run(run)
+    assert result.isError is True
+    assert "Session not found: missing-session" in tool_error_text(result)
 
 
 def test_summarize_session_alerts_tool_reports_invalid_time_range_as_tool_error(
@@ -250,20 +218,17 @@ def test_summarize_session_alerts_tool_reports_invalid_time_range_as_tool_error(
     session_root = configure_session_alert_test(monkeypatch, tmp_path)
     write_known_session(session_root, "session-mcp-invalid-range")
 
-    async def run() -> None:
-        async with create_connected_server_and_client_session(build_mcp_server()) as session:
-            result = await session.call_tool(
-                "summarize_session_alerts",
-                {
-                    "session_id": "session-mcp-invalid-range",
-                    "start_time_utc": "2026-05-06 10:10:00",
-                    "end_time_utc": "2026-05-06 10:00:00",
-                },
-            )
-            assert result.isError is True
-            assert (
-                "start_time_utc must be earlier than or equal to end_time_utc"
-                in _text_content(result)
-            )
+    result = call_mcp_tool(
+        "summarize_session_alerts",
+        {
+            "session_id": "session-mcp-invalid-range",
+            "start_time_utc": "2026-05-06 10:10:00",
+            "end_time_utc": "2026-05-06 10:00:00",
+        },
+    )
 
-    anyio.run(run)
+    assert result.isError is True
+    assert (
+        "start_time_utc must be earlier than or equal to end_time_utc"
+        in tool_error_text(result)
+    )
