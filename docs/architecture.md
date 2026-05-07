@@ -77,9 +77,18 @@ It is now:
 The new MCP surface follows the same adapter pattern:
 
 - [`src/esm_mcp/server.py`](../src/esm_mcp/server.py) is a read-only MCP adapter
+- [`src/session_alert_adapter.py`](../src/session_alert_adapter.py) keeps the
+  small shared adapter mechanics reused by FastAPI and MCP
 - [`src/session_alerts.py`](../src/session_alerts.py) owns persisted alert
-  query/filter/summary logic
+  query/filter/summary logic plus grouped incident timeline and summary logic
 - MCP tools call the shared service directly rather than routing through HTTP
+
+The alert-query slice now has three distinct read models over that same
+persisted alert seam:
+
+- raw alert-event list
+- raw numeric alert summary
+- grouped incident timeline and grouped incident summary
 
 ## Legacy Tooling
 

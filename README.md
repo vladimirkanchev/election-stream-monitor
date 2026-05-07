@@ -67,8 +67,13 @@ is polled by the UI while a run is active. Packaging and broader platform
 support remain separate concerns.
 
 The repo also now includes a small local MCP surface for read-only alert
-querying. It is intentionally narrow and currently exposes persisted session
-alerts through stdio-oriented MCP tools rather than through a separate hosted
+querying. It is intentionally narrow and currently exposes:
+
+- raw persisted session alert queries
+- grouped alert timelines
+- grouped incident summaries
+
+through stdio-oriented MCP tools rather than through a separate hosted
 service layer.
 
 ## Current Capabilities

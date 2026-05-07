@@ -34,6 +34,7 @@ Use this shortcut map before editing code:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
   - [testing-and-validation.md](./testing-and-validation.md)
+  - [fastapi-boundary.md](./fastapi-boundary.md)
   - `src/esm_mcp/`
   - `src/session_alerts.py`
 - adding a detector:
@@ -104,14 +105,24 @@ module families and the matching tests:
   - `frontend/src/bridge/contract.session-snapshot.test.ts`
 - MCP alert-query surface:
   - `src/session_alerts.py`
+  - `src/session_alert_adapter.py`
+  - `src/api/schemas.py`
   - `src/api/routers/alerts.py`
   - `src/esm_mcp/server.py`
   - `src/esm_mcp/alert_tools.py`
   - `tests/session_alert_test_support.py`
+  - `tests/api_alert_test_support.py`
+  - `tests/mcp_alert_test_support.py`
   - `tests/test_alert_query_service.py`
+  - `tests/test_alert_timeline_service.py`
+  - `tests/test_alert_incident_summary_service.py`
   - `tests/test_api_session_alerts.py`
+  - `tests/test_api_session_alert_incidents.py`
   - `tests/test_mcp_server_contracts.py`
   - `tests/test_mcp_server_alerts.py`
+  - `tests/test_mcp_server_incidents.py`
+  - read them in that order if you want the cleanest path from shared service,
+    to HTTP adapter, to MCP adapter, to the split test ownership
 
 ## Current Stable Contracts
 

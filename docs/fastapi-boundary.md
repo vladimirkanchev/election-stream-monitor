@@ -22,6 +22,8 @@ The FastAPI layer currently provides:
 - `GET /sessions/{session_id}`
 - `GET /sessions/{session_id}/alerts`
 - `GET /sessions/{session_id}/alerts/summary`
+- `GET /sessions/{session_id}/alerts/timeline`
+- `GET /sessions/{session_id}/alerts/incident-summary`
 - `POST /sessions/{session_id}/cancel`
 - `POST /playback/resolve`
 
@@ -207,6 +209,35 @@ The summary remains numeric and deterministic by design. If a later milestone
 needs prose or operator-facing explanation, that should be added in a higher
 layer such as an MCP or agent workflow rather than changing the core alert
 query contract.
+
+### `GET /sessions/{session_id}/alerts/timeline`
+
+Returns grouped incident entries for one session after applying the same
+optional alert filters:
+
+- `detector_id`
+- `severity`
+- `start_time_utc`
+- `end_time_utc`
+
+The route remains a thin adapter over the shared alert service. Grouping rules
+stay deterministic and intentionally simple: ordered alert rows with matching
+`detector_id`, `severity`, and `title`, plus a fixed gap threshold.
+
+### `GET /sessions/{session_id}/alerts/incident-summary`
+
+Returns the grouped incident read model for one session, including:
+
+- total raw alerts
+- total grouped incidents
+- counts by detector
+- counts by severity
+- top incident categories by grouped title
+- first and last alert timestamps
+- one optional short `narrative_summary`
+
+This route is distinct from `/alerts/summary`. The older summary route reports
+raw alert counts only; this route reports grouped incident semantics.
 
 ### `POST /sessions/{session_id}/cancel`
 

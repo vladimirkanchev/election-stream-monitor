@@ -1338,6 +1338,108 @@ Current query semantics:
 - malformed alert rows are ignored rather than failing the whole query
 - time filters use the existing persisted UTC timestamp format
 
+### Session Alert Timeline and Incident Summary v1
+
+The incident-oriented alert surface is now live and stays structured first so
+both FastAPI and MCP clients can consume it without parsing prose.
+
+Recommended output split:
+
+- timeline responses stay pure structured JSON
+- incident summary responses stay structured JSON and may include one optional
+  short `narrative_summary` field
+
+This keeps the stable contract in the structured fields while still giving
+operators and agent workflows one convenient short explanation.
+
+Current HTTP routes:
+
+- `GET /sessions/{session_id}/alerts/timeline`
+- `GET /sessions/{session_id}/alerts/incident-summary`
+
+Current MCP tools:
+
+- `query_session_alert_timeline`
+- `summarize_session_alert_incidents`
+
+Shared filter inputs:
+
+- `session_id`
+- optional `detector_id`
+- optional `severity`
+- optional `start_time_utc`
+- optional `end_time_utc`
+
+Current timeline response shape:
+
+```json
+{
+  "session_id": "session-20260506-abc123",
+  "entries": [
+    {
+      "start_time_utc": "2026-05-06 10:00:00",
+      "end_time_utc": "2026-05-06 10:00:45",
+      "detector_id": "video_metrics",
+      "severity": "warning",
+      "title": "Black screen detected",
+      "alert_count": 3,
+      "source_names": ["segment_0001.ts", "segment_0002.ts"],
+      "sample_message": "Black segment."
+    }
+  ]
+}
+```
+
+Timeline notes:
+
+- each entry is a grouped incident, not a raw alert row
+- grouping should remain deterministic and session-scoped
+- v1 grouping stays intentionally simple:
+  - ordered alerts with a fixed gap threshold
+  - matching `detector_id`, `severity`, and `title`
+  - no coarse time buckets as the primary rule
+  - no detector-specific or ML-style incident reconstruction yet
+- `start_time_utc` and `end_time_utc` describe the grouped incident window
+- `sample_message` is descriptive only and should not be treated as a stable
+  identifier
+
+Current incident summary response shape:
+
+```json
+{
+  "session_id": "session-20260506-abc123",
+  "total_alerts": 5,
+  "total_incidents": 2,
+  "counts_by_detector": {
+    "video_metrics": 3,
+    "video_blur": 2
+  },
+  "counts_by_severity": {
+    "warning": 4,
+    "info": 1
+  },
+  "top_incident_categories": {
+    "Black screen detected": 1,
+    "Blur increased": 1
+  },
+  "first_alert_timestamp_utc": "2026-05-06 10:00:00",
+  "last_alert_timestamp_utc": "2026-05-06 10:02:10",
+  "narrative_summary": "Session session-20260506-abc123 had 2 grouped incidents across 5 alerts, mostly from video_metrics, led by black screen detected."
+}
+```
+
+Incident summary notes:
+
+- structured fields remain the source of truth
+- `top_incident_categories` counts grouped incidents by their stable `title`
+  field rather than introducing a second incident taxonomy
+- `narrative_summary` is a convenience field for operators and agents, not a
+  wording-stable primary contract
+- `narrative_summary` is optional convenience text for operators and agents
+- clients must not depend on exact wording of `narrative_summary`
+- this summary is incident-oriented and should stay distinct from the existing
+  raw alert-count summary surface
+
 ### `cancelSession`
 
 Request:

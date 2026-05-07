@@ -129,10 +129,10 @@ It currently covers:
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents
 
-Focused alert-query and MCP validation:
+Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_alert_query_service.py tests/test_api_session_alerts.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py
+.venv/bin/pytest -q tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_server_incidents.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alert
@@ -140,21 +140,51 @@ boundary, and the MCP tool adapter over the same service seam.
 If you change only one of those layers, this command is still the best quick
 confidence check because it proves the ownership split still lines up.
 
+The current functionality under that slice is:
+
+- raw session alert list queries
+- raw numeric alert summaries
+- grouped incident timelines
+- grouped incident summaries
+- stdio MCP launch wiring over the same shared service seam
+
 The current test split is:
 
 - `tests/session_alert_test_support.py`
   - shared file-backed session/alert setup helpers for this slice
+- `tests/api_alert_test_support.py`
+  - shared API error-payload helpers for the alert-route adapter tests
+- `tests/mcp_alert_test_support.py`
+  - shared in-memory MCP session helpers for the alert-tool tests
 - `tests/test_alert_query_service.py`
-  - service-level read, filter, and summary semantics
+  - service-level raw alert read, filter, and summary semantics
+- `tests/test_alert_timeline_service.py`
+  - service-level timeline grouping, ordering, filter reuse, and empty-state semantics
+- `tests/test_alert_incident_summary_service.py`
+  - service-level grouped incident summary fields, categories, and narrative semantics
 - `tests/test_api_session_alerts.py`
-  - FastAPI adapter and API error-mapping behavior
+  - FastAPI adapter behavior for raw alert list and summary routes
+- `tests/test_api_session_alert_incidents.py`
+  - FastAPI adapter behavior for timeline and grouped incident summary routes
 - `tests/test_mcp_server_contracts.py`
   - MCP tool registration, schema basics, and stdio launch wiring
 - `tests/test_mcp_server_alerts.py`
-  - MCP tool behavior through the real in-memory MCP session
+  - MCP raw alert-query tool behavior through the real in-memory MCP session
+- `tests/test_mcp_server_incidents.py`
+  - MCP grouped timeline and incident-summary tool behavior
 
 Keep new tests near those ownership boundaries instead of adding a larger
 "catch-all" alert-query suite.
+
+The split is deliberate:
+
+- service files prove the durable file-backed semantics once
+- FastAPI files prove HTTP parameter binding and error mapping
+- MCP files prove tool registration, launch wiring, and behavior through the
+  real in-memory MCP transport seam
+
+When you add new coverage for this slice, prefer extending the narrow owning
+file over creating another mixed alert-and-incident test module.
 
 Focused MCP launch wiring:
 
