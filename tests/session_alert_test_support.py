@@ -8,7 +8,8 @@ These helpers keep the alert-query tests focused on scenario intent:
 - build alert payloads without repeating the contract shape inline
 
 The module stays small and procedural on purpose. It removes setup noise
-without hiding test meaning behind a framework.
+without hiding test meaning behind a framework, and it supports both the raw
+alert read model and the grouped incident read models that sit on top of it.
 """
 
 from __future__ import annotations
@@ -102,6 +103,95 @@ def build_normalized_alert(
     alert.setdefault("window_index", None)
     alert.setdefault("window_start_sec", None)
     return alert
+
+
+def build_timeline_entry(
+    *,
+    start_time_utc: str,
+    end_time_utc: str,
+    detector_id: str,
+    severity: str,
+    title: str,
+    alert_count: int,
+    source_names: list[str],
+    sample_message: str,
+) -> AlertPayload:
+    """Build one grouped timeline entry in the shared response shape.
+
+    Tests use this helper instead of spelling the same entry shape inline so
+    timeline assertions stay focused on grouping intent rather than payload
+    boilerplate.
+    """
+    return {
+        "start_time_utc": start_time_utc,
+        "end_time_utc": end_time_utc,
+        "detector_id": detector_id,
+        "severity": severity,
+        "title": title,
+        "alert_count": alert_count,
+        "source_names": source_names,
+        "sample_message": sample_message,
+    }
+
+
+def build_alert_summary_payload(
+    session_id: str,
+    *,
+    total_alerts: int,
+    counts_by_detector: dict[str, int],
+    counts_by_severity: dict[str, int],
+    first_alert_timestamp_utc: str | None,
+    last_alert_timestamp_utc: str | None,
+) -> AlertPayload:
+    """Build the stable raw alert-summary payload used by service and adapters."""
+    return {
+        "session_id": session_id,
+        "total_alerts": total_alerts,
+        "counts_by_detector": counts_by_detector,
+        "counts_by_severity": counts_by_severity,
+        "first_alert_timestamp_utc": first_alert_timestamp_utc,
+        "last_alert_timestamp_utc": last_alert_timestamp_utc,
+    }
+
+
+def build_incident_summary_payload(
+    session_id: str,
+    *,
+    total_alerts: int,
+    total_incidents: int,
+    counts_by_detector: dict[str, int],
+    counts_by_severity: dict[str, int],
+    top_incident_categories: dict[str, int],
+    first_alert_timestamp_utc: str | None,
+    last_alert_timestamp_utc: str | None,
+    narrative_summary: str | None,
+) -> AlertPayload:
+    """Build the grouped incident-summary payload shared by service and adapters.
+
+    The grouped summary extends the raw alert summary shape, so this helper
+    intentionally layers grouped-incident fields on top of
+    ``build_alert_summary_payload``.
+    """
+    return {
+        **build_alert_summary_payload(
+            session_id,
+            total_alerts=total_alerts,
+            counts_by_detector=counts_by_detector,
+            counts_by_severity=counts_by_severity,
+            first_alert_timestamp_utc=first_alert_timestamp_utc,
+            last_alert_timestamp_utc=last_alert_timestamp_utc,
+        ),
+        "total_incidents": total_incidents,
+        "top_incident_categories": top_incident_categories,
+        "narrative_summary": narrative_summary,
+    }
+
+
+def assert_narrative_contains(narrative: str | None, *parts: str) -> None:
+    """Assert that one summary sentence still carries the important facts."""
+    assert narrative is not None
+    for part in parts:
+        assert part in narrative
 
 
 def write_known_session(
