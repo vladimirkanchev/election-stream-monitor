@@ -1,3 +1,12 @@
+"""FastAPI and MCP-facing schema models for the current backend surface.
+
+Most of this module defines the HTTP session lifecycle contract, but it also
+owns the structured models reused by the read-only alert query and incident
+timeline adapters. Keeping those models together gives the transport layers one
+stable response vocabulary while the shared service layer remains plain-Python
+and transport-agnostic.
+"""
+
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -93,6 +102,8 @@ class ResultEventResponse(BaseModel):
 
 
 class AlertEventResponse(BaseModel):
+    """One normalized persisted alert row returned by the shared alert service."""
+
     session_id: str
     timestamp_utc: str
     detector_id: str
@@ -105,17 +116,55 @@ class AlertEventResponse(BaseModel):
 
 
 class SessionAlertQueryResponse(BaseModel):
+    """Structured response for filtered raw alert-event queries."""
+
     session_id: str
     alerts: list[AlertEventResponse] = Field(default_factory=list)
 
 
 class SessionAlertSummaryResponse(BaseModel):
+    """Deterministic numeric summary over raw filtered alert events."""
+
     session_id: str
     total_alerts: int
     counts_by_detector: dict[str, int] = Field(default_factory=dict)
     counts_by_severity: dict[str, int] = Field(default_factory=dict)
     first_alert_timestamp_utc: str | None = None
     last_alert_timestamp_utc: str | None = None
+
+
+class SessionAlertTimelineEntryResponse(BaseModel):
+    """One grouped incident entry in the alert timeline contract."""
+
+    start_time_utc: str
+    end_time_utc: str
+    detector_id: str
+    severity: ApiAlertSeverity
+    title: str
+    alert_count: int
+    source_names: list[str] = Field(default_factory=list)
+    sample_message: str
+
+
+class SessionAlertTimelineResponse(BaseModel):
+    """Ordered grouped-incident timeline for one monitoring session."""
+
+    session_id: str
+    entries: list[SessionAlertTimelineEntryResponse] = Field(default_factory=list)
+
+
+class SessionIncidentSummaryResponse(BaseModel):
+    """Structured grouped-incident summary with one optional narrative field."""
+
+    session_id: str
+    total_alerts: int
+    total_incidents: int
+    counts_by_detector: dict[str, int] = Field(default_factory=dict)
+    counts_by_severity: dict[str, int] = Field(default_factory=dict)
+    top_incident_categories: dict[str, int] = Field(default_factory=dict)
+    first_alert_timestamp_utc: str | None = None
+    last_alert_timestamp_utc: str | None = None
+    narrative_summary: str | None = None
 
 
 class SessionSnapshotResponse(BaseModel):

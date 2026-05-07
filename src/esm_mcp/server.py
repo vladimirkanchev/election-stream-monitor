@@ -2,13 +2,26 @@
 
 This adapter sits beside the FastAPI boundary and calls the shared alert query
 service directly. It does not reimplement alert parsing or route through HTTP.
+
+The current tool set is intentionally small and local-first:
+
+- raw alert query and raw numeric summary
+- grouped incident timeline and grouped incident summary
+- stdio transport for desktop and local coding clients
 """
 
 from mcp.server.fastmcp import FastMCP
 
-from api.schemas import SessionAlertQueryResponse, SessionAlertSummaryResponse
+from api.schemas import (
+    SessionAlertQueryResponse,
+    SessionAlertSummaryResponse,
+    SessionAlertTimelineResponse,
+    SessionIncidentSummaryResponse,
+)
 from esm_mcp.alert_tools import (
     query_session_alerts_tool,
+    query_session_alert_timeline_tool,
+    summarize_session_alert_incidents_tool,
     summarize_session_alerts_tool,
 )
 from session_models import EventSeverity
@@ -20,19 +33,8 @@ SERVER_INSTRUCTIONS = (
 )
 
 
-def build_mcp_server() -> FastMCP:
-    """Return the project's MCP server with the current alert-query tools.
-
-    The current server intentionally stays small:
-
-    - stdio-first transport for local clients
-    - read-only tools only
-    - one shared alert-query seam reused from the FastAPI milestone
-    """
-    mcp_server = FastMCP(
-        SERVER_NAME,
-        instructions=SERVER_INSTRUCTIONS,
-    )
+def _register_raw_alert_query_tools(mcp_server: FastMCP) -> None:
+    """Register MCP tools for raw persisted alert queries."""
 
     @mcp_server.tool(
         description="Return persisted alert events for one monitoring session.",
@@ -74,6 +76,71 @@ def build_mcp_server() -> FastMCP:
             end_time_utc=end_time_utc,
         )
 
+
+def _register_incident_alert_tools(mcp_server: FastMCP) -> None:
+    """Register MCP tools for grouped incident timeline and summary views.
+
+    These tools reuse the same shared incident-building logic as the FastAPI
+    routes so operators and coding agents see one consistent grouped read
+    model.
+    """
+
+    @mcp_server.tool(
+        description="Return grouped incident timeline entries for one monitoring session.",
+        structured_output=True,
+    )
+    def query_session_alert_timeline(
+        session_id: str,
+        detector_id: str | None = None,
+        severity: EventSeverity | None = None,
+        start_time_utc: str | None = None,
+        end_time_utc: str | None = None,
+    ) -> SessionAlertTimelineResponse:
+        """Return grouped incident timeline entries after optional filtering."""
+        return query_session_alert_timeline_tool(
+            session_id,
+            detector_id=detector_id,
+            severity=severity,
+            start_time_utc=start_time_utc,
+            end_time_utc=end_time_utc,
+        )
+
+    @mcp_server.tool(
+        description="Return grouped incident summary data for one monitoring session.",
+        structured_output=True,
+    )
+    def summarize_session_alert_incidents(
+        session_id: str,
+        detector_id: str | None = None,
+        severity: EventSeverity | None = None,
+        start_time_utc: str | None = None,
+        end_time_utc: str | None = None,
+    ) -> SessionIncidentSummaryResponse:
+        """Return grouped incident counts, categories, and narrative summary."""
+        return summarize_session_alert_incidents_tool(
+            session_id,
+            detector_id=detector_id,
+            severity=severity,
+            start_time_utc=start_time_utc,
+            end_time_utc=end_time_utc,
+        )
+
+
+def build_mcp_server() -> FastMCP:
+    """Return the project's MCP server with the current alert-query tools.
+
+    The current server intentionally stays small:
+
+    - stdio-first transport for local clients
+    - read-only tools only
+    - one shared alert-query seam reused from the FastAPI milestone
+    """
+    mcp_server = FastMCP(
+        SERVER_NAME,
+        instructions=SERVER_INSTRUCTIONS,
+    )
+    _register_raw_alert_query_tools(mcp_server)
+    _register_incident_alert_tools(mcp_server)
     return mcp_server
 
 
