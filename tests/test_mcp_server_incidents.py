@@ -6,6 +6,7 @@ This file owns the grouped-incident MCP surface:
 - incident-summary payloads
 - empty-state behavior
 - readable tool-level error mapping for validation failures
+- narrative-summary and grouped-category transport behavior
 """
 
 from pathlib import Path

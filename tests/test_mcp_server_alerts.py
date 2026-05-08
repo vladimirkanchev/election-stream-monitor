@@ -4,7 +4,18 @@ These tests complement the MCP contract file by proving that the registered
 tools call the shared raw alert-query service correctly and surface readable
 success and error results through the real in-memory MCP transport seam.
 
+This file owns:
+
+- raw alert list and summary tool success payloads
+- shared filter propagation into the raw read model
+- tool-level error mapping for raw alert queries
+
 Incident-oriented MCP behavior lives in ``test_mcp_server_incidents.py``.
+FastAPI-versus-MCP boundary-split behavior lives in
+``test_mcp_fastapi_boundary_split.py``.
+
+The file stays intentionally free of FastAPI auth/rate-limit assertions so the
+raw tool behavior is easy to review on its own.
 """
 
 from pathlib import Path
@@ -17,6 +28,9 @@ from tests.session_alert_test_support import (
     configure_session_alert_test,
     write_known_session,
 )
+
+
+# Raw MCP behavior over the shared alert-query service
 
 
 def test_list_tools_then_call_query_session_alerts_end_to_end_with_filters(
@@ -88,6 +102,9 @@ def test_list_tools_then_call_query_session_alerts_end_to_end_with_filters(
             )
         ],
     }
+
+
+# Raw alert summary behavior
 
 
 def test_summarize_session_alerts_tool_returns_structured_summary(
@@ -197,6 +214,9 @@ def test_summarize_session_alerts_tool_applies_filters(
         first_alert_timestamp_utc="2026-05-06 10:00:10",
         last_alert_timestamp_utc="2026-05-06 10:00:10",
     )
+
+
+# Tool-level error mapping
 
 
 def test_query_session_alerts_tool_reports_missing_session_as_tool_error() -> None:

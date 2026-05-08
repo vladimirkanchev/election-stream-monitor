@@ -6,6 +6,7 @@ These checks stay above the shared service but below scenario-level behavior:
 - input/output schema basics
 - stdio launch wiring
 - installed console entrypoint metadata
+- grouped incident schema registration alongside raw alert tool schemas
 
 Real alert and incident tool behavior lives in the dedicated MCP behavior
 files so this contract file remains short and structural.
