@@ -6,6 +6,18 @@ This file owns the HTTP boundary for the incident-oriented service layer:
 - grouped incident summary responses
 - empty-state transport behavior
 - not-found and validation mapping for incident routes
+- request-validation behavior specific to timeline and incident-summary routes
+
+Router-scoped auth and rate-limit policy lives in the split alerts-router
+policy files:
+
+- ``test_api_alert_route_auth_policy.py``
+- ``test_api_alert_route_rate_limit_policy.py``
+- ``test_api_alert_route_contracts.py``
+
+That keeps this file focused on transport adaptation over the grouped-incident
+services. Reviewers should be able to read it route-by-route without also
+carrying the auth and throttling story in their heads.
 """
 
 from tests.api_alert_test_support import (

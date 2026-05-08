@@ -1,11 +1,22 @@
 """Focused FastAPI adapter tests for raw session alert query endpoints.
 
-These tests stay intentionally thin. They verify that the HTTP routes bind the
-right parameters, preserve the response shape, and map service-layer errors
-into the repo's stable API error contract.
+These tests stay intentionally thin. They verify that the raw alert routes:
 
-Grouped incident routes are covered separately in
-``test_api_session_alert_incidents.py``.
+- bind the expected query parameters
+- preserve response payload shape
+- map service-layer errors into the stable API contract
+- keep request validation aligned across the raw list and raw summary routes
+
+Router-scoped auth and rate-limit policy lives in the split alerts-router
+policy files:
+
+- ``test_api_alert_route_auth_policy.py``
+- ``test_api_alert_route_rate_limit_policy.py``
+- ``test_api_alert_route_contracts.py``
+
+That keeps this file a transport adapter spec rather than a policy catalog.
+Reviewers should be able to read it route-by-route without also carrying the
+auth and throttling story in their heads.
 """
 
 from tests.api_alert_test_support import (
