@@ -84,6 +84,197 @@ For `main` pull requests, the CI drift gate expects contract changes to move
 with nearby tests and the owning docs update rather than landing as silent
 shape changes.
 
+## FastAPI Authentication Contract v1
+
+Purpose:
+
+- define the first authentication seam for the HTTP API
+- keep request authentication explicit at the FastAPI boundary
+- leave shared backend services auth-agnostic
+- make a later move from API keys to JWT-backed principals easier
+
+Current scope:
+
+- this contract applies to the FastAPI HTTP API only
+- the current stdio MCP server remains a local-trust transport and is not
+  authenticated by this contract
+- the current protected FastAPI scope is the alerts router:
+  - `GET /sessions/{session_id}/alerts`
+  - `GET /sessions/{session_id}/alerts/summary`
+  - `GET /sessions/{session_id}/alerts/timeline`
+  - `GET /sessions/{session_id}/alerts/incident-summary`
+- other FastAPI routers are not yet protected by this contract
+
+Current credential shape:
+
+- clients send one API key in the `X-API-Key` request header
+- missing or invalid credentials should be treated as authentication failures
+- blank or whitespace-only `X-API-Key` values are treated as missing credentials
+- when FastAPI auth is disabled in configuration, the alerts router currently
+  accepts requests without credentials
+
+Current authenticated caller shape:
+
+```json
+{
+  "auth_type": "api_key",
+  "subject": "api-key:<fingerprint>",
+  "key_id": "<fingerprint>"
+}
+```
+
+Notes:
+
+- the authenticated caller object is intentionally auth-neutral
+- API-key principals expose only a short fingerprint derived from the matched
+  configured key rather than the raw API key itself
+- later JWT support should populate the same principal concept with a different
+  credential-validation path rather than changing shared service code
+- business logic modules such as [`src/session_alerts.py`](../src/session_alerts.py)
+  should not validate headers or inspect credentials directly
+
+Current authentication failure shape:
+
+```json
+{
+  "detail": "Authentication failed",
+  "error_code": "authentication_failed",
+  "status_reason": "authentication_failed",
+  "status_detail": "Missing or invalid credentials."
+}
+```
+
+Implementation note:
+
+- the FastAPI auth seam lives in [`src/api_auth.py`](../src/api_auth.py)
+- the alerts-router HTTP protection composition lives in
+  [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
+- auth settings are centralized in [`src/config.py`](../src/config.py) under a
+  small auth-neutral settings object rather than being parsed inline in route
+  code
+- the FastAPI app now validates the current auth and rate-limit settings
+  during startup so invalid enabled configuration fails before the first
+  protected request
+- when FastAPI auth is enabled in configuration, the auth seam validates the
+  presented `X-API-Key` against configured allowed API keys and returns an
+  authenticated principal rather than exposing the raw key downstream
+- the current alerts router enforces that seam through a router dependency
+  rather than FastAPI middleware
+
+## FastAPI Rate Limiting Contract v1
+
+Purpose:
+
+- define the first rate-limiting seam for the HTTP API
+- keep request throttling explicit at the FastAPI boundary
+- reuse authenticated caller identity instead of raw API keys where possible
+- make a later move from local in-memory counting to a shared backend store easier
+
+Current scope:
+
+- this contract applies to the FastAPI HTTP API only
+- the current stdio MCP server remains outside this rate-limiting contract
+- the current protected FastAPI scope matches the alerts router:
+  - `GET /sessions/{session_id}/alerts`
+  - `GET /sessions/{session_id}/alerts/summary`
+  - `GET /sessions/{session_id}/alerts/timeline`
+  - `GET /sessions/{session_id}/alerts/incident-summary`
+- when FastAPI rate limiting is enabled in configuration, the alerts router
+  enforces this contract through the same router boundary that already owns
+  authentication
+
+Current caller identity rule:
+
+- when FastAPI auth is enabled, rate limiting should identify callers by the
+  authenticated principal rather than the raw presented API key
+- the current default strategy is principal-based and prefers
+  `principal.key_id` as the stable caller identity
+- when FastAPI auth is disabled, the limiter falls back to one deterministic
+  local identity for the current process
+- the alternate `ip` strategy is also supported and uses the request host
+  rather than authenticated principal identity
+
+Current limit model:
+
+- one fixed-window limit model
+- one maximum request count in one configured time window
+- current settings live in [`src/config.py`](../src/config.py):
+  - `enabled`
+  - `strategy`
+  - `window_seconds`
+  - `max_requests`
+- current default intended values are:
+  - `strategy = "principal"`
+  - `window_seconds = 60`
+  - `max_requests = 100`
+
+Current rate-limit failure shape:
+
+```json
+{
+  "detail": "Rate limit exceeded",
+  "error_code": "rate_limit_exceeded",
+  "status_reason": "rate_limit_exceeded",
+  "status_detail": "Too many requests for the configured window."
+}
+```
+
+Notes:
+
+- `429` responses also include a coarse `Retry-After` header based on the
+  configured fixed-window size so clients can back off without parsing limiter
+  internals
+- the rate-limit subject is intentionally defined in auth-neutral terms so a
+  later JWT-backed principal can reuse the same boundary contract
+- the current limiter store is local, in-memory, and per-process
+- that makes the current behavior a good fit for local development, demos, and
+  single-process backend runs, but not a distributed or multi-worker contract
+- the current FastAPI security and limiter seams are therefore safe to treat
+  as local/demo readiness features, not as a production-distributed security
+  model
+- shared service modules such as
+  [`src/session_alerts.py`](../src/session_alerts.py) and
+  [`src/session_alert_incidents.py`](../src/session_alert_incidents.py) should
+  remain unaware of request counting
+
+Current readiness summary:
+
+- safe current use:
+  - local development
+  - demos
+  - single-process backend runs
+- not yet ready as a distributed boundary:
+  - multi-worker shared rate limiting
+  - shared-store request budgets
+  - remote MCP auth or limiter enforcement
+  - broader production-distributed guarantees
+
+Implementation note:
+
+- the current limiter mechanics live in [`src/api_rate_limit.py`](../src/api_rate_limit.py)
+- the alerts-router HTTP protection composition lives in
+  [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
+- structured rate-limit settings live in
+  [`src/config.py`](../src/config.py) and a stable `429` error vocabulary in
+  [`src/api/errors.py`](../src/api/errors.py) and
+  [`src/api/schemas.py`](../src/api/schemas.py)
+- the current alerts router enforces the limiter through a router dependency
+  rather than pushing counting logic into route bodies or shared alert services
+- invalid configured auth or limiter settings now fail during FastAPI startup
+  rather than waiting for the first protected request
+
+Future remote MCP note:
+
+- the current FastAPI authentication and rate-limit contracts do not secure the
+  current `stdio` MCP server
+- if MCP later gains a remote transport, it should reuse the auth-neutral
+  principal concept, the same general machine-readable error style, and
+  possibly the limiter service concepts
+- that future work should still be designed at the MCP transport boundary
+  rather than assuming the current FastAPI dependency model already applies
+- until then, keep the current `stdio` MCP server documented as a local-trust
+  transport rather than a protected remote API surface
+
 ## API Stream Source Contract v1
 
 Purpose:

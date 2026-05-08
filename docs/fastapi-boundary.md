@@ -32,6 +32,71 @@ These endpoints already use:
 - explicit request/response schemas
 - structured error payloads
 - cleaned session snapshot semantics
+- router-scoped auth enforcement for the alerts surface
+
+The current alerts router is authenticated when FastAPI auth is enabled.
+The same router can also enforce principal-aware rate limiting when that
+setting is enabled. The current implementation uses one local in-memory
+fixed-window limiter, so the enforcement is per-process rather than
+distributed.
+The owning HTTP protection composition now lives in
+[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py), which
+keeps the alerts router declarations smaller and keeps auth/rate-limit mapping
+local to the boundary.
+The FastAPI app also validates the current auth and rate-limit settings during
+startup so invalid enabled boundary config fails before the first protected
+request.
+
+Current alerts-router protection scope:
+
+- `GET /sessions/{session_id}/alerts`
+- `GET /sessions/{session_id}/alerts/summary`
+- `GET /sessions/{session_id}/alerts/timeline`
+- `GET /sessions/{session_id}/alerts/incident-summary`
+
+Current alerts-router rate-limit rule:
+
+- default identity strategy is authenticated principal, keyed by
+  `principal.key_id`
+- auth-disabled local runs fall back to one deterministic local identity
+- alternate `ip` strategy can instead key the budget by request host
+- `429` responses use the standard structured API error envelope:
+  - `detail = "Rate limit exceeded"`
+  - `error_code = "rate_limit_exceeded"`
+  - `status_reason = "rate_limit_exceeded"`
+  - `status_detail = "Too many requests for the configured window."`
+- `429` responses also include `Retry-After` with a coarse whole-window number
+  of seconds so clients can retry later without guessing the current budget
+
+Current limitation:
+
+- the limiter is intentionally local-first, in-memory, and per-process
+- it is appropriate for the current local backend/runtime model
+- it is not yet a shared-store or multi-worker rate-limit contract
+
+Current readiness summary:
+
+- safe to rely on today for:
+  - local development
+  - demos
+  - single-process desktop-backed backend runs
+- not yet ready to claim as:
+  - multi-worker distributed rate limiting
+  - shared-store production throttling
+  - remote MCP security coverage
+  - a general production-distributed security boundary
+
+Current MCP boundary difference:
+
+- this FastAPI auth/rate-limit boundary applies only to the HTTP alerts router
+- the current MCP server still runs over `stdio` and remains a local-trust
+  transport
+- that means today's `X-API-Key` checks and HTTP `429` limiter contract do not
+  automatically secure MCP
+- if MCP later becomes remote, reuse the principal identity model, the general
+  structured error style, and possibly the limiter concepts, but add them at
+  the MCP transport boundary instead of coupling MCP to FastAPI-specific
+  request handling
 
 What is still partial:
 
@@ -192,8 +257,14 @@ Returns persisted alert events for one session. Current optional filters are:
 - `end_time_utc`
 
 This route is intentionally a read-only HTTP adapter over the shared
-`src/session_alerts.py` service rather than an independent query
+shared `src/session_alerts.py` and `src/session_alert_incidents.py` services
+rather than an independent query
 implementation.
+
+This route is currently protected by the FastAPI auth boundary. When auth is
+enabled in configuration, callers must send `X-API-Key`.
+When FastAPI rate limiting is enabled, this route also participates in the
+shared alerts-router request budget.
 
 ### `GET /sessions/{session_id}/alerts/summary`
 
@@ -210,6 +281,11 @@ needs prose or operator-facing explanation, that should be added in a higher
 layer such as an MCP or agent workflow rather than changing the core alert
 query contract.
 
+This route is currently protected by the same router-level `X-API-Key`
+dependency as the rest of the alerts router.
+It also participates in the same router-level request budget when FastAPI rate
+limiting is enabled.
+
 ### `GET /sessions/{session_id}/alerts/timeline`
 
 Returns grouped incident entries for one session after applying the same
@@ -224,6 +300,11 @@ The route remains a thin adapter over the shared alert service. Grouping rules
 stay deterministic and intentionally simple: ordered alert rows with matching
 `detector_id`, `severity`, and `title`, plus a fixed gap threshold.
 
+This route is currently protected by the same router-level `X-API-Key`
+dependency as the other alerts routes.
+It also participates in the same router-level request budget when FastAPI rate
+limiting is enabled.
+
 ### `GET /sessions/{session_id}/alerts/incident-summary`
 
 Returns the grouped incident read model for one session, including:
@@ -236,8 +317,16 @@ Returns the grouped incident read model for one session, including:
 - first and last alert timestamps
 - one optional short `narrative_summary`
 
+This route is currently protected by the same router-level `X-API-Key`
+dependency as the other alerts routes.
+It also participates in the same router-level request budget when FastAPI rate
+limiting is enabled.
+
 This route is distinct from `/alerts/summary`. The older summary route reports
 raw alert counts only; this route reports grouped incident semantics.
+
+This route is currently protected by the same router-level `X-API-Key`
+dependency as the rest of the alerts router.
 
 ### `POST /sessions/{session_id}/cancel`
 
@@ -260,6 +349,23 @@ Route-level failures use one consistent JSON shape:
   "status_detail": "No persisted session snapshot found for session_id=abc123"
 }
 ```
+
+Authentication failures use the same envelope with:
+
+- `detail = "Authentication failed"`
+- `error_code = "authentication_failed"`
+- `status_reason = "authentication_failed"`
+- `status_detail` describing the concrete auth failure, such as:
+  - missing key
+  - invalid key
+  - enabled auth without configured keys
+
+Rate-limit failures use the same envelope pattern with:
+
+- `detail = "Rate limit exceeded"`
+- `error_code = "rate_limit_exceeded"`
+- `status_reason = "rate_limit_exceeded"`
+- `status_detail` describing the current limiter rejection
 
 Typical cases include:
 
