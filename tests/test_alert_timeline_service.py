@@ -16,7 +16,7 @@ to scan in one pass.
 from pathlib import Path
 from time import perf_counter
 
-from session_alerts import build_session_timeline
+from session_alert_incidents import build_session_timeline
 from tests.session_alert_test_support import (
     build_timeline_entry,
     build_persisted_alert,

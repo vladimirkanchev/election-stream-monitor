@@ -12,7 +12,7 @@ timeline entries:
 
 from pathlib import Path
 
-from session_alerts import build_session_incident_summary
+from session_alert_incidents import build_session_incident_summary
 from tests.session_alert_test_support import (
     assert_narrative_contains,
     build_incident_summary_payload,
