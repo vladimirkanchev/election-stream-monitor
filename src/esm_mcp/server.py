@@ -8,6 +8,9 @@ The current tool set is intentionally small and local-first:
 - raw alert query and raw numeric summary
 - grouped incident timeline and grouped incident summary
 - stdio transport for desktop and local coding clients
+
+The current server is intentionally local-trust. FastAPI API-key auth and
+FastAPI rate limiting do not apply to this stdio transport.
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -132,6 +135,7 @@ def build_mcp_server() -> FastMCP:
     The current server intentionally stays small:
 
     - stdio-first transport for local clients
+    - local-trust transport rather than remote auth/rate-limit enforcement
     - read-only tools only
     - one shared alert-query seam reused from the FastAPI milestone
     """
@@ -152,7 +156,10 @@ def main() -> None:
 
     Stdio is the intended default transport for the current local-first stage
     because it fits Codex and similar desktop/local MCP clients without
-    introducing extra HTTP hosting concerns yet.
+    introducing extra HTTP hosting concerns yet. If the project later exposes
+    MCP over a remote transport, that boundary should add its own auth and
+    rate-limit enforcement instead of coupling directly to FastAPI-specific
+    request handling.
     """
     server.run(transport="stdio")
 

@@ -4,7 +4,8 @@ Keep the tool functions in a small dedicated module so:
 
 - `server.py` stays focused on registration and launch
 - tool behavior can be tested or reused without rebuilding the server
-- transport-neutral alert query logic still lives in `session_alerts.py`
+- raw alert query logic lives in `session_alerts.py`
+- grouped incident read models live in `session_alert_incidents.py`
 
 The MCP surface intentionally mirrors the FastAPI split:
 
@@ -18,18 +19,18 @@ from api.schemas import (
     SessionAlertTimelineResponse,
     SessionIncidentSummaryResponse,
 )
-from session_alert_adapter import build_alert_filter_kwargs, call_alert_service
-from session_alerts import (
-    build_session_incident_summary,
-    build_session_timeline,
-    filter_session_alert_events,
-    summarize_session_alert_events,
+from session_alert_adapter import (
+    AlertServiceCallable,
+    build_alert_filter_kwargs,
+    call_alert_service,
 )
+from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alerts import filter_session_alert_events, summarize_session_alert_events
 from session_models import EventSeverity
 
 
 def _call_tool_alert_service(
-    service_fn: object,
+    service_fn: AlertServiceCallable[object],
     *,
     session_id: str,
     detector_id: str | None,
@@ -40,7 +41,7 @@ def _call_tool_alert_service(
     """Call one shared alert service using the standard MCP filter/error mapping.
 
     The tool layer keeps transport-specific failure wording here and leaves the
-    underlying query, grouping, and summary semantics in ``session_alerts.py``.
+    underlying query and grouping semantics in the shared alert service modules.
     """
     return call_alert_service(
         service_fn,
@@ -62,7 +63,7 @@ def _map_tool_not_found(session_id: str) -> Exception:
 
 
 def _map_tool_validation_error(err: ValueError) -> Exception:
-    """Translate one shared-service validation failure into a tool error."""
+    """Translate one shared-service validation failure into a readable tool error."""
     return ValueError(str(err))
 
 

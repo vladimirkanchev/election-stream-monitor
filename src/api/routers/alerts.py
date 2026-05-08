@@ -1,7 +1,8 @@
 """FastAPI adapters for session-scoped alert query endpoints.
 
-Keep alert-file reading, filtering, and summary logic in `session_alerts.py`.
-Keep this module focused on:
+Keep raw alert-file reading, filtering, and numeric summary logic in
+`session_alerts.py`, and keep grouped incident read models in
+`session_alert_incidents.py`. This module stays focused on:
 
 - query parameter binding
 - response schema binding
@@ -12,32 +13,42 @@ shared service seam:
 
 - raw alert-event list and raw numeric summary
 - grouped incident timeline and grouped incident summary
+
+The whole router is currently protected by the shared alert-route boundary
+policy in `api/alert_route_policy.py`. That keeps authentication and rate
+limiting at the HTTP boundary and out of the shared alert service modules.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from api.alert_route_policy import ALERT_ROUTE_RESPONSES, require_http_alert_principal
 from api.errors import SessionNotFoundError, ValidationFailedError
 from api.schemas import (
     ApiAlertSeverity,
-    ApiErrorResponse,
     SessionAlertTimelineResponse,
     SessionAlertQueryResponse,
     SessionIncidentSummaryResponse,
     SessionAlertSummaryResponse,
 )
-from session_alert_adapter import build_alert_filter_kwargs, call_alert_service
-from session_alerts import (
-    build_session_incident_summary,
-    build_session_timeline,
-    filter_session_alert_events,
-    summarize_session_alert_events,
+from session_alert_adapter import (
+    AlertServiceCallable,
+    build_alert_filter_kwargs,
+    call_alert_service,
 )
+from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alerts import filter_session_alert_events, summarize_session_alert_events
 
-router = APIRouter(tags=["alerts"])
+# Router-level protection is intentionally attached here so all alert-query
+# routes share the same auth and rate-limit boundary without repeating it per
+# endpoint.
+router = APIRouter(
+    tags=["alerts"],
+    dependencies=[Depends(require_http_alert_principal)],
+)
 
 
 def _call_http_alert_service(
-    service_fn: object,
+    service_fn: AlertServiceCallable[object],
     *,
     session_id: str,
     detector_id: str | None,
@@ -48,7 +59,11 @@ def _call_http_alert_service(
     """Call one shared alert service using the standard HTTP filter/error mapping.
 
     This keeps the individual route functions easy to scan: bind params, call
-    the shared helper, then validate the structured response model.
+    the shared helper, then validate the structured response model. Unknown
+    sessions and validation failures are mapped consistently across the raw and
+    incident-oriented read models. The router intentionally stays unaware of
+    auth and rate-limit mechanics because those already live in the shared
+    alert-route boundary policy module.
     """
     return call_alert_service(
         service_fn,
@@ -77,11 +92,7 @@ def _map_http_validation_error(err: ValueError) -> Exception:
 @router.get(
     "/sessions/{session_id}/alerts",
     response_model=SessionAlertQueryResponse,
-    responses={
-        400: {"model": ApiErrorResponse, "description": "Validation failed"},
-        404: {"model": ApiErrorResponse, "description": "Session not found"},
-        422: {"model": ApiErrorResponse, "description": "Request validation failed"},
-    },
+    responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alerts(
     session_id: str,
@@ -92,9 +103,9 @@ async def get_session_alerts(
 ) -> SessionAlertQueryResponse:
     """Return persisted alerts for one session after applying optional filters.
 
-    This route is intentionally a thin adapter over `session_alerts.py`. It
-    owns HTTP parameter binding and HTTP-style error mapping, not alert-query
-    semantics themselves.
+    This route is intentionally a thin adapter over the shared raw alert
+    service. It owns HTTP parameter binding and HTTP-style error mapping, not
+    alert-query semantics themselves.
     """
     alerts = _call_http_alert_service(
         filter_session_alert_events,
@@ -115,11 +126,7 @@ async def get_session_alerts(
 @router.get(
     "/sessions/{session_id}/alerts/summary",
     response_model=SessionAlertSummaryResponse,
-    responses={
-        400: {"model": ApiErrorResponse, "description": "Validation failed"},
-        404: {"model": ApiErrorResponse, "description": "Session not found"},
-        422: {"model": ApiErrorResponse, "description": "Request validation failed"},
-    },
+    responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_summary(
     session_id: str,
@@ -148,11 +155,7 @@ async def get_session_alert_summary(
 @router.get(
     "/sessions/{session_id}/alerts/timeline",
     response_model=SessionAlertTimelineResponse,
-    responses={
-        400: {"model": ApiErrorResponse, "description": "Validation failed"},
-        404: {"model": ApiErrorResponse, "description": "Session not found"},
-        422: {"model": ApiErrorResponse, "description": "Request validation failed"},
-    },
+    responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_timeline(
     session_id: str,
@@ -180,11 +183,7 @@ async def get_session_alert_timeline(
 @router.get(
     "/sessions/{session_id}/alerts/incident-summary",
     response_model=SessionIncidentSummaryResponse,
-    responses={
-        400: {"model": ApiErrorResponse, "description": "Validation failed"},
-        404: {"model": ApiErrorResponse, "description": "Session not found"},
-        422: {"model": ApiErrorResponse, "description": "Request validation failed"},
-    },
+    responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_incident_summary(
     session_id: str,

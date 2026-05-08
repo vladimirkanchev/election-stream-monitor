@@ -25,12 +25,16 @@ ApiAlertSeverity = Literal["info", "warning"]
 
 
 class StartSessionRequest(BaseModel):
+    """Request payload for starting one monitoring session."""
+
     mode: ApiInputMode
     input_path: str
     selected_detectors: list[str] = Field(default_factory=list)
 
 
 class CancelSessionResponse(BaseModel):
+    """Structured response for one accepted session-cancel request."""
+
     session_id: str
     mode: str | None = None
     input_path: str | None = None
@@ -39,27 +43,55 @@ class CancelSessionResponse(BaseModel):
 
 
 class ResolvePlaybackRequest(BaseModel):
+    """Request payload for resolving one playback source."""
+
     mode: ApiInputMode
     input_path: str
     current_item: str | None = None
 
 
 class ResolvePlaybackResponse(BaseModel):
+    """Response payload for playback-source resolution."""
+
     source: str | None
 
 
 class HealthResponse(BaseModel):
+    """Minimal health payload used by local runtime readiness checks."""
+
     status: str
 
 
 class ApiErrorResponse(BaseModel):
+    """Generic API error envelope reused across structured route failures."""
+
     detail: str
     error_code: str
     status_reason: str | None = None
     status_detail: str | None = None
 
 
+class ApiAuthenticationErrorResponse(BaseModel):
+    """Stable error payload for rejected API authentication attempts."""
+
+    detail: str
+    error_code: Literal["authentication_failed"]
+    status_reason: Literal["authentication_failed"]
+    status_detail: str | None = None
+
+
+class ApiRateLimitErrorResponse(BaseModel):
+    """Stable error payload for rejected API rate-limit checks."""
+
+    detail: str
+    error_code: Literal["rate_limit_exceeded"]
+    status_reason: Literal["rate_limit_exceeded"]
+    status_detail: str | None = None
+
+
 class DetectorOptionResponse(BaseModel):
+    """Frontend-facing detector catalog entry exposed by the API boundary."""
+
     id: str
     display_name: str
     description: str
@@ -74,6 +106,8 @@ class DetectorOptionResponse(BaseModel):
 
 
 class SessionSummaryResponse(BaseModel):
+    """Compact session metadata summary returned by session endpoints."""
+
     session_id: str
     mode: ApiInputMode
     input_path: str
@@ -82,6 +116,8 @@ class SessionSummaryResponse(BaseModel):
 
 
 class SessionProgressResponse(BaseModel):
+    """Normalized persisted progress snapshot returned by the API boundary."""
+
     session_id: str
     status: ApiSessionStatus
     processed_count: int
@@ -96,6 +132,8 @@ class SessionProgressResponse(BaseModel):
 
 
 class ResultEventResponse(BaseModel):
+    """One normalized detector result row surfaced through the API."""
+
     session_id: str
     detector_id: str
     payload: dict[str, object]
@@ -168,6 +206,8 @@ class SessionIncidentSummaryResponse(BaseModel):
 
 
 class SessionSnapshotResponse(BaseModel):
+    """Combined session snapshot payload returned by session read routes."""
+
     session: SessionSummaryResponse | None = None
     progress: SessionProgressResponse | None = None
     alerts: list[AlertEventResponse] = Field(default_factory=list)

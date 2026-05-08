@@ -1,7 +1,7 @@
 """Shared adapter helpers for alert-query transport layers.
 
-The FastAPI and MCP surfaces intentionally stay as thin wrappers over
-``session_alerts.py``. They still share two small pieces of mechanics:
+The FastAPI and MCP surfaces intentionally stay as thin wrappers over the
+shared alert service modules. They still share two small pieces of mechanics:
 
 - collecting the optional filter arguments into one stable kwargs shape
 - translating shared-service domain failures into transport-specific errors
@@ -13,13 +13,17 @@ MCP adapters behind a larger abstraction.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TypeVar, TypedDict
+from typing import Protocol, TypeVar, TypedDict
 
 from session_alerts import SessionAlertsNotFoundError
 
 
 class AlertFilterKwargs(TypedDict):
-    """Shared optional filter kwargs accepted by the alert-query service."""
+    """Shared optional filter kwargs accepted by the alert-query service.
+
+    Keeping this shape explicit helps the FastAPI and MCP adapters forward the
+    same stable filter bundle into both the raw and incident alert services.
+    """
 
     detector_id: str | None
     severity: str | None
@@ -30,6 +34,26 @@ class AlertFilterKwargs(TypedDict):
 ServiceReturn = TypeVar("ServiceReturn")
 
 
+class AlertServiceCallable(Protocol[ServiceReturn]):
+    """Callable shape shared by the raw and incident alert service seams.
+
+    The service modules stay plain functions, but the adapters still benefit
+    from one explicit callable contract so the transport-facing helpers remain
+    readable.
+    """
+
+    def __call__(
+        self,
+        session_id: str,
+        *,
+        detector_id: str | None = None,
+        severity: str | None = None,
+        start_time_utc: str | None = None,
+        end_time_utc: str | None = None,
+    ) -> ServiceReturn:
+        ...
+
+
 def build_alert_filter_kwargs(
     *,
     detector_id: str | None,
@@ -37,7 +61,11 @@ def build_alert_filter_kwargs(
     start_time_utc: str | None,
     end_time_utc: str | None,
 ) -> AlertFilterKwargs:
-    """Return one stable kwargs payload for the shared alert-query service."""
+    """Return one stable kwargs payload for the shared alert-query service.
+
+    The transport adapters use this helper so route/tool functions do not keep
+    rebuilding the same small dictionary inline.
+    """
     return {
         "detector_id": detector_id,
         "severity": severity,
@@ -47,7 +75,7 @@ def build_alert_filter_kwargs(
 
 
 def call_alert_service(
-    service_fn: Callable[..., ServiceReturn],
+    service_fn: AlertServiceCallable[ServiceReturn],
     *,
     session_id: str,
     filter_kwargs: AlertFilterKwargs,
