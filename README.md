@@ -6,10 +6,8 @@ Election Stream Monitor is a local-first AI video monitoring system for
 election-related media sources.
 
 It watches polling-station streams, archived recordings, or segmented video
-feeds and surfaces the quality problems that matter during monitoring.
-
-This repo is a desktop-first prototype with an owned FastAPI-backed desktop
-runtime, not a finished platform.
+feeds and surfaces the quality problems that matter during monitoring through
+a desktop-first Electron + FastAPI runtime.
 
 Status:
 
@@ -26,9 +24,9 @@ Works today:
 - built-in `Black Screen` and `Blur Check` monitoring
 - Electron desktop UI with a local FastAPI-backed backend
 
-The project is still intentionally small. The goal is to keep it readable,
-easy to extend, and useful for real monitoring work without adding platform
-weight too early.
+The project is intentionally small. The goal is to keep it readable, easy to
+extend, and useful for real monitoring work without adding platform weight too
+early.
 
 ## Why this project exists
 
@@ -57,8 +55,8 @@ Start here:
 
 ## Desktop Runtime Summary
 
-The Electron app uses the local FastAPI backend as the normal runtime
-path. The app window, session controls, detector loading, and playback-source
+The Electron app uses the local FastAPI backend as the normal runtime path.
+The app window, session controls, detector loading, and playback-source
 resolution all go through that desktop flow.
 
 Electron still handles the desktop-only jobs: app startup, local media
@@ -66,15 +64,43 @@ serving, the HLS proxy path, and the UI bridge. Session state stays local and
 is polled by the UI while a run is active. Packaging and broader platform
 support remain separate concerns.
 
-The repo also now includes a small local MCP surface for read-only alert
-querying. It is intentionally narrow and currently exposes:
+The repo also includes a small local MCP surface for read-only alert querying.
+It currently exposes:
 
 - raw persisted session alert queries
 - grouped alert timelines
 - grouped incident summaries
 
-through stdio-oriented MCP tools rather than through a separate hosted
+through `stdio`-oriented MCP tools rather than through a separate hosted
 service layer.
+
+## Current Readiness
+
+The current FastAPI security and limiter work is intentionally scoped for the
+repo's local-first stage.
+
+Today it is appropriate for:
+
+- local development
+- demos
+- single-process desktop-backed backend runs
+
+Today it is not yet the right thing to describe as:
+
+- multi-worker distributed rate limiting
+- shared-store production throttling
+- remote MCP authentication or limiter coverage
+- a general production-distributed security model
+
+The current MCP alert-query surface remains `stdio` and local-trust. The
+current `X-API-Key` and HTTP `429` protections apply to the FastAPI alerts
+router only. The focused backend tests mirror that split:
+
+- FastAPI auth policy
+- FastAPI rate-limit policy
+- FastAPI `429`/OpenAPI response contracts
+- raw MCP alert-tool behavior
+- explicit FastAPI-versus-stdio MCP boundary coverage
 
 ## Current Capabilities
 
@@ -119,16 +145,15 @@ center/right, and session state and alerts below.
 ### Session Model
 
 This layer writes the session files, updates progress, stores alerts and
-results, and gives the UI something stable to poll.
-
-Right now it works in a simple local-first way:
+results, and gives the UI something stable to poll. Right now it works in a
+simple local-first way:
 
 - a session is created when monitoring starts
 - progress, alerts, and results are written to local JSON / JSONL files
 - the frontend polls those snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
-The current feature set is narrow, but it is easy to extend.
+The current feature set is narrow, but easy to extend.
 
 ## Input Modes
 
@@ -147,8 +172,8 @@ The project currently supports these input modes:
 ## Architecture At A Glance
 
 This is still one local-first project, not a distributed platform, but the
-internal boundaries are deliberate. The goal is to keep the flow simple to use
-while keeping the code structured enough to extend.
+internal boundaries are deliberate. The goal is to keep the flow simple while
+keeping the code structured enough to extend.
 
 In practice, the flow looks like this:
 
@@ -169,7 +194,7 @@ In practice, the flow looks like this:
    Electron and the local FastAPI backend so you can see progress, status, and
    alerts in near real time.
 
-If you want the visual version, the diagram below shows the same runtime flow.
+The diagram below shows the same runtime flow visually.
 
 ![Architecture outlook](./docs/assets/diagram_final.png)
 

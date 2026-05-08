@@ -132,16 +132,28 @@ It currently covers:
 Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_server_incidents.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
 ```
 
-This slice covers the shared read-only alert query service, the FastAPI alert
-boundary, and the MCP tool adapter over the same service seam.
-If you change only one of those layers, this command is still the best quick
-confidence check because it proves the ownership split still lines up.
+This slice covers the shared read-only alert query service, the FastAPI alerts
+boundary, and the MCP adapter over the same service seam. If you change only
+one of those layers, this is still the best quick confidence check because it
+proves the ownership split still lines up.
+
+It exercises the current alerts-router protection contract end to end:
+
+- protected scope
+- structured `401` and `429` responses
+- local in-memory/per-process limiter behavior
+- coarse `Retry-After` behavior on `429`
+
+Treat that as strong confidence for the current local/demo readiness level,
+not as proof of a distributed shared-store deployment model.
 
 The current functionality under that slice is:
 
+- FastAPI API-key authentication seam for the alerts router
+- FastAPI in-memory principal-aware rate-limiting seam for the alerts router
 - raw session alert list queries
 - raw numeric alert summaries
 - grouped incident timelines
@@ -153,11 +165,26 @@ The current test split is:
 - `tests/session_alert_test_support.py`
   - shared file-backed session/alert setup helpers for this slice
 - `tests/api_alert_test_support.py`
-  - shared API error-payload helpers for the alert-route adapter tests
+  - shared FastAPI alert-route payload builders plus boundary setup helpers for
+    auth, limiter, and simple successful route responses
 - `tests/mcp_alert_test_support.py`
   - shared in-memory MCP session helpers for the alert-tool tests
 - `tests/test_alert_query_service.py`
   - service-level raw alert read, filter, and summary semantics
+- `tests/test_api_auth.py`
+  - auth-boundary unit coverage for enabled/disabled auth, missing keys,
+    invalid keys, blank headers, and unsupported modes
+- `tests/test_api_rate_limit.py`
+  - limiter unit coverage for fixed-window counting, principal separation,
+    window reset, and IP-strategy subject building
+- `tests/test_api_boundary_settings.py`
+  - startup/config validation coverage for FastAPI auth and rate-limit seams
+- `tests/test_api_alert_route_auth_policy.py`
+  - shared FastAPI alerts-router authentication policy and `401` behavior
+- `tests/test_api_alert_route_rate_limit_policy.py`
+  - shared FastAPI alerts-router limiter behavior, logging, and budget-sharing policy
+- `tests/test_api_alert_route_contracts.py`
+  - shared FastAPI alerts-router `429` response shaping and OpenAPI contract coverage
 - `tests/test_alert_timeline_service.py`
   - service-level timeline grouping, ordering, filter reuse, and empty-state semantics
 - `tests/test_alert_incident_summary_service.py`
@@ -170,18 +197,38 @@ The current test split is:
   - MCP tool registration, schema basics, and stdio launch wiring
 - `tests/test_mcp_server_alerts.py`
   - MCP raw alert-query tool behavior through the real in-memory MCP session
+- `tests/test_mcp_fastapi_boundary_split.py`
+  - explicit FastAPI-versus-stdio MCP boundary-split and cross-surface smoke coverage
 - `tests/test_mcp_server_incidents.py`
   - MCP grouped timeline and incident-summary tool behavior
 
 Keep new tests near those ownership boundaries instead of adding a larger
-"catch-all" alert-query suite.
+catch-all alert-query suite.
 
 The split is deliberate:
 
 - service files prove the durable file-backed semantics once
+- auth unit files prove API-key validation and auth-mode behavior before the
+  HTTP adapter layer is involved
+- rate-limit unit files prove fixed-window counting semantics before the HTTP
+  adapter layer is involved
+- `tests/api_alert_test_support.py` keeps the route-policy files small by
+  owning the repeated alert-route setup seams rather than leaving each policy
+  file to build its own tiny test framework
+- the alerts-router HTTP protection composition lives in
+  `src/api/alert_route_policy.py`, so route tests patch the boundary seam there
+  rather than duplicating auth/rate-limit behavior inside route functions
+- route-policy files prove router-scoped auth and limiter behavior once across
+  the protected alerts surface, but are now split so authentication policy,
+  limiter policy, and client-visible response contracts each have one obvious home
+- route-policy files also lock down the current limiter identity rule:
+  principal-by-default, optional IP strategy, and local fallback when auth is
+  disabled
 - FastAPI files prove HTTP parameter binding and error mapping
 - MCP files prove tool registration, launch wiring, and behavior through the
   real in-memory MCP transport seam
+- the FastAPI-versus-MCP boundary-split file keeps the current local-trust
+  stdio story explicit without cluttering the raw MCP tool behavior files
 
 When you add new coverage for this slice, prefer extending the narrow owning
 file over creating another mixed alert-and-incident test module.
@@ -258,7 +305,7 @@ If you are validating the MCP slice specifically, include the new shared
 service and MCP adapter in the import smoke check:
 
 ```bash
-PYTHONPATH=src .venv/bin/python -c "import api.app, session_alerts, esm_mcp.server"
+PYTHONPATH=src .venv/bin/python -c "import api.app, session_alerts, session_alert_incidents, esm_mcp.server"
 ```
 
 For a slightly stronger launch-path smoke check, verify the installed console

@@ -30,13 +30,19 @@ Use this shortcut map before editing code:
   - [fastapi-boundary.md](./fastapi-boundary.md)
   - [architecture-decision-fastapi.md](./architecture-decision-fastapi.md)
   - [contracts.md](./contracts.md)
+  - read `fastapi-boundary.md` first if the change touches auth, rate
+    limiting, or current readiness expectations for the alerts router
 - changing MCP alert-query tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
   - [testing-and-validation.md](./testing-and-validation.md)
   - [fastapi-boundary.md](./fastapi-boundary.md)
+  - `src/api_auth.py`
+  - `src/api_rate_limit.py`
+  - `src/api/alert_route_policy.py`
   - `src/esm_mcp/`
   - `src/session_alerts.py`
+  - `src/session_alert_incidents.py`
 - adding a detector:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
 - adding an alert rule:
@@ -104,7 +110,11 @@ module families and the matching tests:
   - `frontend/src/bridge/contract.errors.test.ts`
   - `frontend/src/bridge/contract.session-snapshot.test.ts`
 - MCP alert-query surface:
+  - `src/api_auth.py`
+  - `src/api_rate_limit.py`
+  - `src/api/alert_route_policy.py`
   - `src/session_alerts.py`
+  - `src/session_alert_incidents.py`
   - `src/session_alert_adapter.py`
   - `src/api/schemas.py`
   - `src/api/routers/alerts.py`
@@ -113,6 +123,11 @@ module families and the matching tests:
   - `tests/session_alert_test_support.py`
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
+  - `tests/test_api_auth.py`
+  - `tests/test_api_rate_limit.py`
+  - `tests/test_api_alert_route_auth_policy.py`
+  - `tests/test_api_alert_route_rate_limit_policy.py`
+  - `tests/test_api_alert_route_contracts.py`
   - `tests/test_alert_query_service.py`
   - `tests/test_alert_timeline_service.py`
   - `tests/test_alert_incident_summary_service.py`
@@ -120,9 +135,15 @@ module families and the matching tests:
   - `tests/test_api_session_alert_incidents.py`
   - `tests/test_mcp_server_contracts.py`
   - `tests/test_mcp_server_alerts.py`
+  - `tests/test_mcp_fastapi_boundary_split.py`
   - `tests/test_mcp_server_incidents.py`
-  - read them in that order if you want the cleanest path from shared service,
+  - read them in that order if you want the cleanest path from shared raw alert
+    service and grouped incident service,
     to HTTP adapter, to MCP adapter, to the split test ownership
+  - `tests/api_alert_test_support.py` owns the repeated FastAPI alerts-router
+    setup seams
+  - `tests/test_mcp_fastapi_boundary_split.py` owns the current
+    “FastAPI protected, stdio MCP local-trust” boundary rule
 
 ## Current Stable Contracts
 
