@@ -18,7 +18,7 @@ import hashlib
 import hmac
 from typing import Literal
 
-from config import ApiAuthSettings, get_api_auth_settings
+from api_boundary_config import ApiAuthSettings, get_api_auth_settings
 
 API_KEY_HEADER_NAME = "X-API-Key"
 API_KEY_FINGERPRINT_LENGTH = 12

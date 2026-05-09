@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 
 from api.errors import ApiDomainError
 from api.routers import alerts, detectors, health, playback, sessions
-from config import validate_fastapi_boundary_settings
+from api_boundary_config import validate_fastapi_boundary_settings
 
 
 @asynccontextmanager

@@ -20,7 +20,7 @@ from time import monotonic
 from typing import Protocol
 
 from api_auth import AuthPrincipal
-from config import (
+from api_boundary_config import (
     ApiRateLimitSettings,
     ApiRateLimitStrategy,
     get_api_rate_limit_settings,
