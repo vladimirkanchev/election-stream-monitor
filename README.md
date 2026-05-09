@@ -102,6 +102,59 @@ router only. The focused backend tests mirror that split:
 - raw MCP alert-tool behavior
 - explicit FastAPI-versus-stdio MCP boundary coverage
 
+## FastAPI Access Modes
+
+The FastAPI backend now supports two explicit access modes:
+
+### Local mode
+
+Use `local` mode for normal local development and trusted single-machine runs.
+
+Behavior:
+
+- authentication disabled by default
+- rate limiting disabled by default
+
+Run it from the repository root:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m api_server_cli local
+```
+
+### Share mode
+
+Use `share` mode for temporary demo/shared access when you want lightweight
+HTTP protection on the alerts router.
+
+Behavior:
+
+- API-key authentication enabled by default
+- rate limiting enabled by default
+- if you do not supply `--api-key`, the CLI generates one at startup and
+  prints it once with `X-API-Key` usage guidance
+
+Run it from the repository root:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m api_server_cli share
+```
+
+Optional manual key:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m api_server_cli share --api-key my-demo-key
+```
+
+Notes:
+
+- `share` mode is for temporary demo/shared access only
+- it is not a production-distributed serving model
+- the current MCP server remains `stdio` local-trust and is not covered by
+  FastAPI auth or FastAPI rate limiting
+
 ## Current Capabilities
 
 ### Backend
@@ -278,8 +331,10 @@ Current backend import/run expectations:
   import surface available through an editable install
 - use `PYTHONPATH=src` for backend-only import/debug work from a raw checkout
   when you are intentionally not relying on an editable install
-- use `uvicorn api.app:app --app-dir src --reload` for backend HTTP startup
-  from the current flat `src/` layout
+- use `PYTHONPATH=src python -m api_server_cli local` for the default local
+  FastAPI startup path from a raw checkout
+- use `PYTHONPATH=src python -m api_server_cli share` for the temporary
+  protected share-mode FastAPI path
 
 Quick check:
 
@@ -359,12 +414,23 @@ FastAPI directly instead:
 
 ```bash
 . .venv/bin/activate
-uvicorn api.app:app --app-dir src --reload
+PYTHONPATH=src python -m api_server_cli local
 ```
 
 That backend-only path is mainly for API-focused development, contract
 inspection, and troubleshooting. It is not the primary desktop-app startup
 experience.
+
+For temporary protected sharing during a demo, run:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m api_server_cli share
+```
+
+Share mode enables API-key auth and rate limiting automatically. If you do not
+pass a manual key yet, it generates one for the current process and prints it
+once at startup together with `X-API-Key` usage guidance.
 
 If you are debugging backend imports directly from a raw checkout rather than
 through an editable install, use `PYTHONPATH=src` so the current flat `src/`
