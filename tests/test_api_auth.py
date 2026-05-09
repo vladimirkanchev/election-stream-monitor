@@ -55,6 +55,24 @@ def test_authenticate_api_request_returns_fingerprinted_principal_for_valid_key(
     assert principal.key_id == fingerprint
 
 
+def test_authenticate_api_request_accepts_generated_share_mode_key() -> None:
+    """Generated share-mode keys should behave like ordinary configured API keys."""
+    fingerprint = hashlib.sha256("esm_share_demo-secret".encode("utf-8")).hexdigest()[:12]
+    principal = authenticate_api_request(
+        x_api_key="esm_share_demo-secret",
+        settings=ApiAuthSettings(
+            enabled=True,
+            mode="api_key",
+            allowed_api_keys=("esm_share_demo-secret",),
+            generated_api_key="esm_share_demo-secret",
+        ),
+    )
+
+    assert principal.auth_type == "api_key"
+    assert principal.subject == f"api-key:{fingerprint}"
+    assert principal.key_id == fingerprint
+
+
 def test_authenticate_api_request_rejects_missing_api_key() -> None:
     """Enabled API-key mode should reject a missing credential."""
     with pytest.raises(AuthenticationError, match="Missing API key"):
