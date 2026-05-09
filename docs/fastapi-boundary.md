@@ -47,6 +47,18 @@ The FastAPI app also validates the current auth and rate-limit settings during
 startup so invalid enabled boundary config fails before the first protected
 request.
 
+Current FastAPI access-mode policy:
+
+- `local` is the default run mode
+- `local` keeps FastAPI auth and rate limiting disabled by default
+- `share` is the protected-sharing preset
+- `share` turns FastAPI auth and rate limiting on by default before any
+  lower-level overrides apply
+- when no manual share-mode API key is configured, the CLI can auto-generate
+  one strong process-local key at startup
+- the lower-level auth and limiter settings still exist, but run mode is now
+  the main top-level UX seam for choosing the default FastAPI security posture
+
 Current alerts-router protection scope:
 
 - `GET /sessions/{session_id}/alerts`
@@ -88,9 +100,10 @@ Current readiness summary:
 
 Current MCP boundary difference:
 
-- this FastAPI auth/rate-limit boundary applies only to the HTTP alerts router
-- the current MCP server still runs over `stdio` and remains a local-trust
-  transport
+- this FastAPI auth/rate-limit boundary applies only in FastAPI `share` mode
+  to the HTTP alerts router
+- the current MCP server still runs over `stdio` and remains a separate
+  local-trust transport
 - that means today's `X-API-Key` checks and HTTP `429` limiter contract do not
   automatically secure MCP
 - if MCP later becomes remote, reuse the principal identity model, the general
@@ -188,12 +201,21 @@ From the repository root:
 
 ```bash
 . .venv/bin/activate
-uvicorn api.app:app --app-dir src --reload
+PYTHONPATH=src python -m api_server_cli local
 ```
 
-The explicit `--app-dir src` is intentional here because the backend still uses
-the current flat `src/` module layout. For raw-checkout backend import/debug
-work outside an editable install, use `PYTHONPATH=src`.
+For temporary protected demo/shared access:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m api_server_cli share
+```
+
+If you omit `--api-key` in `share` mode, the CLI generates one API key and
+prints it once together with `X-API-Key` usage guidance.
+
+The backend still uses the current flat `src/` module layout, so
+`PYTHONPATH=src` remains the intended raw-checkout startup path for this CLI.
 
 The Electron desktop runtime can also start the local FastAPI process as part
 of its owned startup/readiness flow. Running `uvicorn` manually is mainly

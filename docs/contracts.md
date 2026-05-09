@@ -149,9 +149,9 @@ Implementation note:
 - the FastAPI auth seam lives in [`src/api_auth.py`](../src/api_auth.py)
 - the alerts-router HTTP protection composition lives in
   [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
-- auth settings are centralized in [`src/config.py`](../src/config.py) under a
-  small auth-neutral settings object rather than being parsed inline in route
-  code
+- auth settings are centralized in
+  [`src/api_boundary_config.py`](../src/api_boundary_config.py) under a small
+  auth-neutral settings object rather than being parsed inline in route code
 - the FastAPI app now validates the current auth and rate-limit settings
   during startup so invalid enabled configuration fails before the first
   protected request
@@ -173,6 +173,11 @@ Purpose:
 Current scope:
 
 - this contract applies to the FastAPI HTTP API only
+- FastAPI run mode now selects the default protected-boundary posture:
+  - `local` defaults auth and rate limiting off
+  - `share` defaults auth and rate limiting on
+- `share` mode can auto-generate one process-local API key at startup when no
+  manual key is configured
 - the current stdio MCP server remains outside this rate-limiting contract
 - the current protected FastAPI scope matches the alerts router:
   - `GET /sessions/{session_id}/alerts`
@@ -198,7 +203,8 @@ Current limit model:
 
 - one fixed-window limit model
 - one maximum request count in one configured time window
-- current settings live in [`src/config.py`](../src/config.py):
+- current settings live in
+  [`src/api_boundary_config.py`](../src/api_boundary_config.py):
   - `enabled`
   - `strategy`
   - `window_seconds`
@@ -254,8 +260,10 @@ Implementation note:
 - the current limiter mechanics live in [`src/api_rate_limit.py`](../src/api_rate_limit.py)
 - the alerts-router HTTP protection composition lives in
   [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
-- structured rate-limit settings live in
-  [`src/config.py`](../src/config.py) and a stable `429` error vocabulary in
+- structured run-mode, auth, and rate-limit settings live in
+  [`src/api_boundary_config.py`](../src/api_boundary_config.py)
+- compatibility re-exports still exist in [`src/config.py`](../src/config.py)
+- the stable `429` error vocabulary lives in
   [`src/api/errors.py`](../src/api/errors.py) and
   [`src/api/schemas.py`](../src/api/schemas.py)
 - the current alerts router enforces the limiter through a router dependency

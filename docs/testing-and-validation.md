@@ -132,7 +132,7 @@ It currently covers:
 Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -142,6 +142,9 @@ proves the ownership split still lines up.
 
 It exercises the current alerts-router protection contract end to end:
 
+- `local` mode defaults keep auth and rate limiting off
+- `share` mode defaults turn auth and rate limiting on
+- share mode can auto-generate one startup API key when none is configured
 - protected scope
 - structured `401` and `429` responses
 - local in-memory/per-process limiter behavior
@@ -177,8 +180,20 @@ The current test split is:
 - `tests/test_api_rate_limit.py`
   - limiter unit coverage for fixed-window counting, principal separation,
     window reset, and IP-strategy subject building
-- `tests/test_api_boundary_settings.py`
-  - startup/config validation coverage for FastAPI auth and rate-limit seams
+- `tests/test_api_boundary_settings_env.py`
+  - env parsing, run-mode defaults, and share-mode API-key generation coverage
+- `tests/test_api_boundary_settings_validation.py`
+  - direct validator coverage plus FastAPI startup validation integration
+- `tests/test_api_boundary_error_contracts.py`
+  - non-429 FastAPI boundary error-header regression coverage
+- `tests/test_api_server_cli_runtime.py`
+  - explicit `local`/`share` CLI runtime preparation, overrides, generated-key
+    flow, and fail-fast behavior
+- `tests/test_api_server_cli_routes.py`
+  - real alerts-router behavior under CLI-prepared `local` and `share` mode,
+    including open local access, `401`, and `429`
+- `tests/test_api_server_cli_output.py`
+  - startup summary output, generated-key guidance, and manual-key non-leakage
 - `tests/test_api_alert_route_auth_policy.py`
   - shared FastAPI alerts-router authentication policy and `401` behavior
 - `tests/test_api_alert_route_rate_limit_policy.py`
@@ -199,6 +214,8 @@ The current test split is:
   - MCP raw alert-query tool behavior through the real in-memory MCP session
 - `tests/test_mcp_fastapi_boundary_split.py`
   - explicit FastAPI-versus-stdio MCP boundary-split and cross-surface smoke coverage
+  - includes the regression that FastAPI `share` CLI runtime preparation must
+    not pull stdio MCP into the HTTP auth/rate-limit boundary
 - `tests/test_mcp_server_incidents.py`
   - MCP grouped timeline and incident-summary tool behavior
 
