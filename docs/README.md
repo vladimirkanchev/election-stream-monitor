@@ -35,6 +35,7 @@ Use this shortcut map before editing code:
 - changing MCP alert-query tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
+  - [mcp-server.md](./mcp-server.md)
   - [testing-and-validation.md](./testing-and-validation.md)
   - [fastapi-boundary.md](./fastapi-boundary.md)
   - `src/api_auth.py`
@@ -198,6 +199,9 @@ Use each doc for one main question:
 - [fastapi-boundary.md](./fastapi-boundary.md)
   - what a future FastAPI layer should own
   - what should stay local/runtime-specific
+- [mcp-server.md](./mcp-server.md)
+  - local MCP startup and connection details
+  - current read-only/query-only MCP scope
 - [testing-and-validation.md](./testing-and-validation.md)
   - routine verification commands
   - CI scope

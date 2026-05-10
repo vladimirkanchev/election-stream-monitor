@@ -123,6 +123,9 @@ Optional manual key:
 PYTHONPATH=src python -m api_server_cli share --api-key my-demo-key
 ```
 
+You can also generate your own stronger key first; see
+[Running The Project](./README.md#running-the-project).
+
 `share` mode is for temporary demo/shared access only. MCP remains local
 `stdio` and stays outside FastAPI auth and rate limiting.
 
@@ -288,18 +291,20 @@ The repo includes a small set of repo-local Codex skills under
 - `test-coverage-gaps`
 - `root-cause-suggestion`
 
+Use these skills when you want quick repo-aware help with summaries, incident
+timelines, root-cause suggestions, or test-coverage gaps.
+
 These are lightweight text helpers, not a separate plugin framework.
 
 ## Running The Project
 
-From the repository root, start the app with:
+Normal desktop app:
 
 ```bash
 npm run dev
 ```
 
-This starts the Vite frontend, the Electron shell, and the local FastAPI
-backend.
+This starts the Vite frontend, Electron, and the local FastAPI backend.
 
 Backend only:
 
@@ -307,6 +312,15 @@ Backend only:
 . .venv/bin/activate
 PYTHONPATH=src python -m api_server_cli local
 ```
+
+If you want the browser-only frontend in this split setup, run:
+
+```bash
+npm --prefix frontend run dev:web
+```
+
+Use that browser path for UI work and frontend debugging. It does not replace
+the normal Electron desktop flow.
 
 Temporary shared demo access:
 
@@ -316,8 +330,36 @@ PYTHONPATH=src python -m api_server_cli share
 ```
 
 `share` mode turns on API-key auth and rate limiting. If you do not pass a
-manual key, the CLI generates one and prints it once. See
+manual key, the CLI generates one and prints it once. Send that key in the
+`X-API-Key` header when calling the protected alerts routes. See
 [FastAPI Access Modes](./README.md#fastapi-access-modes).
+
+If you want Electron to use a separately started `share` backend:
+
+```bash
+ELECTION_API_BASE_URL=http://127.0.0.1:8002 npm run dev
+```
+
+If you want to generate your own stronger key first:
+
+```bash
+python -c "import secrets; print('esm_demo_' + secrets.token_urlsafe(24))"
+```
+
+Then pass that value with `--api-key`.
+
+Local MCP server:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m esm_mcp
+```
+
+This runs over local `stdio`, so use an MCP client instead of a browser or
+HTTP port. See [docs/mcp-server.md](./docs/mcp-server.md).
+
+This runs the MCP server over local `stdio`, so connect to it with an MCP
+client rather than a browser or HTTP port. See [docs/mcp-server.md](./docs/mcp-server.md).
 
 Quick first run:
 
