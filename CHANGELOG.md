@@ -9,7 +9,18 @@ stage.
 
 - ongoing transport, session, and operational hardening
 - continued frontend/operator UX refinement
-- preparation for clearer FastAPI-backed local deployment
+
+## [0.3.0] - 2026-05-09
+
+FastAPI boundary and MCP feature update.
+
+Highlights:
+
+- local MCP server with read-only alert-query tools
+- grouped alert timeline and incident-summary query tools
+- explicit FastAPI `local` and `share` access modes
+- API-key auth and rate limiting for temporary shared demo access
+- split and expanded boundary-focused test coverage
 
 ## [0.1.0] - 2026-04-06
 
