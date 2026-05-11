@@ -1,8 +1,15 @@
-"""Active configuration for the local stream analysis PoC."""
+"""Active configuration for the local stream analysis PoC.
+
+This module keeps the repo's broad project constants in one place. The newer
+FastAPI boundary settings live in `api_boundary_config.py`, but are re-exported
+here so existing imports do not need to churn all at once.
+"""
 
 from pathlib import Path
 import tempfile
 from typing import Literal
+
+import api_boundary_config as _api_boundary_config
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VIDEO_METRICS_PATH = PROJECT_ROOT / "./data/metrics/video_metrics.csv"
@@ -99,3 +106,29 @@ FFMPEG_TIMEOUT_SEC = 20.0
 FFPROBE_TIMEOUT_SEC = 10.0
 LOCAL_MEDIA_MAX_BYTES = 1_000_000_000
 LOCAL_VIDEO_MAX_DURATION_SEC = 21600.0
+
+ApiAuthMode = _api_boundary_config.ApiAuthMode
+SUPPORTED_API_AUTH_MODES = _api_boundary_config.SUPPORTED_API_AUTH_MODES
+FastApiRunMode = _api_boundary_config.FastApiRunMode
+SUPPORTED_FASTAPI_RUN_MODES = _api_boundary_config.SUPPORTED_FASTAPI_RUN_MODES
+FASTAPI_RUN_MODE = _api_boundary_config.FASTAPI_RUN_MODE
+API_AUTH_ENABLED = _api_boundary_config.API_AUTH_ENABLED
+API_AUTH_MODE = _api_boundary_config.API_AUTH_MODE
+API_AUTH_ALLOWED_KEYS = _api_boundary_config.API_AUTH_ALLOWED_KEYS
+ApiRateLimitStrategy = _api_boundary_config.ApiRateLimitStrategy
+SUPPORTED_API_RATE_LIMIT_STRATEGIES = _api_boundary_config.SUPPORTED_API_RATE_LIMIT_STRATEGIES
+API_RATE_LIMIT_ENABLED = _api_boundary_config.API_RATE_LIMIT_ENABLED
+API_RATE_LIMIT_STRATEGY = _api_boundary_config.API_RATE_LIMIT_STRATEGY
+API_RATE_LIMIT_WINDOW_SEC = _api_boundary_config.API_RATE_LIMIT_WINDOW_SEC
+API_RATE_LIMIT_MAX_REQUESTS = _api_boundary_config.API_RATE_LIMIT_MAX_REQUESTS
+ApiBoundaryConfigurationError = _api_boundary_config.ApiBoundaryConfigurationError
+FastApiRunModeSettings = _api_boundary_config.FastApiRunModeSettings
+ApiAuthSettings = _api_boundary_config.ApiAuthSettings
+ApiRateLimitSettings = _api_boundary_config.ApiRateLimitSettings
+get_fastapi_run_mode_settings = _api_boundary_config.get_fastapi_run_mode_settings
+clear_fastapi_boundary_settings_caches = _api_boundary_config.clear_fastapi_boundary_settings_caches
+get_api_auth_settings = _api_boundary_config.get_api_auth_settings
+get_api_rate_limit_settings = _api_boundary_config.get_api_rate_limit_settings
+validate_api_auth_settings = _api_boundary_config.validate_api_auth_settings
+validate_api_rate_limit_settings = _api_boundary_config.validate_api_rate_limit_settings
+validate_fastapi_boundary_settings = _api_boundary_config.validate_fastapi_boundary_settings

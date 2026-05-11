@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  push:
+    branches-ignore:
+      - main
   pull_request:
 
 concurrency:
@@ -321,49 +324,6 @@ jobs:
         if: needs.changes.outputs.frontend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
         run: echo "No frontend or contract changes detected; skipping frontend lint."
 
-  contract-checks:
-    runs-on: ubuntu-24.04
-    if: github.event_name == 'pull_request' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || github.base_ref == 'main')
-    needs:
-      - changes
-      - frontend-checkpoint
-      - backend-tests
-      - frontend-typecheck
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[test]
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run backend contract checks
-        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_api_boundary_contracts.py tests/test_api_boundary_sessions.py tests/test_session_service.py tests/test_session_cli_tooling.py
-
-      - name: Run frontend contract checks
-        working-directory: frontend
-        run: npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.test.ts src/bridge/transport.test.ts src/uiErrors.test.ts
-
   backend-typecheck:
     runs-on: ubuntu-24.04
     needs:
@@ -388,7 +348,7 @@ jobs:
 
       - name: Run backend typecheck
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+        run: MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 
       - name: Skip backend typecheck
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -421,7 +381,7 @@ jobs:
 
       - name: Run backend pyright
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: .venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+        run: .venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 
       - name: Skip backend pyright
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -529,7 +489,7 @@ jobs:
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e .[test]
 
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -537,160 +497,11 @@ jobs:
         run: npm ci
 
       - name: Run backend contract checks
-        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_api_boundary_contracts.py tests/test_api_boundary_sessions.py tests/test_session_service.py tests/test_session_cli_tooling.py
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_api_boundary_contracts.py tests/test_api_boundary_sessions.py tests/test_api_alert_route_contracts.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_mcp_server_contracts.py tests/test_mcp_fastapi_boundary_split.py tests/test_session_service.py tests/test_session_cli_tooling.py
 
       - name: Run frontend contract checks
         working-directory: frontend
         run: npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.test.ts src/bridge/transport.test.ts src/uiErrors.test.ts
-
-  backend-typecheck:
-    runs-on: ubuntu-24.04
-    needs:
-      - changes
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install Python typecheck dependencies
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[typecheck]
-
-      - name: Run backend typecheck
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
-
-      - name: Skip backend typecheck
-        if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: echo "No backend or contract changes detected; skipping backend typecheck."
-
-  backend-pyright:
-    runs-on: ubuntu-24.04
-    continue-on-error: true
-    needs:
-      - changes
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install Python typecheck dependencies
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: |
-          python -m pip install --upgrade pip
-          python -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/pip install -e .[typecheck]
-
-      - name: Run backend pyright
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: .venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
-
-      - name: Skip backend pyright
-        if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: echo "No backend or contract changes detected; skipping backend pyright."
-
-  feature-gate:
-    runs-on: ubuntu-24.04
-    if: always()
-    needs:
-      - frontend-checkpoint
-      - backend-tests
-      - frontend-typecheck
-      - backend-typecheck
-      - backend-ruff
-
-    steps:
-      - name: Verify required feature checks
-        env:
-          FRONTEND_CHECKPOINT_RESULT: ${{ needs.frontend-checkpoint.result }}
-          BACKEND_TESTS_RESULT: ${{ needs.backend-tests.result }}
-          FRONTEND_TYPECHECK_RESULT: ${{ needs.frontend-typecheck.result }}
-          BACKEND_TYPECHECK_RESULT: ${{ needs.backend-typecheck.result }}
-          BACKEND_RUFF_RESULT: ${{ needs.backend-ruff.result }}
-        run: |
-          set -eu
-          for check in \
-            "frontend-checkpoint:${FRONTEND_CHECKPOINT_RESULT}" \
-            "backend-tests:${BACKEND_TESTS_RESULT}" \
-            "frontend-typecheck:${FRONTEND_TYPECHECK_RESULT}" \
-            "backend-typecheck:${BACKEND_TYPECHECK_RESULT}" \
-            "backend-ruff:${BACKEND_RUFF_RESULT}"
-          do
-            name=${check%%:*}
-            result=${check#*:}
-            if [ "$result" != "success" ]; then
-              echo "::error::Required feature check '$name' finished as '$result'"
-              exit 1
-            fi
-          done
-          echo "Feature branch gate passed."
-
-  test-and-build:
-    runs-on: ubuntu-24.04
-    needs:
-      - changes
-      - frontend-checkpoint
-      - backend-tests
-      - frontend-typecheck
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install Python dependencies
-        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .
-
-      - name: Install frontend dependencies
-        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        working-directory: frontend
-        run: npm ci
-
-      - name: Run frontend tests
-        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        working-directory: frontend
-        run: npm run test
-
-      - name: Build frontend
-        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: npm run build
-
-      - name: Skip test and build
-        if: needs.changes.outputs.frontend != 'true' && needs.changes.outputs.contract != 'true' && needs.changes.outputs.backend != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: echo "No backend, frontend, or contract changes detected; skipping full frontend validation."
 
   docs-consistency:
     if: github.event_name == 'pull_request' && github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.contract == 'true')
