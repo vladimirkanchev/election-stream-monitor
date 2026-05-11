@@ -31,7 +31,7 @@ class AlertFilterKwargs(TypedDict):
     end_time_utc: str | None
 
 
-ServiceReturn = TypeVar("ServiceReturn")
+ServiceReturn = TypeVar("ServiceReturn", covariant=True)
 
 
 class AlertServiceCallable(Protocol[ServiceReturn]):

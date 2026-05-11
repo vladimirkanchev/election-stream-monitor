@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Keep the protected-route response metadata here so auth/rate-limit contract
 # changes do not require repeating the same response dictionary in every alert
 # route declaration.
-ALERT_ROUTE_RESPONSES: dict[int, dict[str, Any]] = {
+ALERT_ROUTE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": ApiErrorResponse, "description": "Validation failed"},
     401: {
         "model": ApiAuthenticationErrorResponse,

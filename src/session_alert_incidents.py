@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
+from typing import cast
 
 from session_alerts import (
     ALERT_TIMESTAMP_FORMAT,
@@ -85,6 +86,8 @@ def build_session_incident_summary(
     incidents = _group_alerts_into_incidents(alerts)
     base_summary = build_alert_summary_payload(session_id, alerts)
     top_incident_categories = _count_incident_categories(incidents)
+    counts_by_detector = cast(dict[str, int], base_summary["counts_by_detector"])
+    counts_by_severity = cast(dict[str, int], base_summary["counts_by_severity"])
     return {
         **base_summary,
         "total_incidents": len(incidents),
@@ -93,8 +96,8 @@ def build_session_incident_summary(
             session_id=session_id,
             alerts=alerts,
             incidents=incidents,
-            counts_by_detector=base_summary["counts_by_detector"],
-            counts_by_severity=base_summary["counts_by_severity"],
+            counts_by_detector=counts_by_detector,
+            counts_by_severity=counts_by_severity,
             top_incident_categories=top_incident_categories,
         ),
     }
