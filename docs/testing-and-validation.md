@@ -199,9 +199,13 @@ The current test split is:
 - `tests/test_api_server_cli_output.py`
   - startup summary output, generated-key guidance, and manual-key non-leakage
 - `tests/test_api_alert_route_auth_policy.py`
-  - shared FastAPI alerts-router authentication policy and `401` behavior
+  - shared FastAPI alerts-router authentication policy, stable `401`
+    behavior, cross-route invalid/missing-key consistency, and proof that the
+    alerts-router auth boundary does not become app-wide policy
 - `tests/test_api_alert_route_rate_limit_policy.py`
-  - shared FastAPI alerts-router limiter behavior, logging, and budget-sharing policy
+  - shared FastAPI alerts-router limiter behavior, logging, budget-sharing
+    policy, stable `429` plus `Retry-After`, and proof that unrelated public
+    routes stay usable after protected route throttling
 - `tests/test_api_alert_route_contracts.py`
   - shared FastAPI alerts-router `429` response shaping and OpenAPI contract coverage
 - `tests/test_alert_timeline_service.py`

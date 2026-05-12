@@ -237,6 +237,8 @@ Notes:
 - `429` responses also include a coarse `Retry-After` header based on the
   configured fixed-window size so clients can back off without parsing limiter
   internals
+- the same structured `429` plus `Retry-After` contract is expected across the
+  protected alerts route family, not only on the raw `/alerts` route
 - the rate-limit subject is intentionally defined in auth-neutral terms so a
   later JWT-backed principal can reuse the same boundary contract
 - the current limiter store is local, in-memory, and per-process
@@ -277,6 +279,8 @@ Implementation note:
   rather than pushing counting logic into route bodies or shared alert services
 - invalid configured auth or limiter settings now fail during FastAPI startup
   rather than waiting for the first protected request
+- unrelated public routes such as `/health`, `/docs`, and `/openapi.json`
+  intentionally stay outside the alerts-router auth/rate-limit boundary
 
 Future remote MCP note:
 

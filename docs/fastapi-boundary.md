@@ -66,6 +66,13 @@ Current alerts-router protection scope:
 - `GET /sessions/{session_id}/alerts/timeline`
 - `GET /sessions/{session_id}/alerts/incident-summary`
 
+Current unaffected public routes:
+
+- `GET /health` stays outside the alerts-router auth/rate-limit boundary
+- FastAPI docs and schema endpoints remain public today:
+  - `GET /docs`
+  - `GET /openapi.json`
+
 Current alerts-router rate-limit rule:
 
 - default identity strategy is authenticated principal, keyed by
@@ -79,6 +86,10 @@ Current alerts-router rate-limit rule:
   - `status_detail = "Too many requests for the configured window."`
 - `429` responses also include `Retry-After` with a coarse whole-window number
   of seconds so clients can retry later without guessing the current budget
+- current boundary tests also lock down that public health/docs surfaces remain
+  usable after one protected alert route has exhausted its budget
+- current auth-policy tests also lock down that invalid and missing API-key
+  failures stay aligned across the protected alerts route family
 
 Current limitation:
 

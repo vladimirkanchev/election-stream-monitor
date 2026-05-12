@@ -144,7 +144,11 @@ module families and the matching tests:
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`
+    - router-scoped `401` policy, invalid/missing-key consistency, and
+      protected-versus-public route scope
   - `tests/test_api_alert_route_rate_limit_policy.py`
+    - router-scoped limiter policy, stable `429` plus `Retry-After`, and proof
+      that public routes remain usable after protected-route throttling
   - `tests/test_api_alert_route_contracts.py`
   - `tests/test_alert_query_service.py`
   - `tests/test_alert_timeline_service.py`
