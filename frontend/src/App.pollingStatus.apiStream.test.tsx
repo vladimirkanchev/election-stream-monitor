@@ -1,178 +1,24 @@
 /**
- * App-level polling coverage for operator-visible session status wording.
- *
- * This suite keeps the cases that benefit from rendering the composed App
- * shell: session-status labels, reconnecting banners, and terminal live-stream
- * messaging. Local lifecycle-state polling cases live in the
- * `useMonitoringSession` hook suites, where they run faster at the hook seam.
+ * App-level polling coverage for api_stream operator messaging: reconnecting,
+ * terminal live-stream outcomes, and live progress wording.
  */
 
 // @vitest-environment jsdom
 
-import { describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
-import type { SessionSummary } from "./types";
 import {
-  enterApiStreamSource,
-  enterLocalSource,
-  makeSnapshot,
-  mockBridge,
-  renderApp,
-  RUNNING_SESSION,
-  startMonitoring,
-  toggleFirstDetector,
-} from "./testing/appHarness";
+  expectNoRecoveryOrTerminalSignals,
+  expectRecoveringBanner,
+  expectStatusSignalsAbsent,
+  makeApiStreamSnapshot,
+  mockApiStreamPolling,
+  startApiStreamMonitoringFlow,
+  waitForPollingTick,
+} from "./testing/pollingStatusTestSupport";
 
-const API_STREAM_URL = "https://example.com/live/playlist.m3u8";
-const POLLING_TICK_MS = 1100;
-const BASE_API_STREAM_PROGRESS = {
-  processed_count: 1,
-  total_count: 4,
-  current_item: "live-window-001",
-  latest_result_detector: "video_blur",
-  latest_result_detectors: ["video_blur"],
-  alert_count: 0,
-  last_updated_utc: "2026-04-04 09:00:00",
-  status_reason: null,
-  status_detail: null,
-};
-
-function makeApiStreamSession(
-  overrides: Partial<SessionSummary> = {},
-): SessionSummary {
-  return {
-    session_id: "session-api-live",
-    mode: "api_stream",
-    input_path: API_STREAM_URL,
-    selected_detectors: ["video_blur"],
-    status: "running",
-    ...overrides,
-  };
-}
-
-function makeApiStreamSnapshot(args: {
-  session?: Partial<SessionSummary>;
-  progress?: Partial<NonNullable<ReturnType<typeof makeSnapshot>["progress"]>>;
-} = {}) {
-  const session = makeApiStreamSession(args.session);
-  return makeSnapshot({
-    session,
-    progress: {
-      session_id: session.session_id,
-      status: session.status,
-      ...BASE_API_STREAM_PROGRESS,
-      ...args.progress,
-    },
-  });
-}
-
-function mockApiStreamPolling(args: {
-  session?: Partial<SessionSummary>;
-  polls: Array<ReturnType<typeof makeSnapshot> | Error>;
-}) {
-  const session = makeApiStreamSession(args.session);
-  vi.mocked(mockBridge.startSession).mockResolvedValue(session);
-
-  const readSession = vi.mocked(mockBridge.readSession);
-  for (const poll of args.polls) {
-    if (poll instanceof Error) {
-      readSession.mockRejectedValueOnce(poll);
-    } else {
-      readSession.mockResolvedValueOnce(poll);
-    }
-  }
-
-  const finalPoll = args.polls[args.polls.length - 1];
-  if (finalPoll && !(finalPoll instanceof Error)) {
-    readSession.mockResolvedValue(finalPoll);
-  }
-
-  return session;
-}
-
-async function waitForPollingTick(count = 1) {
-  for (let index = 0; index < count; index += 1) {
-    await new Promise((resolve) => window.setTimeout(resolve, POLLING_TICK_MS));
-  }
-}
-
-// Local-mode polling coverage is intentionally light here. The hook suites own
-// the denser lifecycle matrix, while the App suite keeps the composed operator
-// messaging that is harder to validate one seam lower.
-async function startLocalMonitoringFlow() {
-  await renderApp();
-  await enterLocalSource();
-  await toggleFirstDetector();
-  startMonitoring();
-
-  await waitFor(() => {
-    expect(screen.getByText("Running")).toBeTruthy();
-  });
-}
-
-async function startApiStreamMonitoringFlow(args: {
-  url?: string;
-  selectDetector?: boolean;
-  expectedStatusLabel?: string;
-} = {}) {
-  await renderApp();
-  await enterApiStreamSource(args.url ?? API_STREAM_URL);
-  if (args.selectDetector ?? true) {
-    await toggleFirstDetector();
-  }
-  startMonitoring();
-
-  await waitFor(() => {
-    expect(screen.getByText(args.expectedStatusLabel ?? "Running")).toBeTruthy();
-  });
-}
-
-function expectRecoveringBanner() {
-  expect(screen.getByText("Recovering")).toBeTruthy();
-}
-
-function expectNoRecoveryOrTerminalSignals() {
-  expect(screen.queryByText("Recovering")).toBeNull();
-  expect(screen.queryByText("Needs attention")).toBeNull();
-  expect(screen.queryByText("Ended after going quiet")).toBeNull();
-  expect(screen.queryByText("Failed")).toBeNull();
-}
-
-describe("App polling and status integration", () => {
-  it("updates status from polling and shows completed state", async () => {
-    const completedSnapshot = makeSnapshot({
-      session: {
-        ...RUNNING_SESSION,
-        status: "completed",
-      },
-      progress: {
-        session_id: RUNNING_SESSION.session_id,
-        status: "completed",
-        processed_count: 4,
-        total_count: 4,
-        current_item: "segment_0004.ts",
-        latest_result_detector: "video_blur",
-        latest_result_detectors: ["video_blur"],
-        alert_count: 1,
-        last_updated_utc: "2026-04-02 10:00:04",
-      },
-    });
-    vi.mocked(mockBridge.startSession).mockResolvedValue(RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeSnapshot())
-      .mockResolvedValueOnce(completedSnapshot)
-      .mockResolvedValue(completedSnapshot);
-
-    await startLocalMonitoringFlow();
-    await waitForPollingTick();
-
-    await waitFor(() => {
-      expect(screen.getByText("Completed")).toBeTruthy();
-      expect(screen.getByText("Monitoring finished successfully for the current source.")).toBeTruthy();
-    });
-  });
-
+describe("App polling and status integration (api_stream)", () => {
   it("shows a reconnecting message for api stream polling failures and clears it on recovery", async () => {
     mockApiStreamPolling({
       session: { session_id: "session-api-reconnect" },
@@ -243,7 +89,8 @@ describe("App polling and status integration", () => {
           progress: {
             last_updated_utc: "2026-04-04 09:10:02",
             status_reason: "source_unreachable",
-            status_detail: "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
+            status_detail:
+              "api_stream reconnect budget exhausted: api_stream upstream returned HTTP 503",
           },
         }),
       ],
@@ -341,9 +188,7 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Ended after going quiet")).toBeTruthy();
     });
 
-    expect(screen.queryByText("Recovering")).toBeNull();
-    expect(screen.queryByText("Needs attention")).toBeNull();
-    expect(screen.queryByText("Failed")).toBeNull();
+    expectStatusSignalsAbsent();
   });
 
   it("keeps a running api stream without progress in a neutral state until real warnings appear", async () => {
@@ -374,8 +219,6 @@ describe("App polling and status integration", () => {
     expectNoRecoveryOrTerminalSignals();
   });
 
-  // API stream transition and status-detail rendering
-
   it("shows live session status details for api stream runs", async () => {
     mockApiStreamPolling({
       polls: [makeApiStreamSnapshot()],
@@ -390,7 +233,9 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("1 chunk analyzed, 4 discovered")).toBeTruthy();
       expect(screen.getByText("00:02 live")).toBeTruthy();
       expect(
-        screen.getByText("Live monitoring is active and currently analyzing live-window-001."),
+        screen.getByText(
+          "Live monitoring is active and currently analyzing live-window-001.",
+        ),
       ).toBeTruthy();
     });
   });
@@ -458,7 +303,9 @@ describe("App polling and status integration", () => {
       expect(screen.getByText("Live, 6 chunks analyzed")).toBeTruthy();
       expect(screen.getByText("6 chunks analyzed, 9 discovered")).toBeTruthy();
       expect(
-        screen.getByText("Live monitoring is active and currently analyzing live-window-006."),
+        screen.getByText(
+          "Live monitoring is active and currently analyzing live-window-006.",
+        ),
       ).toBeTruthy();
     });
   });
