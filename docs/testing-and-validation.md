@@ -110,8 +110,12 @@ Common local command:
 ```bash
 . .venv/bin/activate
 pip install -e .[test]
-pytest -q
+pytest -q -m "not e2e and not slow"
 ```
+
+This default backend command keeps the normal local fast lane focused on unit,
+service, and boundary coverage. Use the dedicated e2e commands below when you
+want the snapshot-contract smoke check or the slower real-media matrix.
 
 Focused repo-local skill validation:
 
@@ -433,21 +437,23 @@ Backend/API contract checks:
   - FastAPI request validation
 - `tests/test_api_boundary_playback.py`
   - playback-resolution behavior
-- `tests/test_api_boundary_sessions.py`
-  - session start/read/cancel behavior
-- `tests/test_session_service.py`
-  - shared start/read/cancel service behavior
+- `tests/test_api_boundary_sessions_read.py`
+  - session read-route behavior
+- `tests/test_api_boundary_sessions_start.py`
+  - session start-route behavior
+- `tests/test_api_boundary_sessions_cancel.py`
+  - session cancel-route behavior
+- `tests/test_session_service_start.py`
+  - shared start-session service behavior
+- `tests/test_session_service_worker.py`
+  - detached worker launch and log-handle behavior
+- `tests/test_session_service_read_cancel.py`
+  - shared read/cancel service behavior
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - populated session snapshot response shape
-- `tests/test_api_boundary_sessions.py`
-  - session start/read/cancel contract behavior
-- `tests/test_session_service.py`
-  - shared start/read/cancel service behavior
-- `tests/test_session_cli_tooling.py`
-  - CLI adapter behavior over the shared session service
 - `tests/test_stream_loader_contracts.py`
   - `api_stream` contract-builder consistency
   - loader seam helper invariants
@@ -458,10 +464,16 @@ Backend/API contract checks:
   - live progression, moving-window, cancel, and idle-refresh behavior
 - `tests/test_stream_loader_http_hls_core_provider.py`
   - malformed refresh recovery and provider/transport edge behavior
-- `tests/test_stream_loader_http_hls_reconnect.py`
-  - reconnect, replay de-duplication, and moving-window recovery behavior
-- `tests/test_stream_loader_http_hls_limits.py`
-  - runtime/fetch/temp-budget enforcement and cleanup guarantees
+- `tests/test_stream_loader_http_hls_reconnect_recovery.py`
+  - reconnect recovery, resumed progression, and temporary outage behavior
+- `tests/test_stream_loader_http_hls_reconnect_state.py`
+  - reconnect budgets, replay de-duplication state, and reconnect logging behavior
+- `tests/test_stream_loader_http_hls_limits_runtime.py`
+  - runtime and refresh-budget enforcement plus shutdown behavior
+- `tests/test_stream_loader_http_hls_limits_cleanup.py`
+  - temp-state, cleanup, and storage-budget guarantees
+- `tests/test_stream_loader_http_hls_limits_restart.py`
+  - soak, restart, and dedup-resume behavior
 - `tests/test_stream_loader_http_hls_playlist.py`
   - direct playlist parsing helper coverage
 - `tests/test_stream_loader_http_hls_fetch.py`
@@ -555,7 +567,14 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p n
 Useful focused commands:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_session_service.py tests/test_api_boundary_sessions.py tests/test_session_cli_tooling.py -q
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider \
+  tests/test_session_service_start.py \
+  tests/test_session_service_worker.py \
+  tests/test_session_service_read_cancel.py \
+  tests/test_api_boundary_sessions_read.py \
+  tests/test_api_boundary_sessions_start.py \
+  tests/test_api_boundary_sessions_cancel.py \
+  tests/test_session_cli_tooling.py -q
 ```
 
 Use that command first for worker-observability changes. It covers:
@@ -570,7 +589,9 @@ For the demoted legacy `src/main.py` seam, the intended replacement is focused
 pytest coverage rather than a new manual tooling script. The main local
 confidence replacements are:
 
-- `tests/test_processor.py`
+- `tests/test_processor_routing.py`
+- `tests/test_processor_failures.py`
+- `tests/test_processor_context_alerts.py`
 - `tests/test_session_runner_local.py`
 - `tests/test_e2e_local_session.py`
 
@@ -724,11 +745,13 @@ Note:
 Recommended backend order for session-runner work:
 
 1. `tests/test_session_runner_lifecycle.py`
-2. `tests/test_session_runner_execution.py`
-3. `tests/test_session_runner_terminal.py`
-4. `tests/test_session_runner_local.py`
-5. `tests/test_session_runner_api_stream_basic.py`
-6. `tests/test_session_runner_api_stream_http_hls.py` in a normal local shell when loopback sockets are available
+2. `tests/test_session_runner_execution_local.py`
+3. `tests/test_session_runner_execution_api_stream.py`
+4. `tests/test_session_runner_terminal.py`
+5. `tests/test_session_runner_local.py`
+6. `tests/test_session_runner_api_stream_basic.py`
+7. `tests/test_session_runner_api_stream_http_hls_lifecycle.py` in a normal local shell when loopback sockets are available
+8. `tests/test_session_runner_api_stream_http_hls_failures.py` in a normal local shell when loopback sockets are available
 
 ## Lifecycle Coverage Audit
 
@@ -739,9 +762,12 @@ Current lifecycle coverage is already spread across the main layers:
     - pending-session setup
     - pending-to-running transition semantics
     - smallest helper-level seam for session setup and status transitions
-  - `tests/test_session_runner_execution.py`
+  - `tests/test_session_runner_execution_local.py`
     - extracted local execution-loop helper behavior
+    - analyzer-bundle invocation and local event-persistence seams
+  - `tests/test_session_runner_execution_api_stream.py`
     - extracted live `api_stream` execution-loop helper behavior
+    - api-stream cleanup accounting and live helper wiring seams
     - analyzer-bundle invocation and event-persistence seams
     - first stop when a refactor changes slice-processing flow
   - `tests/test_session_runner_terminal.py`
@@ -760,20 +786,24 @@ Current lifecycle coverage is already spread across the main layers:
   - `tests/test_session_runner_api_stream_basic.py`
     - seam-loader `api_stream` completion, cancel, cleanup, and failure paths
     - stable black-box live progress and summary logging behavior
-  - `tests/test_session_runner_api_stream_http_hls.py`
+  - `tests/test_session_runner_api_stream_http_hls_lifecycle.py`
     - real HTTP/HLS-backed `api_stream` transport and lifecycle integration
-    - keep this as the signoff suite when a change touches real HTTP/HLS behavior
+    - keep this as the signoff suite when a change touches successful real HTTP/HLS progression
+  - `tests/test_session_runner_api_stream_http_hls_failures.py`
+    - real HTTP/HLS-backed failure persistence, partial-progress, and budget exhaustion coverage
   - `tests/test_session_io.py`
     - invalid terminal transitions
     - completed-progress consistency checks
 - FastAPI boundary tests
   - `tests/test_api_boundary_validation.py`
     - request validation failures
-  - `tests/test_api_boundary_sessions.py`
+  - `tests/test_api_boundary_sessions_read.py`
     - missing-session reads
-    - cancel success
-    - missing-session cancel failure
-    - current terminal cancel behavior
+    - populated session snapshot passthrough behavior
+  - `tests/test_api_boundary_sessions_start.py`
+    - start success and shared error mapping
+  - `tests/test_api_boundary_sessions_cancel.py`
+    - cancel success, missing-session cancel failure, and current terminal cancel behavior
   - `tests/test_api_boundary_contracts.py`
     - structured error envelopes
     - malformed nested payload fail-closed behavior

@@ -550,7 +550,9 @@ If you change FastAPI request/response semantics, review these together:
 - `frontend/src/types.ts`
 - `docs/contracts.md`
 - `tests/test_api_boundary_contracts.py`
-- `tests/test_api_boundary_sessions.py`
+- `tests/test_api_boundary_sessions_read.py`
+- `tests/test_api_boundary_sessions_start.py`
+- `tests/test_api_boundary_sessions_cancel.py`
 - `frontend/src/bridge/contract.success.test.ts`
 - `frontend/src/bridge/contract.errors.test.ts`
 - `frontend/src/bridge/contract.session-snapshot.test.ts`

@@ -68,18 +68,24 @@ module families and the matching tests:
   - `src/session_runner_terminal.py`
   - `src/session_runner_discovery.py`
   - `src/session_runner_progress.py`
-  - `tests/test_session_service.py`
-  - `tests/test_api_boundary_sessions.py`
+  - `tests/test_session_service_start.py`
+  - `tests/test_session_service_worker.py`
+  - `tests/test_session_service_read_cancel.py`
+  - `tests/test_api_boundary_sessions_read.py`
+  - `tests/test_api_boundary_sessions_start.py`
+  - `tests/test_api_boundary_sessions_cancel.py`
   - `tests/test_session_cli_tooling.py`
   - `tests/test_session_runner_lifecycle.py`
-  - `tests/test_session_runner_execution.py`
+  - `tests/test_session_runner_execution_local.py`
+  - `tests/test_session_runner_execution_api_stream.py`
   - `tests/test_session_runner_terminal.py`
   - `tests/test_session_runner_local.py`
   - `tests/test_session_runner_api_stream_completion.py`
   - `tests/test_session_runner_api_stream_cancellation.py`
   - `tests/test_session_runner_api_stream_failures.py`
   - `tests/test_session_runner_api_stream_progress.py`
-  - `tests/test_session_runner_api_stream_http_hls.py`
+  - `tests/test_session_runner_api_stream_http_hls_lifecycle.py`
+  - `tests/test_session_runner_api_stream_http_hls_failures.py`
   - read the session-service files first, then the runner files, if you want
     the shortest path into the current session lifecycle split
 - live `api_stream` loading:
@@ -91,8 +97,11 @@ module families and the matching tests:
   - `tests/test_stream_loader_http_hls_core_playlist.py`
   - `tests/test_stream_loader_http_hls_core_progression.py`
   - `tests/test_stream_loader_http_hls_core_provider.py`
-  - `tests/test_stream_loader_http_hls_reconnect.py`
-  - `tests/test_stream_loader_http_hls_limits.py`
+  - `tests/test_stream_loader_http_hls_reconnect_recovery.py`
+  - `tests/test_stream_loader_http_hls_reconnect_state.py`
+  - `tests/test_stream_loader_http_hls_limits_runtime.py`
+  - `tests/test_stream_loader_http_hls_limits_cleanup.py`
+  - `tests/test_stream_loader_http_hls_limits_restart.py`
 - Electron/FastAPI desktop runtime:
   - `frontend/electron/main.mjs`
   - `frontend/electron/fastApiStartupOrchestrator.mjs`

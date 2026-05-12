@@ -443,10 +443,15 @@ Quick local confidence check:
 ```bash
 . .venv/bin/activate
 pip install -e .[test]
-pytest -q
+pytest -q -m "not e2e and not slow"
 npm --prefix frontend run test
 npm run build
 ```
+
+That default backend pass keeps the normal fast lane focused on unit and
+service-level coverage. Run the dedicated e2e commands from
+[`docs/testing-and-validation.md`](./docs/testing-and-validation.md) when you
+want the snapshot smoke or slower real-media checks.
 
 For more detail:
 
