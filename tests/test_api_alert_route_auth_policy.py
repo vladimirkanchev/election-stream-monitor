@@ -5,6 +5,7 @@ This file owns the authentication side of the shared alerts-router boundary:
 - stable `401` mapping for missing, blank, and invalid credentials
 - router-scoped protection versus unrelated routes
 - the real API-key settings seam, including auth-disabled local runs
+- cross-route consistency for the protected alerts family
 - auth-failure logging
 - proof that auth failure short-circuits before rate limiting
 
@@ -32,14 +33,43 @@ from tests.api_boundary_test_support import request
 # Authentication policy
 
 
+def _assert_authentication_failed(
+    response,
+    *,
+    detail: str,
+) -> None:
+    """Assert the stable protected-route `401` payload for one auth failure branch."""
+    assert response.status_code == 401
+    assert response.json() == build_authentication_failed_payload(detail)
+
+
+def _request_with_invalid_api_key(path: str):
+    """Issue one protected-route request with the documented header and a wrong key."""
+    return request(
+        "GET",
+        path,
+        headers=build_api_key_headers("wrong-key"),
+    )
+
+
 def test_get_session_alerts_maps_authentication_failure_to_401(monkeypatch) -> None:
     """Missing or invalid credentials should surface as the stable 401 envelope."""
     install_alert_route_auth_failure(monkeypatch, detail="Missing API key")
 
     response = request("GET", "/sessions/session-123/alerts")
 
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload("Missing API key")
+    _assert_authentication_failed(response, detail="Missing API key")
+
+
+def test_get_session_alert_timeline_rejects_missing_api_key_with_same_401_contract(
+    monkeypatch,
+) -> None:
+    """Timeline routes should share the same missing-key contract as raw alerts."""
+    install_real_alert_route_auth(monkeypatch, enabled=True)
+
+    response = request("GET", "/sessions/session-123/alerts/timeline")
+
+    _assert_authentication_failed(response, detail="Missing API key")
 
 
 def test_get_session_alerts_allows_authenticated_requests(monkeypatch) -> None:
@@ -69,8 +99,7 @@ def test_alert_routes_are_protected_while_health_route_remains_unprotected(
     alert_response = request("GET", "/sessions/session-123/alerts")
     health_response = request("GET", "/health")
 
-    assert alert_response.status_code == 401
-    assert alert_response.json() == build_authentication_failed_payload("Missing API key")
+    _assert_authentication_failed(alert_response, detail="Missing API key")
     assert health_response.status_code == 200
     assert health_response.json() == {"status": "ok"}
 
@@ -85,8 +114,36 @@ def test_get_session_alerts_treats_blank_api_key_header_as_missing(monkeypatch) 
         headers=build_api_key_headers("   "),
     )
 
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload("Missing API key")
+    _assert_authentication_failed(response, detail="Missing API key")
+
+
+def test_invalid_key_failure_does_not_block_later_valid_authenticated_request(
+    monkeypatch,
+) -> None:
+    """Rejected callers should not poison later valid access to the protected route."""
+    reset_alert_route_rate_limit_state()
+    install_real_alert_route_auth(monkeypatch, enabled=True)
+    install_api_rate_limit_settings(
+        monkeypatch,
+        enabled=True,
+        max_requests=1,
+        window_seconds=60,
+    )
+    install_empty_alert_route_services(monkeypatch)
+
+    rejected_response = _request_with_invalid_api_key("/sessions/session-123/alerts")
+    allowed_response = request(
+        "GET",
+        "/sessions/session-123/alerts",
+        headers=build_api_key_headers(),
+    )
+
+    _assert_authentication_failed(rejected_response, detail="Invalid API key")
+    assert allowed_response.status_code == 200
+    assert allowed_response.json() == {
+        "session_id": "session-123",
+        "alerts": [],
+    }
 
 
 def test_authentication_failures_log_safe_boundary_context(monkeypatch, caplog) -> None:
@@ -138,8 +195,7 @@ def test_get_session_alerts_returns_401_before_rate_limit_when_authentication_fa
 
     response = request("GET", "/sessions/session-123/alerts")
 
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload("Missing API key")
+    _assert_authentication_failed(response, detail="Missing API key")
 
 
 def test_get_session_alerts_skips_auth_when_disabled_in_settings(monkeypatch) -> None:
@@ -167,9 +223,9 @@ def test_get_session_alerts_rejects_enabled_auth_without_configured_keys(
         headers=build_api_key_headers(),
     )
 
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload(
-        "API key authentication is enabled but no allowed API keys are configured"
+    _assert_authentication_failed(
+        response,
+        detail="API key authentication is enabled but no allowed API keys are configured",
     )
 
 
@@ -185,8 +241,7 @@ def test_get_session_alert_summary_rejects_wrong_header_name_even_with_valid_key
         headers={"X-Wrong-Key": "valid-key"},
     )
 
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload("Missing API key")
+    _assert_authentication_failed(response, detail="Missing API key")
 
 
 def test_get_session_alert_incident_summary_rejects_invalid_key_with_same_401_contract(
@@ -195,11 +250,19 @@ def test_get_session_alert_incident_summary_rejects_invalid_key_with_same_401_co
     """Incident-summary routes should share the same real invalid-key boundary behavior."""
     install_real_alert_route_auth(monkeypatch, enabled=True)
 
-    response = request(
-        "GET",
-        "/sessions/session-123/alerts/incident-summary",
-        headers=build_api_key_headers("wrong-key"),
-    )
+    response = _request_with_invalid_api_key("/sessions/session-123/alerts/incident-summary")
 
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload("Invalid API key")
+    _assert_authentication_failed(response, detail="Invalid API key")
+
+
+def test_get_session_alert_summary_and_timeline_reject_invalid_key_with_same_401_contract(
+    monkeypatch,
+) -> None:
+    """Protected alert routes should share the same invalid-key 401 envelope."""
+    install_real_alert_route_auth(monkeypatch, enabled=True)
+
+    summary_response = _request_with_invalid_api_key("/sessions/session-123/alerts/summary")
+    timeline_response = _request_with_invalid_api_key("/sessions/session-123/alerts/timeline")
+
+    _assert_authentication_failed(summary_response, detail="Invalid API key")
+    _assert_authentication_failed(timeline_response, detail="Invalid API key")
