@@ -210,8 +210,10 @@ The current test split is:
   - service-level grouped incident summary fields, categories, and narrative semantics
 - `tests/test_api_session_alerts.py`
   - FastAPI adapter behavior for raw alert list and summary routes
+  - includes stable empty-result envelopes and filter-forwarding coverage
 - `tests/test_api_session_alert_incidents.py`
   - FastAPI adapter behavior for timeline and grouped incident summary routes
+  - includes stable empty-result envelopes and grouped filter-forwarding coverage
 - `tests/test_mcp_server_contracts.py`
   - MCP tool registration, schema basics, and stdio launch wiring
 - `tests/test_mcp_server_alerts.py`

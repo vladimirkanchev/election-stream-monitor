@@ -303,6 +303,10 @@ needs prose or operator-facing explanation, that should be added in a higher
 layer such as an MCP or agent workflow rather than changing the core alert
 query contract.
 
+The summary keeps the same top-level key set even when the filtered result set
+is empty. Clients should receive zero counts plus `null` timestamp bounds
+instead of a special reduced envelope.
+
 This route is currently protected by the same router-level `X-API-Key`
 dependency as the rest of the alerts router.
 It also participates in the same router-level request budget when FastAPI rate
@@ -321,6 +325,9 @@ optional alert filters:
 The route remains a thin adapter over the shared alert service. Grouping rules
 stay deterministic and intentionally simple: ordered alert rows with matching
 `detector_id`, `severity`, and `title`, plus a fixed gap threshold.
+
+When no grouped incidents remain after filtering, the route still returns the
+same top-level envelope with an empty `entries` list.
 
 This route is currently protected by the same router-level `X-API-Key`
 dependency as the other alerts routes.
@@ -346,6 +353,10 @@ limiting is enabled.
 
 This route is distinct from `/alerts/summary`. The older summary route reports
 raw alert counts only; this route reports grouped incident semantics.
+
+Like the other protected alert routes, the grouped summary keeps a stable
+envelope for empty results so clients do not need a separate "no incidents"
+response parser.
 
 This route is currently protected by the same router-level `X-API-Key`
 dependency as the rest of the alerts router.
