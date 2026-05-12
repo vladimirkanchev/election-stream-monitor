@@ -492,11 +492,18 @@ Frontend contract checks:
   - typed bridge failures
   - transport-envelope error normalization
   - bridge error payload fallback and typed metadata preservation
-- `frontend/src/bridge/contract.session-snapshot.test.ts`
-  - session snapshot compatibility
-  - fail-closed nested payload handling
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - required session snapshot shape and lifecycle field preservation
+- `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+  - fail-closed malformed nested payload handling
+- `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
+  - partially corrupt alert/result collection compatibility
 - `frontend/src/bridge/transport.test.ts`
   - transport selection and demo fallback behavior
+- `frontend/src/components/SessionStatusPanel.test.tsx`
+  - operator-facing lifecycle, reconnect, and playback-diagnostic wording
+- `frontend/src/presenters/alertFeed.test.ts`
+  - playback-aware alert feed reveal timing and timestamp labels
 - `frontend/src/uiErrors.test.ts`
   - operator-facing error wording
   - `api_stream` status/error interpretation
@@ -506,9 +513,6 @@ Frontend contract checks:
   - hook behavior for `api_stream` reconnect, recovery, and terminal polling semantics
 - `frontend/src/hooks/usePlaybackSource.test.tsx`
   - hook behavior on top of normalized playback-source resolution
-- `frontend/src/uiErrors.test.ts`
-  - operator-facing error wording
-  - `api_stream` status/error interpretation
 - `frontend/electron/fastApiFallback.test.mjs`
   - FastAPI readiness cache and fallback policy
   - no-fallback behavior for structured API business errors
@@ -601,7 +605,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p n
 
 ```bash
 cd frontend
-npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.test.ts src/uiErrors.test.ts
+npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.shape.test.ts src/bridge/contract.session-snapshot.malformed.test.ts src/bridge/contract.session-snapshot.collections.test.ts src/uiErrors.test.ts
 ```
 
 ```bash
@@ -829,8 +833,9 @@ Current lifecycle coverage is already spread across the main layers:
     - malformed cancel payloads
     - missing-session cancel failure
     - `cancelSession -> null` success
-  - `frontend/src/App.pollingStatus.test.tsx`
+  - `frontend/src/App.pollingStatus.local.test.tsx`
     - running-to-completed polling flow
+  - `frontend/src/App.pollingStatus.apiStream.test.tsx`
     - polling failure with recovery
     - running-to-failed terminal transitions
     - `api_stream` status/detail messaging

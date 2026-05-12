@@ -116,9 +116,17 @@ module families and the matching tests:
   - `frontend/src/bridge/contractDetectors.ts`
   - `frontend/src/bridge/contractSessionSnapshot.ts`
   - `frontend/src/bridge/transport.ts`
+  - `frontend/src/bridge/contract.testSupport.ts`
   - `frontend/src/bridge/contract.success.test.ts`
   - `frontend/src/bridge/contract.errors.test.ts`
-  - `frontend/src/bridge/contract.session-snapshot.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
+- frontend operator state presentation:
+  - `frontend/src/components/SessionStatusPanel.tsx`
+  - `frontend/src/components/SessionStatusPanel.test.tsx`
+  - `frontend/src/presenters/alertFeed.ts`
+  - `frontend/src/presenters/alertFeed.test.ts`
 - MCP alert-query surface:
   - `src/api_auth.py`
   - `src/api_rate_limit.py`
