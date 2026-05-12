@@ -95,7 +95,7 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_session_runner_lifecycle.py tests/test_session_runner_execution.py tests/test_session_runner_terminal.py tests/test_session_runner_local.py tests/test_session_runner_api_stream_basic.py tests/test_session_io.py -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_session_runner_lifecycle.py tests/test_session_runner_execution_local.py tests/test_session_runner_execution_api_stream.py tests/test_session_runner_terminal.py tests/test_session_runner_local.py tests/test_session_runner_api_stream_basic.py tests/test_session_io.py -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
 
       - name: Upload lifecycle deep validation log
         if: failure()
