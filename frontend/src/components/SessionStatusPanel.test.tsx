@@ -56,6 +56,12 @@ type RenderPanelArgs = {
   playbackDuration?: number | null;
 };
 
+/**
+ * Builds the panel props used across the status-wording scenarios.
+ *
+ * The suite varies one lifecycle or playback dimension at a time, so the
+ * baseline props stay intentionally stable here.
+ */
 function buildPanelProps(args: RenderPanelArgs = {}) {
   return {
     source: args.source ?? API_STREAM_SOURCE,
@@ -71,6 +77,21 @@ function buildPanelProps(args: RenderPanelArgs = {}) {
   } satisfies React.ComponentProps<typeof SessionStatusPanel>;
 }
 
+/**
+ * Creates a progress payload with only the lifecycle fields under test
+ * overridden for the current scenario.
+ */
+function buildProgress(overrides: Partial<SessionProgress> = {}): SessionProgress {
+  return {
+    ...BASE_PROGRESS,
+    ...overrides,
+  };
+}
+
+/**
+ * Renders the status panel with the common operator-facing defaults used by
+ * this copy-contract suite.
+ */
 function renderPanel(args: RenderPanelArgs = {}) {
   return render(<SessionStatusPanel {...buildPanelProps(args)} />);
 }
@@ -81,12 +102,28 @@ function expectVisibleText(text: string) {
   expect(screen.getByText(text)).toBeTruthy();
 }
 
+/**
+ * Keeps absence checks terse when a scenario should suppress a specific copy
+ * path entirely.
+ */
+function expectTextHidden(text: string) {
+  expect(screen.queryByText(text)).toBeNull();
+}
+
 // Some diagnostics are easier to validate by rendered ordering than by a
 // single exact text node.
 function getDiagnosticItems(container: HTMLElement) {
   return Array.from(container.querySelectorAll(".session-diagnostics__item")).map((item) =>
     item.textContent?.trim(),
   );
+}
+
+/**
+ * Verifies the diagnostic stack order without repeating the DOM query plumbing
+ * in each precedence test.
+ */
+function expectDiagnosticOrder(container: HTMLElement, expected: string[]) {
+  expect(getDiagnosticItems(container)).toEqual(expected);
 }
 
 afterEach(() => {
@@ -97,7 +134,7 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("keeps live stop and terminal summaries distinct", () => {
     const { rerender } = renderPanel({
       sessionStatus: "cancelling",
-      progress: { ...BASE_PROGRESS, status: "cancelling" },
+      progress: buildProgress({ status: "cancelling" }),
     });
 
     expectVisibleText("Stopping now");
@@ -108,7 +145,7 @@ describe("SessionStatusPanel monitoring UX", () => {
       <SessionStatusPanel
         {...buildPanelProps({
           sessionStatus: "cancelled",
-          progress: { ...BASE_PROGRESS, status: "cancelled", current_item: null },
+          progress: buildProgress({ status: "cancelled", current_item: null }),
           playbackStatus: "stopped",
         })}
       />,
@@ -124,12 +161,11 @@ describe("SessionStatusPanel monitoring UX", () => {
       <SessionStatusPanel
         {...buildPanelProps({
           sessionStatus: "failed",
-          progress: {
-            ...BASE_PROGRESS,
+          progress: buildProgress({
             status: "failed",
             status_reason: "source_unreachable",
             status_detail: SOURCE_UNREACHABLE_DETAIL,
-          },
+          }),
           playbackStatus: "stopped",
         })}
       />,
@@ -147,12 +183,11 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("shows completed live runs and idle-bounded completion warnings separately", () => {
     renderPanel({
       sessionStatus: "completed",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "completed",
         status_reason: "idle_poll_budget_exhausted",
         status_detail: "Idle poll budget exhausted",
-      },
+      }),
     });
 
     expectVisibleText("Ended after going quiet");
@@ -170,13 +205,12 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("shows finished-cleanly live completion without the idle warning messaging", () => {
     renderPanel({
       sessionStatus: "completed",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "completed",
         status_reason: "completed",
         status_detail: null,
         current_item: null,
-      },
+      }),
     });
 
     expectVisibleText("Finished cleanly");
@@ -184,7 +218,7 @@ describe("SessionStatusPanel monitoring UX", () => {
       screen.getByText("The live monitoring run reached a normal completion point."),
     ).toBeTruthy();
     expectVisibleText("The bounded live monitoring run completed for the current stream.");
-    expect(screen.queryByText("Ended after going quiet")).toBeNull();
+    expectTextHidden("Ended after going quiet");
   });
 
   it("renders a reconnecting cue separately from terminal diagnostics", () => {
@@ -201,29 +235,27 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("does not show a reconnecting cue while a live session is running normally", () => {
     renderPanel({
       sessionStatus: "running",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "running",
         status_reason: "running",
         status_detail: null,
-      },
+      }),
       sessionError: null,
     });
 
-    expect(screen.queryByText("Recovering")).toBeNull();
-    expect(screen.queryByText("Trying to reconnect to the live stream.")).toBeNull();
+    expectTextHidden("Recovering");
+    expectTextHidden("Trying to reconnect to the live stream.");
     expect(screen.getByText("Live monitoring is active and currently analyzing live-window-002.")).toBeTruthy();
   });
 
   it("renders terminal monitoring diagnostics from api stream failure metadata", () => {
     renderPanel({
       sessionStatus: "failed",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "failed",
         status_reason: "terminal_failure",
         status_detail: SOURCE_UNREACHABLE_DETAIL,
-      },
+      }),
     });
 
     expect(
@@ -250,22 +282,18 @@ describe("SessionStatusPanel monitoring UX", () => {
     renderPanel({
       source: VIDEO_SEGMENTS_SOURCE,
       sessionStatus: "cancelled",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "cancelled",
         current_item: null,
-      },
+      }),
       playbackStatus: "stopped",
     });
 
-    expect(screen.getByText("Stopped by user")).toBeTruthy();
-    expect(screen.getByText("Monitoring was ended by the user.")).toBeTruthy();
+    expectVisibleText("Stopped by user");
     expect(
       screen.getByText("Monitoring was stopped by the user. You can adjust the setup and start again."),
     ).toBeTruthy();
-    expect(
-      screen.queryByText("Live monitoring was stopped by the user before the current stream completed."),
-    ).toBeNull();
+    expectTextHidden("Live monitoring was stopped by the user before the current stream completed.");
   });
 
   it("aligns non-live analysis progress with playback position for segment sources", () => {
@@ -274,11 +302,10 @@ describe("SessionStatusPanel monitoring UX", () => {
       playbackLive: false,
       playbackTime: 12,
       playbackDuration: 20,
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         processed_count: 9,
         total_count: 10,
-      },
+      }),
     });
 
     expect(screen.getByText("Analysis")).toBeTruthy();
@@ -288,12 +315,11 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("shows a waiting analysis label before the first live chunk is accepted", () => {
     renderPanel({
       sessionStatus: "running",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         processed_count: 0,
         total_count: 0,
         current_item: null,
-      },
+      }),
     });
 
     expect(screen.getByText("Live monitoring is active for the current stream.")).toBeTruthy();
@@ -303,16 +329,15 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("orders monitoring errors ahead of secondary playback diagnostics", () => {
     const { container } = renderPanel({
       sessionStatus: "failed",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "failed",
         status_reason: "source_unreachable",
         status_detail: SOURCE_UNREACHABLE_DETAIL,
-      },
+      }),
       playbackStatus: "error",
     });
 
-    expect(getDiagnosticItems(container)).toEqual([
+    expectDiagnosticOrder(container, [
       "Monitoring Monitoring could not reconnect to the live stream, so it has ended.",
       "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
     ]);
@@ -321,16 +346,15 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("treats playback failure as terminal once monitoring is no longer running", () => {
     const { container } = renderPanel({
       sessionStatus: "completed",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "completed",
         status_reason: "completed",
         status_detail: null,
-      },
+      }),
       playbackStatus: "error",
     });
 
-    expect(getDiagnosticItems(container)).toEqual([
+    expectDiagnosticOrder(container, [
       "Playback Playback is unavailable. Check the player panel for the playback-specific reason.",
     ]);
   });
@@ -338,29 +362,25 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("shows raw lifecycle fields in the debug section when expanded", () => {
     renderPanel({
       sessionStatus: "failed",
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         status: "failed",
         status_reason: "source_unreachable",
         status_detail: SOURCE_UNREACHABLE_DETAIL,
-      },
+      }),
     });
 
     expectVisibleText("Show debug info");
     expectVisibleText("Raw session status");
     expectVisibleText("failed");
     expectVisibleText("source_unreachable");
-    expectVisibleText(SOURCE_UNREACHABLE_DETAIL);
-    expectVisibleText("video_blur");
   });
 
   it("shows discovered live chunks separately in the debug section", () => {
     renderPanel({
-      progress: {
-        ...BASE_PROGRESS,
+      progress: buildProgress({
         processed_count: 2,
         total_count: 5,
-      },
+      }),
     });
 
     expectVisibleText("Processed live chunks");

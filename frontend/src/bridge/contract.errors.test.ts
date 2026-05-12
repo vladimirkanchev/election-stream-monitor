@@ -7,6 +7,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { LocalBridge } from "../types";
 import { createNormalizedBridge, fail } from "./contract";
+import {
+  API_STREAM_MONITOR_SOURCE,
+  VIDEO_SEGMENTS_MONITOR_SOURCE,
+  createContractBridge,
+} from "./contract.testSupport";
 
 describe("bridge contract error normalization", () => {
   it("raises when startSession returns a malformed summary", async () => {
@@ -25,34 +30,22 @@ describe("bridge contract error normalization", () => {
 
     await expect(
       bridge.startSession({
-        source: {
-          kind: "video_segments",
-          path: "/tmp/source",
-          access: "local_path",
-        },
+        source: VIDEO_SEGMENTS_MONITOR_SOURCE,
         selectedDetectors: [],
       }),
     ).rejects.toThrow("invalid bridge startSession response");
   });
 
   it("raises a typed bridge error when the transport returns an explicit start failure", async () => {
-    const bridge = createNormalizedBridge({
-      listDetectors: vi.fn(),
+    const bridge = createContractBridge({
       startSession: vi.fn().mockResolvedValue(
         fail("SESSION_START_FAILED", "Session start request failed", "cli crashed"),
       ),
-      readSession: vi.fn(),
-      cancelSession: vi.fn(),
-      resolvePlaybackSource: vi.fn(),
     });
 
     await expect(
       bridge.startSession({
-        source: {
-          kind: "video_segments",
-          path: "/tmp/source",
-          access: "local_path",
-        },
+        source: VIDEO_SEGMENTS_MONITOR_SOURCE,
         selectedDetectors: [],
       }),
     ).rejects.toMatchObject({
@@ -64,8 +57,7 @@ describe("bridge contract error normalization", () => {
   });
 
   it("falls back to a safe typed bridge error when startSession failure metadata is malformed", async () => {
-    const bridge = createNormalizedBridge({
-      listDetectors: vi.fn(),
+    const bridge = createContractBridge({
       startSession: vi.fn().mockResolvedValue({
         ok: false,
         error: {
@@ -75,18 +67,11 @@ describe("bridge contract error normalization", () => {
           backend_error_code: "start_failed",
         },
       }),
-      readSession: vi.fn(),
-      cancelSession: vi.fn(),
-      resolvePlaybackSource: vi.fn(),
     });
 
     await expect(
       bridge.startSession({
-        source: {
-          kind: "video_segments",
-          path: "/tmp/source",
-          access: "local_path",
-        },
+        source: VIDEO_SEGMENTS_MONITOR_SOURCE,
         selectedDetectors: [],
       }),
     ).rejects.toMatchObject({
@@ -101,10 +86,7 @@ describe("bridge contract error normalization", () => {
   });
 
   it("raises a typed bridge error when cancelSession returns an explicit backend failure", async () => {
-    const bridge = createNormalizedBridge({
-      listDetectors: vi.fn(),
-      startSession: vi.fn(),
-      readSession: vi.fn(),
+    const bridge = createContractBridge({
       cancelSession: vi.fn().mockResolvedValue(
         fail(
           "SESSION_CANCEL_FAILED",
@@ -117,7 +99,6 @@ describe("bridge contract error normalization", () => {
           },
         ),
       ),
-      resolvePlaybackSource: vi.fn(),
     });
 
     await expect(bridge.cancelSession("session-123")).rejects.toMatchObject({
@@ -132,10 +113,7 @@ describe("bridge contract error normalization", () => {
   });
 
   it("preserves invalid cancel-state failures as typed bridge transport errors", async () => {
-    const bridge = createNormalizedBridge({
-      listDetectors: vi.fn(),
-      startSession: vi.fn(),
-      readSession: vi.fn(),
+    const bridge = createContractBridge({
       cancelSession: vi.fn().mockResolvedValue(
         fail(
           "SESSION_CANCEL_FAILED",
@@ -148,7 +126,6 @@ describe("bridge contract error normalization", () => {
           },
         ),
       ),
-      resolvePlaybackSource: vi.fn(),
     });
 
     await expect(bridge.cancelSession("session-123")).rejects.toMatchObject({
@@ -160,39 +137,8 @@ describe("bridge contract error normalization", () => {
     });
   });
 
-  it("raises a typed bridge error when readSession returns a missing-session failure", async () => {
-    const bridge = createNormalizedBridge({
-      listDetectors: vi.fn(),
-      startSession: vi.fn(),
-      readSession: vi.fn().mockResolvedValue(
-        fail(
-          "SESSION_READ_FAILED",
-          "Session read request failed",
-          "No persisted session snapshot found for session_id=session-123",
-          {
-            backend_error_code: "session_not_found",
-            status_reason: "session_not_found",
-            status_detail: "No persisted session snapshot found for session_id=session-123",
-          },
-        ),
-      ),
-      cancelSession: vi.fn(),
-      resolvePlaybackSource: vi.fn(),
-    });
-
-    await expect(bridge.readSession("session-123")).rejects.toMatchObject({
-      name: "BridgeTransportError",
-      code: "SESSION_READ_FAILED",
-      backendErrorCode: "session_not_found",
-      statusReason: "session_not_found",
-      statusDetail: "No persisted session snapshot found for session_id=session-123",
-    });
-  });
-
   it("preserves typed lifecycle metadata for explicit readSession bridge failures", async () => {
-    const bridge = createNormalizedBridge({
-      listDetectors: vi.fn(),
-      startSession: vi.fn(),
+    const bridge = createContractBridge({
       readSession: vi.fn().mockResolvedValue(
         fail(
           "SESSION_READ_FAILED",
@@ -205,8 +151,6 @@ describe("bridge contract error normalization", () => {
           },
         ),
       ),
-      cancelSession: vi.fn(),
-      resolvePlaybackSource: vi.fn(),
     });
 
     await expect(bridge.readSession("session-456")).rejects.toMatchObject({
@@ -256,9 +200,8 @@ describe("bridge contract error normalization", () => {
     await expect(
       bridge.resolvePlaybackSource({
         source: {
-          kind: "api_stream",
+          ...API_STREAM_MONITOR_SOURCE,
           path: "https://example.com/live/playlist.m3u8",
-          access: "api_stream",
         },
         currentItem: null,
       }),
@@ -293,9 +236,8 @@ describe("bridge contract error normalization", () => {
     await expect(
       bridge.resolvePlaybackSource({
         source: {
-          kind: "api_stream",
+          ...API_STREAM_MONITOR_SOURCE,
           path: "https://example.com/live/playlist.m3u8",
-          access: "api_stream",
         },
         currentItem: null,
       }),

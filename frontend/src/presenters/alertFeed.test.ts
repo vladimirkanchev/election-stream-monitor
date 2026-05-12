@@ -1,33 +1,56 @@
+/**
+ * Presenter-level coverage for the playback-aware alert feed filters and
+ * timestamp labels shown to the operator.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import type { AlertEvent } from "../types";
 import { buildAlertFeedItems, filterAlertsForPlayback } from "./alertFeed";
 
+/**
+ * Creates a minimal alert payload and lets each case vary only the playback
+ * fields relevant to the current visibility rule.
+ */
+function buildAlert(overrides: Partial<AlertEvent> = {}): AlertEvent {
+  return {
+    session_id: "s1",
+    timestamp_utc: "2026-04-02 10:00:00",
+    detector_id: "video_blur",
+    title: "Blur warning",
+    message: "default",
+    severity: "warning",
+    source_name: "clip.mp4 @ 00:00",
+    window_index: 0,
+    ...overrides,
+  };
+}
+
+/**
+ * Projects the visible source names from the playback filter so the tests can
+ * assert ordering and reveal boundaries without repeating the same mapping.
+ */
+function visibleAlertSources(
+  args: Parameters<typeof filterAlertsForPlayback>[0],
+) {
+  return filterAlertsForPlayback(args).map((alert) => alert.source_name);
+}
+
 describe("filterAlertsForPlayback", () => {
   it("reveals mp4 alerts only after playback reaches their second", () => {
     const alerts: AlertEvent[] = [
-      {
-        session_id: "s1",
-        timestamp_utc: "2026-04-02 10:00:00",
-        detector_id: "video_blur",
-        title: "Blur warning",
+      buildAlert({
         message: "first",
-        severity: "warning",
         source_name: "clip.mp4 @ 00:00",
-        window_index: 0,
         window_start_sec: 0,
-      },
-      {
-        session_id: "s1",
+      }),
+      buildAlert({
         timestamp_utc: "2026-04-02 10:00:01",
-        detector_id: "video_blur",
-        title: "Blur warning",
         message: "second",
-        severity: "warning",
         source_name: "clip.mp4 @ 00:01",
         window_index: 1,
         window_start_sec: 1,
-      },
+      }),
     ];
 
     expect(
@@ -59,40 +82,32 @@ describe("filterAlertsForPlayback", () => {
 
   it("reveals segment alerts by playback-aligned slice count", () => {
     const alerts: AlertEvent[] = [
-      {
-        session_id: "s1",
-        timestamp_utc: "2026-04-02 10:00:00",
+      buildAlert({
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "first",
-        severity: "warning",
         source_name: "segment_0001.ts",
-        window_index: 0,
-      },
-      {
-        session_id: "s1",
+      }),
+      buildAlert({
         timestamp_utc: "2026-04-02 10:00:01",
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "second",
-        severity: "warning",
         source_name: "segment_0002.ts",
         window_index: 1,
-      },
-      {
-        session_id: "s1",
+      }),
+      buildAlert({
         timestamp_utc: "2026-04-02 10:00:02",
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "third",
-        severity: "warning",
         source_name: "segment_0003.ts",
         window_index: 2,
-      },
+      }),
     ];
 
     expect(
-      filterAlertsForPlayback({
+      visibleAlertSources({
         alerts,
         sourceKind: "video_segments",
         playbackTime: 1.1,
@@ -105,11 +120,11 @@ describe("filterAlertsForPlayback", () => {
           "segment_0002.ts": 2,
           "segment_0003.ts": 3,
         },
-      }).map((alert) => alert.source_name),
+      }),
     ).toEqual(["segment_0001.ts"]);
 
     expect(
-      filterAlertsForPlayback({
+      visibleAlertSources({
         alerts,
         sourceKind: "video_segments",
         playbackTime: 2.2,
@@ -122,23 +137,12 @@ describe("filterAlertsForPlayback", () => {
           "segment_0002.ts": 2,
           "segment_0003.ts": 3,
         },
-      }).map((alert) => alert.source_name),
+      }),
     ).toEqual(["segment_0001.ts", "segment_0002.ts"]);
   });
 
   it("keeps segment alerts hidden until the current playback item is known", () => {
-    const alerts: AlertEvent[] = [
-      {
-        session_id: "s1",
-        timestamp_utc: "2026-04-02 10:00:00",
-        detector_id: "video_blur",
-        title: "Blur warning",
-        message: "first",
-        severity: "warning",
-        source_name: "segment_0001.ts",
-        window_index: 0,
-      },
-    ];
+    const alerts: AlertEvent[] = [buildAlert({ source_name: "segment_0001.ts" })];
 
     expect(
       filterAlertsForPlayback({
@@ -156,26 +160,13 @@ describe("filterAlertsForPlayback", () => {
 
   it("reveals all alerts immediately during live playback", () => {
     const alerts: AlertEvent[] = [
-      {
-        session_id: "s1",
-        timestamp_utc: "2026-04-02 10:00:00",
-        detector_id: "video_blur",
-        title: "Blur warning",
-        message: "live-first",
-        severity: "warning",
-        source_name: "live-window-001",
-        window_index: 0,
-      },
-      {
-        session_id: "s1",
+      buildAlert({ message: "live-first", source_name: "live-window-001" }),
+      buildAlert({
         timestamp_utc: "2026-04-02 10:00:01",
-        detector_id: "video_blur",
-        title: "Blur warning",
         message: "live-second",
-        severity: "warning",
         source_name: "live-window-002",
         window_index: 1,
-      },
+      }),
     ];
 
     expect(
@@ -194,20 +185,17 @@ describe("filterAlertsForPlayback", () => {
 
   it("reveals segment alerts exactly at their mapped playback boundary", () => {
     const alerts: AlertEvent[] = [
-      {
-        session_id: "s1",
-        timestamp_utc: "2026-04-02 10:00:00",
+      buildAlert({
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "boundary",
-        severity: "warning",
         source_name: "segment_0002.ts",
         window_index: 1,
-      },
+      }),
     ];
 
     expect(
-      filterAlertsForPlayback({
+      visibleAlertSources({
         alerts,
         sourceKind: "video_segments",
         playbackTime: 2.0,
@@ -219,46 +207,38 @@ describe("filterAlertsForPlayback", () => {
           "segment_0001.ts": 1,
           "segment_0002.ts": 2,
         },
-      }).map((alert) => alert.source_name),
+      }),
     ).toEqual(["segment_0002.ts"]);
   });
 
   it("falls back to segment numbering when a segment start map is not available", () => {
     const alerts: AlertEvent[] = [
-      {
-        session_id: "s1",
-        timestamp_utc: "2026-04-02 10:00:00",
+      buildAlert({
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "first",
-        severity: "warning",
         source_name: "segment_0001.ts",
-        window_index: 0,
-      },
-      {
-        session_id: "s1",
+      }),
+      buildAlert({
         timestamp_utc: "2026-04-02 10:00:01",
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "second",
-        severity: "warning",
         source_name: "segment_0002.ts",
         window_index: 1,
-      },
-      {
-        session_id: "s1",
+      }),
+      buildAlert({
         timestamp_utc: "2026-04-02 10:00:02",
         detector_id: "video_metrics",
         title: "Black screen detected",
         message: "third",
-        severity: "warning",
         source_name: "segment_0003.ts",
         window_index: 2,
-      },
+      }),
     ];
 
     expect(
-      filterAlertsForPlayback({
+      visibleAlertSources({
         alerts,
         sourceKind: "video_segments",
         playbackTime: 0.1,
@@ -267,23 +247,18 @@ describe("filterAlertsForPlayback", () => {
         totalAnalysisCount: 6,
         currentPlaybackItem: "segment_0002.ts",
         segmentStartTimes: {},
-      }).map((alert) => alert.source_name),
+      }),
     ).toEqual(["segment_0001.ts", "segment_0002.ts"]);
   });
 
   it("uses playback moment labels in feed items", () => {
     const segmentItem = buildAlertFeedItems(
       [
-        {
-          session_id: "s1",
-          timestamp_utc: "2026-04-02 10:00:00",
-          detector_id: "video_blur",
-          title: "Blur warning",
+        buildAlert({
           message: "segment",
-          severity: "warning",
           source_name: "segment_0206.ts",
           window_index: 206,
-        },
+        }),
       ],
       [],
       "video_segments",
@@ -294,16 +269,11 @@ describe("filterAlertsForPlayback", () => {
 
     const fileItem = buildAlertFeedItems(
       [
-        {
-          session_id: "s1",
-          timestamp_utc: "2026-04-02 10:00:00",
-          detector_id: "video_blur",
-          title: "Blur warning",
+        buildAlert({
           message: "file",
-          severity: "warning",
           source_name: "clip.mp4 @ 00:12",
           window_start_sec: 12,
-        },
+        }),
       ],
       [],
       "video_files",
