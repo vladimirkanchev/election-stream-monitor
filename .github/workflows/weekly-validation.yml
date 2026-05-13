@@ -37,7 +37,7 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "e2e and slow" tests/test_e2e_*.py -q 2>&1 | tee ci-artifacts/slow-e2e.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "slow" tests/test_e2e_*.py tests/test_detectors_integration.py -q 2>&1 | tee ci-artifacts/slow-e2e.log
 
       - name: Upload slow e2e log
         if: failure()
