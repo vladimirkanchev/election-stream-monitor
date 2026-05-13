@@ -150,6 +150,7 @@ e2e validation path rather than in the normal branch-push backend test job.
 The same weekly validation workflow also owns the heavier confidence-building
 checks for:
 
+- real-media detector integration
 - deeper `api_stream` validation
 - lifecycle-focused backend regression slices
 - security audits
