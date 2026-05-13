@@ -164,8 +164,26 @@ module families and the matching tests:
   - `tests/test_alert_query_service_summary.py`
     - shared raw numeric alert summary semantics, including empty-summary
       behavior, timestamp-bound handling, and summary-specific validation
-  - `tests/test_alert_timeline_service.py`
-  - `tests/test_alert_incident_summary_service.py`
+  - `tests/alert_incident_service_test_support.py`
+    - tiny shared typed-access, stable empty-result, and time-filter helper
+      seams for the split grouped incident suites
+  - `tests/test_alert_timeline_service_grouping.py`
+    - grouped incident timeline semantics for merge and non-merge rules,
+      deterministic ordering, stable grouped `source_names`, transitive
+      adjacent grouping, malformed-row degradation, and a light scaling guard
+  - `tests/test_alert_timeline_service_filters.py`
+    - grouped incident timeline filter and validation semantics, including
+      raw-filter reuse before grouping, invalid and inverted time filters,
+      missing sessions, unknown-filter empty results, and inclusive/open-ended
+      time bounds
+  - `tests/test_alert_incident_summary_service_contracts.py`
+    - grouped incident summary semantics for counts, categories, narrative
+      shaping, deterministic tie-breaking, and explicit raw-versus-grouped
+      count separation when some rows cannot form incidents cleanly
+  - `tests/test_alert_incident_summary_service_filters.py`
+    - grouped incident summary filter and validation semantics, including
+      filtered-empty grouped results, invalid and inverted time filters,
+      missing sessions, and unknown-filter empty grouped summaries
   - `tests/test_api_session_alerts.py`
   - `tests/test_api_session_alert_incidents.py`
   - `tests/test_mcp_server_contracts.py`

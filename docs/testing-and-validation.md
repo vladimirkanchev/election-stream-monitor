@@ -136,7 +136,7 @@ It currently covers:
 Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -178,6 +178,9 @@ The current test split is:
   - shared in-memory MCP session helpers for the alert-tool tests
 - `tests/alert_query_service_test_support.py`
   - tiny shared setup helpers for the split raw alert query service suites
+- `tests/alert_incident_service_test_support.py`
+  - tiny shared typed-access and empty-result helpers for the split grouped
+    incident timeline and summary suites
 - `tests/test_alert_query_service_read.py`
   - service-level persisted alert-log read semantics, corrupt/unreadable input
     tolerance, and missing/orphaned session handling
@@ -227,10 +230,24 @@ The current test split is:
     routes stay usable after protected route throttling
 - `tests/test_api_alert_route_contracts.py`
   - shared FastAPI alerts-router `429` response shaping and OpenAPI contract coverage
-- `tests/test_alert_timeline_service.py`
-  - service-level timeline grouping, ordering, filter reuse, and empty-state semantics
-- `tests/test_alert_incident_summary_service.py`
-  - service-level grouped incident summary fields, categories, and narrative semantics
+- `tests/test_alert_timeline_service_grouping.py`
+  - service-level grouped timeline semantics for merge and non-merge rules,
+    chronological ordering, deterministic same-timestamp tie-breaking, stable
+    grouped `source_names`, transitive adjacent grouping, malformed-row
+    degradation, and a light scaling guard
+- `tests/test_alert_timeline_service_filters.py`
+  - service-level grouped timeline filter reuse before grouping, invalid and
+    inverted time-filter validation, missing-session failures, unknown-filter
+    empty results, inclusive/open-ended time bounds, and time-filter handling
+    for rows with unusable timestamps
+- `tests/test_alert_incident_summary_service_contracts.py`
+  - service-level grouped incident summary counts, categories, narrative
+    shaping, deterministic tie-breaking, malformed-row degradation, and
+    raw-versus-grouped count separation when some rows cannot form incidents
+- `tests/test_alert_incident_summary_service_filters.py`
+  - service-level grouped incident summary filter reuse, filtered-empty
+    summaries, invalid and inverted time-filter validation, missing-session
+    failures, and unknown-filter empty grouped summaries
 - `tests/test_api_session_alerts.py`
   - FastAPI adapter behavior for raw alert list and summary routes
   - includes stable empty-result envelopes and filter-forwarding coverage

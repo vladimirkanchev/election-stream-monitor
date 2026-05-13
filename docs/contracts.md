@@ -1625,14 +1625,28 @@ Timeline notes:
 
 - each entry is a grouped incident, not a raw alert row
 - grouping should remain deterministic and session-scoped
+- timeline ordering is chronological, with persisted row order acting as the
+  stable tie-break when distinct incidents share the same timestamp
+- grouped incidents should split whenever `detector_id`, `severity`, or
+  `title` changes, even if adjacent timestamps would otherwise merge
 - v1 grouping stays intentionally simple:
   - ordered alerts with a fixed gap threshold
   - matching `detector_id`, `severity`, and `title`
   - no coarse time buckets as the primary rule
   - no detector-specific or ML-style incident reconstruction yet
 - `start_time_utc` and `end_time_utc` describe the grouped incident window
+- `source_names` should preserve first-seen unique values inside one grouped
+  incident
 - `sample_message` is descriptive only and should not be treated as a stable
   identifier
+- invalid timeline filter timestamps should fail before grouping begins
+- inverted timeline ranges should fail before grouping begins
+- unknown grouped timeline filters should degrade to an empty timeline rather
+  than inventing grouped incidents
+- grouped timeline filtering should reuse the raw alert-query filter semantics
+  before incident grouping begins
+- timeline grouping should remain stable when one or more persisted rows are
+  malformed or unusable for grouping
 
 Current incident summary response shape:
 
@@ -1667,9 +1681,16 @@ Incident summary notes:
 - `narrative_summary` is a convenience field for operators and agents, not a
   wording-stable primary contract
 - `narrative_summary` is optional convenience text for operators and agents
+- grouped incident summaries preserve raw alert totals even when some rows
+  cannot form incidents
+- when grouped detector/category counts tie, the convenience narrative should
+  still be deterministic even though clients must not depend on its wording
 - clients must not depend on exact wording of `narrative_summary`
 - this summary is incident-oriented and should stay distinct from the existing
   raw alert-count summary surface
+- invalid summary filter timestamps should fail before grouping begins
+- inverted summary filter ranges should fail before grouping begins
+- unknown grouped-summary filters should degrade to the stable empty summary
 
 ### `cancelSession`
 
