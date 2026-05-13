@@ -144,6 +144,17 @@ boundary, and the MCP adapter over the same service seam. If you change only
 one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
 
+The fast backend CI lane intentionally stays synthetic and contract-focused.
+The real-media `ffmpeg`/`ffprobe` fixture coverage lives in the slower weekly
+e2e validation path rather than in the normal branch-push backend test job.
+The same weekly validation workflow also owns the heavier confidence-building
+checks for:
+
+- deeper `api_stream` validation
+- lifecycle-focused backend regression slices
+- security audits
+- dependency consistency audits
+
 It exercises the current alerts-router protection contract end to end:
 
 - `local` mode defaults keep auth and rate limiting off
