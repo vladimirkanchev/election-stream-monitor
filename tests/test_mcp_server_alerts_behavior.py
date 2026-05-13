@@ -10,8 +10,10 @@ This file owns the usable raw MCP payload surface:
 It intentionally keeps success-path tool behavior separate from MCP-facing
 error translation so regressions in raw payload shaping are easier to localize.
 Negative-path MCP transport mapping lives in
-``test_mcp_server_alerts_errors.py``. FastAPI-versus-MCP boundary behavior
-lives in ``test_mcp_fastapi_boundary_split.py``.
+``test_mcp_server_alerts_errors.py``. FastAPI-versus-MCP trust-boundary and
+parity coverage lives in ``test_mcp_fastapi_boundary_split.py``,
+``test_mcp_fastapi_parity_behavior.py``, and
+``test_mcp_fastapi_parity_edges.py``.
 """
 
 from pathlib import Path
