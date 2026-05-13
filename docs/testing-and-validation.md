@@ -136,7 +136,7 @@ It currently covers:
 Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -255,15 +255,45 @@ The current test split is:
   - FastAPI adapter behavior for timeline and grouped incident summary routes
   - includes stable empty-result envelopes and grouped filter-forwarding coverage
 - `tests/test_mcp_server_contracts.py`
-  - MCP tool registration, schema basics, and stdio launch wiring
-- `tests/test_mcp_server_alerts.py`
-  - MCP raw alert-query tool behavior through the real in-memory MCP session
+  - structural MCP registration and launch-wiring coverage, including stable
+    tool names/count, read-only server instructions, schema basics, and stdio
+    launch wiring
+- `tests/mcp_server_alerts_test_support.py`
+  - tiny shared setup and result helpers for the split raw MCP behavior/error suites
+  - intentionally limited to filesystem seams plus success/error assertion helpers
+- `tests/test_mcp_server_alerts_behavior.py`
+  - MCP raw alert-query and raw-summary behavior through the real in-memory MCP session
+  - includes known-session empty payloads, filtered raw MCP list/summary alignment,
+    and raw unknown-filter empty payloads
+  - keeps usable payload behavior separate from MCP-facing error translation
+- `tests/test_mcp_server_alerts_errors.py`
+  - raw MCP tool-level error mapping
+  - includes missing-session failures, invalid time-range failures, and combined
+    raw invalid-timestamp parity
+  - keeps raw MCP list/summary error translation parity explicit
 - `tests/test_mcp_fastapi_boundary_split.py`
   - explicit FastAPI-versus-stdio MCP boundary-split and cross-surface smoke coverage
+  - keeps the raw MCP boundary checks grouped together and the grouped MCP
+    boundary checks grouped together so the trust rule is easier to review
   - includes the regression that FastAPI `share` CLI runtime preparation must
-    not pull stdio MCP into the HTTP auth/rate-limit boundary
-- `tests/test_mcp_server_incidents.py`
-  - MCP grouped timeline and incident-summary tool behavior
+    not pull stdio MCP raw or grouped tools into the HTTP auth/rate-limit boundary
+  - also keeps raw MCP list/summary tools grouped together under direct FastAPI
+    auth/rate-limit boundary checks
+  - and keeps grouped MCP tools usable even when both `share` prep and direct
+    FastAPI protections are applied before the MCP read
+- `tests/mcp_server_incidents_test_support.py`
+  - tiny shared setup and result helpers for the split grouped MCP behavior/error suites
+  - intentionally limited to grouped-session setup plus success/error assertion helpers
+- `tests/test_mcp_server_incidents_behavior.py`
+  - MCP grouped timeline and incident-summary behavior
+  - includes known-session empty grouped payloads, filtered grouped MCP alignment,
+    and unknown-filter empty grouped payloads
+  - keeps grouped payload behavior separate from grouped MCP error translation
+- `tests/test_mcp_server_incidents_errors.py`
+  - grouped MCP tool-level error mapping
+  - includes missing-session failures plus grouped invalid time-range and
+    invalid timestamp-format parity
+  - keeps grouped timeline/summary error translation parity explicit
 
 Keep new tests near those ownership boundaries instead of adding a larger
 catch-all alert-query suite.
@@ -292,6 +322,9 @@ The split is deliberate:
   real in-memory MCP transport seam
 - the FastAPI-versus-MCP boundary-split file keeps the current local-trust
   stdio story explicit without cluttering the raw MCP tool behavior files
+- the raw and grouped MCP behavior files now also lock the no-data and
+  filtered-data tool payloads to the same shared service contracts used by
+  FastAPI
 
 When you add new coverage for this slice, prefer extending the narrow owning
 file over creating another mixed alert-and-incident test module.

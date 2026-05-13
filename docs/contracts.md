@@ -1523,6 +1523,41 @@ Current split test ownership:
 - `tests/test_alert_query_service_summary.py`
   - numeric aggregation, timestamp-bound behavior, empty-summary behavior, and
     summary-specific validation
+- `tests/test_mcp_server_alerts_behavior.py`
+  - raw MCP no-alert behavior, filtered-data behavior, and stable empty results
+    for known sessions whose filters match nothing
+  - keeps raw payload-shaping expectations separate from MCP-facing error translation
+- `tests/test_mcp_server_alerts_errors.py`
+  - raw MCP-facing error mapping over the shared raw alert query seam
+  - includes the expectation that raw MCP list and summary tools keep the same
+    malformed-timestamp error contract
+- `tests/test_mcp_fastapi_boundary_split.py`
+  - FastAPI-versus-stdio MCP local-trust boundary behavior for the current
+    project stage
+  - includes the expectation that raw MCP list and summary tools stay outside
+    direct FastAPI auth/rate-limit state together
+  - keeps the current raw MCP boundary checks grouped together and the grouped
+    MCP boundary checks grouped together so trust-boundary regressions are easy
+    to localize
+  - includes the expectation that grouped MCP tools remain outside the HTTP
+    trust boundary even if both CLI `share` prep and direct FastAPI protection
+    env are applied before the MCP read
+- `tests/test_mcp_server_incidents_behavior.py`
+  - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
+    grouped results for known sessions whose filters match nothing
+  - keeps grouped output-shaping expectations separate from grouped MCP-facing
+    error translation
+- `tests/test_mcp_server_incidents_errors.py`
+  - grouped MCP-facing error mapping over the shared grouped incident seam
+  - includes the expectation that grouped timeline and grouped summary tools
+    keep the same invalid-range and malformed-timestamp error contracts
+
+Current MCP tool expectations:
+
+- the stdio MCP raw alert tools should expose the same empty and filtered-data
+  contracts as the FastAPI raw alert routes
+- enabling FastAPI auth/rate limiting or preparing FastAPI `share` mode must
+  not pull stdio MCP tools into the HTTP trust boundary
 
 Current alert query response shape:
 
@@ -1647,6 +1682,8 @@ Timeline notes:
   before incident grouping begins
 - timeline grouping should remain stable when one or more persisted rows are
   malformed or unusable for grouping
+- the grouped timeline MCP tool should expose the same empty and filtered-data
+  contracts as the FastAPI grouped timeline route
 
 Current incident summary response shape:
 

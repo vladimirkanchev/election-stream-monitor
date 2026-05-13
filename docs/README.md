@@ -187,16 +187,35 @@ module families and the matching tests:
   - `tests/test_api_session_alerts.py`
   - `tests/test_api_session_alert_incidents.py`
   - `tests/test_mcp_server_contracts.py`
-  - `tests/test_mcp_server_alerts.py`
+  - `tests/test_mcp_server_alerts_behavior.py`
+  - `tests/test_mcp_server_alerts_errors.py`
   - `tests/test_mcp_fastapi_boundary_split.py`
-  - `tests/test_mcp_server_incidents.py`
+  - `tests/test_mcp_server_incidents_behavior.py`
+  - `tests/test_mcp_server_incidents_errors.py`
   - read them in that order if you want the cleanest path from shared raw alert
     service and grouped incident service,
     to HTTP adapter, to MCP adapter, to the split test ownership
+  - `tests/test_mcp_server_alerts_behavior.py` owns raw MCP no-alert,
+    filtered-data, and unknown-filter empty behavior, with payload-shaping
+    expectations kept separate from MCP-facing error translation
+  - `tests/test_mcp_server_alerts_errors.py` owns raw MCP missing-session,
+    invalid-range, and invalid-timestamp error mapping
+  - `tests/test_mcp_server_incidents_behavior.py` owns grouped MCP no-alert,
+    filtered-data, and unknown-filter empty behavior, with grouped output
+    shaping kept separate from grouped MCP error translation
+  - `tests/test_mcp_server_incidents_errors.py` owns grouped MCP missing-session,
+    invalid-range, and invalid-timestamp error mapping
   - `tests/api_alert_test_support.py` owns the repeated FastAPI alerts-router
     setup seams
   - `tests/test_mcp_fastapi_boundary_split.py` owns the current
-    “FastAPI protected, stdio MCP local-trust” boundary rule
+    “FastAPI protected, stdio MCP local-trust” boundary rule, including grouped
+    MCP tools under `share`, the combined raw list/summary direct-boundary
+    check, the stronger grouped `share` plus direct-protection regression, and
+    the small cross-surface smoke path where protected HTTP and local MCP read
+    the same persisted alert data together
+  - `tests/test_mcp_server_contracts.py` also keeps one explicit “exactly four
+    current tools” guard for the read-only MCP surface, alongside the
+    structural registration, schema, and stdio launch-wiring checks
 
 ## Current Stable Contracts
 
