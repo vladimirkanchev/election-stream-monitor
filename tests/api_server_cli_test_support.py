@@ -7,6 +7,8 @@ This module intentionally stays small and scenario-oriented. It owns only:
 - one helper for installing empty alert-route services plus CLI runtime setup
 - one helper for deriving request headers from a prepared runtime
 - one helper for capturing CLI stdout plus fake server handoff data
+- one small typed mode alias so the split CLI tests stay aligned on
+  `local` versus `share`
 
 That keeps the runtime, route, and output test files focused on the policy
 they are proving instead of repeating setup and fake-runner boilerplate.
@@ -17,6 +19,7 @@ from __future__ import annotations
 import argparse
 import io
 from collections.abc import Sequence
+from typing import Literal
 
 from api_server_cli import FastApiCliRuntime, prepare_cli_runtime, run_from_args
 from tests.api_alert_test_support import (
@@ -38,18 +41,23 @@ EMPTY_ALERT_SUMMARY_RESPONSE = {
     "last_alert_timestamp_utc": None,
 }
 
+CliMode = Literal["local", "share"]
+"""The only CLI run modes supported by the current FastAPI entrypoint tests."""
+
 
 def prepare_runtime_with_empty_alert_routes(
     monkeypatch,
     *,
-    mode: str,
+    mode: CliMode,
     manual_api_key: str | None = None,
 ) -> FastApiCliRuntime:
     """Install empty alert-route services and prepare one CLI runtime.
 
     This keeps the route-oriented CLI tests focused on the boundary policy
     under test instead of repeating the same empty successful route adapter
-    setup in every scenario.
+    setup in every scenario. It is intentionally limited to the current CLI
+    test slice, where the route layer should observe real auth/rate-limit
+    behavior over deterministic empty alert services.
     """
 
     install_empty_alert_route_services(monkeypatch)
@@ -57,7 +65,11 @@ def prepare_runtime_with_empty_alert_routes(
 
 
 def install_one_request_rate_limit_env(monkeypatch, *, window_seconds: int = 60) -> None:
-    """Install one tiny fixed-window limiter config for CLI route scenarios."""
+    """Install one tiny fixed-window limiter config for CLI route scenarios.
+
+    The helper keeps the share-mode route tests readable by centralizing the
+    most common "admit once, reject second request" limiter setup.
+    """
 
     monkeypatch.setenv("ESM_API_RATE_LIMIT_MAX_REQUESTS", "1")
     monkeypatch.setenv("ESM_API_RATE_LIMIT_WINDOW_SEC", str(window_seconds))
@@ -90,12 +102,17 @@ def build_runtime_headers(
 
 def run_cli_and_capture_output(
     *,
-    mode: str,
+    mode: CliMode,
     host: str,
     port: int,
     api_key: str | None = None,
 ) -> tuple[str, list[dict[str, object]]]:
-    """Run the CLI against a fake server runner and capture observable output."""
+    """Run the CLI against a fake server runner and capture observable output.
+
+    Output tests care about the operator-visible startup summary and about the
+    host/port handoff to the server runner, not about starting a real server.
+    This helper keeps that boundary explicit.
+    """
 
     stdout = io.StringIO()
     seen_calls: list[dict[str, object]] = []
