@@ -190,6 +190,8 @@ module families and the matching tests:
   - `tests/test_mcp_server_alerts_behavior.py`
   - `tests/test_mcp_server_alerts_errors.py`
   - `tests/test_mcp_fastapi_boundary_split.py`
+  - `tests/test_mcp_fastapi_parity_behavior.py`
+  - `tests/test_mcp_fastapi_parity_edges.py`
   - `tests/test_mcp_server_incidents_behavior.py`
   - `tests/test_mcp_server_incidents_errors.py`
   - read them in that order if you want the cleanest path from shared raw alert
@@ -213,6 +215,19 @@ module families and the matching tests:
     check, the stronger grouped `share` plus direct-protection regression, and
     the small cross-surface smoke path where protected HTTP and local MCP read
     the same persisted alert data together
+  - `tests/mcp_fastapi_parity_test_support.py` owns the tiny shared setup and
+    parity-assertion seams for the split FastAPI/MCP parity suites
+  - it is intentionally limited to protected-route setup, persisted parity
+    fixture setup, and cross-surface meaning helpers
+  - `tests/test_mcp_fastapi_parity_behavior.py` owns the current normal
+    FastAPI/MCP parity slice for one shared fixture session across raw alert
+    totals and grouped incident totals
+  - that parity slice includes filtered reads, known empty sessions,
+    unknown-filter no-match reads, and one shared time-bounded query
+  - `tests/test_mcp_fastapi_parity_edges.py` owns the current validation and
+    ordering parity slice, including invalid time-filter validation,
+    inverted ranges, inclusive/open-ended time bounds, and same-timestamp
+    grouped ordering
   - `tests/test_mcp_server_contracts.py` also keeps one explicit “exactly four
     current tools” guard for the read-only MCP surface, alongside the
     structural registration, schema, and stdio launch-wiring checks

@@ -1531,17 +1531,33 @@ Current split test ownership:
   - raw MCP-facing error mapping over the shared raw alert query seam
   - includes the expectation that raw MCP list and summary tools keep the same
     malformed-timestamp error contract
+- `tests/mcp_fastapi_parity_test_support.py`
+  - tiny shared setup and meaning-assertion helpers for the split FastAPI/MCP
+    parity suites
+  - intentionally limited to protected-route setup, file-backed parity
+    fixture setup, and cross-surface meaning helpers
 - `tests/test_mcp_fastapi_boundary_split.py`
   - FastAPI-versus-stdio MCP local-trust boundary behavior for the current
     project stage
   - includes the expectation that raw MCP list and summary tools stay outside
     direct FastAPI auth/rate-limit state together
   - keeps the current raw MCP boundary checks grouped together and the grouped
-    MCP boundary checks grouped together so trust-boundary regressions are easy
+  MCP boundary checks grouped together so trust-boundary regressions are easy
     to localize
   - includes the expectation that grouped MCP tools remain outside the HTTP
     trust boundary even if both CLI `share` prep and direct FastAPI protection
     env are applied before the MCP read
+- `tests/test_mcp_fastapi_parity_behavior.py`
+  - one shared-fixture parity expectation for normal reads: protected FastAPI
+    routes and local MCP tools should preserve equivalent raw alert totals and
+    grouped incident totals for unfiltered, filtered, empty-session,
+    unknown-filter no-match, and time-bounded reads
+- `tests/test_mcp_fastapi_parity_edges.py`
+  - one shared-fixture parity expectation for validation and ordering edges:
+    protected FastAPI routes and local MCP tools should preserve equivalent
+    invalid time-filter behavior, inverted-range behavior,
+    inclusive/open-ended time-bound behavior, and deterministic
+    same-timestamp grouped ordering
 - `tests/test_mcp_server_incidents_behavior.py`
   - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
     grouped results for known sessions whose filters match nothing
@@ -1556,6 +1572,14 @@ Current MCP tool expectations:
 
 - the stdio MCP raw alert tools should expose the same empty and filtered-data
   contracts as the FastAPI raw alert routes
+- for one shared persisted session fixture, the FastAPI and MCP alert-query
+  surfaces should preserve equivalent raw alert counts, summary totals,
+  grouped timeline entry counts, and grouped incident-summary totals even when
+  the transport wrappers differ
+- that parity expectation currently also applies to filtered queries, known
+  empty sessions, unknown-filter no-match queries, one shared time-bounded
+  query slice, invalid time-filter validation, inclusive/open-ended time
+  bounds, and deterministic same-timestamp grouped ordering
 - enabling FastAPI auth/rate limiting or preparing FastAPI `share` mode must
   not pull stdio MCP tools into the HTTP trust boundary
 

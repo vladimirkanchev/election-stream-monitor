@@ -136,7 +136,7 @@ It currently covers:
 Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -271,8 +271,13 @@ The current test split is:
   - includes missing-session failures, invalid time-range failures, and combined
     raw invalid-timestamp parity
   - keeps raw MCP list/summary error translation parity explicit
+- `tests/mcp_fastapi_parity_test_support.py`
+  - tiny shared setup, fetch, and meaning-level assertion helpers for the split
+    FastAPI/MCP parity suites
+  - intentionally limited to protected FastAPI route setup, parity fixture
+    setup, and cross-surface meaning plumbing
 - `tests/test_mcp_fastapi_boundary_split.py`
-  - explicit FastAPI-versus-stdio MCP boundary-split and cross-surface smoke coverage
+  - explicit FastAPI-versus-stdio MCP trust-boundary and cross-surface smoke coverage
   - keeps the raw MCP boundary checks grouped together and the grouped MCP
     boundary checks grouped together so the trust rule is easier to review
   - includes the regression that FastAPI `share` CLI runtime preparation must
@@ -281,6 +286,17 @@ The current test split is:
     auth/rate-limit boundary checks
   - and keeps grouped MCP tools usable even when both `share` prep and direct
     FastAPI protections are applied before the MCP read
+- `tests/test_mcp_fastapi_parity_behavior.py`
+  - FastAPI/MCP meaning parity for normal shared-fixture reads
+  - includes unfiltered and filtered raw/grouped reads, known empty sessions,
+    unknown-filter no-match reads, and one shared time-bounded slice
+  - keeps ordinary parity scenarios separate from validation and ordering edges
+- `tests/test_mcp_fastapi_parity_edges.py`
+  - FastAPI/MCP meaning parity for validation and ordering edges
+  - includes invalid time-filter validation, inverted ranges, inclusive and
+    open-ended time bounds, and same-timestamp grouped ordering
+  - keeps the higher-risk boundary and ordering seams separate from ordinary
+    parity behavior
 - `tests/mcp_server_incidents_test_support.py`
   - tiny shared setup and result helpers for the split grouped MCP behavior/error suites
   - intentionally limited to grouped-session setup plus success/error assertion helpers
