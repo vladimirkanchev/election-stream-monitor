@@ -192,12 +192,21 @@ The current test split is:
   - non-429 FastAPI boundary error-header regression coverage
 - `tests/test_api_server_cli_runtime.py`
   - explicit `local`/`share` CLI runtime preparation, overrides, generated-key
-    flow, and fail-fast behavior
+    flow, fail-fast behavior, and CLI-only boundary posture decisions before
+    any HTTP request exists
 - `tests/test_api_server_cli_routes.py`
   - real alerts-router behavior under CLI-prepared `local` and `share` mode,
-    including open local access, `401`, and `429`
+    including open local access, `401`, `429`, and proof that CLI-prepared
+    share mode does not widen protection to public routes
+  - also locks down that `/openapi.json` and `/detectors` remain outside the
+    current alerts-router auth boundary
+  - keeps generated-key and manual-key access aligned across more than one
+    protected alerts route shape
 - `tests/test_api_server_cli_output.py`
-  - startup summary output, generated-key guidance, and manual-key non-leakage
+  - startup summary output, generated-key guidance, manual-key non-leakage,
+    and operator-facing `share` versus `local` startup distinction
+  - also covers custom host/port reflection for both manual `share` and `local`
+    startup paths
 - `tests/test_api_alert_route_auth_policy.py`
   - shared FastAPI alerts-router authentication policy, stable `401`
     behavior, cross-route invalid/missing-key consistency, and proof that the

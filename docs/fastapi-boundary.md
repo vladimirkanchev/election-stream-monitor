@@ -69,6 +69,7 @@ Current alerts-router protection scope:
 Current unaffected public routes:
 
 - `GET /health` stays outside the alerts-router auth/rate-limit boundary
+- `GET /detectors` stays outside the alerts-router auth boundary
 - FastAPI docs and schema endpoints remain public today:
   - `GET /docs`
   - `GET /openapi.json`
@@ -88,6 +89,9 @@ Current alerts-router rate-limit rule:
   of seconds so clients can retry later without guessing the current budget
 - current boundary tests also lock down that public health/docs surfaces remain
   usable after one protected alert route has exhausted its budget
+- current CLI route tests also lock down that `GET /detectors` and
+  `GET /openapi.json` remain public even when CLI-prepared `share` mode enables
+  alerts-router protection
 - current auth-policy tests also lock down that invalid and missing API-key
   failures stay aligned across the protected alerts route family
 
@@ -137,6 +141,17 @@ session lifecycle and playback-resolution bridge operations.
 
 Python CLI commands remain available as tooling/debugging commands, not as the
 normal Electron runtime backend path.
+
+The current CLI-focused test slice reflects that role:
+
+- runtime tests protect mode/default resolution and fail-fast config behavior
+- output tests protect operator-facing startup guidance, including custom
+  listen-address reflection for manual `share` and `local` startup
+- route tests protect the real `local`/`share` boundary behavior without
+  treating the CLI as the primary desktop runtime path
+- route tests also keep the current public-surface split explicit:
+  protected alerts routes versus open `/health`, `/docs`, `/openapi.json`,
+  and `/detectors`
 
 ## Session Ownership
 

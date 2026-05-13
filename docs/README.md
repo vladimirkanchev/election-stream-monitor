@@ -32,6 +32,10 @@ Use this shortcut map before editing code:
   - [contracts.md](./contracts.md)
   - read `fastapi-boundary.md` first if the change touches auth, rate
     limiting, or current readiness expectations for the alerts router
+  - current CLI-oriented FastAPI boundary checks live mainly in:
+    - `tests/test_api_server_cli_runtime.py`
+    - `tests/test_api_server_cli_output.py`
+    - `tests/test_api_server_cli_routes.py`
 - changing MCP alert-query tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
