@@ -1503,6 +1503,27 @@ Shared filter inputs:
 - optional `start_time_utc`
 - optional `end_time_utc`
 
+Current shared-service validation expectations:
+
+- missing sessions raise the shared not-found contract before filtering or
+  summarization continues
+- invalid `start_time_utc` or `end_time_utc` values raise field-specific
+  validation errors
+- unknown detector/severity filters degrade safely to empty query results
+- time bounds are inclusive when provided
+
+Current split test ownership:
+
+- `tests/test_alert_query_service_read.py`
+  - persisted alert-log reads, corrupt/unreadable input tolerance, and
+    missing/orphaned session handling
+- `tests/test_alert_query_service_filter.py`
+  - raw filtered-row behavior, time-range validation, ordering, and safe empty
+    results for unknown filters
+- `tests/test_alert_query_service_summary.py`
+  - numeric aggregation, timestamp-bound behavior, empty-summary behavior, and
+    summary-specific validation
+
 Current alert query response shape:
 
 ```json

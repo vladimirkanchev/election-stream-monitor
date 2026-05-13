@@ -154,7 +154,16 @@ module families and the matching tests:
     - router-scoped limiter policy, stable `429` plus `Retry-After`, and proof
       that public routes remain usable after protected-route throttling
   - `tests/test_api_alert_route_contracts.py`
-  - `tests/test_alert_query_service.py`
+  - `tests/test_alert_query_service_read.py`
+    - shared raw alert-log read semantics and degradation on corrupt or
+      unreadable persisted input
+  - `tests/test_alert_query_service_filter.py`
+    - shared raw filtered alert semantics, including invalid time-filter
+      validation, inclusive/open-ended time bounds, ordering, and
+      missing-session failures
+  - `tests/test_alert_query_service_summary.py`
+    - shared raw numeric alert summary semantics, including empty-summary
+      behavior, timestamp-bound handling, and summary-specific validation
   - `tests/test_alert_timeline_service.py`
   - `tests/test_alert_incident_summary_service.py`
   - `tests/test_api_session_alerts.py`

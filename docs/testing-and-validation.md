@@ -136,7 +136,7 @@ It currently covers:
 Focused alert-query, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_server_incidents.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -176,8 +176,18 @@ The current test split is:
     auth, limiter, and simple successful route responses
 - `tests/mcp_alert_test_support.py`
   - shared in-memory MCP session helpers for the alert-tool tests
-- `tests/test_alert_query_service.py`
-  - service-level raw alert read, filter, and summary semantics
+- `tests/alert_query_service_test_support.py`
+  - tiny shared setup helpers for the split raw alert query service suites
+- `tests/test_alert_query_service_read.py`
+  - service-level persisted alert-log read semantics, corrupt/unreadable input
+    tolerance, and missing/orphaned session handling
+- `tests/test_alert_query_service_filter.py`
+  - raw filtered alert semantics, including invalid time-filter validation,
+    inclusive/open-ended time-range behavior, persisted ordering, unknown-filter
+    empty results, and filtered-entrypoint missing-session failures
+- `tests/test_alert_query_service_summary.py`
+  - numeric raw alert summary semantics, summary-specific validation, empty
+    summary behavior, and summary-entrypoint missing-session failures
 - `tests/test_api_auth.py`
   - auth-boundary unit coverage for enabled/disabled auth, missing keys,
     invalid keys, blank headers, and unsupported modes
