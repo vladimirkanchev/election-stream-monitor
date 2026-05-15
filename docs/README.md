@@ -231,6 +231,20 @@ module families and the matching tests:
   - `tests/test_mcp_server_contracts.py` also keeps one explicit “exactly four
     current tools” guard for the read-only MCP surface, alongside the
     structural registration, schema, and stdio launch-wiring checks
+  - `.github/ci_test_targets.json` now owns the duplicated CI-critical explicit
+    target groups for the CI hardening slice
+  - Python-side CI consumers share one manifest-loading seam in:
+    `.github/scripts/ci_target_manifest.py`
+  - workflows and consistency scripts consume the manifest through:
+    `.github/scripts/ci_target_manifest.py`,
+    `.github/scripts/read_ci_test_targets.py`,
+    `.github/scripts/validate_ci_test_targets.py`, and
+    `.github/scripts/check_ci_target_drift.py`
+  - the stable CI target-group language is:
+    `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
+    `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
+  - consistency jobs run manifest validation, drift checking, then the
+    manifest-backed policy check
 
 ## Current Stable Contracts
 

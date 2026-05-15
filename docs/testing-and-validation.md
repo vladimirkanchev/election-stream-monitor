@@ -81,6 +81,88 @@ The workflow is now path-aware:
 - contract-boundary edits on `main` PRs are expected to come with matching
   tests and the owning docs update
 
+The CI hardening owner is:
+
+- `.github/ci_test_targets.json`
+
+Supporting scripts:
+
+- `.github/scripts/ci_target_manifest.py`
+  - shared manifest model and loading seam used by every Python-side CI target
+    consumer
+- `.github/scripts/validate_ci_test_targets.py`
+  - validates manifest structure, ownership boundary, and target hygiene
+- `.github/scripts/read_ci_test_targets.py`
+  - resolves one stable target group for workflow shell steps
+- `.github/scripts/check_ci_target_drift.py`
+  - checks workflow, policy, and docs alignment with the manifest
+
+The chosen manifest format is JSON. That keeps the source of truth easy to read
+in Python tooling and straightforward to consume from workflow shell steps via
+`python3`, without coupling the repo to an extra YAML parser or to a Python-only
+module import seam.
+
+Stable target groups:
+
+- `backend_contract`
+- `mcp_fastapi_parity`
+- `frontend_contract`
+- `weekly_slow_media`
+- `weekly_api_stream_deep`
+- `weekly_lifecycle`
+
+Reader example:
+
+```bash
+python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space
+```
+
+Workflow consumers:
+
+- `test-and-build`
+  - backend contract checks read `backend_contract` and `mcp_fastapi_parity`
+  - frontend contract checks read `frontend_contract`
+  - the job now validates the manifest boundary before resolving those groups
+- `weekly-validation`
+  - slow media reads `weekly_slow_media`
+  - deeper `api_stream` validation reads `weekly_api_stream_deep`
+  - lifecycle validation reads `weekly_lifecycle`
+  - each weekly heavy job now validates the manifest boundary before resolving
+    its target group
+
+Policy consumer:
+
+- backend contract policy reuses:
+  - `backend_contract`
+  - `mcp_fastapi_parity`
+- frontend bridge policy reuses:
+  - `frontend_contract`
+- `.github/scripts/check_main_pr_consistency.py`
+  - reads the same manifest-backed groups as the workflows where that reuse is
+    practical, then adds only the gate-local extras it still owns
+
+It still keeps a small gate-local extra layer for coverage that does not yet
+belong to a canonical manifest group.
+
+Manifest protection:
+
+- required stable groups must be present and non-empty
+- referenced target files must exist in the repo
+- duplicate target paths are rejected
+- a small denylist of retired split-test file names is rejected explicitly
+
+Drift protection:
+
+- `.github/scripts/check_ci_target_drift.py`
+  - compares manifest groups, workflow usage, consistency-script usage, and
+    CI-facing docs references
+
+Consistency-job order:
+
+1. manifest validation
+2. CI target drift check
+3. manifest-backed policy check
+
 The slower confidence-building checks run weekly instead of on every PR, so
 the repo gets a broader safety net without turning normal branch work into a
 long queue.
@@ -856,7 +938,7 @@ Recommended backend order for session-runner work:
 3. `tests/test_session_runner_execution_api_stream.py`
 4. `tests/test_session_runner_terminal.py`
 5. `tests/test_session_runner_local.py`
-6. `tests/test_session_runner_api_stream_basic.py`
+6. `tests/test_session_runner_api_stream_progress.py`
 7. `tests/test_session_runner_api_stream_http_hls_lifecycle.py` in a normal local shell when loopback sockets are available
 8. `tests/test_session_runner_api_stream_http_hls_failures.py` in a normal local shell when loopback sockets are available
 
@@ -890,9 +972,9 @@ Current lifecycle coverage is already spread across the main layers:
     - stable black-box local lifecycle coverage
     - local discovery and slice-expansion behavior now owned by
       `session_runner_discovery`
-  - `tests/test_session_runner_api_stream_basic.py`
-    - seam-loader `api_stream` completion, cancel, cleanup, and failure paths
-    - stable black-box live progress and summary logging behavior
+  - `tests/test_session_runner_api_stream_progress.py`
+    - seam-loader `api_stream` progress-shaping, repeated temporary failure
+      tolerance, alert re-entry, and multi-detector live coherence
   - `tests/test_session_runner_api_stream_http_hls_lifecycle.py`
     - real HTTP/HLS-backed `api_stream` transport and lifecycle integration
     - keep this as the signoff suite when a change touches successful real HTTP/HLS progression

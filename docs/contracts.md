@@ -1558,6 +1558,32 @@ Current split test ownership:
     invalid time-filter behavior, inverted-range behavior,
     inclusive/open-ended time-bound behavior, and deterministic
     same-timestamp grouped ordering
+- `.github/ci_test_targets.json`
+  - owner of the duplicated CI-critical explicit target groups for the current
+    CI/CD hardening work
+- `.github/scripts/validate_ci_test_targets.py`
+  - structural and boundary validation for the manifest owner
+- `.github/scripts/ci_target_manifest.py`
+  - shared manifest model and loading seam for the reader, validator, drift
+    check, and manifest-backed consistency policy
+- `.github/scripts/read_ci_test_targets.py`
+  - reader seam used by workflow shell consumers
+- `.github/scripts/check_ci_target_drift.py`
+  - final drift pass across workflow, policy, and doc consumers
+- `.github/scripts/check_main_pr_consistency.py`
+  - reuses manifest-backed groups where practical, while keeping a smaller
+    gate-local layer for expectations that are narrower than the manifest
+- the stable CI target-group language is now:
+  `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
+  `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
+- the protected contract lane and the weekly heavy-validation lanes now resolve
+  those groups directly before running their backend/frontend checks
+- the `main-pr-consistency` contract gate now reuses the same stable manifest
+  groups where practical, while keeping only a smaller gate-local set of extra
+  policy expectations
+- `validate_ci_test_targets.py` protects the manifest itself
+- CI consistency jobs run manifest validation, drift checking, then
+  manifest-backed policy validation
 - `tests/test_mcp_server_incidents_behavior.py`
   - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
     grouped results for known sessions whose filters match nothing
