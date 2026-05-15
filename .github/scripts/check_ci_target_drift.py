@@ -5,6 +5,11 @@ This guard now verifies both:
 - the broader manifest-to-consumer alignment
 - the narrower alignment between the main workflow contract lane and the
   manifest-backed main PR consistency policy
+
+It also relies on the current `ci.yml` ownership boundary: broad shared
+contract consumers should be manifest-backed, while the tiny local integration
+smoke path intentionally remains an inline workflow test. Fast backend CI
+stays synthetic, while weekly validation owns the slow and real-media lanes.
 """
 
 from __future__ import annotations
@@ -14,7 +19,11 @@ import re
 import sys
 from pathlib import Path
 
-from ci_target_manifest import CiTargetManifest, ManifestError, REPO_ROOT
+from ci_target_manifest import (
+    ManifestError,
+    REPO_ROOT,
+    load_ci_target_manifest,
+)
 
 
 CI_WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "ci.yml"
@@ -40,8 +49,17 @@ DOC_REQUIRED_TOKENS = (
 
 
 def _workflow_groups(path: Path) -> set[str]:
-    """Return the manifest groups consumed by one workflow file."""
+    """Return the manifest groups consumed by one workflow file.
+
+    This intentionally sees only shared reader-backed consumers, not the tiny
+    local smoke command that remains inline in `ci.yml`.
+    """
     return set(READ_TARGET_PATTERN.findall(path.read_text()))
+
+
+def _all_workflow_groups() -> set[str]:
+    """Return every manifest group consumed by workflow files."""
+    return set().union(*(_workflow_groups(path) for path in WORKFLOW_PATHS))
 
 
 def _consistency_workflow_groups() -> set[str]:
@@ -51,21 +69,22 @@ def _consistency_workflow_groups() -> set[str]:
     policy. Weekly-only groups are intentionally excluded because that policy
     check should track the protected contract lane, not every workflow in the
     repo.
+
+    At the current workflow shape, this means the shared reader-backed
+    `test-and-build` contract groups in `ci.yml`, not the synthetic fast
+    backend lane or the weekly heavy-validation lanes.
     """
     return _workflow_groups(CI_WORKFLOW_PATH)
 
 
-def _consistency_groups() -> set[str]:
-    """Return the manifest groups consumed by manifest-backed policy gates.
+def _parse_consistency_module() -> ast.Module:
+    """Return the parsed consistency-policy module."""
+    return ast.parse(CONSISTENCY_SCRIPT_PATH.read_text())
 
-    The main consistency script now names some groups through top-level tuple
-    constants, and the gates themselves now use clearer field names, so this
-    reader accepts both inline tuples and named constants.
-    """
-    text = CONSISTENCY_SCRIPT_PATH.read_text()
-    module = ast.parse(text)
+
+def _tuple_constants(module: ast.Module) -> dict[str, tuple[str, ...]]:
+    """Return top-level tuple constants from the consistency script."""
     tuple_constants: dict[str, tuple[str, ...]] = {}
-    groups: set[str] = set()
 
     for node in module.body:
         if not isinstance(node, ast.Assign):
@@ -75,15 +94,35 @@ def _consistency_groups() -> set[str]:
         if not isinstance(node.value, ast.Tuple):
             continue
 
-        constant_values: list[str] = []
-        for item in node.value.elts:
-            if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
-                constant_values = []
-                break
-            constant_values.append(item.value)
-
+        constant_values = _string_tuple(node.value)
         if constant_values:
-            tuple_constants[node.targets[0].id] = tuple(constant_values)
+            tuple_constants[node.targets[0].id] = constant_values
+
+    return tuple_constants
+
+
+def _string_tuple(node: ast.Tuple) -> tuple[str, ...]:
+    """Return one AST tuple of string constants, or an empty tuple."""
+    values: list[str] = []
+
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            return ()
+        values.append(item.value)
+
+    return tuple(values)
+
+
+def _consistency_groups() -> set[str]:
+    """Return the manifest groups consumed by manifest-backed policy gates.
+
+    The main consistency script now names some groups through top-level tuple
+    constants, and the gates themselves now use clearer field names, so this
+    reader accepts both inline tuples and named constants.
+    """
+    module = _parse_consistency_module()
+    tuple_constants = _tuple_constants(module)
+    groups: set[str] = set()
 
     for node in ast.walk(module):
         if not isinstance(node, ast.Call):
@@ -95,9 +134,7 @@ def _consistency_groups() -> set[str]:
             if keyword.arg != "manifest_groups":
                 continue
             if isinstance(keyword.value, ast.Tuple):
-                for item in keyword.value.elts:
-                    if isinstance(item, ast.Constant) and isinstance(item.value, str):
-                        groups.add(item.value)
+                groups.update(_string_tuple(keyword.value))
                 continue
             if isinstance(keyword.value, ast.Name):
                 groups.update(tuple_constants.get(keyword.value.id, ()))
@@ -120,8 +157,7 @@ def _missing_doc_tokens(path: Path) -> list[str]:
 def _validate_doc_alignment(doc_path: Path, manifest_groups: set[str]) -> list[str]:
     """Return documentation drift failures for one CI-facing doc."""
     failures: list[str] = []
-    mentioned = _doc_mentions(doc_path, manifest_groups)
-    missing_groups = sorted(manifest_groups - mentioned)
+    missing_groups = sorted(manifest_groups - _doc_mentions(doc_path, manifest_groups))
     if missing_groups:
         failures.append(
             f"{doc_path.relative_to(REPO_ROOT)} is missing manifest group references: {', '.join(missing_groups)}."
@@ -140,18 +176,19 @@ def main() -> int:
     """Run the final manifest-consumer drift pass for the CI hardening slice.
 
     In particular, this verifies that the main PR consistency policy consumes
-    the same stable manifest groups as the main workflow contract lane, while
-    the manifest remains the owner of the shared target language.
+    the same stable manifest groups as the reader-backed `test-and-build`
+    contract lane, while the manifest remains the owner of the shared target
+    language.
     """
     failures: list[str] = []
 
     try:
-        manifest_groups = set(CiTargetManifest.load().group_names())
+        manifest_groups = set(load_ci_target_manifest().group_names())
     except ManifestError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    workflow_groups = set().union(*(_workflow_groups(path) for path in WORKFLOW_PATHS))
+    workflow_groups = _all_workflow_groups()
     consistency_workflow_groups = _consistency_workflow_groups()
     consistency_groups = _consistency_groups()
 

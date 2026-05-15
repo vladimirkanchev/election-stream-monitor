@@ -3,8 +3,13 @@
 
 The CI hardening scripts all read the same manifest. This module keeps that
 parsing logic in one place so workflow readers, validators, drift checks, and
-policy checks share the same assumptions. It also exposes the shared
-manifest-group access seam used by the manifest-backed consistency policy.
+policy checks share the same assumptions.
+
+At the current repo shape, the manifest already covers the broad shared
+`ci.yml` contract consumers. The remaining tiny smoke path stays inline on
+purpose, so consumers can rely on this module for shared target groups without
+turning every workflow test invocation into manifest data. That keeps only
+genuinely small one-off workflow lists outside the shared selector surface.
 """
 
 from __future__ import annotations
@@ -21,6 +26,14 @@ MANIFEST_PATH = REPO_ROOT / ".github" / "ci_test_targets.json"
 
 class ManifestError(ValueError):
     """Raised when the CI target manifest is missing required structure."""
+
+
+def _load_json_object(path: Path) -> dict[str, object]:
+    """Load one manifest file and require an object root."""
+    raw = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise ManifestError("CI target manifest root must be an object.")
+    return raw
 
 
 def _require_mapping(raw: object, field_name: str) -> dict[str, object]:
@@ -48,7 +61,11 @@ class OwnershipBoundary:
 
 @dataclass(frozen=True)
 class CiTargetManifest:
-    """Parsed CI target manifest with stable, consumer-friendly accessors."""
+    """Parsed CI target manifest with stable, consumer-friendly accessors.
+
+    The manifest models only the shared CI-critical target groups. It does not
+    try to absorb every small one-off workflow test path.
+    """
 
     path: Path
     raw: dict[str, object]
@@ -59,10 +76,7 @@ class CiTargetManifest:
     @classmethod
     def load(cls, path: Path = MANIFEST_PATH) -> "CiTargetManifest":
         """Load and normalize the canonical CI target manifest from disk."""
-        raw = json.loads(path.read_text())
-        if not isinstance(raw, dict):
-            raise ManifestError("CI target manifest root must be an object.")
-
+        raw = _load_json_object(path)
         format_data = _require_mapping(raw.get("format"), "format")
         targets_data = _require_mapping(raw.get("targets"), "targets")
         boundary_data = _require_mapping(

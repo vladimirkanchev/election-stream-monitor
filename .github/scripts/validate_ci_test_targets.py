@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""Validate the CI target manifest structure, boundary, and target hygiene."""
+"""Validate the CI target manifest structure, boundary, and target hygiene.
+
+This validator protects the current ownership split in `ci.yml`: broad shared
+contract consumers belong in manifest-backed target groups, while very small
+one-off smoke paths are allowed to stay inline outside the manifest.
+"""
 
 from __future__ import annotations
 
 import sys
 
-from ci_target_manifest import CiTargetManifest, ManifestError, REPO_ROOT
+from ci_target_manifest import (
+    CiTargetManifest,
+    ManifestError,
+    REPO_ROOT,
+    load_ci_target_manifest,
+)
 
 REQUIRED_INCLUDED_GROUPS = (
     "backend_contract",
@@ -40,6 +50,29 @@ RETIRED_TARGET_PATHS = (
     "tests/test_mcp_server_incidents.py",
 )
 
+BOUNDARY_RULES = (
+    (
+        "format_type",
+        (REQUIRED_FORMAT_TYPE,),
+        "Manifest format drifted from the approved JSON format.",
+    ),
+    (
+        "ownership_boundary.included_target_groups",
+        REQUIRED_INCLUDED_GROUPS,
+        "Manifest included target groups drifted from the approved CI-critical boundary.",
+    ),
+    (
+        "ownership_boundary.excluded_target_categories",
+        REQUIRED_EXCLUDED_CATEGORIES,
+        "Manifest excluded target categories drifted from the approved non-manifest boundary.",
+    ),
+    (
+        "ownership_boundary.current_consumers",
+        REQUIRED_CONSUMERS,
+        "Manifest consumer inventory drifted from the approved current CI/docs consumers.",
+    ),
+)
+
 
 def _check_equal(
     actual: tuple[str, ...],
@@ -52,6 +85,13 @@ def _check_equal(
     return [failure_message]
 
 
+def _require_group_naming(manifest: CiTargetManifest) -> list[str]:
+    """Return a failure when the manifest loses stable group-naming metadata."""
+    if "group_naming" in manifest.raw:
+        return []
+    return ["Manifest is missing the 'group_naming' object."]
+
+
 def _validate_targets(manifest: CiTargetManifest) -> list[str]:
     """Return failures for required stable target groups."""
     failures: list[str] = []
@@ -62,6 +102,31 @@ def _validate_targets(manifest: CiTargetManifest) -> list[str]:
             continue
         if not manifest.group_targets(group_name):
             failures.append(f"Manifest target group '{group_name}' must not be empty.")
+
+    return failures
+
+
+def _manifest_tuple(manifest: CiTargetManifest, field_name: str) -> tuple[str, ...]:
+    """Return one manifest tuple field used by boundary validation."""
+    if field_name == "format_type":
+        return (manifest.format_type,)
+
+    boundary_field = field_name.removeprefix("ownership_boundary.")
+    return getattr(manifest.ownership_boundary, boundary_field)
+
+
+def _validate_boundary_rules(manifest: CiTargetManifest) -> list[str]:
+    """Return failures for the approved manifest boundary contract."""
+    failures: list[str] = []
+
+    for field_name, expected, failure_message in BOUNDARY_RULES:
+        failures.extend(
+            _check_equal(
+                actual=_manifest_tuple(manifest, field_name),
+                expected=expected,
+                failure_message=failure_message,
+            )
+        )
 
     return failures
 
@@ -98,57 +163,32 @@ def _validate_target_paths(manifest: CiTargetManifest) -> list[str]:
 
 
 def _validate_manifest() -> list[str]:
-    """Return human-readable failures for the parsed manifest."""
+    """Return human-readable failures for the parsed manifest.
+
+    This keeps the step-3 boundary explicit: the manifest must stay complete
+    for broad shared consumers without growing to include tiny local smoke
+    paths that intentionally remain inline in `ci.yml`.
+    """
     try:
-        manifest = CiTargetManifest.load()
+        manifest = load_ci_target_manifest()
     except ManifestError as exc:
         return [str(exc)]
 
-    if "group_naming" not in manifest.raw:
-        return ["Manifest is missing the 'group_naming' object."]
-
     failures = []
-    failures.extend(
-        _check_equal(
-            actual=(manifest.format_type,),
-            expected=(REQUIRED_FORMAT_TYPE,),
-            failure_message="Manifest format drifted from the approved JSON format.",
-        )
-    )
-    failures.extend(
-        _check_equal(
-            actual=manifest.ownership_boundary.included_target_groups,
-            expected=REQUIRED_INCLUDED_GROUPS,
-            failure_message=(
-                "Manifest included target groups drifted from the approved CI-critical boundary."
-            ),
-        )
-    )
-    failures.extend(
-        _check_equal(
-            actual=manifest.ownership_boundary.excluded_target_categories,
-            expected=REQUIRED_EXCLUDED_CATEGORIES,
-            failure_message=(
-                "Manifest excluded target categories drifted from the approved non-manifest boundary."
-            ),
-        )
-    )
-    failures.extend(
-        _check_equal(
-            actual=manifest.ownership_boundary.current_consumers,
-            expected=REQUIRED_CONSUMERS,
-            failure_message=(
-                "Manifest consumer inventory drifted from the approved current CI/docs consumers."
-            ),
-        )
-    )
+    failures.extend(_require_group_naming(manifest))
+    failures.extend(_validate_boundary_rules(manifest))
     failures.extend(_validate_targets(manifest))
     failures.extend(_validate_target_paths(manifest))
     return failures
 
 
 def main() -> int:
-    """Run the manifest validation command used by CI workflow and docs guards."""
+    """Run the manifest validation command used by CI workflow and docs guards.
+
+    The current workflow expectation is that `test-and-build` resolves shared
+    contract targets through the reader, while one small integration smoke
+    command remains an explicit local inline invocation.
+    """
     failures = _validate_manifest()
     if failures:
         print("ci_test_targets manifest validation failed:", file=sys.stderr)
