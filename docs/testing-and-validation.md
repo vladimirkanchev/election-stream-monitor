@@ -84,12 +84,15 @@ The workflow is now path-aware:
 The CI hardening owner is:
 
 - `.github/ci_test_targets.json`
+  - owner of the shared CI target groups used by workflow and policy consumers
 
 Supporting scripts:
 
 - `.github/scripts/ci_target_manifest.py`
   - shared manifest model and loading seam used by every Python-side CI target
     consumer
+  - also exposes the shared manifest-group access seam used by
+    `check_main_pr_consistency.py`
 - `.github/scripts/validate_ci_test_targets.py`
   - validates manifest structure, ownership boundary, and target hygiene
 - `.github/scripts/read_ci_test_targets.py`
@@ -130,19 +133,34 @@ Workflow consumers:
   - each weekly heavy job now validates the manifest boundary before resolving
     its target group
 
+Ownership summary:
+
+- the manifest owns the shared CI target groups
+- `.github/scripts/check_main_pr_consistency.py` owns the narrower main-PR
+  policy layer
+- the policy layer keeps only:
+  - gate activation rules
+  - docs expectations
+  - policy-only test expectations that are intentionally narrower than the
+    shared CI groups
+
 Policy consumer:
 
-- backend contract policy reuses:
+- backend contract gate reuses:
   - `backend_contract`
   - `mcp_fastapi_parity`
-- frontend bridge policy reuses:
+- frontend bridge gate reuses:
   - `frontend_contract`
-- `.github/scripts/check_main_pr_consistency.py`
-  - reads the same manifest-backed groups as the workflows where that reuse is
-    practical, then adds only the gate-local extras it still owns
-
-It still keeps a small gate-local extra layer for coverage that does not yet
-belong to a canonical manifest group.
+- electron trust/playback stays local-only until the repo gives it a shared
+  CI target group
+- each policy gate now reads as:
+  - label
+  - changed paths
+  - manifest groups
+  - policy-only tests
+  - docs expectations
+- that keeps the script narrower than the workflow lanes it references, so it
+  does not become a second target manifest
 
 Manifest protection:
 
@@ -156,12 +174,16 @@ Drift protection:
 - `.github/scripts/check_ci_target_drift.py`
   - compares manifest groups, workflow usage, consistency-script usage, and
     CI-facing docs references
+  - verifies that the main PR consistency policy consumes the same stable
+    manifest groups as the main workflow contract lane
+  - protects the ownership split between shared target data and narrower
+    policy logic
 
 Consistency-job order:
 
 1. manifest validation
 2. CI target drift check
-3. manifest-backed policy check
+3. manifest-backed main PR gate policy check
 
 The slower confidence-building checks run weekly instead of on every PR, so
 the repo gets a broader safety net without turning normal branch work into a

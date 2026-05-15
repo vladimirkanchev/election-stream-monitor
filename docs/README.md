@@ -233,6 +233,8 @@ module families and the matching tests:
     structural registration, schema, and stdio launch-wiring checks
   - `.github/ci_test_targets.json` now owns the duplicated CI-critical explicit
     target groups for the CI hardening slice
+  - that manifest owns the shared target groups, while
+    `check_main_pr_consistency.py` owns the narrower main-PR policy layer
   - Python-side CI consumers share one manifest-loading seam in:
     `.github/scripts/ci_target_manifest.py`
   - workflows and consistency scripts consume the manifest through:
@@ -240,6 +242,14 @@ module families and the matching tests:
     `.github/scripts/read_ci_test_targets.py`,
     `.github/scripts/validate_ci_test_targets.py`, and
     `.github/scripts/check_ci_target_drift.py`
+  - the drift check now verifies that `main-pr-consistency` follows the same
+    stable manifest groups as the main workflow contract lane
+  - within `main-pr-consistency`, the backend and frontend bridge gates now
+    read shared manifest groups, while the electron trust/playback gate remains
+    local-only
+  - those gates now read more clearly as:
+    label, changed paths, manifest groups, policy-only tests, and docs
+    expectations
   - the stable CI target-group language is:
     `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
     `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`

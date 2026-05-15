@@ -1561,18 +1561,37 @@ Current split test ownership:
 - `.github/ci_test_targets.json`
   - owner of the duplicated CI-critical explicit target groups for the current
     CI/CD hardening work
+  - owner of the shared CI target groups consumed by workflows and by the
+    manifest-backed part of the main PR policy
 - `.github/scripts/validate_ci_test_targets.py`
   - structural and boundary validation for the manifest owner
 - `.github/scripts/ci_target_manifest.py`
   - shared manifest model and loading seam for the reader, validator, drift
     check, and manifest-backed consistency policy
+  - also owns the shared manifest-group access seam used by the consistency
+    policy script
 - `.github/scripts/read_ci_test_targets.py`
   - reader seam used by workflow shell consumers
 - `.github/scripts/check_ci_target_drift.py`
   - final drift pass across workflow, policy, and doc consumers
+  - verifies that the main PR consistency policy consumes the same stable
+    manifest groups as the main workflow contract lane
+  - protects the ownership split: manifest owns shared target groups, policy
+    script owns narrower PR enforcement
 - `.github/scripts/check_main_pr_consistency.py`
   - reuses manifest-backed groups where practical, while keeping a smaller
-    gate-local layer for expectations that are narrower than the manifest
+    policy-only layer for expectations that are narrower than the manifest
+  - owns the narrower main-PR policy logic:
+    gate activation rules, docs expectations, and policy-only test
+    expectations
+  - each gate now reads as:
+    label, changed paths, manifest groups, policy-only tests, and docs
+    expectations
+  - the policy stays intentionally narrower than the workflow lanes it
+    references, so it does not become a second target manifest
+  - backend policy reads `backend_contract` and `mcp_fastapi_parity`
+  - frontend bridge policy reads `frontend_contract`
+  - electron trust/playback policy stays local-only for now
 - the stable CI target-group language is now:
   `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
   `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
@@ -1583,7 +1602,7 @@ Current split test ownership:
   policy expectations
 - `validate_ci_test_targets.py` protects the manifest itself
 - CI consistency jobs run manifest validation, drift checking, then
-  manifest-backed policy validation
+  manifest-backed main PR gate policy validation
 - `tests/test_mcp_server_incidents_behavior.py`
   - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
     grouped results for known sessions whose filters match nothing
