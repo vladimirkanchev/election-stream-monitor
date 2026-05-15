@@ -126,12 +126,55 @@ Workflow consumers:
   - backend contract checks read `backend_contract` and `mcp_fastapi_parity`
   - frontend contract checks read `frontend_contract`
   - the job now validates the manifest boundary before resolving those groups
+  - both shared contract checks resolve their targets through
+    `read_ci_test_targets.py`
 - `weekly-validation`
   - slow media reads `weekly_slow_media`
   - deeper `api_stream` validation reads `weekly_api_stream_deep`
   - lifecycle validation reads `weekly_lifecycle`
   - each weekly heavy job now validates the manifest boundary before resolving
     its target group
+
+Final `ci.yml` selector ownership:
+
+- manifest-backed workflow jobs
+  - `test-and-build`
+    - backend contract checks
+    - frontend contract checks
+- intentionally inline workflow jobs
+  - `integration-smoke`
+    - `tests/test_e2e_local_session.py`
+    - stays inline because it is a tiny local smoke path
+- weekly manifest-backed workflow jobs
+  - `slow-e2e`
+  - `api-stream-deep`
+  - `lifecycle-deep`
+
+Final lane ownership:
+
+- fast synthetic lane
+  - `backend-tests`
+- protected contract lane
+  - `test-and-build`
+- intentional local smoke lane
+  - `integration-smoke`
+- weekly heavy-validation lanes
+  - `slow-e2e`
+  - `api-stream-deep`
+  - `lifecycle-deep`
+
+Selector ownership summary:
+
+- the canonical manifest already covers every broad shared `ci.yml` contract
+  consumer that should be selector-backed
+- `test-and-build` is the reader-backed execution path for that shared
+  coverage
+- only genuinely small one-off workflow paths stay inline
+- the drift check treats the reader-backed `test-and-build` contract lane as
+  the workflow alignment target for shared `ci.yml` groups
+- fast backend CI stays synthetic with `-m "not e2e and not slow"`
+- slow, real-media, deeper `api_stream`, and lifecycle-heavy coverage stay in
+  the weekly manifest-backed lanes
 
 Ownership summary:
 

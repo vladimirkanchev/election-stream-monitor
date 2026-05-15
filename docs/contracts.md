@@ -1595,8 +1595,15 @@ Current split test ownership:
 - the stable CI target-group language is now:
   `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
   `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
-- the protected contract lane and the weekly heavy-validation lanes now resolve
-  those groups directly before running their backend/frontend checks
+- the protected contract lane and the weekly heavy-validation lanes resolve
+  those groups through the shared reader seam
+- `integration-smoke` remains the intentional inline exception because it is a
+  tiny local smoke path
+- the final lane split is: `backend-tests` fast synthetic, `test-and-build`
+  contract-focused, `integration-smoke` tiny local smoke, and weekly lanes for
+  heavy coverage
+- the drift check treats the reader-backed `test-and-build` contract lane as
+  the workflow alignment target for shared `ci.yml` groups
 - the `main-pr-consistency` contract gate now reuses the same stable manifest
   groups where practical, while keeping only a smaller gate-local set of extra
   policy expectations

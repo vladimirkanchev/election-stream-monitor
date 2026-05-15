@@ -242,8 +242,15 @@ module families and the matching tests:
     `.github/scripts/read_ci_test_targets.py`,
     `.github/scripts/validate_ci_test_targets.py`, and
     `.github/scripts/check_ci_target_drift.py`
-  - the drift check now verifies that `main-pr-consistency` follows the same
-    stable manifest groups as the main workflow contract lane
+  - `test-and-build` and the weekly heavy lanes resolve shared targets through
+    `.github/scripts/read_ci_test_targets.py`
+  - `integration-smoke` is the intentional inline exception because it is a
+    tiny local smoke path
+  - the final lane split is:
+    `backend-tests` fast synthetic, `test-and-build` contract-focused,
+    `integration-smoke` tiny local smoke, and weekly lanes for heavy coverage
+  - the drift check keeps that reader-backed contract lane aligned with the
+    manifest-backed PR policy
   - within `main-pr-consistency`, the backend and frontend bridge gates now
     read shared manifest groups, while the electron trust/playback gate remains
     local-only
