@@ -4,18 +4,28 @@
 The contract gates now consume the same manifest-backed CI target groups used by
 the active workflow jobs where that reuse is practical, which reduces one of
 the main drift seams between CI execution and CI policy enforcement.
+
+Ownership model:
+- `.github/ci_test_targets.json` owns the shared CI target groups
+- this script owns the narrower main-PR policy logic, docs expectations, and
+  policy-only test expectations
+
+Current ownership boundary in this script:
+- local policy triggers such as docs/workflow/contract-sensitive paths
+- per-gate docs expectations
+- smaller policy-only test tuples that are intentionally narrower than the
+  shared manifest groups
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from fnmatch import fnmatch
-from functools import cache
 import subprocess
 import sys
 from pathlib import Path
 
-from ci_target_manifest import CiTargetManifest, REPO_ROOT
+from ci_target_manifest import REPO_ROOT, manifest_group_targets
 
 DOC_PATHS = (
     "README.md",
@@ -23,6 +33,7 @@ DOC_PATHS = (
     "docs/",
 )
 
+# These top-level path sets are policy triggers, not shared CI target inventory.
 WORKFLOW_PATHS = (
     ".github/workflows/",
     "frontend/package.json",
@@ -43,27 +54,111 @@ CONTRACT_PATHS = (
     "docs/contracts.md",
 )
 
+BACKEND_POLICY_GROUPS = (
+    "backend_contract",
+    "mcp_fastapi_parity",
+)
+
+FRONTEND_BRIDGE_POLICY_GROUPS = ("frontend_contract",)
+
+# These tuples are intentionally policy-only. They stay outside the manifest
+# because they are special-case expectations that are narrower than the shared
+# CI ownership groups.
+BACKEND_POLICY_ONLY_TESTS = (
+    "tests/test_api_boundary_validation.py",
+    "tests/test_mcp_server_alerts_behavior.py",
+    "tests/test_mcp_server_alerts_errors.py",
+    "tests/test_mcp_server_incidents_behavior.py",
+    "tests/test_mcp_server_incidents_errors.py",
+    "tests/test_stream_loader_contracts.py",
+    "tests/test_stream_loader_http_hls_policy.py",
+    "tests/test_stream_loader_http_hls_playlist.py",
+    "tests/test_stream_loader_http_hls_fetch.py",
+    "tests/test_stream_loader_http_hls_materialize.py",
+    "tests/test_stream_loader_http_hls_core_provider.py",
+    "tests/test_stream_loader_http_hls_core_progression.py",
+    "tests/test_stream_loader_http_hls_reconnect_recovery.py",
+    "tests/test_stream_loader_http_hls_reconnect_state.py",
+    "tests/test_stream_loader_http_hls_limits_runtime.py",
+    "tests/test_stream_loader_http_hls_limits_cleanup.py",
+    "tests/test_stream_loader_http_hls_limits_restart.py",
+    "tests/test_session_runner_api_stream_completion.py",
+    "tests/test_session_runner_api_stream_cancellation.py",
+    "tests/test_session_runner_execution_local.py",
+    "tests/test_session_runner_execution_api_stream.py",
+)
+
+FRONTEND_BRIDGE_POLICY_ONLY_TESTS = (
+    "frontend/src/bridge/contract.session-snapshot.test.ts",
+    "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
+    "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
+    "frontend/src/hooks/usePlaybackSource.test.tsx",
+)
+
+ELECTRON_TRUST_PLAYBACK_POLICY_ONLY_TESTS = (
+    "frontend/electron/playbackSourcePolicy.test.mjs",
+    "frontend/electron/localMediaRequestPolicy.test.mjs",
+    "frontend/electron/bridgeResponses.test.mjs",
+    "frontend/electron/fastApiFallback.test.mjs",
+    "frontend/electron/fastApiRuntimePolicy.test.mjs",
+    "frontend/electron/fastApiClient.test.mjs",
+    "frontend/electron/fastApiProcessManager.test.mjs",
+    "frontend/electron/fastApiStartupOrchestrator.test.mjs",
+    "frontend/electron/localMediaResponses.test.mjs",
+)
+
 
 @dataclass(frozen=True)
 class ContractGate:
     """Policy gate for one contract-sensitive part of the repo.
 
-    Manifest-backed groups cover the shared stable CI language. Local extras
-    remain for expectations that are intentionally narrower than the manifest.
+    Manifest-backed groups cover the shared stable CI language. Policy-only
+    tests remain for expectations that are intentionally narrower than the
+    manifest. A gate may also stay fully local when the repo does not yet
+    expose a matching shared manifest-backed CI group.
+
+    Read each gate as:
+    - label
+    - changed paths
+    - manifest groups
+    - policy-only tests
+    - docs expectations
     """
 
     label: str
-    paths: tuple[str, ...]
-    docs: tuple[str, ...]
-    tests: tuple[str, ...] = ()
-    manifest_test_groups: tuple[str, ...] = ()
-    extra_tests: tuple[str, ...] = ()
+    changed_paths: tuple[str, ...]
+    manifest_groups: tuple[str, ...] = ()
+    policy_only_tests: tuple[str, ...] = ()
+    docs_expectations: tuple[str, ...] = ()
+
+    def uses_manifest_groups(self) -> bool:
+        """Return whether this gate reuses shared manifest-backed target groups."""
+        return bool(self.manifest_groups)
+
+    def expected_tests(self) -> tuple[str, ...]:
+        """Return the full test expectations for this gate.
+
+        Shared manifest-backed groups provide the broad CI ownership through the
+        shared manifest access seam. Smaller policy-only test tuples keep the
+        special-case expectations that should not move into the shared
+        target manifest yet.
+        """
+        manifest_tests = tuple(
+            test_path
+            for group_name in self.manifest_groups
+            for test_path in manifest_group_targets(group_name)
+        )
+        return manifest_tests + self.policy_only_tests
+
+    def matches_changed_files(self, changed_files: list[str]) -> bool:
+        """Return whether any changed file activates this gate."""
+        return _matches_glob_any(changed_files, self.changed_paths)
 
 
 CONTRACT_GATES = (
     ContractGate(
         label="backend contract",
-        paths=(
+        changed_paths=(
             "src/source_validation.py",
             "src/stream_loader.py",
             "src/stream_loader_contracts.py",
@@ -77,56 +172,33 @@ CONTRACT_GATES = (
             "src/api/schemas.py",
             "src/api/routers/sessions.py",
         ),
-        manifest_test_groups=(
-            "backend_contract",
-            "mcp_fastapi_parity",
-        ),
-        extra_tests=(
-            "tests/test_api_boundary_validation.py",
-            "tests/test_mcp_server_alerts_behavior.py",
-            "tests/test_mcp_server_alerts_errors.py",
-            "tests/test_mcp_server_incidents_behavior.py",
-            "tests/test_mcp_server_incidents_errors.py",
-            "tests/test_stream_loader_contracts.py",
-            "tests/test_stream_loader_http_hls_policy.py",
-            "tests/test_stream_loader_http_hls_playlist.py",
-            "tests/test_stream_loader_http_hls_fetch.py",
-            "tests/test_stream_loader_http_hls_materialize.py",
-            "tests/test_stream_loader_http_hls_core_provider.py",
-            "tests/test_stream_loader_http_hls_core_progression.py",
-            "tests/test_stream_loader_http_hls_reconnect_recovery.py",
-            "tests/test_stream_loader_http_hls_reconnect_state.py",
-            "tests/test_stream_loader_http_hls_limits_runtime.py",
-            "tests/test_stream_loader_http_hls_limits_cleanup.py",
-            "tests/test_stream_loader_http_hls_limits_restart.py",
-            "tests/test_session_runner_api_stream_completion.py",
-            "tests/test_session_runner_api_stream_cancellation.py",
-            "tests/test_session_runner_execution_local.py",
-            "tests/test_session_runner_execution_api_stream.py",
-        ),
-        docs=("docs/contracts.md", "docs/session-model.md"),
+        # This gate reads the same shared backend and parity suites that the
+        # protected CI workflow already uses.
+        manifest_groups=BACKEND_POLICY_GROUPS,
+        # These remain policy-only because the gate expects narrower coverage
+        # than the broader manifest-backed CI lane.
+        policy_only_tests=BACKEND_POLICY_ONLY_TESTS,
+        docs_expectations=("docs/contracts.md", "docs/session-model.md"),
     ),
     ContractGate(
         label="frontend bridge contract",
-        paths=(
+        changed_paths=(
             "frontend/src/bridge/**",
             "frontend/src/types.ts",
             "frontend/src/hooks/useMonitoringSession*.tsx",
             "frontend/src/hooks/usePlaybackSource*.tsx",
             "frontend/src/uiErrors.ts",
         ),
-        manifest_test_groups=("frontend_contract",),
-        extra_tests=(
-            "frontend/src/bridge/contract.session-snapshot.test.ts",
-            "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
-            "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
-            "frontend/src/hooks/usePlaybackSource.test.tsx",
-        ),
-        docs=("docs/contracts.md",),
+        # This gate reads the same shared frontend contract group that the
+        # protected CI workflow already uses.
+        manifest_groups=FRONTEND_BRIDGE_POLICY_GROUPS,
+        # These stay policy-only until they belong to a broader shared CI group.
+        policy_only_tests=FRONTEND_BRIDGE_POLICY_ONLY_TESTS,
+        docs_expectations=("docs/contracts.md",),
     ),
     ContractGate(
         label="electron trust/playback contract",
-        paths=(
+        changed_paths=(
             "frontend/electron/playbackSourcePolicy.mjs",
             "frontend/electron/localMediaRequestPolicy.mjs",
             "frontend/electron/bridgeResponses.mjs",
@@ -137,50 +209,12 @@ CONTRACT_GATES = (
             "frontend/electron/fastApiStartupOrchestrator.mjs",
             "frontend/electron/localMediaResponses.mjs",
         ),
-        tests=(
-            "frontend/electron/playbackSourcePolicy.test.mjs",
-            "frontend/electron/localMediaRequestPolicy.test.mjs",
-            "frontend/electron/bridgeResponses.test.mjs",
-            "frontend/electron/fastApiFallback.test.mjs",
-            "frontend/electron/fastApiRuntimePolicy.test.mjs",
-            "frontend/electron/fastApiClient.test.mjs",
-            "frontend/electron/fastApiProcessManager.test.mjs",
-            "frontend/electron/fastApiStartupOrchestrator.test.mjs",
-            "frontend/electron/localMediaResponses.test.mjs",
-        ),
-        docs=("docs/contracts.md", "docs/architecture.md"),
+        # This gate still owns its full policy-only test list because it is not
+        # yet represented by a shared manifest-backed CI target group.
+        policy_only_tests=ELECTRON_TRUST_PLAYBACK_POLICY_ONLY_TESTS,
+        docs_expectations=("docs/contracts.md", "docs/architecture.md"),
     ),
 )
-
-
-@cache
-def _load_ci_target_manifest() -> CiTargetManifest:
-    """Return the parsed CI target manifest used by workflow and policy checks.
-
-    This keeps the main PR policy gate aligned with the same stable target
-    groups the workflows already consume directly.
-    """
-    return CiTargetManifest.load()
-
-
-def _manifest_group_targets(group_name: str) -> tuple[str, ...]:
-    """Return one stable manifest-backed CI target group."""
-    return _load_ci_target_manifest().group_targets(group_name)
-
-
-def _gate_tests(gate: ContractGate) -> tuple[str, ...]:
-    """Return the combined manifest-backed and gate-local test expectations.
-
-    Manifest-backed groups cover the shared stable CI language. Gate-local
-    extras remain for expectations that are not yet owned by a canonical
-    manifest group.
-    """
-    manifest_tests = tuple(
-        test_path
-        for group_name in gate.manifest_test_groups
-        for test_path in _manifest_group_targets(group_name)
-    )
-    return manifest_tests + gate.extra_tests + gate.tests
 
 
 def _changed_files(diff_range: str) -> list[str]:
@@ -206,7 +240,13 @@ def _matches_glob_any(paths: list[str], patterns: tuple[str, ...]) -> bool:
 
 
 def main() -> int:
-    """Run the manifest-backed main PR consistency policy check."""
+    """Run the manifest-backed main PR consistency policy check.
+
+    The policy layer stays intentionally narrower than the shared CI manifest:
+    it enforces docs expectations, special-case policy-only tests, and the
+    current gate activation rules for `main` pull requests. The shared target
+    groups themselves remain owned by `.github/ci_test_targets.json`.
+    """
     if len(sys.argv) != 2:
         print("usage: check_main_pr_consistency.py <diff-range>", file=sys.stderr)
         return 2
@@ -232,10 +272,10 @@ def main() -> int:
         )
 
     for gate in CONTRACT_GATES:
-        if not _matches_glob_any(changed, gate.paths):
+        if not gate.matches_changed_files(changed):
             continue
 
-        gate_tests = _gate_tests(gate)
+        gate_tests = gate.expected_tests()
 
         if not _matches_glob_any(changed, gate_tests):
             failures.append(
@@ -243,10 +283,10 @@ def main() -> int:
                 f"(expected one of: {', '.join(gate_tests)})."
             )
 
-        if not _matches_glob_any(changed, gate.docs):
+        if not _matches_glob_any(changed, gate.docs_expectations):
             failures.append(
                 f"{gate.label.capitalize()} changed without a matching docs update "
-                f"(expected one of: {', '.join(gate.docs)})."
+                f"(expected one of: {', '.join(gate.docs_expectations)})."
             )
 
     if failures:

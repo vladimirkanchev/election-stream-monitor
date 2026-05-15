@@ -3,12 +3,14 @@
 
 The CI hardening scripts all read the same manifest. This module keeps that
 parsing logic in one place so workflow readers, validators, drift checks, and
-policy checks share the same assumptions.
+policy checks share the same assumptions. It also exposes the shared
+manifest-group access seam used by the manifest-backed consistency policy.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cache
 import json
 from pathlib import Path
 
@@ -116,3 +118,14 @@ class CiTargetManifest:
             for group_name in self.group_names()
             for target_path in self.targets[group_name]
         )
+
+
+@cache
+def load_ci_target_manifest() -> CiTargetManifest:
+    """Return the cached canonical CI target manifest for Python-side consumers."""
+    return CiTargetManifest.load()
+
+
+def manifest_group_targets(group_name: str) -> tuple[str, ...]:
+    """Return one stable target group through the shared manifest access seam."""
+    return load_ci_target_manifest().group_targets(group_name)

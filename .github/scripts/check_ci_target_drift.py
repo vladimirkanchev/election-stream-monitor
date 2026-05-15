@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Check drift between the CI target manifest and its workflow, policy, and doc consumers."""
+"""Check drift between the CI target manifest and its workflow, policy, and doc consumers.
+
+This guard now verifies both:
+- the broader manifest-to-consumer alignment
+- the narrower alignment between the main workflow contract lane and the
+  manifest-backed main PR consistency policy
+"""
 
 from __future__ import annotations
 
@@ -26,12 +32,6 @@ WORKFLOW_PATHS = (
 
 READ_TARGET_PATTERN = re.compile(r"read_ci_test_targets\.py\s+([a-z_]+)")
 
-EXPECTED_CONSISTENCY_GROUPS = {
-    "backend_contract",
-    "mcp_fastapi_parity",
-    "frontend_contract",
-}
-
 DOC_REQUIRED_TOKENS = (
     ".github/ci_test_targets.json",
     ".github/scripts/read_ci_test_targets.py",
@@ -44,11 +44,46 @@ def _workflow_groups(path: Path) -> set[str]:
     return set(READ_TARGET_PATTERN.findall(path.read_text()))
 
 
+def _consistency_workflow_groups() -> set[str]:
+    """Return the manifest groups used by the main CI workflow contract lane.
+
+    This is the workflow-side alignment target for the main PR consistency
+    policy. Weekly-only groups are intentionally excluded because that policy
+    check should track the protected contract lane, not every workflow in the
+    repo.
+    """
+    return _workflow_groups(CI_WORKFLOW_PATH)
+
+
 def _consistency_groups() -> set[str]:
-    """Return the manifest groups consumed by the main consistency script."""
+    """Return the manifest groups consumed by manifest-backed policy gates.
+
+    The main consistency script now names some groups through top-level tuple
+    constants, and the gates themselves now use clearer field names, so this
+    reader accepts both inline tuples and named constants.
+    """
     text = CONSISTENCY_SCRIPT_PATH.read_text()
     module = ast.parse(text)
+    tuple_constants: dict[str, tuple[str, ...]] = {}
     groups: set[str] = set()
+
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        if not isinstance(node.value, ast.Tuple):
+            continue
+
+        constant_values: list[str] = []
+        for item in node.value.elts:
+            if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+                constant_values = []
+                break
+            constant_values.append(item.value)
+
+        if constant_values:
+            tuple_constants[node.targets[0].id] = tuple(constant_values)
 
     for node in ast.walk(module):
         if not isinstance(node, ast.Call):
@@ -57,13 +92,15 @@ def _consistency_groups() -> set[str]:
             continue
 
         for keyword in node.keywords:
-            if keyword.arg != "manifest_test_groups":
+            if keyword.arg != "manifest_groups":
                 continue
-            if not isinstance(keyword.value, ast.Tuple):
+            if isinstance(keyword.value, ast.Tuple):
+                for item in keyword.value.elts:
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                        groups.add(item.value)
                 continue
-            for item in keyword.value.elts:
-                if isinstance(item, ast.Constant) and isinstance(item.value, str):
-                    groups.add(item.value)
+            if isinstance(keyword.value, ast.Name):
+                groups.update(tuple_constants.get(keyword.value.id, ()))
 
     return groups
 
@@ -100,7 +137,12 @@ def _validate_doc_alignment(doc_path: Path, manifest_groups: set[str]) -> list[s
 
 
 def main() -> int:
-    """Run the final manifest-consumer drift pass for the CI hardening slice."""
+    """Run the final manifest-consumer drift pass for the CI hardening slice.
+
+    In particular, this verifies that the main PR consistency policy consumes
+    the same stable manifest groups as the main workflow contract lane, while
+    the manifest remains the owner of the shared target language.
+    """
     failures: list[str] = []
 
     try:
@@ -110,6 +152,7 @@ def main() -> int:
         return 1
 
     workflow_groups = set().union(*(_workflow_groups(path) for path in WORKFLOW_PATHS))
+    consistency_workflow_groups = _consistency_workflow_groups()
     consistency_groups = _consistency_groups()
 
     if workflow_groups != manifest_groups:
@@ -118,10 +161,10 @@ def main() -> int:
             f"(manifest={sorted(manifest_groups)}, workflows={sorted(workflow_groups)})."
         )
 
-    if consistency_groups != EXPECTED_CONSISTENCY_GROUPS:
+    if consistency_groups != consistency_workflow_groups:
         failures.append(
-            "Consistency-script manifest-group usage drifted from the approved shared groups "
-            f"(expected={sorted(EXPECTED_CONSISTENCY_GROUPS)}, actual={sorted(consistency_groups)})."
+            "Consistency-script manifest-group usage drifted from the main workflow contract lane "
+            f"(workflow={sorted(consistency_workflow_groups)}, actual={sorted(consistency_groups)})."
         )
 
     for doc_path in DOC_PATHS:
