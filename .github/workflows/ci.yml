@@ -74,13 +74,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Keep the owner/consumer contract healthy before evaluating policy.
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Check CI target drift
+      # Prove that workflow execution and PR policy still consume the same
+      # shared manifest groups.
+      - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
-      - name: Run manifest-backed main PR consistency checks
+      # Run the narrower PR policy only after the manifest and its consumers
+      # are known to be aligned.
+      - name: Run manifest-backed main PR gate policy
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
   frontend-checkpoint:
@@ -523,13 +528,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The docs/workflow consistency lane uses the same manifest contract as
+      # the main PR policy lane.
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Check CI target drift
+      - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
-      - name: Run manifest-backed docs and workflow consistency checks
+      - name: Run manifest-backed docs and workflow gate policy
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
   integration-smoke:
