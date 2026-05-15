@@ -33,11 +33,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      - name: Run slow e2e media tests
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Run manifest-backed slow e2e media tests
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "slow" tests/test_e2e_*.py tests/test_detectors_integration.py -q 2>&1 | tee ci-artifacts/slow-e2e.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "slow" \
+            $(python3 .github/scripts/read_ci_test_targets.py weekly_slow_media --separator space) \
+            -q 2>&1 | tee ci-artifacts/slow-e2e.log
 
       - name: Upload slow e2e log
         if: failure()
@@ -66,11 +71,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      - name: Run deeper api_stream validation
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Run manifest-backed deeper api_stream validation
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_stream_loader_http_hls_*.py tests/test_session_runner_api_stream_*.py tests/test_api_stream_local_validation.py -q 2>&1 | tee ci-artifacts/api-stream-deep.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
+            $(python3 .github/scripts/read_ci_test_targets.py weekly_api_stream_deep --separator space) \
+            -q 2>&1 | tee ci-artifacts/api-stream-deep.log
 
       - name: Upload api_stream deep validation log
         if: failure()
@@ -99,11 +109,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      - name: Run lifecycle-focused backend tests
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Run manifest-backed lifecycle-focused backend tests
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_session_runner_lifecycle.py tests/test_session_runner_execution_local.py tests/test_session_runner_execution_api_stream.py tests/test_session_runner_terminal.py tests/test_session_runner_local.py tests/test_session_runner_api_stream_basic.py tests/test_session_io.py -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
+            $(python3 .github/scripts/read_ci_test_targets.py weekly_lifecycle --separator space) \
+            -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
 
       - name: Upload lifecycle deep validation log
         if: failure()

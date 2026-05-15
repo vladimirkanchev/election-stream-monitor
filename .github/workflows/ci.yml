@@ -74,7 +74,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run main PR consistency checks
+      - name: Validate CI test target manifest structure and boundary
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Check CI target drift
+        run: python .github/scripts/check_ci_target_drift.py
+
+      - name: Run manifest-backed main PR consistency checks
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
   frontend-checkpoint:
@@ -486,12 +492,18 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run backend contract checks
-        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_api_boundary_contracts.py tests/test_api_boundary_sessions_read.py tests/test_api_boundary_sessions_start.py tests/test_api_boundary_sessions_cancel.py tests/test_api_alert_route_contracts.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_mcp_server_contracts.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_session_service_start.py tests/test_session_service_worker.py tests/test_session_service_read_cancel.py tests/test_session_cli_tooling.py
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Run frontend contract checks
+      - name: Run manifest-backed backend contract checks
+        run: |
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \
+            $(python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space) \
+            $(python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
+
+      - name: Run manifest-backed frontend contract checks
         working-directory: frontend
-        run: npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.shape.test.ts src/bridge/contract.session-snapshot.malformed.test.ts src/bridge/contract.session-snapshot.collections.test.ts src/bridge/transport.test.ts src/uiErrors.test.ts
+        run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space)
 
   docs-consistency:
     if: github.event_name == 'pull_request' && github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.contract == 'true')
@@ -511,7 +523,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run docs and workflow consistency checks
+      - name: Validate CI test target manifest structure and boundary
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Check CI target drift
+        run: python .github/scripts/check_ci_target_drift.py
+
+      - name: Run manifest-backed docs and workflow consistency checks
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
   integration-smoke:
