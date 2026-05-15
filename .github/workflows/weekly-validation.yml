@@ -34,7 +34,9 @@ jobs:
           pip install -e .[test]
 
       # Weekly heavy lanes still resolve through the same shared manifest
-      # contract as the protected PR lanes.
+      # contract as the protected PR lanes, but they own the slow and
+      # real-media boundary on purpose. That keeps the protected contract lane
+      # fast enough for PR work while preserving deeper weekly confidence.
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 

@@ -170,6 +170,9 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
+          # Keep the fast backend lane synthetic and lightweight. Slow or
+          # real-media suites must stay in the weekly manifest-backed lanes,
+          # while shared contract ownership lives in `test-and-build`.
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -m "not e2e and not slow" 2>&1 | tee ci-artifacts/backend-tests.log
 
       - name: Skip backend tests
@@ -500,13 +503,23 @@ jobs:
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Run manifest-backed backend contract checks
+      # The canonical manifest is already complete for this workflow lane:
+      # no extra ci.yml selector groups are missing for the broad shared
+      # contract coverage that runs here.
+      # This protected lane stays separate from the fast synthetic backend lane
+      # and from the weekly slow/real-media lanes, so selector ownership is
+      # concentrated in one contract-focused place.
+      # This is the remaining broad pytest consumer in ci.yml. Keep its target
+      # list manifest-backed so split or renamed suites do not have to be
+      # maintained inline here.
+      - name: Run manifest-backed backend contract checks via shared target reader
         run: |
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \
             $(python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space) \
             $(python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
 
-      - name: Run manifest-backed frontend contract checks
+      # Frontend contract coverage follows the same shared-target pattern.
+      - name: Run manifest-backed frontend contract checks via shared target reader
         working-directory: frontend
         run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space)
 
@@ -561,5 +574,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
+      # Keep only genuinely small one-off workflow lists inline. This smoke
+      # path is intentionally narrow, does not represent reusable shared CI
+      # ownership, and would add more noise than value if extracted.
       - name: Run integration smoke test
         run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_e2e_local_session.py

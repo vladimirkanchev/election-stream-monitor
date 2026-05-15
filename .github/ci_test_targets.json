@@ -27,7 +27,8 @@
   "ownership_notes": [
     "This manifest covers only duplicated CI-critical explicit test target groups.",
     "It stays narrower than the full CI configuration surface.",
-    "validate_ci_test_targets.py protects that boundary."
+    "validate_ci_test_targets.py protects that boundary.",
+    "The current ci.yml inventory does not need additional selector groups: broad shared contract consumers are already manifest-backed, while the remaining smoke path stays intentionally inline."
   ],
   "inventory_sources": [
     ".github/workflows/ci.yml",
@@ -55,6 +56,14 @@
       ".github/workflows/weekly-validation.yml",
       ".github/scripts/check_main_pr_consistency.py",
       "docs/testing-and-validation.md"
+    ]
+  },
+  "ci_yml_selector_inventory": {
+    "missing_groups": [],
+    "status": "complete for current ci.yml workflow consumers",
+    "notes": [
+      "test-and-build already resolves the broad shared backend and frontend contract consumers from stable manifest groups.",
+      "integration-smoke remains a deliberate inline one-off path and does not justify a reusable selector group."
     ]
   },
   "targets": {
