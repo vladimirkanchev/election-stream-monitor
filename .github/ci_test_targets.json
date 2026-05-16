@@ -140,6 +140,39 @@
       "It should not expand into a general repo linter or source-path validator."
     ]
   },
+  "alignment_contract_inventory": {
+    "workflow_to_manifest": [
+      "the shared reader-backed contract groups in ci.yml test-and-build must match the protected alignment group set"
+    ],
+    "policy_to_workflow": [
+      "manifest groups consumed by manifest-backed ContractGate entries in check_main_pr_consistency.py must match the shared reader-backed contract groups in ci.yml test-and-build"
+    ],
+    "docs_to_manifest": [
+      "docs/testing-and-validation.md must mention every stable manifest group and the core manifest ownership references",
+      "docs/README.md must mention every stable manifest group and the core manifest ownership references",
+      "docs/contracts.md must mention every stable manifest group and the core manifest ownership references"
+    ],
+    "notes": [
+      "This inventory records the exact alignment contract currently enforced by check_ci_target_drift.py.",
+      "It is intentionally narrower than a general docs-correctness review and narrower than path-existence validation."
+    ]
+  },
+  "alignment_boundary": {
+    "protected_workflow_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract"
+    ],
+    "excluded_alignment_categories": [
+      "weekly-only manifest groups",
+      "tiny inline smoke paths",
+      "non-manifest workflow behavior"
+    ],
+    "notes": [
+      "Alignment is intentionally anchored to the protected shared contract lane in ci.yml and the manifest-backed policy groups in check_main_pr_consistency.py.",
+      "Weekly-only groups, the inline integration smoke path, and broader workflow behavior should not be forced into the same equality rule."
+    ]
+  },
   "targets": {
     "backend_contract": [
       "tests/test_api_boundary_contracts.py",

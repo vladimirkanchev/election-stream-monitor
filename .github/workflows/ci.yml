@@ -88,8 +88,12 @@ jobs:
       - name: Check CI-owned test path existence
         run: python .github/scripts/check_ci_test_paths_exist.py
 
-      # Prove that workflow execution and PR policy still consume the same
-      # shared manifest groups.
+      # Prove that the protected contract lane and the main-PR policy still
+      # consume the same shared manifest groups through one explicit alignment
+      # model. Weekly-only groups and the inline smoke path are intentionally
+      # outside this equality rule. Workflow-side extraction now tolerates
+      # light shell-formatting changes, and policy-side extraction reads from
+      # the explicit owner helper in `check_main_pr_consistency.py`.
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
@@ -517,7 +521,8 @@ jobs:
       # Protected contract-lane order is:
       # 1. manifest structure/scope
       # 2. CI-owned test-path existence
-      # 3. broader shared contract suites
+      # 3. workflow/policy drift alignment
+      # 4. broader shared contract suites
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 
@@ -525,6 +530,12 @@ jobs:
       # contract suites in this protected lane.
       - name: Check CI-owned test path existence
         run: python .github/scripts/check_ci_test_paths_exist.py
+
+      # Keep the shared contract lane aligned with the same manifest-backed
+      # policy and docs ownership model before running the heavier contract
+      # suites below.
+      - name: Check CI target drift and workflow-policy alignment
+        run: python .github/scripts/check_ci_target_drift.py
 
       # The canonical manifest is already complete for this workflow lane:
       # no extra ci.yml selector groups are missing for the broad shared

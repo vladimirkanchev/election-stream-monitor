@@ -249,6 +249,26 @@ def local_only_policy_test_paths() -> tuple[str, ...]:
     return tuple(ordered_unique_paths)
 
 
+def manifest_policy_groups() -> tuple[str, ...]:
+    """Return the deduplicated manifest groups consumed by policy gates.
+
+    This is the explicit policy-owner seam for CI drift checks. Shared
+    workflow/policy alignment should read from this helper instead of
+    reverse-engineering `ContractGate(...)` internals.
+    """
+    ordered_unique_groups: list[str] = []
+    seen_groups: set[str] = set()
+
+    for gate in CONTRACT_GATES:
+        for group_name in gate.manifest_groups:
+            if group_name in seen_groups:
+                continue
+            seen_groups.add(group_name)
+            ordered_unique_groups.append(group_name)
+
+    return tuple(ordered_unique_groups)
+
+
 def _changed_files(diff_range: str) -> list[str]:
     """Return repo-relative files changed in the provided git diff range."""
     result = subprocess.run(

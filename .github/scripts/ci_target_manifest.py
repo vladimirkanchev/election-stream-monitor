@@ -11,9 +11,12 @@ purpose, so consumers can rely on this module for shared target groups without
 turning every workflow test invocation into manifest data. That keeps only
 genuinely small one-off workflow lists outside the shared selector surface.
 
-The manifest also records the current path-owning CI surface and the intended
-scope of the future path-existence self-check: CI-owned test paths belong in
-that guard, while non-test source files and docs rules stay outside it.
+The manifest also records:
+- the current path-owning CI surface for the path-existence guard
+- the narrow workflow/policy alignment boundary for the protected contract lane
+- the high-signal CI-facing doc requirements used by the drift checker
+
+That keeps path-existence and alignment checks small, explicit, and shared.
 """
 
 from __future__ import annotations
@@ -22,10 +25,14 @@ from dataclasses import dataclass
 from functools import cache
 import json
 from pathlib import Path
+import re
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = REPO_ROOT / ".github" / "ci_test_targets.json"
+READ_TARGET_PATTERN = re.compile(
+    r"(?:^|[\s(])python(?:3)?\s+\S*read_ci_test_targets\.py\s+([a-z_]+)"
+)
 
 
 class ManifestError(ValueError):
@@ -68,6 +75,46 @@ def _ordered_unique_paths(relative_paths: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(ordered_unique_paths)
 
 
+def _doc_alignment_requirements(
+    protected_workflow_groups: tuple[str, ...],
+) -> tuple["DocAlignmentRequirement", ...]:
+    """Return the high-signal CI-facing doc requirements for drift checks."""
+    return (
+        DocAlignmentRequirement(
+            path=REPO_ROOT / "docs" / "testing-and-validation.md",
+            required_tokens=(
+                ".github/ci_test_targets.json",
+                ".github/scripts/read_ci_test_targets.py",
+                ".github/scripts/check_ci_target_drift.py",
+                ".github/scripts/check_main_pr_consistency.py",
+            ),
+            required_groups=protected_workflow_groups,
+        ),
+        DocAlignmentRequirement(
+            path=REPO_ROOT / "docs" / "README.md",
+            required_tokens=(
+                ".github/ci_test_targets.json",
+                ".github/scripts/ci_target_manifest.py",
+                ".github/scripts/check_ci_target_drift.py",
+                ".github/scripts/check_main_pr_consistency.py",
+            ),
+        ),
+        DocAlignmentRequirement(
+            path=REPO_ROOT / "docs" / "contracts.md",
+            required_tokens=(
+                ".github/ci_test_targets.json",
+                ".github/scripts/check_ci_target_drift.py",
+                ".github/scripts/check_main_pr_consistency.py",
+            ),
+        ),
+    )
+
+
+def _normalize_workflow_shell_text(raw_text: str) -> str:
+    """Return workflow shell text normalized for reader-command extraction."""
+    return raw_text.replace("\\\n", " ").replace("\n", " ")
+
+
 @dataclass(frozen=True)
 class OwnershipBoundary:
     """Approved ownership boundary declared inside the CI target manifest."""
@@ -75,6 +122,37 @@ class OwnershipBoundary:
     included_target_groups: tuple[str, ...]
     excluded_target_categories: tuple[str, ...]
     current_consumers: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AlignmentBoundary:
+    """Approved narrow workflow/policy alignment boundary in the CI target manifest."""
+
+    protected_workflow_groups: tuple[str, ...]
+    excluded_alignment_categories: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DocAlignmentRequirement:
+    """High-signal ownership references required in one CI-facing doc."""
+
+    path: Path
+    required_tokens: tuple[str, ...]
+    required_groups: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AlignmentContract:
+    """Shared alignment model consumed by the drift checker.
+
+    This keeps the protected workflow groups and the high-signal CI-facing
+    doc ownership checks in one shared place so the drift checker can gather
+    inputs, compare them, and report failures without carrying those
+    assumptions inline.
+    """
+
+    protected_workflow_groups: tuple[str, ...]
+    doc_requirements: tuple[DocAlignmentRequirement, ...]
 
 
 @dataclass(frozen=True)
@@ -102,6 +180,7 @@ class CiTargetManifest:
     format_type: str
     targets: dict[str, tuple[str, ...]]
     ownership_boundary: OwnershipBoundary
+    alignment_boundary: AlignmentBoundary
     path_existence_inventory: PathExistenceInventory
 
     @classmethod
@@ -117,6 +196,10 @@ class CiTargetManifest:
         path_existence_data = _require_mapping(
             raw.get("path_existence_inventory"),
             "path_existence_inventory",
+        )
+        alignment_data = _require_mapping(
+            raw.get("alignment_boundary"),
+            "alignment_boundary",
         )
 
         targets = {
@@ -136,6 +219,17 @@ class CiTargetManifest:
             current_consumers=_require_string_list(
                 boundary_data.get("current_consumers"),
                 "ownership_boundary.current_consumers",
+            ),
+        )
+
+        alignment_boundary = AlignmentBoundary(
+            protected_workflow_groups=_require_string_list(
+                alignment_data.get("protected_workflow_groups"),
+                "alignment_boundary.protected_workflow_groups",
+            ),
+            excluded_alignment_categories=_require_string_list(
+                alignment_data.get("excluded_alignment_categories"),
+                "alignment_boundary.excluded_alignment_categories",
             ),
         )
 
@@ -164,6 +258,7 @@ class CiTargetManifest:
             format_type=str(format_data.get("type", "")),
             targets=targets,
             ownership_boundary=boundary,
+            alignment_boundary=alignment_boundary,
             path_existence_inventory=path_existence_inventory,
         )
 
@@ -216,6 +311,20 @@ class CiTargetManifest:
         """Return the deduplicated CI-owned test paths for the existence guard."""
         return _ordered_unique_paths(self.path_existence_paths())
 
+    def alignment_contract(self) -> AlignmentContract:
+        """Return the shared workflow/policy/docs alignment contract.
+
+        The protected-lane equality stays intentionally narrow:
+        `backend_contract`, `mcp_fastapi_parity`, and `frontend_contract`.
+        Weekly-only groups and the inline smoke path remain outside that rule.
+        """
+        return AlignmentContract(
+            protected_workflow_groups=self.alignment_boundary.protected_workflow_groups,
+            doc_requirements=_doc_alignment_requirements(
+                self.alignment_boundary.protected_workflow_groups
+            ),
+        )
+
 
 @cache
 def load_ci_target_manifest() -> CiTargetManifest:
@@ -236,3 +345,25 @@ def ci_owned_test_paths() -> tuple[str, ...]:
 def workflow_inline_ci_test_paths() -> tuple[str, ...]:
     """Return the explicit inline workflow test-path exceptions."""
     return load_ci_target_manifest().workflow_inline_test_paths()
+
+
+def protected_alignment_groups() -> tuple[str, ...]:
+    """Return the protected contract-lane groups used by workflow/policy alignment."""
+    return load_ci_target_manifest().alignment_boundary.protected_workflow_groups
+
+
+def alignment_contract() -> AlignmentContract:
+    """Return the shared workflow/policy/docs alignment contract."""
+    return load_ci_target_manifest().alignment_contract()
+
+
+def workflow_reader_groups(path: Path) -> tuple[str, ...]:
+    """Return manifest groups consumed through the shared workflow reader.
+
+    The extraction intentionally targets shell invocations of
+    `read_ci_test_targets.py` and normalizes multiline workflow commands so
+    light formatting changes do not alter the discovered group set. It also
+    tolerates `python` vs `python3` call-site variation.
+    """
+    normalized_text = _normalize_workflow_shell_text(path.read_text())
+    return tuple(dict.fromkeys(READ_TARGET_PATTERN.findall(normalized_text)))
