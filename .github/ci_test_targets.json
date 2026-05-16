@@ -28,8 +28,57 @@
     "This manifest covers only duplicated CI-critical explicit test target groups.",
     "It stays narrower than the full CI configuration surface.",
     "validate_ci_test_targets.py protects that boundary.",
-    "The current ci.yml inventory does not need additional selector groups: broad shared contract consumers are already manifest-backed, while the remaining smoke path stays intentionally inline."
+    "The current ci.yml inventory does not need additional selector groups: broad shared contract consumers are already manifest-backed, while the remaining smoke path stays intentionally inline.",
+    "This file is the canonical owner of CI lane-category definitions.",
+    "ci_target_manifest.py is the shared Python access seam for those definitions, not a second owner."
   ],
+  "lane_categories": {
+    "fast_synthetic": {
+      "includes": [
+        "lightweight synthetic backend validation in backend-tests",
+        "fast pytest marker filters such as not e2e and not slow",
+        "quick feedback intended for normal PR and branch work"
+      ],
+      "excludes": [
+        "shared contract/boundary target groups",
+        "real-media or ffmpeg-dependent coverage",
+        "weekly-only deep lifecycle or api_stream suites"
+      ]
+    },
+    "contract_boundary": {
+      "includes": [
+        "shared manifest-backed backend and frontend contract groups",
+        "reader-backed test-and-build ownership",
+        "the tiny integration-smoke local inline exception"
+      ],
+      "excludes": [
+        "broad backend fast-lane selectors",
+        "weekly-only slow or real-media suites",
+        "security, lint, typecheck, packaging, and audit jobs"
+      ]
+    },
+    "weekly_slow_real_media": {
+      "includes": [
+        "weekly_slow_media",
+        "weekly_api_stream_deep",
+        "weekly_lifecycle",
+        "slow, real-media, ffmpeg-dependent, and heavier confidence-building coverage"
+      ],
+      "excludes": [
+        "fast PR feedback lanes",
+        "protected contract-lane equality checks",
+        "tiny local smoke paths"
+      ]
+    }
+  },
+  "group_lane_categories": {
+    "backend_contract": "contract_boundary",
+    "mcp_fastapi_parity": "contract_boundary",
+    "frontend_contract": "contract_boundary",
+    "weekly_slow_media": "weekly_slow_real_media",
+    "weekly_api_stream_deep": "weekly_slow_real_media",
+    "weekly_lifecycle": "weekly_slow_real_media"
+  },
   "inventory_sources": [
     ".github/workflows/ci.yml",
     ".github/workflows/weekly-validation.yml",
