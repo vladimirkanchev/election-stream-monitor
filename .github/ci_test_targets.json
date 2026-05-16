@@ -66,6 +66,80 @@
       "integration-smoke remains a deliberate inline one-off path and does not justify a reusable selector group."
     ]
   },
+  "path_existence_inventory": {
+    "workflow_manifest_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract",
+      "weekly_slow_media",
+      "weekly_api_stream_deep",
+      "weekly_lifecycle"
+    ],
+    "workflow_inline_test_paths": [
+      "tests/test_e2e_local_session.py"
+    ],
+    "policy_manifest_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract"
+    ],
+    "policy_only_test_paths": [
+      "tests/test_api_boundary_validation.py",
+      "tests/test_mcp_server_alerts_behavior.py",
+      "tests/test_mcp_server_alerts_errors.py",
+      "tests/test_mcp_server_incidents_behavior.py",
+      "tests/test_mcp_server_incidents_errors.py",
+      "tests/test_stream_loader_contracts.py",
+      "tests/test_stream_loader_http_hls_policy.py",
+      "tests/test_stream_loader_http_hls_playlist.py",
+      "tests/test_stream_loader_http_hls_fetch.py",
+      "tests/test_stream_loader_http_hls_materialize.py",
+      "tests/test_stream_loader_http_hls_core_provider.py",
+      "tests/test_stream_loader_http_hls_core_progression.py",
+      "tests/test_stream_loader_http_hls_reconnect_recovery.py",
+      "tests/test_stream_loader_http_hls_reconnect_state.py",
+      "tests/test_stream_loader_http_hls_limits_runtime.py",
+      "tests/test_stream_loader_http_hls_limits_cleanup.py",
+      "tests/test_stream_loader_http_hls_limits_restart.py",
+      "tests/test_session_runner_api_stream_completion.py",
+      "tests/test_session_runner_api_stream_cancellation.py",
+      "tests/test_session_runner_execution_local.py",
+      "tests/test_session_runner_execution_api_stream.py",
+      "frontend/src/bridge/contract.session-snapshot.shape.test.ts",
+      "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
+      "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
+      "frontend/src/hooks/usePlaybackSource.test.tsx",
+      "frontend/electron/playbackSourcePolicy.test.mjs",
+      "frontend/electron/localMediaRequestPolicy.test.mjs",
+      "frontend/electron/bridgeResponses.test.mjs",
+      "frontend/electron/fastApiFallback.test.mjs",
+      "frontend/electron/fastApiRuntimePolicy.test.mjs",
+      "frontend/electron/fastApiClient.test.mjs",
+      "frontend/electron/fastApiProcessManager.test.mjs",
+      "frontend/electron/fastApiStartupOrchestrator.test.mjs",
+      "frontend/electron/localMediaResponses.test.mjs"
+    ],
+    "notes": [
+      "This inventory is the full current surface for the future CI path-existence self-check.",
+      "It intentionally includes the one inline smoke-path exception and the narrower policy-only test paths from check_main_pr_consistency.py."
+    ]
+  },
+  "path_existence_boundary": {
+    "included_path_categories": [
+      "manifest target entries",
+      "inline workflow test paths",
+      "policy-only test paths"
+    ],
+    "excluded_path_categories": [
+      "non-test source paths",
+      "docs expectations",
+      "glob-like selectors if they appear later"
+    ],
+    "notes": [
+      "The existence self-check is a narrow structural guard for CI-owned test paths.",
+      "It should not expand into a general repo linter or source-path validator."
+    ]
+  },
   "targets": {
     "backend_contract": [
       "tests/test_api_boundary_contracts.py",

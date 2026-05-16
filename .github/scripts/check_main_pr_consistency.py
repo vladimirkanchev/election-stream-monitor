@@ -89,7 +89,7 @@ BACKEND_POLICY_ONLY_TESTS = (
 )
 
 FRONTEND_BRIDGE_POLICY_ONLY_TESTS = (
-    "frontend/src/bridge/contract.session-snapshot.test.ts",
+    "frontend/src/bridge/contract.session-snapshot.shape.test.ts",
     "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
     "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
     "frontend/src/hooks/usePlaybackSource.test.tsx",
@@ -215,6 +215,38 @@ CONTRACT_GATES = (
         docs_expectations=("docs/contracts.md", "docs/architecture.md"),
     ),
 )
+
+
+def policy_only_test_paths() -> tuple[str, ...]:
+    """Return the deduplicated policy-only test paths across all gates."""
+    ordered_unique_paths: list[str] = []
+    seen_paths: set[str] = set()
+
+    for gate in CONTRACT_GATES:
+        for relative_path in gate.policy_only_tests:
+            if relative_path in seen_paths:
+                continue
+            seen_paths.add(relative_path)
+            ordered_unique_paths.append(relative_path)
+
+    return tuple(ordered_unique_paths)
+
+
+def local_only_policy_test_paths() -> tuple[str, ...]:
+    """Return the deduplicated policy-only test paths from local-only gates."""
+    ordered_unique_paths: list[str] = []
+    seen_paths: set[str] = set()
+
+    for gate in CONTRACT_GATES:
+        if gate.uses_manifest_groups():
+            continue
+        for relative_path in gate.policy_only_tests:
+            if relative_path in seen_paths:
+                continue
+            seen_paths.add(relative_path)
+            ordered_unique_paths.append(relative_path)
+
+    return tuple(ordered_unique_paths)
 
 
 def _changed_files(diff_range: str) -> list[str]:

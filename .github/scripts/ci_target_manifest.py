@@ -10,6 +10,10 @@ At the current repo shape, the manifest already covers the broad shared
 purpose, so consumers can rely on this module for shared target groups without
 turning every workflow test invocation into manifest data. That keeps only
 genuinely small one-off workflow lists outside the shared selector surface.
+
+The manifest also records the current path-owning CI surface and the intended
+scope of the future path-existence self-check: CI-owned test paths belong in
+that guard, while non-test source files and docs rules stay outside it.
 """
 
 from __future__ import annotations
@@ -50,6 +54,20 @@ def _require_string_list(raw: object, field_name: str) -> tuple[str, ...]:
     return tuple(str(item) for item in raw)
 
 
+def _ordered_unique_paths(relative_paths: tuple[str, ...]) -> tuple[str, ...]:
+    """Return one path tuple with duplicates removed and order preserved."""
+    ordered_unique_paths: list[str] = []
+    seen_paths: set[str] = set()
+
+    for relative_path in relative_paths:
+        if relative_path in seen_paths:
+            continue
+        seen_paths.add(relative_path)
+        ordered_unique_paths.append(relative_path)
+
+    return tuple(ordered_unique_paths)
+
+
 @dataclass(frozen=True)
 class OwnershipBoundary:
     """Approved ownership boundary declared inside the CI target manifest."""
@@ -60,11 +78,23 @@ class OwnershipBoundary:
 
 
 @dataclass(frozen=True)
+class PathExistenceInventory:
+    """Current CI-owned test-path surface for the existence self-check."""
+
+    workflow_manifest_groups: tuple[str, ...]
+    workflow_inline_test_paths: tuple[str, ...]
+    policy_manifest_groups: tuple[str, ...]
+    policy_only_test_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CiTargetManifest:
     """Parsed CI target manifest with stable, consumer-friendly accessors.
 
     The manifest models only the shared CI-critical target groups. It does not
-    try to absorb every small one-off workflow test path.
+    try to absorb every small one-off workflow test path. Its raw data also
+    carries the current path-existence inventory and boundary notes that the
+    validator protects.
     """
 
     path: Path
@@ -72,6 +102,7 @@ class CiTargetManifest:
     format_type: str
     targets: dict[str, tuple[str, ...]]
     ownership_boundary: OwnershipBoundary
+    path_existence_inventory: PathExistenceInventory
 
     @classmethod
     def load(cls, path: Path = MANIFEST_PATH) -> "CiTargetManifest":
@@ -82,6 +113,10 @@ class CiTargetManifest:
         boundary_data = _require_mapping(
             raw.get("ownership_boundary"),
             "ownership_boundary",
+        )
+        path_existence_data = _require_mapping(
+            raw.get("path_existence_inventory"),
+            "path_existence_inventory",
         )
 
         targets = {
@@ -104,12 +139,32 @@ class CiTargetManifest:
             ),
         )
 
+        path_existence_inventory = PathExistenceInventory(
+            workflow_manifest_groups=_require_string_list(
+                path_existence_data.get("workflow_manifest_groups"),
+                "path_existence_inventory.workflow_manifest_groups",
+            ),
+            workflow_inline_test_paths=_require_string_list(
+                path_existence_data.get("workflow_inline_test_paths"),
+                "path_existence_inventory.workflow_inline_test_paths",
+            ),
+            policy_manifest_groups=_require_string_list(
+                path_existence_data.get("policy_manifest_groups"),
+                "path_existence_inventory.policy_manifest_groups",
+            ),
+            policy_only_test_paths=_require_string_list(
+                path_existence_data.get("policy_only_test_paths"),
+                "path_existence_inventory.policy_only_test_paths",
+            ),
+        )
+
         return cls(
             path=path,
             raw=raw,
             format_type=str(format_data.get("type", "")),
             targets=targets,
             ownership_boundary=boundary,
+            path_existence_inventory=path_existence_inventory,
         )
 
     def group_names(self) -> tuple[str, ...]:
@@ -133,6 +188,34 @@ class CiTargetManifest:
             for target_path in self.targets[group_name]
         )
 
+    def path_existence_paths(self) -> tuple[str, ...]:
+        """Return every CI-owned test path covered by the existence guard."""
+        inventory = self.path_existence_inventory
+        workflow_group_paths = tuple(
+            target_path
+            for group_name in inventory.workflow_manifest_groups
+            for target_path in self.group_targets(group_name)
+        )
+        policy_group_paths = tuple(
+            target_path
+            for group_name in inventory.policy_manifest_groups
+            for target_path in self.group_targets(group_name)
+        )
+        return (
+            workflow_group_paths
+            + inventory.workflow_inline_test_paths
+            + policy_group_paths
+            + inventory.policy_only_test_paths
+        )
+
+    def workflow_inline_test_paths(self) -> tuple[str, ...]:
+        """Return the explicit inline workflow test-path exceptions."""
+        return self.path_existence_inventory.workflow_inline_test_paths
+
+    def unique_path_existence_paths(self) -> tuple[str, ...]:
+        """Return the deduplicated CI-owned test paths for the existence guard."""
+        return _ordered_unique_paths(self.path_existence_paths())
+
 
 @cache
 def load_ci_target_manifest() -> CiTargetManifest:
@@ -143,3 +226,13 @@ def load_ci_target_manifest() -> CiTargetManifest:
 def manifest_group_targets(group_name: str) -> tuple[str, ...]:
     """Return one stable target group through the shared manifest access seam."""
     return load_ci_target_manifest().group_targets(group_name)
+
+
+def ci_owned_test_paths() -> tuple[str, ...]:
+    """Return the deduplicated CI-owned test-path inventory."""
+    return load_ci_target_manifest().unique_path_existence_paths()
+
+
+def workflow_inline_ci_test_paths() -> tuple[str, ...]:
+    """Return the explicit inline workflow test-path exceptions."""
+    return load_ci_target_manifest().workflow_inline_test_paths()

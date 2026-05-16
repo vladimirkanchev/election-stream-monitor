@@ -75,8 +75,18 @@ jobs:
           python-version: "3.12"
 
       # Keep the owner/consumer contract healthy before evaluating policy.
+      # Protected main-PR order is:
+      # 1. manifest structure/scope
+      # 2. CI-owned test-path existence
+      # 3. workflow/policy drift
+      # 4. narrower PR gate policy
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
+
+      # Fail early on missing CI-owned test paths before broader alignment or
+      # policy checks have a chance to become noisier.
+      - name: Check CI-owned test path existence
+        run: python .github/scripts/check_ci_test_paths_exist.py
 
       # Prove that workflow execution and PR policy still consume the same
       # shared manifest groups.
@@ -500,8 +510,21 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # This validator now protects both the shared selector boundary and the
+      # explicit path-existence inventory/scope that the dedicated
+      # `check_ci_test_paths_exist.py` guard consumes, including the inline
+      # smoke-path exception and the policy-only test ownership surface.
+      # Protected contract-lane order is:
+      # 1. manifest structure/scope
+      # 2. CI-owned test-path existence
+      # 3. broader shared contract suites
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
+
+      # Fail on missing CI-owned test paths before running the broader shared
+      # contract suites in this protected lane.
+      - name: Check CI-owned test path existence
+        run: python .github/scripts/check_ci_test_paths_exist.py
 
       # The canonical manifest is already complete for this workflow lane:
       # no extra ci.yml selector groups are missing for the broad shared
@@ -543,8 +566,18 @@ jobs:
 
       # The docs/workflow consistency lane uses the same manifest contract as
       # the main PR policy lane.
+      # It validates the same selector boundary plus the inline/policy
+      # test-path ownership contract before checking broader workflow-policy
+      # drift. Order stays:
+      # 1. manifest structure/scope
+      # 2. CI-owned test-path existence
+      # 3. workflow/policy drift
+      # 4. narrower docs/workflow gate policy
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Check CI-owned test path existence
+        run: python .github/scripts/check_ci_test_paths_exist.py
 
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
