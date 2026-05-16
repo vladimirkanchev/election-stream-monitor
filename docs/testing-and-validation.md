@@ -81,6 +81,81 @@ The workflow is now path-aware:
 - contract-boundary edits on `main` PRs are expected to come with matching
   tests and the owning docs update
 
+Current `changes` filter contract:
+
+- `backend`
+  - broad backend trigger
+  - paths: `src/**`, `tests/**`
+  - main direct gates: `backend-tests`, `backend-ruff`, `backend-typecheck`, `backend-pyright`
+  - also feeds: `frontend-checkpoint`, `contract-checks`, `test-and-build`
+- `frontend`
+  - broad frontend trigger
+  - paths: `frontend/**` except `frontend/README.md`
+  - main direct gates: `frontend-checkpoint`, `frontend-typecheck`, `frontend-lint`
+  - also feeds: `contract-checks`, `test-and-build`
+- `docs`
+  - docs-oriented consistency trigger
+  - paths: `docs/**`, `README.md`, `frontend/README.md`
+  - direct gate: `docs-consistency` on non-`main` pull requests
+- `workflow`
+  - CI/support-tooling trigger
+  - paths: `.github/workflows/**`, `.github/scripts/**`, `frontend/package.json`, `pyproject.toml`
+  - direct gate: `docs-consistency` on non-`main` pull requests
+- `contract`
+  - narrower contract-sensitive trigger
+  - paths: selected backend boundary files, current session/stream contract owners, `frontend/src/bridge/**`, contract-sensitive monitoring hooks, `frontend/src/types.ts`, and `frontend/src/uiErrors.ts`
+  - main direct gates: `frontend-checkpoint`, `backend-tests`, `backend-ruff`, `frontend-typecheck`, `frontend-lint`, `backend-typecheck`, `backend-pyright`, `docs-consistency`
+  - also feeds: `contract-checks`, `test-and-build`
+
+Filter intent:
+
+- broad convenience scopes: `backend`, `frontend`
+- narrower high-signal scopes: `contract`, `workflow`
+- docs-oriented policy scope: `docs`
+
+`backend` and `frontend` are intentionally coarse. `contract` is the curated
+cross-boundary signal and should be read more precisely.
+
+Current contract-filter refinement result:
+
+- added: `src/stream_loader.py`, `src/stream_loader_http_hls.py`,
+  `src/session_runner.py`, `src/session_runner_progress.py`,
+  `src/session_service.py`,
+  `frontend/src/hooks/useMonitoringSession*.tsx`,
+  `frontend/src/hooks/usePlaybackSource*.tsx`,
+  `frontend/src/uiErrors.ts`
+- intentionally left out: docs-only ownership such as `docs/contracts.md`,
+  weekly-only owners, and electron trust/playback files that still belong to
+  a local-only policy gate
+
+Current broad-filter review result:
+
+- `backend` stays broad as `src/**` plus `tests/**`
+  - reason: narrowing it now would add more under-trigger risk than real CI savings
+- `frontend` stays broad for real frontend work, but now excludes the docs-only
+  handoff file `frontend/README.md`
+  - reason: that file already belongs to the `docs` trigger
+- no broader exclusions were applied yet for tracked frontend source, Electron,
+  package, or config files
+  - reason: those files still have meaningful impact on current frontend lanes
+
+Downstream trigger model in `ci.yml` now matches that intent:
+
+- backend-heavy jobs (`backend-tests`, `backend-ruff`, `backend-typecheck`,
+  `backend-pyright`)
+  - wake on `backend` or `contract`, plus protected `main` PR fallback
+- frontend-heavy jobs (`frontend-typecheck`, `frontend-lint`)
+  - wake on `frontend` or `contract`, plus protected `main` PR fallback
+- `frontend-checkpoint`
+  - wakes on `frontend`, `backend`, or `contract`, plus protected `main` PR fallback
+- PR-only boundary lanes (`contract-checks`, `test-and-build`)
+  - can be reached from broad `backend` / `frontend` scopes or the narrower `contract` scope
+- `docs-consistency`
+  - stays the non-`main` PR lane for `docs`, `workflow`, and narrower `contract` alignment work
+
+`main` pull requests still run the protected lanes even when these branch-level
+filters would otherwise skip them.
+
 The CI hardening owner is `.github/ci_test_targets.json`.
 
 Key Python-side consumers:
@@ -102,6 +177,9 @@ Key Python-side consumers:
 - `tests/test_ci_test_target_scripts.py`
   - focused coverage for the shared path inventory, lane-helper seam, and the
     current drift outcomes
+  - also covers the high-signal `changes` filter assumptions that now protect
+    the refined contract trigger and the docs-only `frontend/README.md`
+    exclusion
 
 Those checks are complementary:
 

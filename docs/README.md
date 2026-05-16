@@ -320,6 +320,16 @@ module families and the matching tests:
     `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
   - protected consistency lanes run manifest validation, CI-owned test-path
     existence, drift checking, then the manifest-backed policy check
+  - the `changes` job in `ci.yml` is the current path-filter owner for branch
+    trigger scope
+  - current path-filter summary:
+    `contract` covers the refined backend/frontend boundary files,
+    `frontend` excludes the docs-only `frontend/README.md`, and downstream
+    trigger intent in `ci.yml` now matches that split
+  - focused regression coverage for those high-signal `changes` assumptions
+    lives in `tests/test_ci_test_target_scripts.py`
+  - keep the full path-filter contract, intent, and current review results in
+    `docs/testing-and-validation.md`
 
 ## Current Stable Contracts
 

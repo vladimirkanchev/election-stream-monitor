@@ -28,6 +28,16 @@ jobs:
           lfs: true
           fetch-depth: 0
 
+      # Path-filter model:
+      # - `backend` / `frontend`: broad convenience scopes
+      # - `contract` / `workflow`: narrower high-signal scopes
+      # - `docs`: docs-oriented policy scope
+      # Current review result:
+      # - `frontend` excludes the docs-only `frontend/README.md` handoff
+      # - `contract` includes the refined session/stream and bridge boundary files
+      # Focused regression coverage lives in
+      # `tests/test_ci_test_target_scripts.py`.
+      # Protected `main` PR lanes still run the fuller validation set.
       - name: Detect changed paths
         id: filter
         uses: dorny/paths-filter@v4
@@ -38,6 +48,7 @@ jobs:
               - 'tests/**'
             frontend:
               - 'frontend/**'
+              - '!frontend/README.md'
             docs:
               - 'docs/**'
               - 'README.md'
@@ -49,14 +60,22 @@ jobs:
               - 'pyproject.toml'
             contract:
               - 'src/source_validation.py'
+              - 'src/stream_loader.py'
               - 'src/session_io.py'
               - 'src/session_models.py'
               - 'src/alert_rules.py'
               - 'src/stream_loader_contracts.py'
+              - 'src/stream_loader_http_hls.py'
               - 'src/api/routers/sessions.py'
               - 'src/api/schemas.py'
+              - 'src/session_runner.py'
+              - 'src/session_runner_progress.py'
+              - 'src/session_service.py'
               - 'frontend/src/bridge/**'
+              - 'frontend/src/hooks/useMonitoringSession*.tsx'
+              - 'frontend/src/hooks/usePlaybackSource*.tsx'
               - 'frontend/src/types.ts'
+              - 'frontend/src/uiErrors.ts'
 
   main-pr-consistency:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
@@ -125,6 +144,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - run on broad `frontend` changes
+      # - also run on broad `backend` changes because this checkpoint catches
+      #   cross-surface session-flow regressions
+      # - also run on narrower `contract` changes
+      # - protected `main` PRs still force this lane on
       - name: Install Python dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
@@ -161,6 +186,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Trigger model:
+      # - run on broad `backend` changes
+      # - also run on narrower `contract` changes
+      # - protected `main` PRs still force this lane on
       - name: Run editable-install packaging check
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
@@ -251,6 +280,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - run on broad `frontend` changes
+      # - also run on narrower `contract` changes
+      # - protected `main` PRs still force this lane on
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         working-directory: frontend
@@ -325,6 +358,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - broad `backend` and `frontend` scopes can contribute here because
+      #   this PR-only lane sits near the shared contract boundary
+      # - narrower `contract` changes should reliably wake it
+      # - protected `main` PRs still force it on
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -505,6 +543,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - broad `frontend` and `backend` scopes can contribute here because
+      #   the protected contract lane still validates shared boundary suites
+      # - narrower `contract` changes should reliably wake it
+      # - protected `main` PRs still force it on
       - name: Install Python dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
@@ -583,6 +626,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Trigger model:
+      # - run only on non-`main` PRs
+      # - `docs` and `workflow` are the primary triggers here
+      # - narrower `contract` changes also wake this lane because the docs and
+      #   workflow policy around the protected boundary must stay aligned
       # The docs/workflow consistency lane uses the same manifest contract as
       # the main PR policy lane.
       # It validates the same selector boundary plus the inline/policy

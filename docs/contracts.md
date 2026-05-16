@@ -1563,7 +1563,7 @@ Current split test ownership:
     CI/CD hardening work
   - owner of the shared CI target groups consumed by workflows and by the
     manifest-backed part of the main PR policy
-  - now also records the current path-owning CI consumers for the upcoming
+  - now also records the current path-owning CI consumers for the live
     path-existence self-check:
     workflow manifest groups, the one inline smoke path, policy manifest
     groups, and the policy-only test paths
@@ -1636,6 +1636,15 @@ Current split test ownership:
   those groups through the shared reader seam
 - `integration-smoke` remains the intentional inline exception because it is a
   tiny local smoke path
+- the `changes` job in `ci.yml` owns branch-level path-filter trigger scope
+- current path-filter summary:
+  `contract` covers the refined backend/frontend boundary files,
+  `frontend` excludes the docs-only `frontend/README.md`, and downstream
+  trigger intent in `ci.yml` now matches that split
+- focused regression coverage for those high-signal `changes` assumptions
+  lives in `tests/test_ci_test_target_scripts.py`
+- keep the full path-filter contract, intent, and current review results in
+  `docs/testing-and-validation.md`
 - CI lane ownership now uses the canonical vocabulary
   `fast_synthetic`, `contract_boundary`, and `weekly_slow_real_media`
 - `.github/ci_test_targets.json` owns that lane model, including the
