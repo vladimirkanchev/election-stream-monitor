@@ -544,7 +544,7 @@ jobs:
       # Frontend contract coverage follows the same shared-target pattern.
       - name: Run manifest-backed frontend contract checks via shared target reader
         working-directory: frontend
-        run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space)
+        run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
 
   docs-consistency:
     if: github.event_name == 'pull_request' && github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.contract == 'true')

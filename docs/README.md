@@ -268,6 +268,8 @@ module families and the matching tests:
     manifest shape/scope, test-path existence, and manifest-consumer drift
   - `test-and-build` and the weekly heavy lanes resolve shared targets through
     `.github/scripts/read_ci_test_targets.py`
+  - the frontend contract lane uses the same reader with `--strip-prefix frontend/`
+    because it runs inside the `frontend/` working directory
   - `integration-smoke` is the intentional inline exception because it is a
     tiny local smoke path
   - `.github/ci_test_targets.json` now also records the full current

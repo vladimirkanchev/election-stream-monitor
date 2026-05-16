@@ -162,6 +162,8 @@ Workflow consumers:
   - the job now validates the manifest boundary before resolving those groups
   - both shared contract checks resolve their targets through
     `read_ci_test_targets.py`
+  - the frontend lane strips the leading `frontend/` prefix because Vitest runs
+    from the `frontend/` working directory
 - `weekly-validation`
   - slow media reads `weekly_slow_media`
   - deeper `api_stream` validation reads `weekly_api_stream_deep`

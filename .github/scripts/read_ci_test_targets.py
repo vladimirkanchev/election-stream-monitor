@@ -44,7 +44,25 @@ def _build_parser() -> argparse.ArgumentParser:
         default="newline",
         help="How to print the resolved targets",
     )
+    parser.add_argument(
+        "--strip-prefix",
+        help="Optional leading path prefix to remove from each resolved target",
+    )
     return parser
+
+
+def _normalize_targets(targets: list[str], strip_prefix: str | None) -> list[str]:
+    """Return resolved targets after an optional shared-prefix strip."""
+    if strip_prefix is None:
+        return targets
+
+    normalized_prefix = strip_prefix
+    return [
+        target.removeprefix(normalized_prefix)
+        if target.startswith(normalized_prefix)
+        else target
+        for target in targets
+    ]
 
 
 def _print_targets(targets: list[str], separator: str) -> None:
@@ -71,6 +89,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
+    targets = _normalize_targets(targets, args.strip_prefix)
     _print_targets(targets, args.separator)
     return 0
 
