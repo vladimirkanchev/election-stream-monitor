@@ -47,6 +47,11 @@ def test_ci_owned_test_paths_keep_inline_and_policy_inventory() -> None:
         "frontend/electron/localMediaResponses.test.mjs",
     )
     assert manifest.path_existence_inventory.policy_only_test_paths == policy_paths
+    assert manifest.path_existence_boundary.included_path_categories == (
+        "manifest target entries",
+        "inline workflow test paths",
+        "policy-only test paths",
+    )
     assert manifest_groups == (
         "backend_contract",
         "mcp_fastapi_parity",
@@ -60,6 +65,67 @@ def test_ci_owned_test_paths_keep_inline_and_policy_inventory() -> None:
         "weekly_api_stream_deep",
         "weekly_lifecycle",
     }
+
+
+def test_manifest_lane_ownership_matches_current_ci_split() -> None:
+    manifest = ci_target_manifest.load_ci_target_manifest()
+    lane_group_map = manifest.lane_group_map()
+
+    assert lane_group_map["contract_boundary"] == (
+        "backend_contract",
+        "mcp_fastapi_parity",
+        "frontend_contract",
+    )
+    assert lane_group_map["weekly_slow_real_media"] == (
+        "weekly_slow_media",
+        "weekly_api_stream_deep",
+        "weekly_lifecycle",
+    )
+    assert lane_group_map["fast_synthetic"] == ()
+    assert ci_target_manifest.manifest_lane_groups("contract_boundary") == (
+        "backend_contract",
+        "mcp_fastapi_parity",
+        "frontend_contract",
+    )
+    assert (
+        manifest.group_lane_category_name("backend_contract") == "contract_boundary"
+    )
+    assert (
+        manifest.group_lane_category_name("weekly_slow_media")
+        == "weekly_slow_real_media"
+    )
+
+
+def test_lane_category_helpers_expose_metadata_and_fail_cleanly() -> None:
+    category = ci_target_manifest.ci_lane_category("contract_boundary")
+
+    assert category.name == "contract_boundary"
+    assert "reader-backed test-and-build ownership" in category.includes
+    assert "weekly-only slow or real-media suites" in category.excludes
+    assert (
+        ci_target_manifest.manifest_group_lane_category_name("frontend_contract")
+        == "contract_boundary"
+    )
+    assert (
+        ci_target_manifest.load_ci_target_manifest().group_lane_category(
+            "frontend_contract"
+        ).name
+        == "contract_boundary"
+    )
+
+    try:
+        ci_target_manifest.ci_lane_category("unknown_lane")
+    except ci_target_manifest.ManifestError as exc:
+        assert "Unknown CI lane category" in str(exc)
+    else:
+        raise AssertionError("Expected ManifestError for unknown lane category")
+
+    try:
+        ci_target_manifest.manifest_group_lane_category_name("unknown_group")
+    except ci_target_manifest.ManifestError as exc:
+        assert "Unknown CI target manifest group" in str(exc)
+    else:
+        raise AssertionError("Expected ManifestError for unknown manifest group")
 
 
 def test_ci_owned_test_path_existence_guard_passes_on_current_repo() -> None:
