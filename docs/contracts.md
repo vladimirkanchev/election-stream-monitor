@@ -1636,18 +1636,26 @@ Current split test ownership:
   those groups through the shared reader seam
 - `integration-smoke` remains the intentional inline exception because it is a
   tiny local smoke path
-- the final lane split is: `backend-tests` fast synthetic, `test-and-build`
-  contract-focused, `integration-smoke` tiny local smoke, and weekly lanes for
-  heavy coverage
+- CI lane ownership now uses the canonical vocabulary
+  `fast_synthetic`, `contract_boundary`, and `weekly_slow_real_media`
+- `.github/ci_test_targets.json` owns that lane model, including the
+  `group_lane_categories` mapping exposed through
+  `.github/scripts/ci_target_manifest.py`
+- `ci_target_manifest.py` is the Python access seam for lane-category lookup
+  and lane-to-group queries
+- `docs/testing-and-validation.md` is the primary explanation path for the
+  full lane split and enforcement rules
+- `tests/test_ci_test_target_scripts.py` provides the focused project-side
+  coverage for the lane-helper seam and the current lane split
+- the current lane owners are only: `backend-tests`, `test-and-build`,
+  `integration-smoke`, `slow-e2e`, `api-stream-deep`, and `lifecycle-deep`
+- lint, typecheck, security-audit, docs-consistency, and summary/filter jobs
+  support those lanes but are not lane owners themselves
 - the drift check treats the reader-backed `test-and-build` contract lane as
   the workflow alignment target for shared `ci.yml` groups
-- the protected alignment contract is now exposed through the shared manifest
-  helper seam in `.github/scripts/ci_target_manifest.py`
-- workflow-side group extraction for that guard now also comes from the same
-  helper seam, with multiline shell normalization and `python`/`python3`
-  tolerance
-- policy-side group extraction now comes from the explicit
-  `manifest_policy_groups()` helper in
+- the protected alignment contract is exposed through
+  `.github/scripts/ci_target_manifest.py`, and policy-side group extraction
+  comes from `manifest_policy_groups()` in
   `.github/scripts/check_main_pr_consistency.py`
 - docs-side drift checking is now limited to high-signal ownership
   references instead of repeating every CI detail in every doc

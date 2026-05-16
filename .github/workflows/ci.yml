@@ -179,14 +179,16 @@ jobs:
         run: |
           python -c "import api.app, api.routers.sessions, session_service, session_cli"
 
-      - name: Run backend tests
+      - name: Run fast_synthetic backend tests
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          # Keep the fast backend lane synthetic and lightweight. Slow or
-          # real-media suites must stay in the weekly manifest-backed lanes,
-          # while shared contract ownership lives in `test-and-build`.
+          # Keep the `fast_synthetic` lane lightweight. Manifest validation
+          # enforces that no shared manifest groups drift into this lane.
+          # Slow or real-media suites must stay in the
+          # `weekly_slow_real_media` lanes, while shared contract ownership
+          # lives in the `contract_boundary` lane.
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -m "not e2e and not slow" 2>&1 | tee ci-artifacts/backend-tests.log
 
       - name: Skip backend tests
@@ -526,34 +528,40 @@ jobs:
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 
-      # Fail on missing CI-owned test paths before running the broader shared
-      # contract suites in this protected lane.
+      # Fail on missing CI-owned test paths before running the broader
+      # `contract_boundary` suites in this protected lane.
       - name: Check CI-owned test path existence
         run: python .github/scripts/check_ci_test_paths_exist.py
 
-      # Keep the shared contract lane aligned with the same manifest-backed
-      # policy and docs ownership model before running the heavier contract
-      # suites below.
+      # Keep the shared `contract_boundary` lane aligned with the same
+      # manifest-backed policy and docs ownership model before running the
+      # heavier contract suites below. The lane-ownership helper seam lives in
+      # `ci_target_manifest.py`, where the manifest-backed lane model and
+      # lane-to-group queries stay centralized. That seam is covered from the
+      # project side by `tests/test_ci_test_target_scripts.py`.
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
       # The canonical manifest is already complete for this workflow lane:
       # no extra ci.yml selector groups are missing for the broad shared
-      # contract coverage that runs here.
-      # This protected lane stays separate from the fast synthetic backend lane
-      # and from the weekly slow/real-media lanes, so selector ownership is
-      # concentrated in one contract-focused place.
+      # contract coverage that runs here. Manifest validation also enforces
+      # that these shared groups stay in `contract_boundary`, not in
+      # `weekly_slow_real_media` or `fast_synthetic`.
+      # This protected lane stays separate from `fast_synthetic` and
+      # `weekly_slow_real_media`, so selector ownership is concentrated in one
+      # explicit contract/boundary place.
       # This is the remaining broad pytest consumer in ci.yml. Keep its target
       # list manifest-backed so split or renamed suites do not have to be
       # maintained inline here.
-      - name: Run manifest-backed backend contract checks via shared target reader
+      - name: Run contract_boundary backend contract checks via shared target reader
         run: |
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \
             $(python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space) \
             $(python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
 
-      # Frontend contract coverage follows the same shared-target pattern.
-      - name: Run manifest-backed frontend contract checks via shared target reader
+      # Frontend `contract_boundary` coverage follows the same shared-target
+      # pattern.
+      - name: Run contract_boundary frontend contract checks via shared target reader
         working-directory: frontend
         run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
 

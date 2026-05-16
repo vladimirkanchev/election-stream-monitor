@@ -33,10 +33,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      # Weekly heavy lanes still resolve through the same shared manifest
-      # contract as the protected PR lanes, but they own the slow and
-      # real-media boundary on purpose. That keeps the protected contract lane
-      # fast enough for PR work while preserving deeper weekly confidence.
+      # `weekly_slow_real_media` lanes still resolve through the same shared
+      # manifest contract as the protected PR lanes, but they own the slow and
+      # real-media boundary on purpose. Manifest validation enforces that the
+      # shared weekly groups stay here instead of drifting into
+      # `contract_boundary` or `fast_synthetic`. That keeps the
+      # `contract_boundary` lane fast enough for PR work while preserving
+      # deeper weekly confidence. The same shared lane model lives in
+      # `ci_target_manifest.py`, backed by `.github/ci_test_targets.json`.
       # Weekly lanes share the same manifest validator, including the explicit
       # path-existence inventory/scope contract that the dedicated
       # `check_ci_test_paths_exist.py` guard consumes for inline and
@@ -46,7 +50,7 @@ jobs:
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Run manifest-backed slow e2e media tests
+      - name: Run weekly_slow_real_media slow e2e media tests
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
@@ -84,7 +88,7 @@ jobs:
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Run manifest-backed deeper api_stream validation
+      - name: Run weekly_slow_real_media api_stream deep validation
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
@@ -122,7 +126,7 @@ jobs:
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Run manifest-backed lifecycle-focused backend tests
+      - name: Run weekly_slow_real_media lifecycle backend tests
         run: |
           mkdir -p ci-artifacts
           set -o pipefail

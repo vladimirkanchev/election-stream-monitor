@@ -277,23 +277,27 @@ module families and the matching tests:
   - `integration-smoke` is the intentional inline exception because it is a
     tiny local smoke path
   - `.github/ci_test_targets.json` now also records the full current
-    path-owning CI surface for the future existence self-check:
+    path-owning CI surface for the live existence self-check:
     shared workflow groups, the inline smoke path, and the
     `check_main_pr_consistency.py` policy-side test paths
-  - that future existence check is intentionally narrow:
+  - that existence check is intentionally narrow:
     it covers CI-owned test paths, not non-test source files or docs rules
-  - the final lane split is:
-    `backend-tests` fast synthetic, `test-and-build` contract-focused,
-    `integration-smoke` tiny local smoke, and weekly lanes for heavy coverage
-  - the drift check keeps that reader-backed contract lane aligned with the
-    manifest-backed PR policy
-  - the protected alignment contract is now exposed through the shared
-    manifest helper seam in `.github/scripts/ci_target_manifest.py`
-  - workflow-side group extraction for that guard now also comes from the same
-    helper seam, with multiline shell normalization and `python`/`python3`
-    tolerance
-  - policy-side group extraction now comes from the explicit
-    `manifest_policy_groups()` helper in
+  - CI lane ownership now uses the canonical vocabulary
+    `fast_synthetic`, `contract_boundary`, and `weekly_slow_real_media`
+  - `.github/ci_test_targets.json` owns that lane model, including the
+    `group_lane_categories` mapping consumed through
+    `.github/scripts/ci_target_manifest.py`
+  - `ci_target_manifest.py` is the Python access seam for:
+    manifest groups, lane-category lookup, and lane-to-group queries
+  - `docs/testing-and-validation.md` is the primary explanation path for the
+    full lane split, lane owners, and enforcement rules
+  - `tests/test_ci_test_target_scripts.py` provides focused coverage for the
+    lane-helper seam and the current CI split
+  - adjacent jobs such as lint, typecheck, security audit, docs consistency,
+    and summary/filter jobs support those lanes but are not lane owners
+  - the drift check keeps the reader-backed contract lane aligned with the
+    manifest-backed PR policy, using the shared helper seam plus
+    `manifest_policy_groups()` in
     `.github/scripts/check_main_pr_consistency.py`
   - docs-side drift checking is now limited to high-signal ownership
     references instead of repeating every CI detail in every doc

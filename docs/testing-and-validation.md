@@ -81,64 +81,33 @@ The workflow is now path-aware:
 - contract-boundary edits on `main` PRs are expected to come with matching
   tests and the owning docs update
 
-The CI hardening owner is:
+The CI hardening owner is `.github/ci_test_targets.json`.
 
-- `.github/ci_test_targets.json`
-  - owner of the shared CI target groups used by workflow and policy consumers
-
-Supporting scripts:
+Key Python-side consumers:
 
 - `.github/scripts/ci_target_manifest.py`
-  - shared manifest model and loading seam used by every Python-side CI target
-    consumer
-  - also exposes the shared manifest-group access seam used by
-    `check_main_pr_consistency.py`
-  - now also exposes the deduplicated CI-owned test-path inventory used by
-    `check_ci_test_paths_exist.py`
-  - now also exposes the explicit protected-lane alignment model used by
-    `check_ci_target_drift.py`
-- `.github/scripts/validate_ci_test_targets.py`
-  - validates manifest structure, ownership boundary, target hygiene, and the
-    explicit inventory/scope boundary used by `check_ci_test_paths_exist.py`
+  - shared manifest access seam for target groups, lane ownership, path
+    inventory, and the protected alignment model
 - `.github/scripts/read_ci_test_targets.py`
   - resolves one stable target group for workflow shell steps
-- `.github/scripts/check_ci_target_drift.py`
-  - checks workflow, policy, and docs alignment with the manifest
-  - reads one explicit protected-lane alignment model from
-    `ci_target_manifest.py`
+- `.github/scripts/validate_ci_test_targets.py`
+  - checks manifest shape, approved scope, target hygiene, and lane ownership
 - `.github/scripts/check_ci_test_paths_exist.py`
-  - validates that every CI-owned test path in the current inventory still
-    exists in the repo
-  - consumes that inventory through `ci_target_manifest.py` instead of
-    re-parsing manifest data locally
-  - explicitly validates the current inline workflow exception set, including
-    `integration-smoke`
-  - also validates policy-only and local-only gate expectations from
-    `check_main_pr_consistency.py` explicitly
-  - also checks that the manifest policy-only inventory still matches that
-    policy owner
+  - checks that CI-owned test paths still exist, including the inline smoke
+    exception and the policy-owned paths from
+    `.github/scripts/check_main_pr_consistency.py`
+- `.github/scripts/check_ci_target_drift.py`
+  - checks that manifest, workflows, `.github/scripts/check_main_pr_consistency.py`,
+    and CI-facing docs still agree on the protected contract lane
 - `tests/test_ci_test_target_scripts.py`
-  - focused project tests for the shared CI-owned test-path inventory and the
-    current green-path behavior of `check_ci_test_paths_exist.py`
-  - also keeps the inline workflow exception inventory explicit and covered
-  - also covers policy-only and local-only gate expectations from
-    `check_main_pr_consistency.py`
-  - also keeps the manifest-to-policy ownership link honest
-  - also covers the drift checker on matching, workflow-mismatch,
-    policy-mismatch, and doc-mismatch cases
+  - focused coverage for the shared path inventory, lane-helper seam, and the
+    current drift outcomes
 
-CI helper roles:
+Those checks are complementary:
 
-- `validate_ci_test_targets.py`
-  - checks manifest shape, approved scope, and target hygiene
-- `check_ci_test_paths_exist.py`
-  - checks that CI-owned test paths still exist
-- `check_ci_target_drift.py`
-  - checks that manifest, workflows, policy, and docs still agree
-
-That split matters because these three checks are related but not interchangeable.
-One catches bad manifest shape, one catches missing files, and one catches
-consumer drift.
+- `validate_ci_test_targets.py` catches bad manifest shape or scope
+- `check_ci_test_paths_exist.py` catches missing CI-owned test files
+- `check_ci_target_drift.py` catches workflow/policy/docs drift
 
 The chosen manifest format is JSON. That keeps the source of truth easy to read
 in Python tooling and straightforward to consume from workflow shell steps via
@@ -163,34 +132,95 @@ python3 .github/scripts/read_ci_test_targets.py backend_contract --separator spa
 Workflow consumers:
 
 - `test-and-build`
-  - backend contract checks read `backend_contract` and `mcp_fastapi_parity`
-  - frontend contract checks read `frontend_contract`
+  - `contract_boundary` backend contract checks read `backend_contract` and
+    `mcp_fastapi_parity`
+  - `contract_boundary` frontend contract checks read `frontend_contract`
   - the job now validates the manifest boundary before resolving those groups
   - both shared contract checks resolve their targets through
     `read_ci_test_targets.py`
   - the frontend lane strips the leading `frontend/` prefix because Vitest runs
     from the `frontend/` working directory
 - `weekly-validation`
-  - slow media reads `weekly_slow_media`
-  - deeper `api_stream` validation reads `weekly_api_stream_deep`
-  - lifecycle validation reads `weekly_lifecycle`
+  - `weekly_slow_real_media` slow media reads `weekly_slow_media`
+  - `weekly_slow_real_media` deeper `api_stream` validation reads
+    `weekly_api_stream_deep`
+  - `weekly_slow_real_media` lifecycle validation reads `weekly_lifecycle`
   - each weekly heavy job now validates the manifest boundary before resolving
     its target group
 
-Final `ci.yml` selector ownership:
+This section is the primary CI lane-ownership reference for the repo. Keep the
+full lane explanation here, and keep shorter CI mentions in `docs/README.md`
+and `docs/contracts.md` role-specific.
 
-- manifest-backed workflow jobs
-  - `test-and-build`
-    - backend contract checks
-    - frontend contract checks
-- intentionally inline workflow jobs
-  - `integration-smoke`
-    - `tests/test_e2e_local_session.py`
-    - stays inline because it is a tiny local smoke path
-- weekly manifest-backed workflow jobs
-  - `slow-e2e`
-  - `api-stream-deep`
-  - `lifecycle-deep`
+Lane-ownership model:
+
+- `fast_synthetic`
+  - owner jobs:
+    `backend-tests`
+  - purpose:
+    lightweight synthetic pytest coverage and fast PR/branch feedback such as
+    `-m "not e2e and not slow"`
+  - excludes:
+    shared contract groups, real-media or `ffmpeg`-dependent suites, and
+    weekly-only deep lifecycle or `api_stream` coverage
+- `contract_boundary`
+  - owner jobs:
+    `test-and-build`, `integration-smoke`
+  - purpose:
+    manifest-backed shared backend/frontend contract checks in
+    `test-and-build` plus the tiny inline `integration-smoke` exception
+  - excludes:
+    broad fast-lane backend selectors, weekly-only heavy suites, and lint /
+    typecheck / security / packaging support jobs
+- `weekly_slow_real_media`
+  - owner jobs:
+    `slow-e2e`, `api-stream-deep`, `lifecycle-deep`
+  - purpose:
+    `weekly_slow_media`, `weekly_api_stream_deep`, `weekly_lifecycle`, and the
+    slower real-media / `ffmpeg` / deeper confidence-building suites
+  - excludes:
+    fast PR feedback lanes, protected contract-lane equality, and tiny local
+    smoke paths
+
+These category definitions live in `.github/ci_test_targets.json`, so the repo
+has one official CI lane vocabulary. The manifest also assigns each shared
+target group to one canonical lane category, and
+`.github/scripts/ci_target_manifest.py` exposes that mapping to Python-side CI
+helpers.
+
+The executable seam is:
+
+- `group_lane_categories` in `.github/ci_test_targets.json`
+- `.github/scripts/ci_target_manifest.py`
+  - `manifest_group_lane_category_name(...)`
+  - `manifest_lane_groups(...)`
+  - `lane_group_map()`
+
+`validate_ci_test_targets.py` now also enforces that:
+
+- `contract_boundary` owns only the protected shared PR contract groups
+- `weekly_slow_real_media` owns only the weekly-only shared groups
+- `fast_synthetic` owns no shared manifest groups at all
+
+Adjacent CI jobs that are not lane owners:
+
+- `frontend-checkpoint`
+- `backend-ruff`
+- `frontend-typecheck`
+- `frontend-lint`
+- `backend-typecheck`
+- `backend-pyright`
+- security and dependency audit jobs
+- summary/coordination jobs such as `changes`, `feature-gate`, and
+  `docs-consistency`
+
+Selector ownership summary:
+
+- shared contract and weekly-heavy suites are manifest-backed
+- `test-and-build` is the reader-backed execution path for shared
+  `contract_boundary` coverage
+- `integration-smoke` stays inline because it is a tiny local smoke path
+- `backend-tests` stays the `fast_synthetic` pytest marker lane
 
 Current path-owning CI consumers for the existence self-check:
 
@@ -211,10 +241,8 @@ Current path-owning CI consumers for the existence self-check:
   - the narrower backend, frontend bridge, and electron trust/playback test
     tuples in `.github/scripts/check_main_pr_consistency.py`
 
-That inventory is the full current validation surface for the
-path-existence self-check. It is intentionally broader than the manifest alone
-because the one inline smoke-path exception and the policy-only test paths can
-also drift.
+That inventory is broader than the manifest alone because the one inline
+smoke-path exception and the policy-only test paths can drift too.
 
 Path-existence self-check boundary:
 
@@ -230,9 +258,8 @@ Path-existence self-check boundary:
 That boundary keeps the check precise. It is meant to catch stale
 CI-owned test paths early, not to act as a general repo linter.
 
-The current validator already protects that scope contract, so the existence
-check runs on top of a stable, documented boundary instead of inventing its
-own rules.
+The validator already protects that scope contract, so the existence check runs
+on a stable documented boundary instead of inventing its own rules.
 
 Current command:
 
@@ -276,25 +303,15 @@ Current alignment contract enforced by `check_ci_target_drift.py`:
     `docs/contracts.md` must keep the high-signal CI ownership references that
     match their role
 
-This inventory is the current baseline. It keeps the next alignment-hardening
-steps focused on real drift gaps instead of re-implementing checks that
-already exist.
-
-That protected alignment contract now lives behind the shared Python seam in
+The protected alignment contract now lives behind the shared Python seam in
 `.github/scripts/ci_target_manifest.py`, so the drift checker consumes one
-explicit model instead of carrying those expectations inline.
+explicit model instead of carrying those expectations inline. Workflow-side
+group extraction comes from that helper too, with multiline-shell normalization
+and `python`/`python3` tolerance. On the policy side, the drift checker reads
+manifest-group usage from the explicit `manifest_policy_groups()` helper in
+`.github/scripts/check_main_pr_consistency.py`.
 
-The workflow-side group extraction also now comes from that shared helper
-module, with multiline shell normalization, so light `ci.yml` formatting
-changes are less likely to cause false drift failures. That helper also
-tolerates `python` vs `python3` invocation differences in workflow commands.
-
-On the policy side, the drift check now reads manifest-group usage from the
-explicit `manifest_policy_groups()` helper in
-`.github/scripts/check_main_pr_consistency.py` instead of scraping
-`ContractGate(...)` internals.
-
-The docs-side check is intentionally narrower now too:
+The docs-side check is intentionally narrow:
 
 - `docs/testing-and-validation.md`
   - must keep the protected alignment groups and the key CI ownership helpers
@@ -304,10 +321,7 @@ The docs-side check is intentionally narrower now too:
   - must keep the contract-relevant CI ownership references
 
 It does not require every CI-facing doc to repeat every manifest group or
-every helper name. The goal is ownership clarity, not repetition.
-
-That keeps docs alignment focused on ownership clarity instead of policing low-
-value repetition across all CI-facing docs.
+helper name. The goal is ownership clarity, not repetition.
 
 What is intentionally outside that equality rule:
 
@@ -328,18 +342,17 @@ Protected CI lane order:
 That keeps missing-path failures early, fast, and easier to read than later
 policy or contract-lane failures.
 
-This early-order rule applies to the protected PR lanes:
+This order applies to the protected PR lanes:
 
 - `main-pr-consistency`
 - `test-and-build`
 - `docs-consistency`
 
-In all three lanes, that means the broader policy or contract work does not
-start until the manifest boundary, CI-owned path inventory, and protected-lane
-alignment contract are already known to be healthy.
-
-The weekly heavy lanes still validate the manifest first, but they do not run
-the protected-lane existence/drift sequence before their slower suites.
+The broader policy or contract work does not start until the manifest
+boundary, CI-owned path inventory, and protected-lane alignment contract are
+already healthy. Weekly heavy lanes still validate the manifest first, but
+they do not run the protected-lane existence/drift sequence before their
+slower suites.
 
 Current focused test:
 
@@ -347,35 +360,9 @@ Current focused test:
 pytest -q tests/test_ci_test_target_scripts.py
 ```
 
-That focused test now also covers the workflow-reader extraction seam used by
-the drift check, along with the explicit policy-group helper it now consumes
-and the main drift outcomes it reports.
-
-Final lane ownership:
-
-- fast synthetic lane
-  - `backend-tests`
-- protected contract lane
-  - `test-and-build`
-- intentional local smoke lane
-  - `integration-smoke`
-- weekly heavy-validation lanes
-  - `slow-e2e`
-  - `api-stream-deep`
-  - `lifecycle-deep`
-
-Selector ownership summary:
-
-- the canonical manifest already covers every broad shared `ci.yml` contract
-  consumer that should be selector-backed
-- `test-and-build` is the reader-backed execution path for that shared
-  coverage
-- only genuinely small one-off workflow paths stay inline
-- the drift check treats the reader-backed `test-and-build` contract lane as
-  the workflow alignment target for shared `ci.yml` groups
-- fast backend CI stays synthetic with `-m "not e2e and not slow"`
-- slow, real-media, deeper `api_stream`, and lifecycle-heavy coverage stay in
-  the weekly manifest-backed lanes
+That focused test also covers the workflow-reader extraction seam used by the
+drift check, the explicit policy-group helper it consumes, the lane-helper
+API, and the main drift outcomes it reports.
 
 Ownership summary:
 
@@ -405,30 +392,6 @@ Policy consumer:
   - docs expectations
 - that keeps the script narrower than the workflow lanes it references, so it
   does not become a second target manifest
-
-Manifest protection:
-
-- required stable groups must be present and non-empty
-- referenced target files must exist in the repo
-- duplicate target paths are rejected
-- a small denylist of retired split-test file names is rejected explicitly
-
-Drift protection:
-
-- `.github/scripts/check_ci_target_drift.py`
-  - compares manifest groups, workflow usage, consistency-script usage, and
-    CI-facing docs references
-  - verifies that the main PR consistency policy consumes the same stable
-    manifest groups as the main workflow contract lane
-  - protects the ownership split between shared target data and narrower
-    policy logic
-
-Consistency-job order:
-
-1. manifest validation
-2. CI-owned test-path existence
-3. CI target drift check
-4. manifest-backed main PR gate policy check
 
 The slower confidence-building checks run weekly instead of on every PR, so
 the repo gets a broader safety net without turning normal branch work into a
