@@ -4,6 +4,10 @@
 This validator protects the current ownership split in `ci.yml`: broad shared
 contract consumers belong in manifest-backed target groups, while very small
 one-off smoke paths are allowed to stay inline outside the manifest.
+
+It also protects the explicit inventory and scope boundary for the
+path-existence self-check, so that guard stays limited to CI-owned test paths
+instead of growing into a generic repo linter.
 """
 
 from __future__ import annotations
@@ -41,6 +45,16 @@ REQUIRED_CONSUMERS = (
 )
 
 REQUIRED_FORMAT_TYPE = "json"
+REQUIRED_PATH_EXISTENCE_INCLUDED_CATEGORIES = (
+    "manifest target entries",
+    "inline workflow test paths",
+    "policy-only test paths",
+)
+REQUIRED_PATH_EXISTENCE_EXCLUDED_CATEGORIES = (
+    "non-test source paths",
+    "docs expectations",
+    "glob-like selectors if they appear later",
+)
 RETIRED_TARGET_PATHS = (
     "tests/test_session_runner_api_stream_basic.py",
     "tests/test_alert_query_service.py",
@@ -70,6 +84,16 @@ BOUNDARY_RULES = (
         "ownership_boundary.current_consumers",
         REQUIRED_CONSUMERS,
         "Manifest consumer inventory drifted from the approved current CI/docs consumers.",
+    ),
+    (
+        "path_existence_boundary.included_path_categories",
+        REQUIRED_PATH_EXISTENCE_INCLUDED_CATEGORIES,
+        "Manifest path-existence included categories drifted from the approved self-check scope.",
+    ),
+    (
+        "path_existence_boundary.excluded_path_categories",
+        REQUIRED_PATH_EXISTENCE_EXCLUDED_CATEGORIES,
+        "Manifest path-existence excluded categories drifted from the approved self-check scope.",
     ),
 )
 
@@ -110,6 +134,11 @@ def _manifest_tuple(manifest: CiTargetManifest, field_name: str) -> tuple[str, .
     """Return one manifest tuple field used by boundary validation."""
     if field_name == "format_type":
         return (manifest.format_type,)
+
+    if field_name.startswith("path_existence_boundary."):
+        boundary = manifest.raw["path_existence_boundary"]
+        boundary_field = field_name.removeprefix("path_existence_boundary.")
+        return tuple(boundary[boundary_field])
 
     boundary_field = field_name.removeprefix("ownership_boundary.")
     return getattr(manifest.ownership_boundary, boundary_field)
@@ -167,7 +196,10 @@ def _validate_manifest() -> list[str]:
 
     This keeps the step-3 boundary explicit: the manifest must stay complete
     for broad shared consumers without growing to include tiny local smoke
-    paths that intentionally remain inline in `ci.yml`.
+    paths that intentionally remain inline in `ci.yml`. The same validator now
+    also protects the narrower scope of the upcoming path-existence self-check,
+    which should stay limited to CI-owned test paths listed in the inventory
+    and excluded from source/doc ownership rules.
     """
     try:
         manifest = load_ci_target_manifest()
@@ -187,7 +219,9 @@ def main() -> int:
 
     The current workflow expectation is that `test-and-build` resolves shared
     contract targets through the reader, while one small integration smoke
-    command remains an explicit local inline invocation.
+    command remains an explicit local inline invocation. The same command also
+    keeps the path-existence inventory and scope boundary stable for the next
+    CI hardening step.
     """
     failures = _validate_manifest()
     if failures:

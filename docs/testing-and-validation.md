@@ -93,12 +93,46 @@ Supporting scripts:
     consumer
   - also exposes the shared manifest-group access seam used by
     `check_main_pr_consistency.py`
+  - now also exposes the deduplicated CI-owned test-path inventory used by
+    `check_ci_test_paths_exist.py`
 - `.github/scripts/validate_ci_test_targets.py`
-  - validates manifest structure, ownership boundary, and target hygiene
+  - validates manifest structure, ownership boundary, target hygiene, and the
+    explicit inventory/scope boundary for the future path-existence self-check
 - `.github/scripts/read_ci_test_targets.py`
   - resolves one stable target group for workflow shell steps
 - `.github/scripts/check_ci_target_drift.py`
   - checks workflow, policy, and docs alignment with the manifest
+- `.github/scripts/check_ci_test_paths_exist.py`
+  - validates that every CI-owned test path in the current inventory still
+    exists in the repo
+  - consumes that inventory through `ci_target_manifest.py` instead of
+    re-parsing manifest data locally
+  - explicitly validates the current inline workflow exception set, including
+    `integration-smoke`
+  - also validates policy-only and local-only gate expectations from
+    `check_main_pr_consistency.py` explicitly
+  - also checks that the manifest policy-only inventory still matches that
+    policy owner
+- `tests/test_ci_test_target_scripts.py`
+  - focused project tests for the shared CI-owned test-path inventory and the
+    current green-path behavior of `check_ci_test_paths_exist.py`
+  - also keeps the inline workflow exception inventory explicit and covered
+  - also covers policy-only and local-only gate expectations from
+    `check_main_pr_consistency.py`
+  - also keeps the manifest-to-policy ownership link honest
+
+CI helper roles:
+
+- `validate_ci_test_targets.py`
+  - checks manifest shape, approved scope, and target hygiene
+- `check_ci_test_paths_exist.py`
+  - checks that CI-owned test paths still exist
+- `check_ci_target_drift.py`
+  - checks that manifest, workflows, policy, and docs still agree
+
+That split matters because these three checks are related but not interchangeable.
+One catches bad manifest shape, one catches missing files, and one catches
+consumer drift.
 
 The chosen manifest format is JSON. That keeps the source of truth easy to read
 in Python tooling and straightforward to consume from workflow shell steps via
@@ -149,6 +183,98 @@ Final `ci.yml` selector ownership:
   - `slow-e2e`
   - `api-stream-deep`
   - `lifecycle-deep`
+
+Current path-owning CI consumers for the existence self-check:
+
+- workflow manifest groups
+  - `backend_contract`
+  - `mcp_fastapi_parity`
+  - `frontend_contract`
+  - `weekly_slow_media`
+  - `weekly_api_stream_deep`
+  - `weekly_lifecycle`
+- workflow inline test paths
+  - `tests/test_e2e_local_session.py`
+- policy manifest groups
+  - `backend_contract`
+  - `mcp_fastapi_parity`
+  - `frontend_contract`
+- policy-only test paths
+  - the narrower backend, frontend bridge, and electron trust/playback test
+    tuples in `.github/scripts/check_main_pr_consistency.py`
+
+That inventory is the full current validation surface for the
+path-existence self-check. It is intentionally broader than the manifest alone
+because the one inline smoke-path exception and the policy-only test paths can
+also drift.
+
+Path-existence self-check boundary:
+
+- included
+  - manifest target entries
+  - inline workflow test paths
+  - policy-only test paths
+- excluded
+  - non-test source paths
+  - docs expectations
+  - glob-like selectors if they appear later
+
+That boundary keeps the future check precise. It is meant to catch stale
+CI-owned test paths early, not to act as a general repo linter.
+
+The current validator already protects that scope contract, so the existence
+check runs on top of a stable, documented boundary instead of inventing its
+own rules.
+
+Current command:
+
+```bash
+python3 .github/scripts/check_ci_test_paths_exist.py
+```
+
+What this guard owns:
+
+- missing-file validation for CI-owned test paths
+- the inline workflow exception slice
+- policy-only and local-only gate test expectations
+- the manifest-to-policy ownership link for policy-only test paths
+
+What it does not own:
+
+- manifest structure and scope validation
+  - that belongs to `validate_ci_test_targets.py`
+- workflow/policy/docs alignment validation
+  - that belongs to `check_ci_target_drift.py`
+- general source-path or docs-path ownership checks
+  - those stay outside this guard on purpose
+
+That split keeps the new structural guard small, explicit, and hard to confuse
+with the broader validator or drift check.
+
+Protected CI lane order:
+
+1. `validate_ci_test_targets.py`
+2. `check_ci_test_paths_exist.py`
+3. `check_ci_target_drift.py`
+4. broader workflow or policy checks
+
+That keeps missing-path failures early, fast, and easier to read than later
+policy or contract-lane failures.
+
+This early-order rule applies to the protected PR lanes:
+
+- `main-pr-consistency`
+- `test-and-build`
+- `docs-consistency`
+
+The weekly heavy lanes still validate the manifest first, but they do not run
+the protected-lane existence/drift sequence before their slower suites.
+
+Current focused test:
+
+```bash
+pytest -q tests/test_ci_test_target_scripts.py
+```
 
 Final lane ownership:
 

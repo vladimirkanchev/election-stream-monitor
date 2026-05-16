@@ -1563,8 +1563,16 @@ Current split test ownership:
     CI/CD hardening work
   - owner of the shared CI target groups consumed by workflows and by the
     manifest-backed part of the main PR policy
+  - now also records the current path-owning CI consumers for the upcoming
+    path-existence self-check:
+    workflow manifest groups, the one inline smoke path, policy manifest
+    groups, and the policy-only test paths
+  - the existence check boundary stays intentionally narrow:
+    it validates CI-owned test paths, not source-path ownership or docs rules
 - `.github/scripts/validate_ci_test_targets.py`
   - structural and boundary validation for the manifest owner
+  - also protects the explicit path-existence inventory and scope boundary for
+    the CI-owned test-path guard
 - `.github/scripts/ci_target_manifest.py`
   - shared manifest model and loading seam for the reader, validator, drift
     check, and manifest-backed consistency policy
@@ -1578,6 +1586,30 @@ Current split test ownership:
     manifest groups as the main workflow contract lane
   - protects the ownership split: manifest owns shared target groups, policy
     script owns narrower PR enforcement
+- `.github/scripts/check_ci_test_paths_exist.py`
+  - validates the current CI-owned test-path inventory from one place
+  - covers manifest-backed workflow groups, inline workflow test exceptions,
+    and policy-only test paths
+  - reuses the shared manifest-loading seam instead of parsing manifest data
+    ad hoc
+  - keeps the `integration-smoke` inline exception explicit instead of letting
+    it hide behind manifest-backed coverage
+  - validates policy-only and local-only gate expectations against
+    `check_main_pr_consistency.py`, which is their real owner
+  - checks that the manifest policy-only inventory still matches that owner
+  - now runs before broader drift and policy checks in the protected CI lanes
+  - that protected-lane order currently covers `main-pr-consistency`,
+    `test-and-build`, and `docs-consistency`
+  - intentionally does not replace:
+    `validate_ci_test_targets.py` for manifest shape/scope or
+    `check_ci_target_drift.py` for manifest-consumer alignment
+- together, the three CI helper roles are:
+  - manifest shape and scope
+  - CI-owned test-path existence
+  - manifest-consumer drift
+- `tests/test_ci_test_target_scripts.py`
+  - keeps the CI-owned test-path inventory seam and the current success-path
+    existence guard covered from normal project tests
 - `.github/scripts/check_main_pr_consistency.py`
   - reuses manifest-backed groups where practical, while keeping a smaller
     policy-only layer for expectations that are narrower than the manifest

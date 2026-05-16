@@ -37,6 +37,12 @@ jobs:
       # contract as the protected PR lanes, but they own the slow and
       # real-media boundary on purpose. That keeps the protected contract lane
       # fast enough for PR work while preserving deeper weekly confidence.
+      # Weekly lanes share the same manifest validator, including the explicit
+      # path-existence inventory/scope contract that the dedicated
+      # `check_ci_test_paths_exist.py` guard consumes for inline and
+      # policy-owned test expectations. Unlike the protected PR lanes, weekly
+      # lanes stop at manifest validation and do not run the existence/drift
+      # guard sequence before their heavier suites.
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
 

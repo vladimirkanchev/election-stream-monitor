@@ -242,10 +242,40 @@ module families and the matching tests:
     `.github/scripts/read_ci_test_targets.py`,
     `.github/scripts/validate_ci_test_targets.py`, and
     `.github/scripts/check_ci_target_drift.py`
+  - `.github/scripts/check_ci_test_paths_exist.py` is the narrow structural
+    guard for CI-owned test-path existence
+  - it reads the deduplicated inventory through
+    `.github/scripts/ci_target_manifest.py`, not through local manifest
+    parsing
+  - it also validates the explicit inline workflow exception set, not just the
+    manifest-backed groups
+  - it now also validates policy-only and local-only test expectations from
+    `.github/scripts/check_main_pr_consistency.py`
+  - it also checks that the manifest policy-only inventory still matches that
+    policy owner
+  - protected CI lanes now run it before broader drift and policy checks so
+    stale-path failures surface early
+  - that protected-lane order currently applies to:
+    `main-pr-consistency`, `test-and-build`, and `docs-consistency`
+  - it is intentionally narrower than:
+    `validate_ci_test_targets.py` for manifest structure/scope and
+    `check_ci_target_drift.py` for manifest-consumer alignment
+  - `tests/test_ci_test_target_scripts.py` keeps the shared inventory seam and
+    the green-path existence guard behavior covered from the project side
+  - `validate_ci_test_targets.py` now also protects the explicit
+    path-existence inventory and scope boundary for the next CI hardening step
+  - the three CI helper responsibilities are now:
+    manifest shape/scope, test-path existence, and manifest-consumer drift
   - `test-and-build` and the weekly heavy lanes resolve shared targets through
     `.github/scripts/read_ci_test_targets.py`
   - `integration-smoke` is the intentional inline exception because it is a
     tiny local smoke path
+  - `.github/ci_test_targets.json` now also records the full current
+    path-owning CI surface for the future existence self-check:
+    shared workflow groups, the inline smoke path, and the
+    `check_main_pr_consistency.py` policy-side test paths
+  - that future existence check is intentionally narrow:
+    it covers CI-owned test paths, not non-test source files or docs rules
   - the final lane split is:
     `backend-tests` fast synthetic, `test-and-build` contract-focused,
     `integration-smoke` tiny local smoke, and weekly lanes for heavy coverage

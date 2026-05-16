@@ -10,6 +10,8 @@ It also relies on the current `ci.yml` ownership boundary: broad shared
 contract consumers should be manifest-backed, while the tiny local integration
 smoke path intentionally remains an inline workflow test. Fast backend CI
 stays synthetic, while weekly validation owns the slow and real-media lanes.
+The path-existence self-check is narrower: it covers CI-owned test paths only,
+not the wider source/doc ownership rules this drift check reasons about.
 """
 
 from __future__ import annotations
