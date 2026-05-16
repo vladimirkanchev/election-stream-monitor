@@ -1,4 +1,11 @@
-"""Tests for CI target-manifest helpers and CI structural guards."""
+"""Focused tests for CI manifest helpers, path guards, and drift checks.
+
+This file keeps the repo's CI-hardening seams readable in one place:
+- manifest-backed target and lane ownership helpers
+- CI-owned test-path existence coverage
+- protected-lane alignment behavior
+- high-signal `changes` filter assumptions in `ci.yml`
+"""
 
 from __future__ import annotations
 
@@ -16,6 +23,77 @@ check_ci_test_paths_exist = importlib.import_module("check_ci_test_paths_exist")
 check_ci_target_drift = importlib.import_module("check_ci_target_drift")
 check_main_pr_consistency = importlib.import_module("check_main_pr_consistency")
 ci_target_manifest = importlib.import_module("ci_target_manifest")
+
+PROTECTED_ALIGNMENT_GROUPS = (
+    "backend_contract",
+    "mcp_fastapi_parity",
+    "frontend_contract",
+)
+WEEKLY_LANE_GROUPS = (
+    "weekly_slow_media",
+    "weekly_api_stream_deep",
+    "weekly_lifecycle",
+)
+LOCAL_ONLY_POLICY_TEST_PATHS = (
+    "frontend/electron/playbackSourcePolicy.test.mjs",
+    "frontend/electron/localMediaRequestPolicy.test.mjs",
+    "frontend/electron/bridgeResponses.test.mjs",
+    "frontend/electron/fastApiFallback.test.mjs",
+    "frontend/electron/fastApiRuntimePolicy.test.mjs",
+    "frontend/electron/fastApiClient.test.mjs",
+    "frontend/electron/fastApiProcessManager.test.mjs",
+    "frontend/electron/fastApiStartupOrchestrator.test.mjs",
+    "frontend/electron/localMediaResponses.test.mjs",
+)
+REFINED_CONTRACT_FILTER_PATHS = (
+    "src/stream_loader.py",
+    "src/stream_loader_http_hls.py",
+    "src/session_runner.py",
+    "src/session_runner_progress.py",
+    "src/session_service.py",
+    "frontend/src/hooks/useMonitoringSession*.tsx",
+    "frontend/src/hooks/usePlaybackSource*.tsx",
+    "frontend/src/uiErrors.ts",
+)
+DOCS_CONSISTENCY_NON_MAIN_PR_IF = (
+    "github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || "
+    "needs.changes.outputs.workflow == 'true' || "
+    "needs.changes.outputs.contract == 'true')"
+)
+PATH_EXISTENCE_SUMMARY_LABELS = (
+    "all ci-owned test paths",
+    "inline workflow exceptions",
+    "policy-only expectations",
+    "local-only policy expectations",
+)
+
+
+def _current_ci_workflow_text() -> str:
+    """Return the current workflow text used by focused `changes` assertions."""
+    return (ci_target_manifest.REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+
+def _assert_contains_all(text: str, expected_snippets: tuple[str, ...]) -> None:
+    """Assert that one text blob contains every expected snippet."""
+    for snippet in expected_snippets:
+        assert snippet in text
+
+
+def _path_summaries_by_label() -> dict[str, Any]:
+    """Return current existence-guard summaries keyed by their stable labels."""
+    return {
+        summary.label: summary
+        for summary in check_ci_test_paths_exist._path_summaries()
+    }
+
+
+def _patch_clean_doc_alignment(monkeypatch) -> None:
+    """Patch the drift checker so tests can focus on workflow/policy scenarios."""
+    monkeypatch.setattr(
+        check_ci_target_drift,
+        "_validate_doc_alignment",
+        lambda requirement: [],
+    )
 
 
 def test_ci_owned_test_paths_keep_inline_and_policy_inventory() -> None:
@@ -35,35 +113,17 @@ def test_ci_owned_test_paths_keep_inline_and_policy_inventory() -> None:
         in inventory_paths
     )
     assert "frontend/electron/playbackSourcePolicy.test.mjs" in policy_paths
-    assert local_only_policy_paths == (
-        "frontend/electron/playbackSourcePolicy.test.mjs",
-        "frontend/electron/localMediaRequestPolicy.test.mjs",
-        "frontend/electron/bridgeResponses.test.mjs",
-        "frontend/electron/fastApiFallback.test.mjs",
-        "frontend/electron/fastApiRuntimePolicy.test.mjs",
-        "frontend/electron/fastApiClient.test.mjs",
-        "frontend/electron/fastApiProcessManager.test.mjs",
-        "frontend/electron/fastApiStartupOrchestrator.test.mjs",
-        "frontend/electron/localMediaResponses.test.mjs",
-    )
+    assert local_only_policy_paths == LOCAL_ONLY_POLICY_TEST_PATHS
     assert manifest.path_existence_inventory.policy_only_test_paths == policy_paths
     assert manifest.path_existence_boundary.included_path_categories == (
         "manifest target entries",
         "inline workflow test paths",
         "policy-only test paths",
     )
-    assert manifest_groups == (
-        "backend_contract",
-        "mcp_fastapi_parity",
-        "frontend_contract",
-    )
+    assert manifest_groups == PROTECTED_ALIGNMENT_GROUPS
     assert set(manifest.path_existence_inventory.workflow_manifest_groups) == {
-        "backend_contract",
-        "mcp_fastapi_parity",
-        "frontend_contract",
-        "weekly_slow_media",
-        "weekly_api_stream_deep",
-        "weekly_lifecycle",
+        *PROTECTED_ALIGNMENT_GROUPS,
+        *WEEKLY_LANE_GROUPS,
     }
 
 
@@ -71,21 +131,12 @@ def test_manifest_lane_ownership_matches_current_ci_split() -> None:
     manifest = ci_target_manifest.load_ci_target_manifest()
     lane_group_map = manifest.lane_group_map()
 
-    assert lane_group_map["contract_boundary"] == (
-        "backend_contract",
-        "mcp_fastapi_parity",
-        "frontend_contract",
-    )
-    assert lane_group_map["weekly_slow_real_media"] == (
-        "weekly_slow_media",
-        "weekly_api_stream_deep",
-        "weekly_lifecycle",
-    )
+    assert lane_group_map["contract_boundary"] == PROTECTED_ALIGNMENT_GROUPS
+    assert lane_group_map["weekly_slow_real_media"] == WEEKLY_LANE_GROUPS
     assert lane_group_map["fast_synthetic"] == ()
-    assert ci_target_manifest.manifest_lane_groups("contract_boundary") == (
-        "backend_contract",
-        "mcp_fastapi_parity",
-        "frontend_contract",
+    assert (
+        ci_target_manifest.manifest_lane_groups("contract_boundary")
+        == PROTECTED_ALIGNMENT_GROUPS
     )
     assert (
         manifest.group_lane_category_name("backend_contract") == "contract_boundary"
@@ -129,16 +180,11 @@ def test_lane_category_helpers_expose_metadata_and_fail_cleanly() -> None:
 
 
 def test_ci_owned_test_path_existence_guard_passes_on_current_repo() -> None:
-    summaries = {
-        summary.label: summary
-        for summary in check_ci_test_paths_exist._path_summaries()
-    }
+    summaries = _path_summaries_by_label()
 
-    assert summaries["all ci-owned test paths"].missing_paths == ()
-    assert summaries["inline workflow exceptions"].missing_paths == ()
+    for label in PATH_EXISTENCE_SUMMARY_LABELS:
+        assert summaries[label].missing_paths == ()
     assert check_ci_test_paths_exist._policy_inventory_drift_failures() == []
-    assert summaries["policy-only expectations"].missing_paths == ()
-    assert summaries["local-only policy expectations"].missing_paths == ()
 
 
 def test_workflow_reader_groups_handle_multiline_shell_invocations(
@@ -162,16 +208,27 @@ def test_workflow_reader_groups_handle_multiline_shell_invocations(
     )
 
 
+def test_ci_workflow_changes_filter_keeps_refined_high_signal_contract_scope() -> None:
+    workflow_text = _current_ci_workflow_text()
+
+    _assert_contains_all(
+        workflow_text,
+        (
+            "frontend:",
+            "- 'frontend/**'",
+            "- '!frontend/README.md'",
+            *tuple(f"- '{path}'" for path in REFINED_CONTRACT_FILTER_PATHS),
+            DOCS_CONSISTENCY_NON_MAIN_PR_IF,
+        ),
+    )
+
+
 def _alignment_contract(
     *,
-    protected_groups: tuple[str, ...] = (
-        "backend_contract",
-        "mcp_fastapi_parity",
-        "frontend_contract",
-    ),
+    protected_groups: tuple[str, ...] = PROTECTED_ALIGNMENT_GROUPS,
     doc_requirements: tuple[Any, ...] = (),
 ) -> Any:
-    """Build one narrow protected-lane alignment contract for focused tests."""
+    """Build one narrow protected-lane alignment contract for drift tests."""
     return ci_target_manifest.AlignmentContract(
         protected_workflow_groups=protected_groups,
         doc_requirements=doc_requirements,
@@ -185,7 +242,7 @@ def _patch_drift_inputs(
     workflow_groups: set[str] | None = None,
     policy_groups: set[str] | None = None,
 ) -> set[str]:
-    """Patch the drift checker to one controlled alignment scenario."""
+    """Patch the drift checker to one controlled protected-lane scenario."""
     expected_groups = set(contract.protected_workflow_groups)
     monkeypatch.setattr(check_ci_target_drift, "alignment_contract", lambda: contract)
     monkeypatch.setattr(
@@ -207,11 +264,7 @@ def test_ci_target_drift_check_passes_for_matching_alignment(
 ) -> None:
     contract = _alignment_contract()
     _patch_drift_inputs(monkeypatch, contract)
-    monkeypatch.setattr(
-        check_ci_target_drift,
-        "_validate_doc_alignment",
-        lambda requirement: [],
-    )
+    _patch_clean_doc_alignment(monkeypatch)
 
     assert check_ci_target_drift.main() == 0
     captured = capsys.readouterr()
@@ -232,11 +285,7 @@ def test_ci_target_drift_check_reports_workflow_alignment_mismatch(
         workflow_groups=workflow_groups,
         policy_groups=workflow_groups,
     )
-    monkeypatch.setattr(
-        check_ci_target_drift,
-        "_validate_doc_alignment",
-        lambda requirement: [],
-    )
+    _patch_clean_doc_alignment(monkeypatch)
 
     assert check_ci_target_drift.main() == 1
     captured = capsys.readouterr()
@@ -255,11 +304,7 @@ def test_ci_target_drift_check_reports_policy_alignment_mismatch(
         contract,
         policy_groups=policy_groups,
     )
-    monkeypatch.setattr(
-        check_ci_target_drift,
-        "_validate_doc_alignment",
-        lambda requirement: [],
-    )
+    _patch_clean_doc_alignment(monkeypatch)
 
     assert check_ci_target_drift.main() == 1
     captured = capsys.readouterr()
