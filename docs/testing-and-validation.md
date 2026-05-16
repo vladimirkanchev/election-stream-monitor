@@ -95,13 +95,17 @@ Supporting scripts:
     `check_main_pr_consistency.py`
   - now also exposes the deduplicated CI-owned test-path inventory used by
     `check_ci_test_paths_exist.py`
+  - now also exposes the explicit protected-lane alignment model used by
+    `check_ci_target_drift.py`
 - `.github/scripts/validate_ci_test_targets.py`
   - validates manifest structure, ownership boundary, target hygiene, and the
-    explicit inventory/scope boundary for the future path-existence self-check
+    explicit inventory/scope boundary used by `check_ci_test_paths_exist.py`
 - `.github/scripts/read_ci_test_targets.py`
   - resolves one stable target group for workflow shell steps
 - `.github/scripts/check_ci_target_drift.py`
   - checks workflow, policy, and docs alignment with the manifest
+  - reads one explicit protected-lane alignment model from
+    `ci_target_manifest.py`
 - `.github/scripts/check_ci_test_paths_exist.py`
   - validates that every CI-owned test path in the current inventory still
     exists in the repo
@@ -120,6 +124,8 @@ Supporting scripts:
   - also covers policy-only and local-only gate expectations from
     `check_main_pr_consistency.py`
   - also keeps the manifest-to-policy ownership link honest
+  - also covers the drift checker on matching, workflow-mismatch,
+    policy-mismatch, and doc-mismatch cases
 
 CI helper roles:
 
@@ -221,7 +227,7 @@ Path-existence self-check boundary:
   - docs expectations
   - glob-like selectors if they appear later
 
-That boundary keeps the future check precise. It is meant to catch stale
+That boundary keeps the check precise. It is meant to catch stale
 CI-owned test paths early, not to act as a general repo linter.
 
 The current validator already protects that scope contract, so the existence
@@ -253,6 +259,65 @@ What it does not own:
 That split keeps the new structural guard small, explicit, and hard to confuse
 with the broader validator or drift check.
 
+Current alignment contract enforced by `check_ci_target_drift.py`:
+
+- workflow-to-manifest alignment
+  - the shared reader-backed contract groups in `ci.yml` `test-and-build`
+    must match the protected alignment group set:
+    - `backend_contract`
+    - `mcp_fastapi_parity`
+    - `frontend_contract`
+- policy-to-workflow alignment
+  - manifest groups consumed by manifest-backed `ContractGate` entries in
+    `check_main_pr_consistency.py` must match the shared reader-backed
+    `test-and-build` contract groups in `ci.yml`
+- docs-to-manifest alignment
+  - `docs/testing-and-validation.md`, `docs/README.md`, and
+    `docs/contracts.md` must keep the high-signal CI ownership references that
+    match their role
+
+This inventory is the current baseline. It keeps the next alignment-hardening
+steps focused on real drift gaps instead of re-implementing checks that
+already exist.
+
+That protected alignment contract now lives behind the shared Python seam in
+`.github/scripts/ci_target_manifest.py`, so the drift checker consumes one
+explicit model instead of carrying those expectations inline.
+
+The workflow-side group extraction also now comes from that shared helper
+module, with multiline shell normalization, so light `ci.yml` formatting
+changes are less likely to cause false drift failures. That helper also
+tolerates `python` vs `python3` invocation differences in workflow commands.
+
+On the policy side, the drift check now reads manifest-group usage from the
+explicit `manifest_policy_groups()` helper in
+`.github/scripts/check_main_pr_consistency.py` instead of scraping
+`ContractGate(...)` internals.
+
+The docs-side check is intentionally narrower now too:
+
+- `docs/testing-and-validation.md`
+  - must keep the protected alignment groups and the key CI ownership helpers
+- `docs/README.md`
+  - must keep the top-level ownership handoff references
+- `docs/contracts.md`
+  - must keep the contract-relevant CI ownership references
+
+It does not require every CI-facing doc to repeat every manifest group or
+every helper name. The goal is ownership clarity, not repetition.
+
+That keeps docs alignment focused on ownership clarity instead of policing low-
+value repetition across all CI-facing docs.
+
+What is intentionally outside that equality rule:
+
+- weekly-only manifest groups
+- the tiny inline `integration-smoke` path
+- non-manifest workflow behavior
+
+So the current alignment check is intentionally about the protected contract
+lane, not the whole workflow universe.
+
 Protected CI lane order:
 
 1. `validate_ci_test_targets.py`
@@ -269,6 +334,10 @@ This early-order rule applies to the protected PR lanes:
 - `test-and-build`
 - `docs-consistency`
 
+In all three lanes, that means the broader policy or contract work does not
+start until the manifest boundary, CI-owned path inventory, and protected-lane
+alignment contract are already known to be healthy.
+
 The weekly heavy lanes still validate the manifest first, but they do not run
 the protected-lane existence/drift sequence before their slower suites.
 
@@ -277,6 +346,10 @@ Current focused test:
 ```bash
 pytest -q tests/test_ci_test_target_scripts.py
 ```
+
+That focused test now also covers the workflow-reader extraction seam used by
+the drift check, along with the explicit policy-group helper it now consumes
+and the main drift outcomes it reports.
 
 Final lane ownership:
 
@@ -353,8 +426,9 @@ Drift protection:
 Consistency-job order:
 
 1. manifest validation
-2. CI target drift check
-3. manifest-backed main PR gate policy check
+2. CI-owned test-path existence
+3. CI target drift check
+4. manifest-backed main PR gate policy check
 
 The slower confidence-building checks run weekly instead of on every PR, so
 the repo gets a broader safety net without turning normal branch work into a

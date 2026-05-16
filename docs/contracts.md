@@ -1586,6 +1586,8 @@ Current split test ownership:
     manifest groups as the main workflow contract lane
   - protects the ownership split: manifest owns shared target groups, policy
     script owns narrower PR enforcement
+  - reads one explicit protected-lane alignment model from
+    `.github/scripts/ci_target_manifest.py`
 - `.github/scripts/check_ci_test_paths_exist.py`
   - validates the current CI-owned test-path inventory from one place
   - covers manifest-backed workflow groups, inline workflow test exceptions,
@@ -1600,6 +1602,8 @@ Current split test ownership:
   - now runs before broader drift and policy checks in the protected CI lanes
   - that protected-lane order currently covers `main-pr-consistency`,
     `test-and-build`, and `docs-consistency`
+  - in those lanes, broader policy or contract work now starts only after the
+    manifest, CI-owned path inventory, and drift alignment checks pass
   - intentionally does not replace:
     `validate_ci_test_targets.py` for manifest shape/scope or
     `check_ci_target_drift.py` for manifest-consumer alignment
@@ -1608,8 +1612,9 @@ Current split test ownership:
   - CI-owned test-path existence
   - manifest-consumer drift
 - `tests/test_ci_test_target_scripts.py`
-  - keeps the CI-owned test-path inventory seam and the current success-path
-    existence guard covered from normal project tests
+  - keeps the CI-owned test-path inventory seam, the current success-path
+    existence guard, and focused drift-check outcomes covered from normal
+    project tests
 - `.github/scripts/check_main_pr_consistency.py`
   - reuses manifest-backed groups where practical, while keeping a smaller
     policy-only layer for expectations that are narrower than the manifest
@@ -1636,12 +1641,31 @@ Current split test ownership:
   heavy coverage
 - the drift check treats the reader-backed `test-and-build` contract lane as
   the workflow alignment target for shared `ci.yml` groups
+- the protected alignment contract is now exposed through the shared manifest
+  helper seam in `.github/scripts/ci_target_manifest.py`
+- workflow-side group extraction for that guard now also comes from the same
+  helper seam, with multiline shell normalization and `python`/`python3`
+  tolerance
+- policy-side group extraction now comes from the explicit
+  `manifest_policy_groups()` helper in
+  `.github/scripts/check_main_pr_consistency.py`
+- docs-side drift checking is now limited to high-signal ownership
+  references instead of repeating every CI detail in every doc
+- that means this doc keeps the contract-relevant ownership facts, not a full
+  duplicate of every CI helper detail
+- that equality rule is intentionally narrow:
+  `backend_contract`, `mcp_fastapi_parity`, and `frontend_contract`
+- weekly-only groups and the inline smoke path stay outside that equality
+  contract on purpose
+- that keeps the alignment guard focused on the shared contract lane instead
+  of forcing unrelated workflow behavior into the same rule
 - the `main-pr-consistency` contract gate now reuses the same stable manifest
   groups where practical, while keeping only a smaller gate-local set of extra
   policy expectations
 - `validate_ci_test_targets.py` protects the manifest itself
-- CI consistency jobs run manifest validation, drift checking, then
-  manifest-backed main PR gate policy validation
+- protected CI consistency lanes run manifest validation, CI-owned test-path
+  existence, drift checking, then manifest-backed main PR gate policy
+  validation
 - `tests/test_mcp_server_incidents_behavior.py`
   - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
     grouped results for known sessions whose filters match nothing

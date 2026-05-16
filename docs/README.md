@@ -257,13 +257,17 @@ module families and the matching tests:
     stale-path failures surface early
   - that protected-lane order currently applies to:
     `main-pr-consistency`, `test-and-build`, and `docs-consistency`
+  - in those lanes, broader policy or contract work now starts only after:
+    manifest validation, CI-owned path existence, and drift alignment all pass
   - it is intentionally narrower than:
     `validate_ci_test_targets.py` for manifest structure/scope and
     `check_ci_target_drift.py` for manifest-consumer alignment
   - `tests/test_ci_test_target_scripts.py` keeps the shared inventory seam and
-    the green-path existence guard behavior covered from the project side
+    the green-path existence guard behavior plus focused drift-check outcomes
+    covered from the project side
   - `validate_ci_test_targets.py` now also protects the explicit
-    path-existence inventory and scope boundary for the next CI hardening step
+    path-existence inventory and scope boundary used by the current structural
+    guard
   - the three CI helper responsibilities are now:
     manifest shape/scope, test-path existence, and manifest-consumer drift
   - `test-and-build` and the weekly heavy lanes resolve shared targets through
@@ -283,6 +287,24 @@ module families and the matching tests:
     `integration-smoke` tiny local smoke, and weekly lanes for heavy coverage
   - the drift check keeps that reader-backed contract lane aligned with the
     manifest-backed PR policy
+  - the protected alignment contract is now exposed through the shared
+    manifest helper seam in `.github/scripts/ci_target_manifest.py`
+  - workflow-side group extraction for that guard now also comes from the same
+    helper seam, with multiline shell normalization and `python`/`python3`
+    tolerance
+  - policy-side group extraction now comes from the explicit
+    `manifest_policy_groups()` helper in
+    `.github/scripts/check_main_pr_consistency.py`
+  - docs-side drift checking is now limited to high-signal ownership
+    references instead of repeating every CI detail in every doc
+  - that means CI-facing docs are checked for the ownership facts they should
+    carry, not for full duplication of every manifest detail
+  - that equality rule is intentionally narrow:
+    `backend_contract`, `mcp_fastapi_parity`, and `frontend_contract`
+  - weekly-only groups and the inline smoke path stay outside that equality
+    contract on purpose
+  - that means the alignment guard is protecting the shared contract lane, not
+    trying to prove every workflow behavior is identical
   - within `main-pr-consistency`, the backend and frontend bridge gates now
     read shared manifest groups, while the electron trust/playback gate remains
     local-only
@@ -292,8 +314,8 @@ module families and the matching tests:
   - the stable CI target-group language is:
     `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
     `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
-  - consistency jobs run manifest validation, drift checking, then the
-    manifest-backed policy check
+  - protected consistency lanes run manifest validation, CI-owned test-path
+    existence, drift checking, then the manifest-backed policy check
 
 ## Current Stable Contracts
 
