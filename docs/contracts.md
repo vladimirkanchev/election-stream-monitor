@@ -1660,6 +1660,10 @@ Current split test ownership:
     references, so it does not become a second target manifest
   - backend policy reads `backend_contract` and `mcp_fastapi_parity`
   - frontend bridge policy reads `frontend_contract`
+  - shared `frontend_contract` ownership now covers the bridge, transport, and
+    `uiErrors` contract suites, while the narrower hook monitoring/playback
+    expectations stay policy-only
+  - `tests/test_ci_test_target_scripts.py` regression-covers that split
   - electron trust/playback policy stays local-only for now
 - the stable CI target-group language is now:
   `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,

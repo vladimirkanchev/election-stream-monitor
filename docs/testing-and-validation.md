@@ -607,6 +607,63 @@ Policy consumer:
 - that keeps the script narrower than the workflow lanes it references, so it
   does not become a second target manifest
 
+Current frontend contract targeting baseline:
+
+- shared manifest group:
+  - `frontend_contract`
+  - current targets:
+    - `frontend/src/bridge/contract.success.test.ts`
+    - `frontend/src/bridge/contract.errors.test.ts`
+    - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+    - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+    - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
+    - `frontend/src/bridge/transport.test.ts`
+    - `frontend/src/uiErrors.test.ts`
+- workflow consumer:
+  - `test-and-build` runs the frontend `contract_boundary` lane with:
+    `npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)`
+  - the shared reader stays necessary because Vitest runs from the
+    `frontend/` working directory while the manifest stores repo-root paths
+- policy consumer:
+  - the `frontend bridge contract` gate in
+    `.github/scripts/check_main_pr_consistency.py` reuses
+    `frontend_contract`
+  - that gate is still intentionally narrower than the full workflow lane and
+    now keeps only narrower frontend policy-only tests for:
+    - `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
+    - `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
+    - `frontend/src/hooks/usePlaybackSource.test.tsx`
+- current focused regression coverage:
+  - `tests/test_ci_test_target_scripts.py` now locks in:
+    - the exact `frontend_contract` manifest targets
+    - the remaining hook-only policy slice
+    - the live workflow reader command
+
+Final frontend ownership model:
+
+- shared manifest lane:
+  - `frontend_contract`
+  - owns the stable bridge, transport, and `uiErrors` contract suites
+- policy-only frontend lane:
+  - `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
+  - `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
+  - `frontend/src/hooks/usePlaybackSource.test.tsx`
+- local-only frontend-adjacent lane:
+  - Electron trust/playback expectations
+
+Why the hook suites stay policy-only:
+
+- they sit downstream of the shared bridge contract rather than defining it
+- they assert hook-level polling, reconnect, terminal-state, and playback
+  behavior after bridge normalization
+- they are closer to operator-facing lifecycle and playback semantics than to
+  the narrower shared bridge/transport payload contract
+- moving them into `frontend_contract` now would broaden the shared workflow
+  lane more than it would reduce real duplication
+
+That keeps the shared manifest lane focused and leaves the narrower hook and
+Electron expectations outside that workflow-owned contract surface.
+
 The slower confidence-building checks run weekly instead of on every PR, so
 the repo gets a broader safety net without turning normal branch work into a
 long queue.

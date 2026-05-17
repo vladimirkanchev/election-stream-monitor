@@ -344,6 +344,10 @@ module families and the matching tests:
   - within `main-pr-consistency`, the backend and frontend bridge gates now
     read shared manifest groups, while the electron trust/playback gate remains
     local-only
+  - on the frontend side, the shared `frontend_contract` lane now owns the
+    bridge/transport/ui-errors contract suites, while the narrower
+    hook-oriented monitoring/playback expectations stay policy-only
+  - `tests/test_ci_test_target_scripts.py` locks in that frontend split
   - those gates now read more clearly as:
     label, changed paths, manifest groups, policy-only tests, and docs
     expectations
@@ -362,6 +366,7 @@ module families and the matching tests:
     lives in `tests/test_ci_test_target_scripts.py`
   - keep the full path-filter contract, intent, and current review results in
     `docs/testing-and-validation.md`
+  - keep the full frontend task-9 ownership boundary there too
   - keep the full guarded split-suite surface, registration contract, and
     changed-files strategy there too
 
