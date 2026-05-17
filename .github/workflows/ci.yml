@@ -622,7 +622,9 @@ jobs:
             $(python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
 
       # Frontend `contract_boundary` coverage follows the same shared-target
-      # pattern.
+      # pattern. The shared lane owns the bridge/transport/ui-errors contract
+      # suites; narrower monitoring/playback hook expectations stay in the
+      # main-PR policy layer.
       - name: Run contract_boundary frontend contract checks via shared target reader
         working-directory: frontend
         run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lightweight main-PR consistency checks for docs and workflow-sensitive changes.
+"""Run the narrower manifest-aware main-PR policy checks.
 
 The contract gates now consume the same manifest-backed CI target groups used by
 the active workflow jobs where that reuse is practical, which reduces one of
@@ -15,6 +15,12 @@ Current ownership boundary in this script:
 - per-gate docs expectations
 - smaller policy-only test tuples that are intentionally narrower than the
   shared manifest groups
+
+For the frontend side, the final task-9 split is:
+- shared `frontend_contract` ownership for bridge, transport, and `uiErrors`
+  contract suites
+- policy-only ownership for the narrower hook-level monitoring/playback tests
+- local-only ownership for Electron trust/playback expectations
 """
 
 from __future__ import annotations
@@ -23,7 +29,6 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 import subprocess
 import sys
-from pathlib import Path
 
 from ci_target_manifest import REPO_ROOT, manifest_group_targets
 
@@ -89,10 +94,17 @@ BACKEND_POLICY_ONLY_TESTS = (
 )
 
 FRONTEND_BRIDGE_POLICY_ONLY_TESTS = (
-    "frontend/src/bridge/contract.session-snapshot.shape.test.ts",
     "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
     "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
     "frontend/src/hooks/usePlaybackSource.test.tsx",
+)
+
+FRONTEND_BRIDGE_CHANGED_PATHS = (
+    "frontend/src/bridge/**",
+    "frontend/src/types.ts",
+    "frontend/src/hooks/useMonitoringSession*.tsx",
+    "frontend/src/hooks/usePlaybackSource*.tsx",
+    "frontend/src/uiErrors.ts",
 )
 
 ELECTRON_TRUST_PLAYBACK_POLICY_ONLY_TESTS = (
@@ -105,6 +117,18 @@ ELECTRON_TRUST_PLAYBACK_POLICY_ONLY_TESTS = (
     "frontend/electron/fastApiProcessManager.test.mjs",
     "frontend/electron/fastApiStartupOrchestrator.test.mjs",
     "frontend/electron/localMediaResponses.test.mjs",
+)
+
+ELECTRON_TRUST_PLAYBACK_CHANGED_PATHS = (
+    "frontend/electron/playbackSourcePolicy.mjs",
+    "frontend/electron/localMediaRequestPolicy.mjs",
+    "frontend/electron/bridgeResponses.mjs",
+    "frontend/electron/fastApiFallback.mjs",
+    "frontend/electron/fastApiRuntimePolicy.mjs",
+    "frontend/electron/fastApiClient.mjs",
+    "frontend/electron/fastApiProcessManager.mjs",
+    "frontend/electron/fastApiStartupOrchestrator.mjs",
+    "frontend/electron/localMediaResponses.mjs",
 )
 
 
@@ -155,6 +179,20 @@ class ContractGate:
         return _matches_glob_any(changed_files, self.changed_paths)
 
 
+def _ordered_unique_values(values: tuple[str, ...]) -> tuple[str, ...]:
+    """Return one stable tuple without duplicate values, preserving order."""
+    ordered_unique_values: list[str] = []
+    seen_values: set[str] = set()
+
+    for value in values:
+        if value in seen_values:
+            continue
+        seen_values.add(value)
+        ordered_unique_values.append(value)
+
+    return tuple(ordered_unique_values)
+
+
 CONTRACT_GATES = (
     ContractGate(
         label="backend contract",
@@ -182,33 +220,19 @@ CONTRACT_GATES = (
     ),
     ContractGate(
         label="frontend bridge contract",
-        changed_paths=(
-            "frontend/src/bridge/**",
-            "frontend/src/types.ts",
-            "frontend/src/hooks/useMonitoringSession*.tsx",
-            "frontend/src/hooks/usePlaybackSource*.tsx",
-            "frontend/src/uiErrors.ts",
-        ),
+        changed_paths=FRONTEND_BRIDGE_CHANGED_PATHS,
         # This gate reads the same shared frontend contract group that the
         # protected CI workflow already uses.
         manifest_groups=FRONTEND_BRIDGE_POLICY_GROUPS,
-        # These stay policy-only until they belong to a broader shared CI group.
+        # These stay policy-only because they assert hook-level
+        # monitoring/playback behavior after bridge normalization rather than
+        # the stable shared bridge/transport/ui-errors contract lane itself.
         policy_only_tests=FRONTEND_BRIDGE_POLICY_ONLY_TESTS,
         docs_expectations=("docs/contracts.md",),
     ),
     ContractGate(
         label="electron trust/playback contract",
-        changed_paths=(
-            "frontend/electron/playbackSourcePolicy.mjs",
-            "frontend/electron/localMediaRequestPolicy.mjs",
-            "frontend/electron/bridgeResponses.mjs",
-            "frontend/electron/fastApiFallback.mjs",
-            "frontend/electron/fastApiRuntimePolicy.mjs",
-            "frontend/electron/fastApiClient.mjs",
-            "frontend/electron/fastApiProcessManager.mjs",
-            "frontend/electron/fastApiStartupOrchestrator.mjs",
-            "frontend/electron/localMediaResponses.mjs",
-        ),
+        changed_paths=ELECTRON_TRUST_PLAYBACK_CHANGED_PATHS,
         # This gate still owns its full policy-only test list because it is not
         # yet represented by a shared manifest-backed CI target group.
         policy_only_tests=ELECTRON_TRUST_PLAYBACK_POLICY_ONLY_TESTS,
@@ -218,35 +242,26 @@ CONTRACT_GATES = (
 
 
 def policy_only_test_paths() -> tuple[str, ...]:
-    """Return the deduplicated policy-only test paths across all gates."""
-    ordered_unique_paths: list[str] = []
-    seen_paths: set[str] = set()
-
-    for gate in CONTRACT_GATES:
-        for relative_path in gate.policy_only_tests:
-            if relative_path in seen_paths:
-                continue
-            seen_paths.add(relative_path)
-            ordered_unique_paths.append(relative_path)
-
-    return tuple(ordered_unique_paths)
+    """Return every gate-local policy-only test path across all contract gates."""
+    return _ordered_unique_values(
+        tuple(
+            relative_path
+            for gate in CONTRACT_GATES
+            for relative_path in gate.policy_only_tests
+        )
+    )
 
 
 def local_only_policy_test_paths() -> tuple[str, ...]:
-    """Return the deduplicated policy-only test paths from local-only gates."""
-    ordered_unique_paths: list[str] = []
-    seen_paths: set[str] = set()
-
-    for gate in CONTRACT_GATES:
-        if gate.uses_manifest_groups():
-            continue
-        for relative_path in gate.policy_only_tests:
-            if relative_path in seen_paths:
-                continue
-            seen_paths.add(relative_path)
-            ordered_unique_paths.append(relative_path)
-
-    return tuple(ordered_unique_paths)
+    """Return only the policy-only test paths from gates with no manifest groups."""
+    return _ordered_unique_values(
+        tuple(
+            relative_path
+            for gate in CONTRACT_GATES
+            if not gate.uses_manifest_groups()
+            for relative_path in gate.policy_only_tests
+        )
+    )
 
 
 def manifest_policy_groups() -> tuple[str, ...]:
@@ -256,21 +271,13 @@ def manifest_policy_groups() -> tuple[str, ...]:
     workflow/policy alignment should read from this helper instead of
     reverse-engineering `ContractGate(...)` internals.
     """
-    ordered_unique_groups: list[str] = []
-    seen_groups: set[str] = set()
-
-    for gate in CONTRACT_GATES:
-        for group_name in gate.manifest_groups:
-            if group_name in seen_groups:
-                continue
-            seen_groups.add(group_name)
-            ordered_unique_groups.append(group_name)
-
-    return tuple(ordered_unique_groups)
+    return _ordered_unique_values(
+        tuple(group_name for gate in CONTRACT_GATES for group_name in gate.manifest_groups)
+    )
 
 
 def manifest_policy_test_paths() -> tuple[str, ...]:
-    """Return the manifest-backed test paths consumed by policy gates."""
+    """Return the shared manifest-backed test paths reused by policy gates."""
     return tuple(
         test_path
         for group_name in manifest_policy_groups()
@@ -279,12 +286,12 @@ def manifest_policy_test_paths() -> tuple[str, ...]:
 
 
 def policy_owned_test_paths() -> tuple[str, ...]:
-    """Return the full policy-owned test surface across manifest and local policy."""
+    """Return the full test surface owned by the main-PR policy layer."""
     return manifest_policy_test_paths() + policy_only_test_paths()
 
 
 def _changed_files(diff_range: str) -> list[str]:
-    """Return repo-relative files changed in the provided git diff range."""
+    """Return repo-relative changed files for one PR-style diff range."""
     result = subprocess.run(
         ["git", "diff", "--name-only", diff_range],
         cwd=REPO_ROOT,
@@ -296,12 +303,12 @@ def _changed_files(diff_range: str) -> list[str]:
 
 
 def _matches_any(path: str, prefixes: tuple[str, ...]) -> bool:
-    """Return whether a changed path matches one exact or prefix-based trigger."""
+    """Return whether one changed path matches any exact or prefix trigger."""
     return any(path == prefix or path.startswith(prefix) for prefix in prefixes)
 
 
 def _matches_glob_any(paths: list[str], patterns: tuple[str, ...]) -> bool:
-    """Return whether any changed path matches any glob-like gate pattern."""
+    """Return whether any changed path matches any gate glob/pattern."""
     return any(any(fnmatch(path, pattern) for pattern in patterns) for path in paths)
 
 
@@ -312,6 +319,10 @@ def main() -> int:
     it enforces docs expectations, special-case policy-only tests, and the
     current gate activation rules for `main` pull requests. The shared target
     groups themselves remain owned by `.github/ci_test_targets.json`.
+
+    For the frontend boundary, this means the shared workflow lane stays
+    focused on `frontend_contract`, while hook-level monitoring/playback
+    expectations continue to live here as policy-only checks.
     """
     if len(sys.argv) != 2:
         print("usage: check_main_pr_consistency.py <diff-range>", file=sys.stderr)

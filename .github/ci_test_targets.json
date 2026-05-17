@@ -154,7 +154,6 @@
       "tests/test_session_runner_api_stream_cancellation.py",
       "tests/test_session_runner_execution_local.py",
       "tests/test_session_runner_execution_api_stream.py",
-      "frontend/src/bridge/contract.session-snapshot.shape.test.ts",
       "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
       "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
       "frontend/src/hooks/usePlaybackSource.test.tsx",
@@ -169,7 +168,7 @@
       "frontend/electron/localMediaResponses.test.mjs"
     ],
     "notes": [
-      "This inventory is the full current surface for the future CI path-existence self-check.",
+      "This inventory is the full current surface for the CI path-existence self-check.",
       "It intentionally includes the one inline smoke-path exception and the narrower policy-only test paths from check_main_pr_consistency.py."
     ]
   },

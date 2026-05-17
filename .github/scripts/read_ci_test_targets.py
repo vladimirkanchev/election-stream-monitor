@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Resolve one stable CI target group from the canonical manifest.
+"""Resolve one stable CI target group from the canonical manifest for workflows.
 
 The active workflow consumers are the broad contract-style jobs in `ci.yml`
 and the heavier weekly validation lanes. Small one-off smoke paths stay inline
 in the workflow when extracting them would add noise without reducing drift.
 The drift check then treats the reader-backed `test-and-build` contract lane
 as the workflow-side alignment target for those shared `ci.yml` groups.
+
+For task-9's final frontend split, this reader resolves the shared
+`frontend_contract` workflow lane, while the narrower hook-level frontend tests
+stay policy-only in `check_main_pr_consistency.py`.
 """
 
 from __future__ import annotations
@@ -52,21 +56,20 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _normalize_targets(targets: list[str], strip_prefix: str | None) -> list[str]:
-    """Return resolved targets after an optional shared-prefix strip."""
+    """Return resolved targets after an optional leading-prefix strip."""
     if strip_prefix is None:
         return targets
 
-    normalized_prefix = strip_prefix
     return [
-        target.removeprefix(normalized_prefix)
-        if target.startswith(normalized_prefix)
+        target.removeprefix(strip_prefix)
+        if target.startswith(strip_prefix)
         else target
         for target in targets
     ]
 
 
 def _print_targets(targets: list[str], separator: str) -> None:
-    """Print resolved targets in the requested shell-friendly format."""
+    """Print resolved targets in one shell-friendly format."""
     if separator == "space":
         print(" ".join(targets))
         return
@@ -78,8 +81,10 @@ def main() -> int:
     """Print one manifest target group in a shell-friendly format.
 
     In `ci.yml`, this currently powers the shared backend and frontend
-    contract lanes in `test-and-build`, while the tiny integration smoke path
-    stays inline outside the reader on purpose.
+    contract lanes in `test-and-build`. The frontend lane strips the leading
+    `frontend/` prefix because Vitest runs from that working directory, while
+    the tiny integration smoke path stays inline outside the reader on
+    purpose.
     """
     args = _build_parser().parse_args()
 
