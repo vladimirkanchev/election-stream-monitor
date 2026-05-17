@@ -56,6 +56,9 @@ Use this shortcut map before editing code:
   - [testing-and-validation.md](./testing-and-validation.md)
   - `./.agents/skills/`
   - `tests/test_repo_skills.py`
+- changing CI ownership rules, target manifests, or split-suite registration:
+  - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
 
 ## Current High-Signal Code Areas
 
@@ -231,144 +234,16 @@ module families and the matching tests:
   - `tests/test_mcp_server_contracts.py` also keeps one explicit “exactly four
     current tools” guard for the read-only MCP surface, alongside the
     structural registration, schema, and stdio launch-wiring checks
-  - `.github/ci_test_targets.json` now owns the duplicated CI-critical explicit
-    target groups for the CI hardening slice
-  - that manifest owns the shared target groups, while
-    `check_main_pr_consistency.py` owns the narrower main-PR policy layer
-  - Python-side CI consumers share one manifest-loading seam in:
-    `.github/scripts/ci_target_manifest.py`
-  - workflows and consistency scripts consume the manifest through:
-    `.github/scripts/ci_target_manifest.py`,
-    `.github/scripts/read_ci_test_targets.py`,
-    `.github/scripts/validate_ci_test_targets.py`, and
-    `.github/scripts/check_ci_target_drift.py`
-  - `.github/scripts/check_ci_test_paths_exist.py` is the narrow structural
-    guard for CI-owned test-path existence
-  - it reads the deduplicated inventory through
-    `.github/scripts/ci_target_manifest.py`, not through local manifest
-    parsing
-  - it also validates the explicit inline workflow exception set, not just the
-    manifest-backed groups
-  - it now also validates policy-only and local-only test expectations from
-    `.github/scripts/check_main_pr_consistency.py`
-  - it also checks that the manifest policy-only inventory still matches that
-    policy owner
-  - protected CI lanes now run it before broader drift and policy checks so
-    stale-path failures surface early
-  - that protected-lane order currently applies to:
-    `main-pr-consistency`, `test-and-build`, and `docs-consistency`
-  - in those lanes, broader policy or contract work now starts only after:
-    manifest validation, CI-owned path existence, and drift alignment all pass
-  - it is intentionally narrower than:
-    `validate_ci_test_targets.py` for manifest structure/scope and
-    `check_ci_target_drift.py` for manifest-consumer alignment
-  - `tests/test_ci_test_target_scripts.py` keeps the shared inventory seam and
-    the green-path existence guard behavior plus focused drift-check outcomes
-    covered from the project side
-  - `validate_ci_test_targets.py` now also protects the explicit
-    path-existence inventory and scope boundary used by the current structural
-    guard
-  - the three CI helper responsibilities are now:
-    manifest shape/scope, test-path existence, and manifest-consumer drift
-  - `test-and-build` and the weekly heavy lanes resolve shared targets through
-    `.github/scripts/read_ci_test_targets.py`
-  - the frontend contract lane uses the same reader with `--strip-prefix frontend/`
-    because it runs inside the `frontend/` working directory
-  - `integration-smoke` is the intentional inline exception because it is a
-    tiny local smoke path
-  - `.github/ci_test_targets.json` now also records the full current
-    path-owning CI surface for the live existence self-check:
-    shared workflow groups, the inline smoke path, and the
-    `check_main_pr_consistency.py` policy-side test paths
-  - it also records the guarded split-suite registration surface for the live
-    CI registration guard:
-    backend contract/session-service areas, `api_stream` and HLS boundary
-    suites, frontend bridge/hook contract suites, and local-only Electron
-    policy suites
-  - split-suite registration stays narrow:
-    shared-group additions update the manifest,
-    policy-owned additions update the main-PR policy owner,
-    docs update only when ownership meaning changes
-  - the guard inspects changed files in protected PR CI, not
-    re-scan the whole repo
-  - the shared registration-check command is:
-    `.github/scripts/check_split_suite_registration.py <diff-range>`
-  - most guarded areas accept `shared_manifest` or `policy_owned`
-    registration, while the Electron local-only area requires
-    `local_only_policy`
-  - docs changes are required only when the ownership model changes, a new
-    guarded category appears, or the policy-boundary meaning changes
-  - when the guard fails:
-    update `.github/ci_test_targets.json` for shared manifest ownership or
-    `.github/scripts/check_main_pr_consistency.py` for policy ownership
-  - use `docs/testing-and-validation.md` for the full guarded-area patterns,
-    accepted registration surfaces, and the complete fix path
-  - the guard reads those surfaces through:
-    `shared_manifest_test_paths()` in
-    `.github/scripts/ci_target_manifest.py`,
-    plus `policy_owned_test_paths()` and
-    `local_only_policy_test_paths()` in
-    `.github/scripts/check_main_pr_consistency.py`
-  - protected PR lanes now run that registration guard after drift alignment
-    and before broader policy or contract work
-  - that existence check is intentionally narrow:
-    it covers CI-owned test paths, not non-test source files or docs rules
-  - CI lane ownership now uses the canonical vocabulary
-    `fast_synthetic`, `contract_boundary`, and `weekly_slow_real_media`
-  - `.github/ci_test_targets.json` owns that lane model, including the
-    `group_lane_categories` mapping consumed through
-    `.github/scripts/ci_target_manifest.py`
-  - `ci_target_manifest.py` is the Python access seam for:
-    manifest groups, lane-category lookup, and lane-to-group queries
-  - `docs/testing-and-validation.md` is the primary explanation path for the
-    full lane split, lane owners, and enforcement rules
-  - `tests/test_ci_test_target_scripts.py` provides focused coverage for the
-    lane-helper seam, the current CI split, and split-suite registration
-    outcomes, including representative owner-seam coverage
-  - adjacent jobs such as lint, typecheck, security audit, docs consistency,
-    and summary/filter jobs support those lanes but are not lane owners
-  - the drift check keeps the reader-backed contract lane aligned with the
-    manifest-backed PR policy, using the shared helper seam plus
-    `manifest_policy_groups()` in
-    `.github/scripts/check_main_pr_consistency.py`
-  - docs-side drift checking is now limited to high-signal ownership
-    references instead of repeating every CI detail in every doc
-  - that means CI-facing docs are checked for the ownership facts they should
-    carry, not for full duplication of every manifest detail
-  - that equality rule is intentionally narrow:
-    `backend_contract`, `mcp_fastapi_parity`, and `frontend_contract`
-  - weekly-only groups and the inline smoke path stay outside that equality
-    contract on purpose
-  - that means the alignment guard is protecting the shared contract lane, not
-    trying to prove every workflow behavior is identical
-  - within `main-pr-consistency`, the backend and frontend bridge gates now
-    read shared manifest groups, while the electron trust/playback gate remains
-    local-only
-  - on the frontend side, the shared `frontend_contract` lane now owns the
-    bridge/transport/ui-errors contract suites, while the narrower
-    hook-oriented monitoring/playback expectations stay policy-only
-  - `tests/test_ci_test_target_scripts.py` locks in that frontend split
-  - those gates now read more clearly as:
-    label, changed paths, manifest groups, policy-only tests, and docs
-    expectations
-  - the stable CI target-group language is:
-    `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
-    `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
-  - protected consistency lanes run manifest validation, CI-owned test-path
-    existence, drift checking, then the manifest-backed policy check
-  - the `changes` job in `ci.yml` is the current path-filter owner for branch
-    trigger scope
-  - current path-filter summary:
-    `contract` covers the refined backend/frontend boundary files,
-    `frontend` excludes the docs-only `frontend/README.md`, and downstream
-    trigger intent in `ci.yml` now matches that split
-  - focused regression coverage for those high-signal `changes` assumptions
-    lives in `tests/test_ci_test_target_scripts.py`
-  - keep the full path-filter contract, intent, and current review results in
-    `docs/testing-and-validation.md`
-  - keep the full frontend task-9 ownership boundary there too
-  - keep the full guarded split-suite surface, registration contract, and
-    changed-files strategy there too
+  - CI ownership now centers on `.github/ci_test_targets.json` and the shared
+    Python seam in `.github/scripts/ci_target_manifest.py`
+  - `.github/scripts/check_main_pr_consistency.py` owns the narrower main-PR
+    policy layer
+  - `.github/scripts/check_ci_target_drift.py` is the high-signal drift guard
+    for workflow, policy, and CI-facing docs
+  - use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the short CI
+    ownership handoff
+  - use [testing-and-validation.md](./testing-and-validation.md) for the full
+    lane, filter, split-suite, and validation model
 
 ## Current Stable Contracts
 

@@ -1665,61 +1665,15 @@ Current split test ownership:
     expectations stay policy-only
   - `tests/test_ci_test_target_scripts.py` regression-covers that split
   - electron trust/playback policy stays local-only for now
-- the stable CI target-group language is now:
-  `backend_contract`, `mcp_fastapi_parity`, `frontend_contract`,
-  `weekly_slow_media`, `weekly_api_stream_deep`, and `weekly_lifecycle`
-- the protected contract lane and the weekly heavy-validation lanes resolve
-  those groups through the shared reader seam
-- `integration-smoke` remains the intentional inline exception because it is a
-  tiny local smoke path
-- the `changes` job in `ci.yml` owns branch-level path-filter trigger scope
-- current path-filter summary:
-  `contract` covers the refined backend/frontend boundary files,
-  `frontend` excludes the docs-only `frontend/README.md`, and downstream
-  trigger intent in `ci.yml` now matches that split
-- focused regression coverage for those high-signal `changes` assumptions
-  lives in `tests/test_ci_test_target_scripts.py`
-- keep the full path-filter contract, intent, and current review results in
-  `docs/testing-and-validation.md`
-- CI lane ownership now uses the canonical vocabulary
-  `fast_synthetic`, `contract_boundary`, and `weekly_slow_real_media`
-- `.github/ci_test_targets.json` owns that lane model, including the
-  `group_lane_categories` mapping exposed through
-  `.github/scripts/ci_target_manifest.py`
-- `ci_target_manifest.py` is the Python access seam for lane-category lookup
-  and lane-to-group queries
-- `docs/testing-and-validation.md` is the primary explanation path for the
-  full lane split and enforcement rules
-- `tests/test_ci_test_target_scripts.py` provides the focused project-side
-  coverage for the lane-helper seam, the current lane split, and split-suite
-  registration owner-seam coverage
-- the current lane owners are only: `backend-tests`, `test-and-build`,
-  `integration-smoke`, `slow-e2e`, `api-stream-deep`, and `lifecycle-deep`
-- lint, typecheck, security-audit, docs-consistency, and summary/filter jobs
-  support those lanes but are not lane owners themselves
-- the drift check treats the reader-backed `test-and-build` contract lane as
-  the workflow alignment target for shared `ci.yml` groups
-- the protected alignment contract is exposed through
-  `.github/scripts/ci_target_manifest.py`, and policy-side group extraction
-  comes from `manifest_policy_groups()` in
-  `.github/scripts/check_main_pr_consistency.py`
-- docs-side drift checking is now limited to high-signal ownership
-  references instead of repeating every CI detail in every doc
-- that means this doc keeps the contract-relevant ownership facts, not a full
-  duplicate of every CI helper detail
-- that equality rule is intentionally narrow:
-  `backend_contract`, `mcp_fastapi_parity`, and `frontend_contract`
-- weekly-only groups and the inline smoke path stay outside that equality
-  contract on purpose
-- that keeps the alignment guard focused on the shared contract lane instead
-  of forcing unrelated workflow behavior into the same rule
-- the `main-pr-consistency` contract gate now reuses the same stable manifest
-  groups where practical, while keeping only a smaller gate-local set of extra
-  policy expectations
-- `validate_ci_test_targets.py` protects the manifest itself
+- shared CI ownership now centers on `.github/ci_test_targets.json`
+- `.github/scripts/check_ci_target_drift.py` keeps workflow, policy, and
+  CI-facing docs aligned through the shared manifest model
 - protected CI consistency lanes run manifest validation, CI-owned test-path
-  existence, drift checking, then manifest-backed main PR gate policy
-  validation
+  existence, drift checking, then manifest-backed main-PR policy validation
+- the contract-relevant lane and policy details above are intentionally brief;
+  use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the short CI
+  ownership handoff and [testing-and-validation.md](./testing-and-validation.md)
+  for the full CI lane, filter, split-suite, and validation model
 - `tests/test_mcp_server_incidents_behavior.py`
   - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
     grouped results for known sessions whose filters match nothing

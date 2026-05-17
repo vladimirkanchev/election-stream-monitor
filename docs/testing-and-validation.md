@@ -6,6 +6,9 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+For a shorter CI ownership handoff, use
+[ci-maintainer-guide.md](./ci-maintainer-guide.md).
+
 ## Routine Validation
 
 ## CI Shape
@@ -156,7 +159,8 @@ Downstream trigger model in `ci.yml` now matches that intent:
 `main` pull requests still run the protected lanes even when these branch-level
 filters would otherwise skip them.
 
-The CI hardening owner is `.github/ci_test_targets.json`.
+The CI hardening owner is `.github/ci_test_targets.json`. For the short owner
+surface map, use [ci-maintainer-guide.md](./ci-maintainer-guide.md).
 
 Key Python-side consumers:
 
