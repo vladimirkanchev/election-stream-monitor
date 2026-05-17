@@ -67,6 +67,34 @@ REQUIRED_ALIGNMENT_EXCLUDED_CATEGORIES = (
     "tiny inline smoke paths",
     "non-manifest workflow behavior",
 )
+REQUIRED_SPLIT_SUITE_REGISTRATION_EXCLUDED_CASES = (
+    "unguarded test files outside the guarded split-suite surface",
+    "docs-only wording refreshes that do not change CI ownership meaning",
+    "new files that stay outside shared manifest groups and outside policy-owned expectations",
+)
+REQUIRED_SPLIT_SUITE_DETECTION_MODE = "changed_files_in_pr_ci"
+REQUIRED_SPLIT_SUITE_DETECTION_SOURCE = (
+    "inspect changed files in protected PR CI instead of scanning the full repo state"
+)
+REQUIRED_SPLIT_SUITE_REJECTED_ALTERNATIVES = (
+    "full historical repo inference over every guarded path",
+    "broad repo-wide registration policing for all test files",
+)
+REQUIRED_SPLIT_SUITE_DOCS_REQUIRED_WHEN = (
+    "ownership model changes",
+    "a new guarded split-suite category appears",
+    "policy-boundary meaning changes",
+)
+REQUIRED_SPLIT_SUITE_DOCS_EXCLUDED_CASES = (
+    "ordinary split-file additions that stay within an existing guarded area and ownership model",
+    "manifest or policy-owner additions that do not change CI ownership meaning",
+    "new guarded files that satisfy registration through existing shared manifest or policy-owner seams",
+)
+ALLOWED_REGISTRATION_SURFACES = (
+    "shared_manifest",
+    "policy_owned",
+    "local_only_policy",
+)
 REQUIRED_LANE_CATEGORIES = (
     "fast_synthetic",
     "contract_boundary",
@@ -158,6 +186,48 @@ BOUNDARY_RULES = (
             "Manifest alignment excluded categories drifted from the approved narrow contract."
         ),
     ),
+    BoundaryRule(
+        actual=lambda manifest: manifest.split_suite_registration_contract.excluded_cases,
+        expected=REQUIRED_SPLIT_SUITE_REGISTRATION_EXCLUDED_CASES,
+        failure_message=(
+            "Manifest split-suite registration excluded cases drifted from the approved narrow contract."
+        ),
+    ),
+    BoundaryRule(
+        actual=lambda manifest: (manifest.split_suite_detection_strategy.mode,),
+        expected=(REQUIRED_SPLIT_SUITE_DETECTION_MODE,),
+        failure_message=(
+            "Manifest split-suite detection mode drifted from the approved changed-files strategy."
+        ),
+    ),
+    BoundaryRule(
+        actual=lambda manifest: (manifest.split_suite_detection_strategy.source,),
+        expected=(REQUIRED_SPLIT_SUITE_DETECTION_SOURCE,),
+        failure_message=(
+            "Manifest split-suite detection source drifted from the approved PR changed-files strategy."
+        ),
+    ),
+    BoundaryRule(
+        actual=lambda manifest: manifest.split_suite_detection_strategy.rejected_alternatives,
+        expected=REQUIRED_SPLIT_SUITE_REJECTED_ALTERNATIVES,
+        failure_message=(
+            "Manifest split-suite detection rejected alternatives drifted from the approved narrow strategy."
+        ),
+    ),
+    BoundaryRule(
+        actual=lambda manifest: manifest.split_suite_docs_enforcement.required_when,
+        expected=REQUIRED_SPLIT_SUITE_DOCS_REQUIRED_WHEN,
+        failure_message=(
+            "Manifest split-suite docs-enforcement triggers drifted from the approved high-signal boundary."
+        ),
+    ),
+    BoundaryRule(
+        actual=lambda manifest: manifest.split_suite_docs_enforcement.excluded_cases,
+        expected=REQUIRED_SPLIT_SUITE_DOCS_EXCLUDED_CASES,
+        failure_message=(
+            "Manifest split-suite docs-enforcement excluded cases drifted from the approved high-signal boundary."
+        ),
+    ),
 )
 
 
@@ -216,6 +286,82 @@ def _validate_lane_categories(manifest: CiTargetManifest) -> list[str]:
             )
 
     return failures
+
+
+def _validate_split_suite_registration_contract(
+    manifest: CiTargetManifest,
+) -> list[str]:
+    """Return failures for the shared guarded split-suite registration contract."""
+    contract = manifest.split_suite_registration_contract
+    failures: list[str] = []
+
+    if not contract.manifest_owned_rule:
+        failures.append(
+            "Manifest split-suite registration contract must define a manifest-owned rule."
+        )
+    if not contract.policy_owned_rule:
+        failures.append(
+            "Manifest split-suite registration contract must define a policy-owned rule."
+        )
+    if not contract.docs_rule:
+        failures.append(
+            "Manifest split-suite registration contract must define a docs rule."
+        )
+
+    return failures
+
+
+def _validate_split_suite_detection_strategy(
+    manifest: CiTargetManifest,
+) -> list[str]:
+    """Return failures for the shared split-suite detection strategy."""
+    strategy = manifest.split_suite_detection_strategy
+    failures: list[str] = []
+
+    if not strategy.rationale:
+        failures.append(
+            "Manifest split-suite detection strategy must define a rationale."
+        )
+
+    return failures
+
+
+def _validate_guarded_split_suite_areas(
+    manifest: CiTargetManifest,
+) -> list[str]:
+    """Return failures for guarded split-suite registration metadata."""
+    failures: list[str] = []
+
+    for area_name in manifest.guarded_split_suite_area_names():
+        area = manifest.guarded_split_suite_area(area_name)
+        if not area.patterns:
+            failures.append(
+                f"Guarded split-suite area '{area_name}' must define at least one pattern."
+            )
+        if not area.registration_surfaces:
+            failures.append(
+                f"Guarded split-suite area '{area_name}' must define registration surfaces."
+            )
+        for surface in area.registration_surfaces:
+            if surface not in ALLOWED_REGISTRATION_SURFACES:
+                failures.append(
+                    f"Guarded split-suite area '{area_name}' uses unknown registration surface '{surface}'."
+                )
+        if not area.rationale:
+            failures.append(
+                f"Guarded split-suite area '{area_name}' must define a rationale."
+            )
+
+    return failures
+
+
+def _validate_split_suite_docs_enforcement(
+    manifest: CiTargetManifest,
+) -> list[str]:
+    """Return failures for the split-suite docs-enforcement boundary."""
+    if manifest.split_suite_docs_enforcement.rationale:
+        return []
+    return ["Manifest split-suite docs-enforcement boundary must define a rationale."]
 
 
 def _validate_group_lane_categories(manifest: CiTargetManifest) -> list[str]:
@@ -328,6 +474,10 @@ def _validate_manifest() -> list[str]:
     failures = []
     failures.extend(_require_group_naming(manifest))
     failures.extend(_validate_boundary_rules(manifest))
+    failures.extend(_validate_split_suite_registration_contract(manifest))
+    failures.extend(_validate_split_suite_detection_strategy(manifest))
+    failures.extend(_validate_guarded_split_suite_areas(manifest))
+    failures.extend(_validate_split_suite_docs_enforcement(manifest))
     failures.extend(_validate_lane_categories(manifest))
     failures.extend(_validate_group_lane_categories(manifest))
     failures.extend(_validate_lane_ownership_rules(manifest))

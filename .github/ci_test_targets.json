@@ -189,6 +189,91 @@
       "It should not expand into a general repo linter or source-path validator."
     ]
   },
+  "guarded_split_suite_areas": {
+    "backend_contract_and_session_service": {
+      "patterns": [
+        "tests/test_api_boundary_*.py",
+        "tests/test_api_alert_route_*.py",
+        "tests/test_api_session_alert*.py",
+        "tests/test_alert_query_service_*.py",
+        "tests/test_alert_timeline_service_*.py",
+        "tests/test_alert_incident_summary_service_*.py",
+        "tests/test_api_server_cli_*.py",
+        "tests/test_mcp_server_*.py",
+        "tests/test_session_service_*.py",
+        "tests/test_session_cli_*.py"
+      ],
+      "registration_surfaces": [
+        "shared_manifest",
+        "policy_owned"
+      ],
+      "rationale": "Shared backend contract and session-service split suites feed protected contract ownership and should not gain new files without explicit CI registration."
+    },
+    "api_stream_and_hls_boundary": {
+      "patterns": [
+        "tests/test_stream_loader*.py",
+        "tests/test_session_runner_api_stream*.py"
+      ],
+      "registration_surfaces": [
+        "shared_manifest",
+        "policy_owned"
+      ],
+      "rationale": "api_stream and HTTP/HLS split suites are contract-sensitive and policy-sensitive, so new files here should be reviewed against manifest and consistency ownership."
+    },
+    "frontend_contract_and_hook_boundary": {
+      "patterns": [
+        "frontend/src/bridge/*.test.ts",
+        "frontend/src/hooks/useMonitoringSession*.test.tsx",
+        "frontend/src/hooks/usePlaybackSource*.test.tsx"
+      ],
+      "registration_surfaces": [
+        "shared_manifest",
+        "policy_owned"
+      ],
+      "rationale": "Frontend bridge and monitoring/playback hook contract suites are part of the protected boundary lane and need explicit registration when they split further."
+    },
+    "local_only_policy_areas": {
+      "patterns": [
+        "frontend/electron/*.test.mjs"
+      ],
+      "registration_surfaces": [
+        "local_only_policy"
+      ],
+      "rationale": "Electron local-only policy suites are intentionally guarded even when they stay outside shared manifest groups."
+    }
+  },
+  "split_suite_registration_contract": {
+    "manifest_owned_rule": "If a new guarded split suite belongs to a shared CI target group, the manifest target inventory must be updated.",
+    "policy_owned_rule": "If a new guarded split suite is owned by the main PR policy layer, check_main_pr_consistency.py ownership must be updated through the manifest-backed or policy-only owner seam.",
+    "docs_rule": "Docs should change only when the ownership meaning changes, such as a new guarded area, a new shared ownership category, or a policy-boundary change.",
+    "excluded_cases": [
+      "unguarded test files outside the guarded split-suite surface",
+      "docs-only wording refreshes that do not change CI ownership meaning",
+      "new files that stay outside shared manifest groups and outside policy-owned expectations"
+    ]
+  },
+  "split_suite_detection_strategy": {
+    "mode": "changed_files_in_pr_ci",
+    "source": "inspect changed files in protected PR CI instead of scanning the full repo state",
+    "rationale": "This keeps the future registration guard high-signal, cheaper to maintain, and easier to understand than historical repo inference.",
+    "rejected_alternatives": [
+      "full historical repo inference over every guarded path",
+      "broad repo-wide registration policing for all test files"
+    ]
+  },
+  "split_suite_docs_enforcement": {
+    "required_when": [
+      "ownership model changes",
+      "a new guarded split-suite category appears",
+      "policy-boundary meaning changes"
+    ],
+    "excluded_cases": [
+      "ordinary split-file additions that stay within an existing guarded area and ownership model",
+      "manifest or policy-owner additions that do not change CI ownership meaning",
+      "new guarded files that satisfy registration through existing shared manifest or policy-owner seams"
+    ],
+    "rationale": "Docs enforcement should stay high-signal so split-suite registration does not create routine docs busywork."
+  },
   "alignment_contract_inventory": {
     "workflow_to_manifest": [
       "the shared reader-backed contract groups in ci.yml test-and-build must match the protected alignment group set"

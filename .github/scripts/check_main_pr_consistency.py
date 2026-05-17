@@ -269,6 +269,20 @@ def manifest_policy_groups() -> tuple[str, ...]:
     return tuple(ordered_unique_groups)
 
 
+def manifest_policy_test_paths() -> tuple[str, ...]:
+    """Return the manifest-backed test paths consumed by policy gates."""
+    return tuple(
+        test_path
+        for group_name in manifest_policy_groups()
+        for test_path in manifest_group_targets(group_name)
+    )
+
+
+def policy_owned_test_paths() -> tuple[str, ...]:
+    """Return the full policy-owned test surface across manifest and local policy."""
+    return manifest_policy_test_paths() + policy_only_test_paths()
+
+
 def _changed_files(diff_range: str) -> list[str]:
     """Return repo-relative files changed in the provided git diff range."""
     result = subprocess.run(

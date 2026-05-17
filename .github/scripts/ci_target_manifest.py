@@ -17,6 +17,10 @@ genuinely small one-off workflow lists outside the shared selector surface.
 
 The manifest also records:
 - the current path-owning CI surface for the path-existence guard
+- the guarded split-suite areas for the live registration guard
+- the registration contract those guarded areas must satisfy
+- the changed-files detection strategy for split-suite registration
+- the high-signal docs-enforcement boundary for split-suite registration
 - the narrow workflow/policy alignment boundary for the protected contract lane
 - the canonical fast/contract/weekly lane-category vocabulary
 - the lane category assigned to each shared manifest group
@@ -28,6 +32,7 @@ That keeps path-existence and alignment checks small, explicit, and shared.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from functools import cache
 import json
 from pathlib import Path
@@ -207,6 +212,45 @@ class PathExistenceBoundary:
 
 
 @dataclass(frozen=True)
+class GuardedSplitSuiteArea:
+    """One guarded area where new split test files require CI registration."""
+
+    name: str
+    patterns: tuple[str, ...]
+    registration_surfaces: tuple[str, ...]
+    rationale: str
+
+
+@dataclass(frozen=True)
+class SplitSuiteRegistrationContract:
+    """Shared rules for when a new guarded split suite counts as registered."""
+
+    manifest_owned_rule: str
+    policy_owned_rule: str
+    docs_rule: str
+    excluded_cases: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SplitSuiteDetectionStrategy:
+    """Shared changed-files strategy for the live split-suite registration guard."""
+
+    mode: str
+    source: str
+    rationale: str
+    rejected_alternatives: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SplitSuiteDocsEnforcement:
+    """High-signal rules for when split-suite registration should require docs."""
+
+    required_when: tuple[str, ...]
+    excluded_cases: tuple[str, ...]
+    rationale: str
+
+
+@dataclass(frozen=True)
 class CiTargetManifest:
     """Parsed CI target manifest with stable, consumer-friendly accessors.
 
@@ -224,6 +268,10 @@ class CiTargetManifest:
     alignment_boundary: AlignmentBoundary
     path_existence_inventory: PathExistenceInventory
     path_existence_boundary: PathExistenceBoundary
+    guarded_split_suite_areas: dict[str, GuardedSplitSuiteArea]
+    split_suite_registration_contract: SplitSuiteRegistrationContract
+    split_suite_detection_strategy: SplitSuiteDetectionStrategy
+    split_suite_docs_enforcement: SplitSuiteDocsEnforcement
     lane_categories: dict[str, LaneCategoryDefinition]
     group_lane_categories: dict[str, str]
 
@@ -242,6 +290,10 @@ class CiTargetManifest:
             alignment_boundary=_parse_alignment_boundary(raw),
             path_existence_inventory=_parse_path_existence_inventory(raw),
             path_existence_boundary=_parse_path_existence_boundary(raw),
+            guarded_split_suite_areas=_parse_guarded_split_suite_areas(raw),
+            split_suite_registration_contract=_parse_split_suite_registration_contract(raw),
+            split_suite_detection_strategy=_parse_split_suite_detection_strategy(raw),
+            split_suite_docs_enforcement=_parse_split_suite_docs_enforcement(raw),
             lane_categories=_parse_lane_categories(raw),
             group_lane_categories=_parse_group_lane_categories(raw),
         )
@@ -292,6 +344,37 @@ class CiTargetManifest:
     def workflow_inline_test_paths(self) -> tuple[str, ...]:
         """Return the explicit inline workflow test-path exceptions."""
         return self.path_existence_inventory.workflow_inline_test_paths
+
+    def guarded_split_suite_area(
+        self,
+        area_name: str,
+    ) -> GuardedSplitSuiteArea:
+        """Return one guarded split-suite area by stable name."""
+        try:
+            return self.guarded_split_suite_areas[area_name]
+        except KeyError as exc:
+            raise ManifestError(
+                f"Unknown guarded split-suite area: {area_name}"
+            ) from exc
+
+    def guarded_split_suite_area_names(self) -> tuple[str, ...]:
+        """Return the guarded split-suite area names in manifest order."""
+        return tuple(self.guarded_split_suite_areas.keys())
+
+    def matching_guarded_split_suite_areas(
+        self,
+        relative_path: str,
+    ) -> tuple[GuardedSplitSuiteArea, ...]:
+        """Return the guarded split-suite areas matched by one repo-relative path.
+
+        This is the main matching seam used by the live split-suite
+        registration guard.
+        """
+        return tuple(
+            area
+            for area in self.guarded_split_suite_areas.values()
+            if any(fnmatch(relative_path, pattern) for pattern in area.patterns)
+        )
 
     def unique_path_existence_paths(self) -> tuple[str, ...]:
         """Return the deduplicated CI-owned test paths for the existence guard."""
@@ -443,6 +526,97 @@ def _parse_path_existence_boundary(
     )
 
 
+def _parse_guarded_split_suite_areas(
+    raw: dict[str, object],
+) -> dict[str, GuardedSplitSuiteArea]:
+    """Return the guarded split-suite registration areas from the manifest."""
+    areas_data = _require_mapping(
+        raw.get("guarded_split_suite_areas"),
+        "guarded_split_suite_areas",
+    )
+    guarded_areas: dict[str, GuardedSplitSuiteArea] = {}
+
+    for area_name, area_value in areas_data.items():
+        if not isinstance(area_value, dict):
+            raise ManifestError(
+                "CI target manifest field "
+                f"'guarded_split_suite_areas.{area_name}' must be an object."
+            )
+        guarded_areas[area_name] = GuardedSplitSuiteArea(
+            name=area_name,
+            patterns=_require_string_list(
+                area_value.get("patterns"),
+                f"guarded_split_suite_areas.{area_name}.patterns",
+            ),
+            registration_surfaces=_require_string_list(
+                area_value.get("registration_surfaces"),
+                f"guarded_split_suite_areas.{area_name}.registration_surfaces",
+            ),
+            rationale=str(area_value.get("rationale", "")).strip(),
+        )
+
+    return guarded_areas
+
+
+def _parse_split_suite_registration_contract(
+    raw: dict[str, object],
+) -> SplitSuiteRegistrationContract:
+    """Return the shared registration contract for new guarded split suites."""
+    contract_data = _require_mapping(
+        raw.get("split_suite_registration_contract"),
+        "split_suite_registration_contract",
+    )
+    return SplitSuiteRegistrationContract(
+        manifest_owned_rule=str(contract_data.get("manifest_owned_rule", "")).strip(),
+        policy_owned_rule=str(contract_data.get("policy_owned_rule", "")).strip(),
+        docs_rule=str(contract_data.get("docs_rule", "")).strip(),
+        excluded_cases=_require_string_list(
+            contract_data.get("excluded_cases"),
+            "split_suite_registration_contract.excluded_cases",
+        ),
+    )
+
+
+def _parse_split_suite_detection_strategy(
+    raw: dict[str, object],
+) -> SplitSuiteDetectionStrategy:
+    """Return the shared detection strategy for guarded split-suite checks."""
+    strategy_data = _require_mapping(
+        raw.get("split_suite_detection_strategy"),
+        "split_suite_detection_strategy",
+    )
+    return SplitSuiteDetectionStrategy(
+        mode=str(strategy_data.get("mode", "")).strip(),
+        source=str(strategy_data.get("source", "")).strip(),
+        rationale=str(strategy_data.get("rationale", "")).strip(),
+        rejected_alternatives=_require_string_list(
+            strategy_data.get("rejected_alternatives"),
+            "split_suite_detection_strategy.rejected_alternatives",
+        ),
+    )
+
+
+def _parse_split_suite_docs_enforcement(
+    raw: dict[str, object],
+) -> SplitSuiteDocsEnforcement:
+    """Return the shared docs-enforcement boundary for split-suite registration."""
+    docs_data = _require_mapping(
+        raw.get("split_suite_docs_enforcement"),
+        "split_suite_docs_enforcement",
+    )
+    return SplitSuiteDocsEnforcement(
+        required_when=_require_string_list(
+            docs_data.get("required_when"),
+            "split_suite_docs_enforcement.required_when",
+        ),
+        excluded_cases=_require_string_list(
+            docs_data.get("excluded_cases"),
+            "split_suite_docs_enforcement.excluded_cases",
+        ),
+        rationale=str(docs_data.get("rationale", "")).strip(),
+    )
+
+
 def _parse_lane_categories(
     raw: dict[str, object],
 ) -> dict[str, LaneCategoryDefinition]:
@@ -494,9 +668,30 @@ def ci_owned_test_paths() -> tuple[str, ...]:
     return load_ci_target_manifest().unique_path_existence_paths()
 
 
+def shared_manifest_test_paths() -> tuple[str, ...]:
+    """Return every shared manifest-backed test path."""
+    return load_ci_target_manifest().all_target_paths()
+
+
 def workflow_inline_ci_test_paths() -> tuple[str, ...]:
     """Return the explicit inline workflow test-path exceptions."""
     return load_ci_target_manifest().workflow_inline_test_paths()
+
+
+def guarded_split_suite_areas() -> tuple[GuardedSplitSuiteArea, ...]:
+    """Return the guarded split-suite registration areas in manifest order."""
+    manifest = load_ci_target_manifest()
+    return tuple(
+        manifest.guarded_split_suite_area(area_name)
+        for area_name in manifest.guarded_split_suite_area_names()
+    )
+
+
+def matching_guarded_split_suite_areas(
+    relative_path: str,
+) -> tuple[GuardedSplitSuiteArea, ...]:
+    """Return the guarded split-suite areas matched by one repo-relative path."""
+    return load_ci_target_manifest().matching_guarded_split_suite_areas(relative_path)
 
 
 def alignment_contract() -> AlignmentContract:
