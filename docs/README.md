@@ -280,6 +280,37 @@ module families and the matching tests:
     path-owning CI surface for the live existence self-check:
     shared workflow groups, the inline smoke path, and the
     `check_main_pr_consistency.py` policy-side test paths
+  - it also records the guarded split-suite registration surface for the live
+    CI registration guard:
+    backend contract/session-service areas, `api_stream` and HLS boundary
+    suites, frontend bridge/hook contract suites, and local-only Electron
+    policy suites
+  - split-suite registration stays narrow:
+    shared-group additions update the manifest,
+    policy-owned additions update the main-PR policy owner,
+    docs update only when ownership meaning changes
+  - the guard inspects changed files in protected PR CI, not
+    re-scan the whole repo
+  - the shared registration-check command is:
+    `.github/scripts/check_split_suite_registration.py <diff-range>`
+  - most guarded areas accept `shared_manifest` or `policy_owned`
+    registration, while the Electron local-only area requires
+    `local_only_policy`
+  - docs changes are required only when the ownership model changes, a new
+    guarded category appears, or the policy-boundary meaning changes
+  - when the guard fails:
+    update `.github/ci_test_targets.json` for shared manifest ownership or
+    `.github/scripts/check_main_pr_consistency.py` for policy ownership
+  - use `docs/testing-and-validation.md` for the full guarded-area patterns,
+    accepted registration surfaces, and the complete fix path
+  - the guard reads those surfaces through:
+    `shared_manifest_test_paths()` in
+    `.github/scripts/ci_target_manifest.py`,
+    plus `policy_owned_test_paths()` and
+    `local_only_policy_test_paths()` in
+    `.github/scripts/check_main_pr_consistency.py`
+  - protected PR lanes now run that registration guard after drift alignment
+    and before broader policy or contract work
   - that existence check is intentionally narrow:
     it covers CI-owned test paths, not non-test source files or docs rules
   - CI lane ownership now uses the canonical vocabulary
@@ -292,7 +323,8 @@ module families and the matching tests:
   - `docs/testing-and-validation.md` is the primary explanation path for the
     full lane split, lane owners, and enforcement rules
   - `tests/test_ci_test_target_scripts.py` provides focused coverage for the
-    lane-helper seam and the current CI split
+    lane-helper seam, the current CI split, and split-suite registration
+    outcomes, including representative owner-seam coverage
   - adjacent jobs such as lint, typecheck, security audit, docs consistency,
     and summary/filter jobs support those lanes but are not lane owners
   - the drift check keeps the reader-backed contract lane aligned with the
@@ -330,6 +362,8 @@ module families and the matching tests:
     lives in `tests/test_ci_test_target_scripts.py`
   - keep the full path-filter contract, intent, and current review results in
     `docs/testing-and-validation.md`
+  - keep the full guarded split-suite surface, registration contract, and
+    changed-files strategy there too
 
 ## Current Stable Contracts
 

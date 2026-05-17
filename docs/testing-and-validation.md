@@ -175,8 +175,11 @@ Key Python-side consumers:
   - checks that manifest, workflows, `.github/scripts/check_main_pr_consistency.py`,
     and CI-facing docs still agree on the protected contract lane
 - `tests/test_ci_test_target_scripts.py`
-  - focused coverage for the shared path inventory, lane-helper seam, and the
-    current drift outcomes
+  - focused coverage for the shared path inventory, lane-helper seam, current
+    drift outcomes, and split-suite registration outcomes
+  - includes split-suite checks for:
+    accepted-surface semantics, guarded-pattern matching, mixed changed-file
+    batches, and representative owner-seam alignment
   - also covers the high-signal `changes` filter assumptions that now protect
     the refined contract trigger and the docs-only `frontend/README.md`
     exclusion
@@ -339,7 +342,140 @@ CI-owned test paths early, not to act as a general repo linter.
 The validator already protects that scope contract, so the existence check runs
 on a stable documented boundary instead of inventing its own rules.
 
-Current command:
+Split-suite registration guard:
+
+What counts as a guarded split suite:
+
+- backend contract and session-service split suites
+  - `tests/test_api_boundary_*.py`
+  - `tests/test_api_alert_route_*.py`
+  - `tests/test_api_session_alert*.py`
+  - `tests/test_alert_query_service_*.py`
+  - `tests/test_alert_timeline_service_*.py`
+  - `tests/test_alert_incident_summary_service_*.py`
+  - `tests/test_api_server_cli_*.py`
+  - `tests/test_mcp_server_*.py`
+  - `tests/test_session_service_*.py`
+  - `tests/test_session_cli_*.py`
+- `api_stream` and HTTP/HLS boundary split suites
+  - `tests/test_stream_loader*.py`
+  - `tests/test_session_runner_api_stream*.py`
+- frontend bridge and hook contract split suites
+  - `frontend/src/bridge/*.test.ts`
+  - `frontend/src/hooks/useMonitoringSession*.test.tsx`
+  - `frontend/src/hooks/usePlaybackSource*.test.tsx`
+- local-only Electron policy suites
+  - `frontend/electron/*.test.mjs`
+
+This surface stays narrower than the whole repo so the guard can catch
+high-signal split-suite ownership misses without policing every new test file.
+
+What registration is required:
+
+- update the manifest if the new file belongs to a shared CI target group
+- update `check_main_pr_consistency.py` ownership if the new file belongs to
+  the main-PR policy layer
+- update docs only when the ownership meaning changes:
+  - a new guarded area
+  - a new shared ownership category
+  - a policy-boundary change
+
+This stays intentionally narrow. It does not require docs churn for every new
+test file, and it does not treat unguarded test files as CI-registration
+failures.
+
+Where to update ownership when this guard fails:
+
+- shared manifest ownership
+  - update `.github/ci_test_targets.json`
+  - use `.github/scripts/ci_target_manifest.py` as the read-side helper seam
+- main-PR policy ownership
+  - update `.github/scripts/check_main_pr_consistency.py`
+- docs ownership
+  - update this file only when ownership meaning changes
+  - keep `docs/README.md` and `docs/contracts.md` as shorter handoff docs,
+    not full duplicate owners
+
+Chosen detection strategy for the live registration guard:
+
+- inspect changed files in protected PR CI
+- do not scan the full repo or try to infer historical split ownership
+
+That keeps the guard cheaper, clearer, and more maintainable. It should
+fail when a new guarded file is introduced without the required ownership
+updates, not re-lint the whole repository on every run.
+
+Split-suite registration command:
+
+```bash
+python3 .github/scripts/check_split_suite_registration.py <diff-range>
+```
+
+Current registration surfaces checked by that guard:
+
+- `shared_manifest`
+  - the new file is present in one shared manifest-backed target group
+- `policy_owned`
+  - the new file is present in the main-PR policy owner surface
+- `local_only_policy`
+  - the new file is present in the local-only policy owner surface
+
+The current rule is still intentionally narrow:
+
+- most guarded areas accept either `shared_manifest` or `policy_owned`
+- the Electron local-only area requires `local_only_policy`
+- docs changes are required only when:
+  - the ownership model changes
+  - a new guarded split-suite category appears
+  - policy-boundary meaning changes
+- ordinary split-file additions that stay within an existing guarded area and
+  ownership model do not require docs churn on their own
+
+Where to update ownership:
+
+- shared manifest ownership
+  - update `.github/ci_test_targets.json`
+  - read-side helper seam: `.github/scripts/ci_target_manifest.py`
+- main-PR policy ownership
+  - update `.github/scripts/check_main_pr_consistency.py`
+- docs ownership
+  - update this file only when ownership meaning changes
+  - keep `docs/README.md` and `docs/contracts.md` as shorter handoff docs
+
+How the guard detects new files:
+
+- inspect changed files in protected PR CI
+- do not scan the full repo or infer historical ownership
+
+That keeps the guard cheaper and clearer. It should fail when a new guarded
+file is introduced without the required ownership updates, not re-lint the
+whole repository on every run.
+
+Command:
+
+```bash
+python3 .github/scripts/check_split_suite_registration.py <diff-range>
+```
+
+Owner seams used by the guard:
+
+- `.github/scripts/ci_target_manifest.py`
+  - `shared_manifest_test_paths()`
+  - `matching_guarded_split_suite_areas(...)`
+- `.github/scripts/check_main_pr_consistency.py`
+  - `policy_owned_test_paths()`
+  - `local_only_policy_test_paths()`
+
+Protected PR lanes now run that guard after drift alignment and before broader
+policy or contract work. The current protected order is:
+
+1. manifest structure and scope
+2. CI-owned test-path existence
+3. workflow, policy, and docs drift alignment
+4. split-suite registration for newly added guarded files
+5. broader policy or shared contract execution
+
+CI-owned test-path existence command:
 
 ```bash
 python3 .github/scripts/check_ci_test_paths_exist.py

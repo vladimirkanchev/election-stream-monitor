@@ -1604,6 +1604,38 @@ Current split test ownership:
     `test-and-build`, and `docs-consistency`
   - in those lanes, broader policy or contract work now starts only after the
     manifest, CI-owned path inventory, and drift alignment checks pass
+  - the same manifest now also records the guarded split-suite registration
+    surface for the live CI registration guard:
+    backend contract/session-service areas, `api_stream` and HLS boundary
+    suites, frontend bridge/hook contract suites, and local-only Electron
+    policy suites
+  - the registration rule stays narrow:
+    shared-group additions update the manifest,
+    policy-owned additions update `check_main_pr_consistency.py`,
+    and docs update only when ownership meaning changes
+  - the registration guard inspects changed files in protected PR
+    CI instead of doing full historical repo inference or broad repo-wide
+    policing
+  - the shared registration-check command is:
+    `.github/scripts/check_split_suite_registration.py <diff-range>`
+  - most guarded areas accept `shared_manifest` or `policy_owned`
+    registration, while the Electron local-only area requires
+    `local_only_policy`
+  - docs changes are required only when the ownership model changes, a new
+    guarded category appears, or the policy-boundary meaning changes
+  - when the guard fails:
+    update `.github/ci_test_targets.json` for shared manifest ownership or
+    `.github/scripts/check_main_pr_consistency.py` for policy ownership
+  - use `docs/testing-and-validation.md` for the full guarded-area patterns,
+    accepted registration surfaces, and the complete fix path
+  - the guard reuses the current owner seams instead of re-parsing raw files:
+    `shared_manifest_test_paths()` from
+    `.github/scripts/ci_target_manifest.py`,
+    plus `policy_owned_test_paths()` and
+    `local_only_policy_test_paths()` from
+    `.github/scripts/check_main_pr_consistency.py`
+  - protected PR lanes now run that registration guard after drift alignment
+    and before broader policy or contract work
   - intentionally does not replace:
     `validate_ci_test_targets.py` for manifest shape/scope or
     `check_ci_target_drift.py` for manifest-consumer alignment
@@ -1613,8 +1645,8 @@ Current split test ownership:
   - manifest-consumer drift
 - `tests/test_ci_test_target_scripts.py`
   - keeps the CI-owned test-path inventory seam, the current success-path
-    existence guard, and focused drift-check outcomes covered from normal
-    project tests
+    existence guard, focused drift-check outcomes, and split-suite
+    registration outcomes covered from normal project tests
 - `.github/scripts/check_main_pr_consistency.py`
   - reuses manifest-backed groups where practical, while keeping a smaller
     policy-only layer for expectations that are narrower than the manifest
@@ -1655,7 +1687,8 @@ Current split test ownership:
 - `docs/testing-and-validation.md` is the primary explanation path for the
   full lane split and enforcement rules
 - `tests/test_ci_test_target_scripts.py` provides the focused project-side
-  coverage for the lane-helper seam and the current lane split
+  coverage for the lane-helper seam, the current lane split, and split-suite
+  registration owner-seam coverage
 - the current lane owners are only: `backend-tests`, `test-and-build`,
   `integration-smoke`, `slow-e2e`, `api-stream-deep`, and `lifecycle-deep`
 - lint, typecheck, security-audit, docs-consistency, and summary/filter jobs
