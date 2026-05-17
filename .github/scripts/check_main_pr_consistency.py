@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 """Run the narrower manifest-aware main-PR policy checks.
 
-The contract gates now consume the same manifest-backed CI target groups used by
-the active workflow jobs where that reuse is practical, which reduces one of
-the main drift seams between CI execution and CI policy enforcement.
-
-Ownership model:
-- `.github/ci_test_targets.json` owns the shared CI target groups
-- this script owns the narrower main-PR policy logic, docs expectations, and
+This script is the protected-PR policy layer that sits beside, not above, the
+shared CI manifest:
+- `.github/ci_test_targets.json` owns shared target groups
+- this script owns narrower gate activation rules, docs expectations, and
   policy-only test expectations
 
-Current ownership boundary in this script:
-- local policy triggers such as docs/workflow/contract-sensitive paths
-- per-gate docs expectations
-- smaller policy-only test tuples that are intentionally narrower than the
-  shared manifest groups
+Where practical, gates reuse manifest-backed groups from the active workflow.
+That keeps CI execution and CI policy aligned without promoting every narrower
+policy expectation into the shared manifest.
 
-For the frontend side, the final task-9 split is:
+Current frontend split:
 - shared `frontend_contract` ownership for bridge, transport, and `uiErrors`
   contract suites
-- policy-only ownership for the narrower hook-level monitoring/playback tests
+- policy-only ownership for narrower hook-level monitoring/playback tests
 - local-only ownership for Electron trust/playback expectations
+
+For the short maintainer-facing summary of how this policy fits into CI
+ownership, see `docs/ci-maintainer-guide.md`.
 """
 
 from __future__ import annotations
@@ -134,7 +132,7 @@ ELECTRON_TRUST_PLAYBACK_CHANGED_PATHS = (
 
 @dataclass(frozen=True)
 class ContractGate:
-    """Policy gate for one contract-sensitive part of the repo.
+    """Policy gate for one contract-sensitive CI seam.
 
     Manifest-backed groups cover the shared stable CI language. Policy-only
     tests remain for expectations that are intentionally narrower than the
@@ -162,17 +160,11 @@ class ContractGate:
     def expected_tests(self) -> tuple[str, ...]:
         """Return the full test expectations for this gate.
 
-        Shared manifest-backed groups provide the broad CI ownership through the
-        shared manifest access seam. Smaller policy-only test tuples keep the
-        special-case expectations that should not move into the shared
-        target manifest yet.
+        Shared manifest-backed groups provide the broad CI-owned coverage for
+        the gate. Smaller policy-only tuples keep the expectations that should
+        stay narrower than the shared manifest groups for now.
         """
-        manifest_tests = tuple(
-            test_path
-            for group_name in self.manifest_groups
-            for test_path in manifest_group_targets(group_name)
-        )
-        return manifest_tests + self.policy_only_tests
+        return _manifest_group_test_paths(self.manifest_groups) + self.policy_only_tests
 
     def matches_changed_files(self, changed_files: list[str]) -> bool:
         """Return whether any changed file activates this gate."""
@@ -191,6 +183,19 @@ def _ordered_unique_values(values: tuple[str, ...]) -> tuple[str, ...]:
         ordered_unique_values.append(value)
 
     return tuple(ordered_unique_values)
+
+
+def _manifest_group_test_paths(group_names: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the shared manifest-backed test paths for one group tuple.
+
+    This keeps manifest-group flattening in one place for both per-gate
+    expectations and policy-wide manifest-backed test ownership.
+    """
+    return tuple(
+        test_path
+        for group_name in group_names
+        for test_path in manifest_group_targets(group_name)
+    )
 
 
 CONTRACT_GATES = (
@@ -278,15 +283,15 @@ def manifest_policy_groups() -> tuple[str, ...]:
 
 def manifest_policy_test_paths() -> tuple[str, ...]:
     """Return the shared manifest-backed test paths reused by policy gates."""
-    return tuple(
-        test_path
-        for group_name in manifest_policy_groups()
-        for test_path in manifest_group_targets(group_name)
-    )
+    return _manifest_group_test_paths(manifest_policy_groups())
 
 
 def policy_owned_test_paths() -> tuple[str, ...]:
-    """Return the full test surface owned by the main-PR policy layer."""
+    """Return the full test surface owned by the main-PR policy layer.
+
+    This combines shared manifest-backed tests reused by policy gates with the
+    narrower policy-only expectations that stay local to this script.
+    """
     return manifest_policy_test_paths() + policy_only_test_paths()
 
 

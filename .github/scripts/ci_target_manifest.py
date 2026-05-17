@@ -1,32 +1,22 @@
 #!/usr/bin/env python3
 """Shared manifest-loading helpers for CI target scripts.
 
-The CI hardening scripts all read the same manifest. This module keeps that
-parsing logic in one place so workflow readers, validators, drift checks, and
-policy checks share the same assumptions.
+All CI ownership helpers read the same manifest. This module keeps manifest
+parsing and normalized access in one place so workflow readers, validators,
+drift checks, path-existence checks, and policy checks share the same model.
 
-`.github/ci_test_targets.json` is the canonical owner of the lane-category
-definitions. This module exposes those definitions to Python-side consumers so
-they do not re-parse or re-describe the lane model independently.
+`.github/ci_test_targets.json` is the canonical owner of:
+- shared target groups
+- lane-category definitions
+- path-existence inventory and boundary notes
+- split-suite registration metadata
+- protected workflow/policy alignment metadata
 
-At the current repo shape, the manifest already covers the broad shared
-`ci.yml` contract consumers. The remaining tiny smoke path stays inline on
-purpose, so consumers can rely on this module for shared target groups without
-turning every workflow test invocation into manifest data. That keeps only
-genuinely small one-off workflow lists outside the shared selector surface.
+Small one-off workflow test paths can still stay inline when they are truly
+local exceptions, such as the tiny integration smoke path.
 
-The manifest also records:
-- the current path-owning CI surface for the path-existence guard
-- the guarded split-suite areas for the live registration guard
-- the registration contract those guarded areas must satisfy
-- the changed-files detection strategy for split-suite registration
-- the high-signal docs-enforcement boundary for split-suite registration
-- the narrow workflow/policy alignment boundary for the protected contract lane
-- the canonical fast/contract/weekly lane-category vocabulary
-- the lane category assigned to each shared manifest group
-- the high-signal CI-facing doc requirements used by the drift checker
-
-That keeps path-existence and alignment checks small, explicit, and shared.
+For the short maintainer-facing map of these ownership rules, see
+`docs/ci-maintainer-guide.md`.
 """
 
 from __future__ import annotations
@@ -107,7 +97,11 @@ def _group_paths(
 def _doc_alignment_requirements(
     protected_workflow_groups: tuple[str, ...],
 ) -> tuple["DocAlignmentRequirement", ...]:
-    """Return the high-signal CI-facing doc requirements for drift checks."""
+    """Return the high-signal CI-facing doc requirements for drift checks.
+
+    These docs are intentionally checked for a small set of ownership facts,
+    not for a full duplicate of every CI rule.
+    """
     return (
         DocAlignmentRequirement(
             path=REPO_ROOT / "docs" / "testing-and-validation.md",
