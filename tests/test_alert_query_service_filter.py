@@ -1,15 +1,7 @@
-"""Focused service tests for raw alert filtering behavior.
+"""Focused tests for raw alert filtering over the persistence seam.
 
-This suite owns the raw filtered-alert contract:
-
-- composing detector, severity, and time filters
-- preserving persisted ordering
-- treating unknown filters as safe empty results
-- validating malformed or inverted time filters
-- keeping known-session semantics intact on the filtered entrypoint
-
-It intentionally stops at raw filtered rows. Numeric aggregation belongs in the
-summary suite so filter-edge failures stay easy to isolate.
+This suite owns filter composition, ordering, empty-result behavior, and
+service-layer time validation without mixing in summary concerns.
 """
 
 from pathlib import Path
@@ -22,6 +14,7 @@ from tests.alert_query_service_test_support import (
     write_known_session_without_alerts,
 )
 from tests.session_alert_test_support import (
+    StaticAlertStore,
     build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
@@ -441,6 +434,61 @@ def test_filter_session_alert_events_applies_start_only_time_filter(
     assert _alert_titles(filtered) == [
         "At start",
         "After start",
+    ]
+
+
+def test_filter_session_alert_events_accepts_an_explicit_store_seam() -> None:
+    """Raw filtering should stay in the service layer over an injected store seam."""
+    store = StaticAlertStore(
+        "store-filter",
+        [
+            build_normalized_alert(
+                "store-filter",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Metric warning",
+                message="Should be excluded by time range.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_normalized_alert(
+                "store-filter",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_blur",
+                title="Blur info",
+                message="Wrong detector and severity.",
+                severity="info",
+                source_name="segment_0002.ts",
+            ),
+            build_normalized_alert(
+                "store-filter",
+                timestamp_utc="2026-05-06 10:00:20",
+                detector_id="video_metrics",
+                title="Metric warning in range",
+                message="Should survive filtering.",
+                severity="warning",
+                source_name="segment_0003.ts",
+            ),
+        ],
+    )
+
+    assert filter_session_alert_events(
+        "store-filter",
+        detector_id="video_metrics",
+        severity="warning",
+        start_time_utc="2026-05-06 10:00:15",
+        end_time_utc="2026-05-06 10:00:25",
+        store=store,
+    ) == [
+        build_normalized_alert(
+            "store-filter",
+            timestamp_utc="2026-05-06 10:00:20",
+            detector_id="video_metrics",
+            title="Metric warning in range",
+            message="Should survive filtering.",
+            severity="warning",
+            source_name="segment_0003.ts",
+        )
     ]
 
 

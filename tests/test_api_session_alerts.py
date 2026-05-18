@@ -1,23 +1,7 @@
-"""Focused FastAPI adapter tests for raw session alert query endpoints.
+"""Focused FastAPI tests for raw alert-route transport behavior.
 
-These tests stay intentionally thin. They verify that the raw alert routes:
-
-- bind the expected query parameters
-- preserve response payload shape
-- keep empty-result envelopes stable for list and summary responses
-- map service-layer errors into the stable API contract
-- keep request validation aligned across the raw list and raw summary routes
-
-Router-scoped auth and rate-limit policy lives in the split alerts-router
-policy files:
-
-- ``test_api_alert_route_auth_policy.py``
-- ``test_api_alert_route_rate_limit_policy.py``
-- ``test_api_alert_route_contracts.py``
-
-That keeps this file a transport adapter spec rather than a policy catalog.
-Reviewers should be able to read it route-by-route without also carrying the
-auth and throttling story in their heads.
+This file owns route parameter binding, payload shaping, empty-result behavior,
+and error mapping for the raw alert list and summary endpoints.
 """
 
 from tests.api_alert_test_support import (
@@ -27,15 +11,31 @@ from tests.api_alert_test_support import (
 )
 from session_alerts import SessionAlertsNotFoundError
 from tests.api_boundary_test_support import request
-from tests.session_alert_test_support import build_alert_summary_payload
+from tests.mcp_alert_test_support import call_mcp_tool
+from tests.mcp_server_alerts_test_support import assert_mcp_tool_success
+from tests.session_alert_test_support import (
+    build_alert_summary_payload,
+    build_normalized_alert,
+    build_persisted_alert,
+    configure_session_alert_test,
+    write_known_session,
+)
+
+
+def _write_real_alert_session(
+    monkeypatch,
+    tmp_path,
+    *,
+    session_id: str,
+    alert_rows: list[dict[str, object]],
+) -> None:
+    """Persist one real session for raw FastAPI and MCP boundary tests."""
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id, alert_rows=alert_rows)
 
 
 def _empty_alert_list_payload(session_id: str) -> dict[str, object]:
-    """Return the stable empty raw-alert list payload for one session.
-
-    Keeping the empty envelope in one helper makes the newer contract tests
-    read as route-boundary behavior instead of repeated payload literals.
-    """
+    """Return the stable empty raw-alert list payload for one session."""
     return {
         "session_id": session_id,
         "alerts": [],
@@ -43,12 +43,7 @@ def _empty_alert_list_payload(session_id: str) -> dict[str, object]:
 
 
 def _empty_alert_summary_payload(session_id: str) -> dict[str, object]:
-    """Return the stable empty raw-alert summary payload for one session.
-
-    The summary route must preserve the same key set for empty and non-empty
-    results so clients do not need a special parsing branch for no-alert
-    sessions.
-    """
+    """Return the stable empty raw-alert summary payload for one session."""
     return build_alert_summary_payload(
         session_id,
         total_alerts=0,
@@ -211,6 +206,162 @@ def test_get_session_alert_summary_returns_stable_empty_payload(monkeypatch) -> 
 
     assert response.status_code == 200
     assert response.json() == _empty_alert_summary_payload("empty-session")
+
+
+def test_get_session_alerts_reads_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The raw list route should work over persisted alert files without monkeypatched services."""
+    _write_real_alert_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-real-alert-list",
+        alert_rows=[
+            {
+                "session_id": "session-real-alert-list",
+                "timestamp_utc": "2026-05-06 10:00:00",
+                "detector_id": "video_metrics",
+                "title": "Black screen detected",
+                "message": "Real persisted alert row.",
+                "severity": "warning",
+                "source_name": "segment_0001.ts",
+            }
+        ],
+    )
+
+    response = request("GET", "/sessions/session-real-alert-list/alerts")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": "session-real-alert-list",
+        "alerts": [
+            build_normalized_alert(
+                "session-real-alert-list",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Real persisted alert row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            )
+        ],
+    }
+
+
+def test_get_session_alert_summary_reads_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The raw summary route should work over the real persisted alert seam."""
+    _write_real_alert_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-real-alert-summary",
+        alert_rows=[
+            {
+                "session_id": "session-real-alert-summary",
+                "timestamp_utc": "2026-05-06 10:00:00",
+                "detector_id": "video_metrics",
+                "title": "Black screen detected",
+                "message": "First persisted alert row.",
+                "severity": "warning",
+                "source_name": "segment_0001.ts",
+            },
+            {
+                "session_id": "session-real-alert-summary",
+                "timestamp_utc": "2026-05-06 10:00:10",
+                "detector_id": "video_blur",
+                "title": "Blur increased",
+                "message": "Second persisted alert row.",
+                "severity": "info",
+                "source_name": "segment_0002.ts",
+            },
+        ],
+    )
+
+    response = request("GET", "/sessions/session-real-alert-summary/alerts/summary")
+
+    assert response.status_code == 200
+    assert response.json() == build_alert_summary_payload(
+        "session-real-alert-summary",
+        total_alerts=2,
+        counts_by_detector={"video_metrics": 1, "video_blur": 1},
+        counts_by_severity={"warning": 1, "info": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:00:10",
+    )
+
+
+def test_raw_alert_boundaries_preserve_optional_window_fields(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """FastAPI and MCP raw readers should preserve normalized optional window fields."""
+    _write_real_alert_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-real-window-fields",
+        alert_rows=[
+            build_persisted_alert(
+                "session-real-window-fields",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Windowed alert",
+                message="Carries explicit window fields.",
+                severity="warning",
+                source_name="segment_0001.ts",
+                window_index=3,
+                window_start_sec=12.5,
+            ),
+            build_persisted_alert(
+                "session-real-window-fields",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_blur",
+                title="Windowless alert",
+                message="Normalizes missing optional fields.",
+                severity="info",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+    expected_payload = {
+        "session_id": "session-real-window-fields",
+        "alerts": [
+            build_normalized_alert(
+                "session-real-window-fields",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Windowed alert",
+                message="Carries explicit window fields.",
+                severity="warning",
+                source_name="segment_0001.ts",
+                window_index=3,
+                window_start_sec=12.5,
+            ),
+            build_normalized_alert(
+                "session-real-window-fields",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_blur",
+                title="Windowless alert",
+                message="Normalizes missing optional fields.",
+                severity="info",
+                source_name="segment_0002.ts",
+                window_index=None,
+                window_start_sec=None,
+            ),
+        ],
+    }
+
+    response = request("GET", "/sessions/session-real-window-fields/alerts")
+    result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": "session-real-window-fields"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected_payload
+    assert_mcp_tool_success(result, expected_payload=expected_payload)
 
 
 def test_get_session_alerts_accepts_detector_only_filter_with_empty_result(

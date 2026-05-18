@@ -1,39 +1,49 @@
-"""Shared support helpers for session alert query tests.
+"""Small helpers for the alert persistence seam test layer.
 
-These helpers keep the alert-query tests focused on scenario intent:
-
-- isolate one temporary session-output root
-- create a minimal persisted session snapshot
-- write alert JSONL rows, including intentionally invalid lines
-- build alert payloads without repeating the contract shape inline
-
-The module stays small and procedural on purpose. It removes setup noise
-without hiding test meaning behind a framework, and it supports both the raw
-alert read model and the grouped incident read models that sit on top of it.
+The helpers here keep the Task-1 seam tests explicit while avoiding repeated
+JSONL setup and payload boilerplate across raw, grouped, API, and MCP tests.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import config
 import pytest
+from session_alert_incidents import AlertTimelineEntryPayload, IncidentSummaryPayload
+from session_alerts import AlertSummaryPayload
+from session_alert_store import AlertEventPayload, SessionAlertStore
+from session_models import AlertEvent, EventSeverity
 
 AlertPayload = dict[str, object]
 AlertLogRow = AlertPayload | str
+
+
+class StaticAlertStore(SessionAlertStore):
+    """Tiny read-only store used to prove the injected seam is honored."""
+
+    def __init__(self, session_id: str, alerts: list[AlertEventPayload]) -> None:
+        """Keep one fixed alert set available for one expected session."""
+        self._session_id = session_id
+        self._alerts = alerts
+
+    def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
+        """Reject writes so the helper stays read-only by design."""
+        raise AssertionError("append_alert should not be called in read-only seam tests")
+
+    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+        """Return the fixed alert set for the expected seam test session."""
+        assert session_id == self._session_id
+        return self._alerts
 
 
 def configure_session_alert_test(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """Redirect one alert-query test into isolated temporary session state.
-
-    Returning the configured root keeps the callers explicit about where
-    session directories are created instead of hiding filesystem ownership
-    inside a fixture with more implicit behavior.
-    """
+    """Point one test at an isolated temporary session-output root."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
     return tmp_path
 
@@ -50,11 +60,7 @@ def build_persisted_alert(
     window_index: int | None = None,
     window_start_sec: float | None = None,
 ) -> AlertPayload:
-    """Build one alert payload as it would be persisted to JSONL.
-
-    This shape intentionally omits normalized defaults so tests can distinguish
-    persisted rows from the read/query payload returned after parsing.
-    """
+    """Build one alert row in its persisted JSONL shape."""
     alert: AlertPayload = {
         "session_id": session_id,
         "timestamp_utc": timestamp_utc,
@@ -82,13 +88,8 @@ def build_normalized_alert(
     source_name: str,
     window_index: int | None = None,
     window_start_sec: float | None = None,
-) -> AlertPayload:
-    """Build one alert payload in the normalized read/query response shape.
-
-    The service layer normalizes optional window fields to explicit ``None``
-    values, so callers can compare full payloads without repeating that detail
-    in every assertion.
-    """
+) -> AlertEventPayload:
+    """Build one alert row in the normalized read/query shape."""
     alert = build_persisted_alert(
         session_id,
         timestamp_utc=timestamp_utc,
@@ -102,7 +103,7 @@ def build_normalized_alert(
     )
     alert.setdefault("window_index", None)
     alert.setdefault("window_start_sec", None)
-    return alert
+    return cast(AlertEventPayload, alert)
 
 
 def build_timeline_entry(
@@ -110,18 +111,13 @@ def build_timeline_entry(
     start_time_utc: str,
     end_time_utc: str,
     detector_id: str,
-    severity: str,
+    severity: EventSeverity,
     title: str,
     alert_count: int,
     source_names: list[str],
     sample_message: str,
-) -> AlertPayload:
-    """Build one grouped timeline entry in the shared response shape.
-
-    Tests use this helper instead of spelling the same entry shape inline so
-    timeline assertions stay focused on grouping intent rather than payload
-    boilerplate.
-    """
+) -> AlertTimelineEntryPayload:
+    """Build one grouped timeline entry in the shared response shape."""
     return {
         "start_time_utc": start_time_utc,
         "end_time_utc": end_time_utc,
@@ -142,8 +138,8 @@ def build_alert_summary_payload(
     counts_by_severity: dict[str, int],
     first_alert_timestamp_utc: str | None,
     last_alert_timestamp_utc: str | None,
-) -> AlertPayload:
-    """Build the stable raw alert-summary payload used by service and adapters."""
+) -> AlertSummaryPayload:
+    """Build the stable raw alert-summary payload."""
     return {
         "session_id": session_id,
         "total_alerts": total_alerts,
@@ -164,14 +160,9 @@ def build_incident_summary_payload(
     top_incident_categories: dict[str, int],
     first_alert_timestamp_utc: str | None,
     last_alert_timestamp_utc: str | None,
-    narrative_summary: str | None,
-) -> AlertPayload:
-    """Build the grouped incident-summary payload shared by service and adapters.
-
-    The grouped summary extends the raw alert summary shape, so this helper
-    intentionally layers grouped-incident fields on top of
-    ``build_alert_summary_payload``.
-    """
+    narrative_summary: str,
+) -> IncidentSummaryPayload:
+    """Build the grouped incident-summary payload."""
     return {
         **build_alert_summary_payload(
             session_id,
@@ -188,7 +179,7 @@ def build_incident_summary_payload(
 
 
 def assert_narrative_contains(narrative: str | None, *parts: str) -> None:
-    """Assert that one summary sentence still carries the important facts."""
+    """Assert that a narrative summary still carries the important facts."""
     assert narrative is not None
     for part in parts:
         assert part in narrative
@@ -200,11 +191,7 @@ def write_known_session(
     *,
     alert_rows: list[AlertLogRow] | None = None,
 ) -> Path:
-    """Create one minimal known session with optional alert-log content.
-
-    This writes only the smallest stable session snapshot needed for the
-    current alert-query seam: ``session.json`` plus an optional ``alerts.jsonl``.
-    """
+    """Create the minimal known session used by the alert seam tests."""
     session_dir = session_root / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / "session.json").write_text(
@@ -225,11 +212,7 @@ def write_known_session(
 
 
 def write_alert_log(session_dir: Path, rows: list[AlertLogRow]) -> None:
-    """Write one alert log file from payload rows or raw invalid-line strings.
-
-    Raw string rows let the service tests cover malformed-line tolerance
-    without needing a second helper dedicated only to broken input.
-    """
+    """Write one alert log from payload rows or intentionally invalid strings."""
     encoded_rows = [
         row if isinstance(row, str) else json.dumps(row)
         for row in rows

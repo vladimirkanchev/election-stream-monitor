@@ -1,10 +1,15 @@
-"""Focused tests for finite-slice execution helpers in session_runner_execution."""
+"""Focused tests for finite-slice execution over the alert persistence seam."""
 
 from pathlib import Path
 from typing import cast
 
+from tests.api_boundary_test_support import request
+from tests.mcp_alert_test_support import call_mcp_tool
+from tests.mcp_server_alerts_test_support import assert_mcp_tool_success
+from tests.session_alert_test_support import build_normalized_alert
 from session_io import initialize_session, read_session_snapshot
-from session_models import SessionProgress
+from session_alerts import read_session_alert_events
+from session_models import SessionMetadata, SessionProgress
 import session_runner_execution
 from tests.session_runner_execution_test_support import (
     build_metadata,
@@ -15,9 +20,50 @@ from tests.session_runner_execution_test_support import (
 )
 
 
+def _identity_finalizer(**kwargs):
+    """Return finalizer inputs unchanged for small execution-loop tests."""
+    return kwargs["metadata"], kwargs["progress"]
+
+
+def _configure_local_execution_session(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    session_id: str,
+) -> tuple[SessionMetadata, SessionProgress]:
+    """Create one isolated local execution session with persisted base state."""
+    configure_session_output(monkeypatch, tmp_path)
+    metadata = build_metadata(session_id=session_id)
+    progress = build_progress(session_id=metadata.session_id)
+    persist_session_state(metadata, progress)
+    return metadata, progress
+
+
+def _warning_alert_entry(
+    session_id: str,
+    *,
+    timestamp_utc: str,
+    title: str,
+    message: str,
+    source_name: str,
+    detector_id: str = "video_metrics",
+) -> dict[str, object]:
+    """Build one small warning alert entry for execution-loop seam tests."""
+    return {
+        "session_id": session_id,
+        "timestamp_utc": timestamp_utc,
+        "detector_id": detector_id,
+        "title": title,
+        "message": message,
+        "severity": "warning",
+        "source_name": source_name,
+    }
+
+
 def test_run_analyzers_for_slice_filters_kwargs_for_simple_bundle_runner(
     tmp_path: Path,
 ) -> None:
+    """Analyzer execution should keep older narrow bundle-runner doubles working."""
     analysis_slice = build_slice(tmp_path, "segment_0001.ts")
     observed: dict[str, object] = {}
 
@@ -44,6 +90,7 @@ def test_run_analyzers_for_slice_filters_kwargs_for_simple_bundle_runner(
 def test_persist_bundle_events_appends_results_and_alerts(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Persisting one bundle should append both result and alert payloads."""
     configure_session_output(monkeypatch, tmp_path)
     metadata = build_metadata(session_id="session-execution-persist", status="pending")
     initialize_session(metadata)
@@ -84,6 +131,7 @@ def test_persist_bundle_events_appends_results_and_alerts(
 def test_process_discovered_slices_cancels_before_processing_next_slice(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Cancellation before the next slice should stop processing cleanly."""
     configure_session_output(monkeypatch, tmp_path)
     metadata = build_metadata(session_id="session-execution-cancel")
     progress = build_progress(session_id=metadata.session_id)
@@ -131,6 +179,7 @@ def test_process_discovered_slices_cancels_before_processing_next_slice(
 def test_process_discovered_slices_completes_and_writes_slice_progress(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Successful finite-slice execution should update progress and finalize completed."""
     configure_session_output(monkeypatch, tmp_path)
     metadata = build_metadata(session_id="session-execution-local-complete")
     progress = build_progress(session_id=metadata.session_id)
@@ -190,6 +239,288 @@ def test_process_discovered_slices_completes_and_writes_slice_progress(
     assert progress_data["processed_count"] == 1
     assert progress_data["current_item"] == "segment_0001.ts"
     assert finalizer_calls[-1]["status"] == "completed"
+
+
+def test_process_discovered_slices_persists_alerts_through_the_shared_alert_seam(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Finite-slice execution should write alerts that the shared read models can read back."""
+    configure_session_output(monkeypatch, tmp_path)
+    metadata = build_metadata(session_id="session-execution-alert-seam")
+    progress = build_progress(session_id=metadata.session_id)
+    persist_session_state(metadata, progress)
+
+    slices = [build_slice(tmp_path, "segment_0001.ts")]
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: False)
+
+    def fake_finalizer(**kwargs):
+        return kwargs["metadata"], kwargs["progress"]
+
+    def fake_bundle_runner(**kwargs):
+        return {
+            "results": [],
+            "alerts": [
+                {
+                    "session_id": metadata.session_id,
+                    "timestamp_utc": "2026-05-06 10:00:00",
+                    "detector_id": "video_metrics",
+                    "title": "Black screen detected",
+                    "message": "Persisted through process_discovered_slices.",
+                    "severity": "warning",
+                    "source_name": "segment_0001.ts",
+                    "window_index": 0,
+                    "window_start_sec": 0.0,
+                }
+            ],
+        }
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=["video_metrics"],
+        input_slices=slices,
+        bundle_runner=fake_bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=fake_finalizer,
+    )
+
+    snapshot = read_session_snapshot(metadata.session_id)
+    alerts = cast(list[dict[str, object]], snapshot["alerts"])
+
+    assert alerts == [
+        {
+            "session_id": metadata.session_id,
+            "timestamp_utc": "2026-05-06 10:00:00",
+            "detector_id": "video_metrics",
+            "title": "Black screen detected",
+            "message": "Persisted through process_discovered_slices.",
+            "severity": "warning",
+            "source_name": "segment_0001.ts",
+            "window_index": 0,
+            "window_start_sec": 0.0,
+        }
+    ]
+
+
+def test_process_discovered_slices_runner_written_alert_is_visible_through_fastapi_and_mcp(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Runner-persisted alerts should be readable through both public raw boundaries."""
+    metadata, progress = _configure_local_execution_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-execution-boundary-parity",
+    )
+    slices = [build_slice(tmp_path, "segment_0001.ts")]
+    monkeypatch.setattr(
+        session_runner_execution,
+        "is_session_cancel_requested",
+        lambda session_id: False,
+    )
+
+    def fake_bundle_runner(**kwargs):
+        return {
+            "results": [],
+            "alerts": [
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:00:00",
+                    title="Boundary-visible alert",
+                    message="Persisted by the runner write path.",
+                    source_name="segment_0001.ts",
+                )
+            ],
+        }
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=["video_metrics"],
+        input_slices=slices,
+        bundle_runner=fake_bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=_identity_finalizer,
+    )
+
+    expected_payload = {
+        "session_id": metadata.session_id,
+        "alerts": [
+            build_normalized_alert(
+                metadata.session_id,
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Boundary-visible alert",
+                message="Persisted by the runner write path.",
+                severity="warning",
+                source_name="segment_0001.ts",
+                window_index=None,
+                window_start_sec=None,
+            )
+        ],
+    }
+    response = request("GET", f"/sessions/{metadata.session_id}/alerts")
+    mcp_result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": metadata.session_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected_payload
+    assert_mcp_tool_success(mcp_result, expected_payload=expected_payload)
+
+
+def test_process_discovered_slices_preserves_alert_append_order_in_raw_reads(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Runner writes should preserve append order even when timestamps are not sorted."""
+    metadata, progress = _configure_local_execution_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-execution-alert-order",
+    )
+    slices = [build_slice(tmp_path, "segment_0001.ts")]
+    monkeypatch.setattr(
+        session_runner_execution,
+        "is_session_cancel_requested",
+        lambda session_id: False,
+    )
+
+    def fake_bundle_runner(**kwargs):
+        return {
+            "results": [],
+            "alerts": [
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:00:20",
+                    title="Persisted first",
+                    message="Written first.",
+                    source_name="segment_0002.ts",
+                ),
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:00:00",
+                    title="Persisted second",
+                    message="Written second.",
+                    source_name="segment_0001.ts",
+                ),
+            ],
+        }
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=["video_metrics"],
+        input_slices=slices,
+        bundle_runner=fake_bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=_identity_finalizer,
+    )
+
+    assert read_session_alert_events(metadata.session_id) == [
+        build_normalized_alert(
+            metadata.session_id,
+            timestamp_utc="2026-05-06 10:00:20",
+            detector_id="video_metrics",
+            title="Persisted first",
+            message="Written first.",
+            severity="warning",
+            source_name="segment_0002.ts",
+            window_index=None,
+            window_start_sec=None,
+        ),
+        build_normalized_alert(
+            metadata.session_id,
+            timestamp_utc="2026-05-06 10:00:00",
+            detector_id="video_metrics",
+            title="Persisted second",
+            message="Written second.",
+            severity="warning",
+            source_name="segment_0001.ts",
+            window_index=None,
+            window_start_sec=None,
+        ),
+    ]
+
+
+def test_process_discovered_slices_stops_persisting_alerts_after_cancel(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Cancellation before the next slice should prevent later alerts from being written."""
+    metadata, progress = _configure_local_execution_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-execution-cancelled-alerts",
+    )
+    slices = [
+        build_slice(tmp_path, "segment_0001.ts"),
+        build_slice(tmp_path, "segment_0002.ts"),
+    ]
+    cancel_checks = iter([False, True])
+    monkeypatch.setattr(
+        session_runner_execution,
+        "is_session_cancel_requested",
+        lambda session_id: next(cancel_checks),
+    )
+
+    finalizer_calls: list[dict[str, object]] = []
+    bundle_calls: list[str] = []
+
+    def fake_bundle_runner(analysis_slice, **kwargs):
+        bundle_calls.append(analysis_slice.source_name)
+        return {
+            "results": [],
+            "alerts": [
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:00:00",
+                    title="Only persisted alert",
+                    message="Should survive cancellation.",
+                    source_name=analysis_slice.source_name,
+                )
+            ],
+        }
+
+    def recording_finalizer(**kwargs):
+        finalizer_calls.append(kwargs)
+        return _identity_finalizer(**kwargs)
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=["video_metrics"],
+        input_slices=slices,
+        bundle_runner=fake_bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=recording_finalizer,
+    )
+
+    assert bundle_calls == ["segment_0001.ts"]
+    assert finalizer_calls[-1]["status"] == "cancelled"
+    assert read_session_alert_events(metadata.session_id) == [
+        build_normalized_alert(
+            metadata.session_id,
+            timestamp_utc="2026-05-06 10:00:00",
+            detector_id="video_metrics",
+            title="Only persisted alert",
+            message="Should survive cancellation.",
+            severity="warning",
+            source_name="segment_0001.ts",
+            window_index=None,
+            window_start_sec=None,
+        )
+    ]
 
 
 def test_process_discovered_slices_uses_default_progress_and_finalizer_helpers(

@@ -1,13 +1,7 @@
-"""Focused service tests for persisted raw alert read behavior.
+"""Focused tests for raw alert reads over the persistence seam.
 
-This suite owns the lowest-level alert-log read contract:
-
-- reading valid persisted alert rows
-- degrading safely on corrupt or unreadable alert logs
-- preserving the known-session boundary for missing or orphaned sessions
-
-Filter semantics and numeric summaries live in the sibling split suites so the
-persisted read seam stays small and easy to audit.
+This suite keeps the lowest-level read contract small: valid persisted rows,
+safe degradation on bad logs, and the shared known-session boundary.
 """
 
 from pathlib import Path
@@ -16,6 +10,7 @@ import pytest
 
 from session_alerts import SessionAlertsNotFoundError, read_session_alert_events
 from tests.session_alert_test_support import (
+    StaticAlertStore,
     build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
@@ -142,3 +137,33 @@ def test_read_session_alert_events_rejects_directory_without_session_metadata(
 
     with pytest.raises(SessionAlertsNotFoundError):
         read_session_alert_events("orphaned-session-dir")
+
+
+def test_read_session_alert_events_accepts_an_explicit_store_seam() -> None:
+    """Raw alert reads should be able to depend on an injected store seam."""
+    store = StaticAlertStore(
+        "store-session",
+        [
+            build_normalized_alert(
+                "store-session",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="From the injected store.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            )
+        ],
+    )
+
+    assert read_session_alert_events("store-session", store=store) == [
+        build_normalized_alert(
+            "store-session",
+            timestamp_utc="2026-05-06 10:00:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="From the injected store.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    ]

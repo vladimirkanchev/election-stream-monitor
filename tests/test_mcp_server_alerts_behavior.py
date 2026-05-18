@@ -205,6 +205,85 @@ def test_summarize_session_alerts_tool_returns_empty_summary_for_known_session_w
     )
 
 
+def test_raw_mcp_alert_tools_read_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The raw MCP tools should work over real persisted alert files."""
+    session_root = write_raw_alert_tool_session(monkeypatch, tmp_path)
+    write_known_session(
+        session_root,
+        "session-mcp-real-alerts",
+        alert_rows=[
+            build_persisted_alert(
+                "session-mcp-real-alerts",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Real raw MCP alert row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_persisted_alert(
+                "session-mcp-real-alerts",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_blur",
+                title="Blur increased",
+                message="Real raw MCP summary row.",
+                severity="info",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+
+    query_result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": "session-mcp-real-alerts"},
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alerts",
+        {"session_id": "session-mcp-real-alerts"},
+    )
+
+    assert_mcp_tool_success(
+        query_result,
+        expected_payload={
+            "session_id": "session-mcp-real-alerts",
+            "alerts": [
+                build_normalized_alert(
+                    "session-mcp-real-alerts",
+                    timestamp_utc="2026-05-06 10:00:00",
+                    detector_id="video_metrics",
+                    title="Black screen detected",
+                    message="Real raw MCP alert row.",
+                    severity="warning",
+                    source_name="segment_0001.ts",
+                ),
+                build_normalized_alert(
+                    "session-mcp-real-alerts",
+                    timestamp_utc="2026-05-06 10:00:10",
+                    detector_id="video_blur",
+                    title="Blur increased",
+                    message="Real raw MCP summary row.",
+                    severity="info",
+                    source_name="segment_0002.ts",
+                ),
+            ],
+        },
+    )
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=build_alert_summary_payload(
+            "session-mcp-real-alerts",
+            total_alerts=2,
+            counts_by_detector={"video_metrics": 1, "video_blur": 1},
+            counts_by_severity={"warning": 1, "info": 1},
+            first_alert_timestamp_utc="2026-05-06 10:00:00",
+            last_alert_timestamp_utc="2026-05-06 10:00:10",
+        ),
+    )
+
+
 def test_raw_mcp_alert_tools_preserve_filtered_query_results(
     monkeypatch,
     tmp_path: Path,

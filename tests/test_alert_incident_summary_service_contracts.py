@@ -1,13 +1,7 @@
-"""Focused grouped incident-summary tests for aggregation and narrative behavior.
+"""Focused grouped incident-summary tests layered on top of the raw alert seam.
 
-This file owns the summary-oriented grouped read model after raw filtering has
-already selected the alert rows:
-
-- grouped incident counts and detector/severity totals
-- top-category aggregation
-- narrative shaping and deterministic tie-breaking
-- malformed or ungroupable row degradation
-- explicit separation between raw alert totals and grouped incident totals
+This suite owns grouped aggregation, top-category counting, and narrative
+behavior after raw filtering has already selected the alert rows.
 """
 
 from pathlib import Path
@@ -18,8 +12,10 @@ from tests.alert_incident_service_test_support import (
     summary_narrative,
 )
 from tests.session_alert_test_support import (
+    StaticAlertStore,
     assert_narrative_contains,
     build_incident_summary_payload,
+    build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
     write_alert_log,
@@ -390,3 +386,64 @@ def test_build_session_incident_summary_counts_all_filtered_alerts_even_when_som
     assert summary["total_incidents"] == 1
     assert summary["counts_by_detector"] == {"video_metrics": 2}
     assert summary["counts_by_severity"] == {"warning": 2}
+
+
+def test_build_session_incident_summary_accepts_an_explicit_store_seam() -> None:
+    """Grouped incident summaries should preserve behavior over an injected store seam."""
+    store = StaticAlertStore(
+        "store-incident-summary",
+        [
+            build_normalized_alert(
+                "store-incident-summary",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First grouped row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_normalized_alert(
+                "store-incident-summary",
+                timestamp_utc="2026-05-06 10:00:30",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second grouped row in the same incident.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+            build_normalized_alert(
+                "store-incident-summary",
+                timestamp_utc="2026-05-06 10:02:00",
+                detector_id="video_blur",
+                title="Blur increased",
+                message="Separate grouped incident.",
+                severity="info",
+                source_name="segment_0003.ts",
+            ),
+        ],
+    )
+
+    summary = build_session_incident_summary("store-incident-summary", store=store)
+    narrative = summary_narrative(summary)
+
+    assert summary == build_incident_summary_payload(
+        "store-incident-summary",
+        total_alerts=3,
+        total_incidents=2,
+        counts_by_detector={"video_metrics": 2, "video_blur": 1},
+        counts_by_severity={"warning": 2, "info": 1},
+        top_incident_categories={"Black screen detected": 1, "Blur increased": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:02:00",
+        narrative_summary=narrative,
+    )
+    assert_narrative_contains(
+        narrative,
+        "store-incident-summary",
+        "2 grouped incidents",
+        "3 alerts",
+        "video_metrics",
+        "blur increased",
+        "2 warning alerts",
+        "1 info alerts",
+    )

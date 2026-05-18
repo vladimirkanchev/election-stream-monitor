@@ -1,23 +1,7 @@
-"""Focused FastAPI adapter tests for grouped alert timeline and incident routes.
+"""Focused FastAPI tests for grouped alert-route transport behavior.
 
-This file owns the HTTP boundary for the incident-oriented service layer:
-
-- grouped timeline responses
-- grouped incident summary responses
-- stable empty-result envelopes for grouped incident reads
-- not-found and validation mapping for incident routes
-- request-validation behavior specific to timeline and incident-summary routes
-
-Router-scoped auth and rate-limit policy lives in the split alerts-router
-policy files:
-
-- ``test_api_alert_route_auth_policy.py``
-- ``test_api_alert_route_rate_limit_policy.py``
-- ``test_api_alert_route_contracts.py``
-
-That keeps this file focused on transport adaptation over the grouped-incident
-services. Reviewers should be able to read it route-by-route without also
-carrying the auth and throttling story in their heads.
+This file owns payload shaping, empty-result behavior, request validation, and
+error mapping for grouped timeline and incident-summary endpoints.
 """
 
 from tests.api_alert_test_support import (
@@ -27,20 +11,58 @@ from tests.api_alert_test_support import (
 )
 from session_alerts import SessionAlertsNotFoundError
 from tests.api_boundary_test_support import request
+from tests.mcp_alert_test_support import call_mcp_tool
+from tests.mcp_server_incidents_test_support import assert_mcp_tool_success
 from tests.session_alert_test_support import (
+    build_persisted_alert,
     build_incident_summary_payload,
     build_timeline_entry,
     configure_session_alert_test,
+    write_alert_log,
     write_known_session,
 )
 
 
-def _empty_timeline_payload(session_id: str) -> dict[str, object]:
-    """Return the stable empty grouped-timeline payload for one session.
+def _write_real_grouped_alert_session(
+    monkeypatch,
+    tmp_path,
+    *,
+    session_id: str,
+    alert_rows: list[dict[str, object]],
+) -> None:
+    """Persist one real session for grouped FastAPI and MCP boundary tests."""
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id, alert_rows=alert_rows)
 
-    Keeping the timeline empty envelope explicit helps reviewers see that the
-    transport contract stays stable even when grouping produced no incidents.
-    """
+
+def _expected_incident_summary_with_runtime_narrative(
+    session_id: str,
+    *,
+    total_alerts: int,
+    total_incidents: int,
+    counts_by_detector: dict[str, int],
+    counts_by_severity: dict[str, int],
+    top_incident_categories: dict[str, int],
+    first_alert_timestamp_utc: str | None,
+    last_alert_timestamp_utc: str | None,
+    narrative_summary: str,
+) -> dict[str, object]:
+    """Build one grouped summary while preserving the runtime narrative sentence."""
+    return build_incident_summary_payload(
+        session_id,
+        total_alerts=total_alerts,
+        total_incidents=total_incidents,
+        counts_by_detector=counts_by_detector,
+        counts_by_severity=counts_by_severity,
+        top_incident_categories=top_incident_categories,
+        first_alert_timestamp_utc=first_alert_timestamp_utc,
+        last_alert_timestamp_utc=last_alert_timestamp_utc,
+        narrative_summary=narrative_summary,
+    )
+
+
+def _empty_timeline_payload(session_id: str) -> dict[str, object]:
+    """Return the stable empty grouped-timeline payload for one session."""
     return {
         "session_id": session_id,
         "entries": [],
@@ -48,12 +70,7 @@ def _empty_timeline_payload(session_id: str) -> dict[str, object]:
 
 
 def _empty_incident_summary_payload(session_id: str) -> dict[str, object]:
-    """Return the stable empty grouped incident-summary payload for one session.
-
-    The grouped summary route extends the raw summary shape, so this helper
-    keeps the contract tests centered on route behavior rather than on
-    re-spelling the summary payload in every empty-result case.
-    """
+    """Return the stable empty grouped incident-summary payload for one session."""
     return build_incident_summary_payload(
         session_id,
         total_alerts=0,
@@ -237,6 +254,212 @@ def test_get_session_alert_incident_summary_returns_stable_empty_payload(
 
     assert response.status_code == 200
     assert response.json() == _empty_incident_summary_payload("empty-session")
+
+
+def test_get_session_alert_timeline_reads_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The grouped timeline route should work over real persisted alert files."""
+    _write_real_grouped_alert_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-real-timeline",
+        alert_rows=[
+            build_persisted_alert(
+                "session-real-timeline",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First grouped row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_persisted_alert(
+                "session-real-timeline",
+                timestamp_utc="2026-05-06 10:00:30",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second grouped row in the same incident.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+
+    response = request("GET", "/sessions/session-real-timeline/alerts/timeline")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": "session-real-timeline",
+        "entries": [
+            build_timeline_entry(
+                start_time_utc="2026-05-06 10:00:00",
+                end_time_utc="2026-05-06 10:00:30",
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=2,
+                source_names=["segment_0001.ts", "segment_0002.ts"],
+                sample_message="First grouped row.",
+            )
+        ],
+    }
+
+
+def test_get_session_alert_incident_summary_reads_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The grouped summary route should work over the real persisted alert seam."""
+    _write_real_grouped_alert_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-real-incident-summary",
+        alert_rows=[
+            build_persisted_alert(
+                "session-real-incident-summary",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First grouped row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_persisted_alert(
+                "session-real-incident-summary",
+                timestamp_utc="2026-05-06 10:00:30",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second grouped row in the same incident.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+            build_persisted_alert(
+                "session-real-incident-summary",
+                timestamp_utc="2026-05-06 10:02:00",
+                detector_id="video_blur",
+                title="Blur increased",
+                message="Separate grouped incident.",
+                severity="info",
+                source_name="segment_0003.ts",
+            ),
+        ],
+    )
+
+    response = request(
+        "GET",
+        "/sessions/session-real-incident-summary/alerts/incident-summary",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == _expected_incident_summary_with_runtime_narrative(
+        "session-real-incident-summary",
+        total_alerts=3,
+        total_incidents=2,
+        counts_by_detector={"video_metrics": 2, "video_blur": 1},
+        counts_by_severity={"warning": 2, "info": 1},
+        top_incident_categories={"Black screen detected": 1, "Blur increased": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:02:00",
+        narrative_summary=payload["narrative_summary"],
+    )
+
+
+def test_grouped_alert_boundaries_skip_malformed_persisted_rows(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """FastAPI and MCP grouped readers should ignore malformed persisted rows the same way."""
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    session_dir = write_known_session(session_root, "session-malformed-grouped")
+    write_alert_log(
+        session_dir,
+        [
+            build_persisted_alert(
+                "session-malformed-grouped",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Valid grouped row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            "{bad json",
+            build_persisted_alert(
+                "session-malformed-grouped",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="",
+                title="Invalid detector row",
+                message="Should be ignored by grouped readers.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+    expected_timeline = {
+        "session_id": "session-malformed-grouped",
+        "entries": [
+            build_timeline_entry(
+                start_time_utc="2026-05-06 10:00:00",
+                end_time_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=1,
+                source_names=["segment_0001.ts"],
+                sample_message="Valid grouped row.",
+            )
+        ],
+    }
+
+    timeline_response = request("GET", "/sessions/session-malformed-grouped/alerts/timeline")
+    summary_response = request(
+        "GET",
+        "/sessions/session-malformed-grouped/alerts/incident-summary",
+    )
+    timeline_result = call_mcp_tool(
+        "query_session_alert_timeline",
+        {"session_id": "session-malformed-grouped"},
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alert_incidents",
+        {"session_id": "session-malformed-grouped"},
+    )
+
+    assert timeline_response.status_code == 200
+    assert timeline_response.json() == expected_timeline
+    assert_mcp_tool_success(timeline_result, expected_payload=expected_timeline)
+
+    summary_payload = summary_response.json()
+    expected_summary = _expected_incident_summary_with_runtime_narrative(
+        "session-malformed-grouped",
+        total_alerts=1,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 1},
+        counts_by_severity={"warning": 1},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:00",
+        last_alert_timestamp_utc="2026-05-06 10:00:00",
+        narrative_summary=summary_payload["narrative_summary"],
+    )
+    assert summary_response.status_code == 200
+    assert summary_payload == expected_summary
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=_expected_incident_summary_with_runtime_narrative(
+            "session-malformed-grouped",
+            total_alerts=1,
+            total_incidents=1,
+            counts_by_detector={"video_metrics": 1},
+            counts_by_severity={"warning": 1},
+            top_incident_categories={"Black screen detected": 1},
+            first_alert_timestamp_utc="2026-05-06 10:00:00",
+            last_alert_timestamp_utc="2026-05-06 10:00:00",
+            narrative_summary=summary_result.structuredContent["narrative_summary"],
+        ),
+    )
 
 
 def test_get_session_alert_incident_summary_accepts_severity_only_filter_with_empty_result(

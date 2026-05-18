@@ -212,6 +212,100 @@ def test_summarize_session_alert_incidents_tool_returns_empty_summary_for_known_
     )
 
 
+def test_grouped_mcp_alert_tools_read_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The grouped MCP tools should work over the real file-backed alert seam."""
+    session_root = write_incident_tool_session(monkeypatch, tmp_path)
+    write_known_session(
+        session_root,
+        "session-mcp-real-incidents",
+        alert_rows=[
+            build_persisted_alert(
+                "session-mcp-real-incidents",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First grouped MCP row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_persisted_alert(
+                "session-mcp-real-incidents",
+                timestamp_utc="2026-05-06 10:00:30",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second grouped MCP row.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+            build_persisted_alert(
+                "session-mcp-real-incidents",
+                timestamp_utc="2026-05-06 10:02:00",
+                detector_id="video_blur",
+                title="Blur increased",
+                message="Separate grouped MCP incident.",
+                severity="info",
+                source_name="segment_0003.ts",
+            ),
+        ],
+    )
+
+    timeline_result = call_mcp_tool(
+        "query_session_alert_timeline",
+        {"session_id": "session-mcp-real-incidents"},
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alert_incidents",
+        {"session_id": "session-mcp-real-incidents"},
+    )
+
+    assert_mcp_tool_success(
+        timeline_result,
+        expected_payload={
+            "session_id": "session-mcp-real-incidents",
+            "entries": [
+                build_timeline_entry(
+                    start_time_utc="2026-05-06 10:00:00",
+                    end_time_utc="2026-05-06 10:00:30",
+                    detector_id="video_metrics",
+                    severity="warning",
+                    title="Black screen detected",
+                    alert_count=2,
+                    source_names=["segment_0001.ts", "segment_0002.ts"],
+                    sample_message="First grouped MCP row.",
+                ),
+                build_timeline_entry(
+                    start_time_utc="2026-05-06 10:02:00",
+                    end_time_utc="2026-05-06 10:02:00",
+                    detector_id="video_blur",
+                    severity="info",
+                    title="Blur increased",
+                    alert_count=1,
+                    source_names=["segment_0003.ts"],
+                    sample_message="Separate grouped MCP incident.",
+                ),
+            ],
+        },
+    )
+    summary_payload = summary_result.structuredContent
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=build_incident_summary_payload(
+            "session-mcp-real-incidents",
+            total_alerts=3,
+            total_incidents=2,
+            counts_by_detector={"video_metrics": 2, "video_blur": 1},
+            counts_by_severity={"warning": 2, "info": 1},
+            top_incident_categories={"Black screen detected": 1, "Blur increased": 1},
+            first_alert_timestamp_utc="2026-05-06 10:00:00",
+            last_alert_timestamp_utc="2026-05-06 10:02:00",
+            narrative_summary=summary_payload["narrative_summary"],
+        ),
+    )
+
+
 def test_grouped_mcp_alert_tools_preserve_filtered_query_results(
     monkeypatch,
     tmp_path: Path,

@@ -1,7 +1,7 @@
-"""Tests for session file helpers.
+"""Tests for session file helpers and persisted session artifacts.
 
-This suite owns the persisted session-artifact contract, including the
-session-scoped location of backend-only diagnostics such as `worker.log`.
+This suite still owns the file-backed session contract while Task 1 keeps only
+alert persistence behind the new seam.
 """
 
 import json
@@ -9,6 +9,9 @@ from pathlib import Path
 
 import config
 import pytest
+import session_alert_store
+from session_alert_incidents import build_session_timeline
+from session_alerts import read_session_alert_events, summarize_session_alert_events
 from session_io import (
     append_alert,
     append_result,
@@ -304,6 +307,98 @@ def test_session_snapshot_preserves_alert_fields_and_append_order(
     ]
     assert [alert["window_index"] for alert in snapshot["alerts"]] == [0, 1]
     assert [alert["window_start_sec"] for alert in snapshot["alerts"]] == [0.0, 1.0]
+
+
+def test_append_alert_uses_the_default_alert_store_seam(monkeypatch, tmp_path: Path) -> None:
+    """The compatibility write helper should delegate to the default alert store."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    observed: list[AlertEvent] = []
+
+    class FakeAlertStore:
+        def append_alert(self, event: AlertEvent) -> None:
+            observed.append(event)
+
+    monkeypatch.setattr(session_alert_store, "DEFAULT_SESSION_ALERT_STORE", FakeAlertStore())
+
+    event = AlertEvent(
+        session_id="session-store-write",
+        timestamp_utc="2026-03-30 12:00:00",
+        detector_id="video_metrics",
+        title="Black screen detected",
+        message="Delegated through the store seam.",
+        severity="warning",
+        source_name="segment_0001.ts",
+    )
+
+    append_alert(event)
+
+    assert observed == [event]
+
+
+def test_append_alert_round_trips_through_the_shared_alert_read_models(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The compatibility write entrypoint should feed the same seam used by alert readers."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = SessionMetadata(
+        session_id="session-alert-round-trip",
+        mode="video_segments",
+        input_path="/tmp/input",
+        selected_detectors=["video_metrics"],
+        status="running",
+    )
+    initialize_session(metadata)
+
+    append_alert(
+        AlertEvent(
+            session_id="session-alert-round-trip",
+            timestamp_utc="2026-05-06 10:00:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Round-trip through the compatibility write seam.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    )
+
+    assert read_session_alert_events("session-alert-round-trip") == [
+        {
+            "session_id": "session-alert-round-trip",
+            "timestamp_utc": "2026-05-06 10:00:00",
+            "detector_id": "video_metrics",
+            "title": "Black screen detected",
+            "message": "Round-trip through the compatibility write seam.",
+            "severity": "warning",
+            "source_name": "segment_0001.ts",
+            "window_index": None,
+            "window_start_sec": None,
+        }
+    ]
+    assert summarize_session_alert_events("session-alert-round-trip") == {
+        "session_id": "session-alert-round-trip",
+        "total_alerts": 1,
+        "counts_by_detector": {"video_metrics": 1},
+        "counts_by_severity": {"warning": 1},
+        "first_alert_timestamp_utc": "2026-05-06 10:00:00",
+        "last_alert_timestamp_utc": "2026-05-06 10:00:00",
+    }
+    assert build_session_timeline("session-alert-round-trip") == {
+        "session_id": "session-alert-round-trip",
+        "entries": [
+            {
+                "start_time_utc": "2026-05-06 10:00:00",
+                "end_time_utc": "2026-05-06 10:00:00",
+                "detector_id": "video_metrics",
+                "severity": "warning",
+                "title": "Black screen detected",
+                "alert_count": 1,
+                "source_names": ["segment_0001.ts"],
+                "sample_message": "Round-trip through the compatibility write seam.",
+            }
+        ],
+    }
 
 
 @pytest.mark.parametrize(
