@@ -367,6 +367,8 @@
       "tests/test_stream_loader_http_hls_reconnect_state.py",
       "tests/test_session_runner_api_stream_cancellation.py",
       "tests/test_session_runner_api_stream_completion.py",
+      "tests/test_session_runner_api_stream_http_hls_lifecycle.py",
+      "tests/test_session_runner_api_stream_http_hls_failures.py",
       "tests/test_api_stream_local_validation.py"
     ],
     "weekly_lifecycle": [
