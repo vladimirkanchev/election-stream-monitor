@@ -7,6 +7,7 @@ This file owns `prepare_cli_runtime(...)` behavior:
 - override precedence
 - fail-fast validation
 - recovery after bad startup attempts
+- CLI-specific boundary posture decisions before any HTTP request exists
 
 Route-level behavior and startup output live in neighboring files.
 """
@@ -14,6 +15,8 @@ Route-level behavior and startup output live in neighboring files.
 from __future__ import annotations
 
 import re
+from collections.abc import Generator
+from typing import Literal
 
 import pytest
 
@@ -27,7 +30,7 @@ from tests.api_boundary_env_test_support import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_boundary_settings_caches() -> None:
+def _clear_boundary_settings_caches() -> Generator[None, None, None]:
     """Keep env-driven FastAPI boundary settings isolated across CLI runtime tests."""
 
     original_values = snapshot_boundary_env()
@@ -53,7 +56,7 @@ def _clear_boundary_settings_caches() -> None:
     ],
 )
 def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
-    mode: str,
+    mode: Literal["local", "share"],
     manual_api_key: str | None,
     auth_enabled: bool,
     rate_limit_enabled: bool,
@@ -68,6 +71,9 @@ def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
     - generated-key share startup
     - manual-key share startup
     - blank-manual-key fallback to generated-key startup
+    This file intentionally stops at the prepared runtime object. Questions
+    about which real routes stay open or protected belong in the neighboring
+    CLI route tests.
     """
 
     runtime = prepare_cli_runtime(mode=mode, manual_api_key=manual_api_key)
@@ -100,6 +106,20 @@ def test_prepare_cli_runtime_share_mode_honors_explicit_rate_limit_override(
 
     assert runtime.auth_settings.enabled is True
     assert runtime.rate_limit_settings.enabled is False
+
+
+def test_prepare_cli_runtime_share_mode_does_not_change_route_protection_scope() -> None:
+    """Share-mode runtime prep should only set boundary posture, not widen protected scope."""
+
+    runtime = prepare_cli_runtime(
+        mode="share",
+        manual_api_key=None,
+    )
+
+    assert runtime.mode == "share"
+    assert runtime.auth_settings.enabled is True
+    assert runtime.rate_limit_settings.enabled is True
+    assert runtime.auth_settings.generated_api_key is not None
 
 
 def test_prepare_cli_runtime_local_mode_enabled_auth_without_key_fails_early(

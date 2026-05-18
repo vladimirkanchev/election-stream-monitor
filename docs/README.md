@@ -32,6 +32,10 @@ Use this shortcut map before editing code:
   - [contracts.md](./contracts.md)
   - read `fastapi-boundary.md` first if the change touches auth, rate
     limiting, or current readiness expectations for the alerts router
+  - current CLI-oriented FastAPI boundary checks live mainly in:
+    - `tests/test_api_server_cli_runtime.py`
+    - `tests/test_api_server_cli_output.py`
+    - `tests/test_api_server_cli_routes.py`
 - changing MCP alert-query tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
@@ -52,6 +56,9 @@ Use this shortcut map before editing code:
   - [testing-and-validation.md](./testing-and-validation.md)
   - `./.agents/skills/`
   - `tests/test_repo_skills.py`
+- changing CI ownership rules, target manifests, or split-suite registration:
+  - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
 
 ## Current High-Signal Code Areas
 
@@ -68,18 +75,24 @@ module families and the matching tests:
   - `src/session_runner_terminal.py`
   - `src/session_runner_discovery.py`
   - `src/session_runner_progress.py`
-  - `tests/test_session_service.py`
-  - `tests/test_api_boundary_sessions.py`
+  - `tests/test_session_service_start.py`
+  - `tests/test_session_service_worker.py`
+  - `tests/test_session_service_read_cancel.py`
+  - `tests/test_api_boundary_sessions_read.py`
+  - `tests/test_api_boundary_sessions_start.py`
+  - `tests/test_api_boundary_sessions_cancel.py`
   - `tests/test_session_cli_tooling.py`
   - `tests/test_session_runner_lifecycle.py`
-  - `tests/test_session_runner_execution.py`
+  - `tests/test_session_runner_execution_local.py`
+  - `tests/test_session_runner_execution_api_stream.py`
   - `tests/test_session_runner_terminal.py`
   - `tests/test_session_runner_local.py`
   - `tests/test_session_runner_api_stream_completion.py`
   - `tests/test_session_runner_api_stream_cancellation.py`
   - `tests/test_session_runner_api_stream_failures.py`
   - `tests/test_session_runner_api_stream_progress.py`
-  - `tests/test_session_runner_api_stream_http_hls.py`
+  - `tests/test_session_runner_api_stream_http_hls_lifecycle.py`
+  - `tests/test_session_runner_api_stream_http_hls_failures.py`
   - read the session-service files first, then the runner files, if you want
     the shortest path into the current session lifecycle split
 - live `api_stream` loading:
@@ -91,8 +104,11 @@ module families and the matching tests:
   - `tests/test_stream_loader_http_hls_core_playlist.py`
   - `tests/test_stream_loader_http_hls_core_progression.py`
   - `tests/test_stream_loader_http_hls_core_provider.py`
-  - `tests/test_stream_loader_http_hls_reconnect.py`
-  - `tests/test_stream_loader_http_hls_limits.py`
+  - `tests/test_stream_loader_http_hls_reconnect_recovery.py`
+  - `tests/test_stream_loader_http_hls_reconnect_state.py`
+  - `tests/test_stream_loader_http_hls_limits_runtime.py`
+  - `tests/test_stream_loader_http_hls_limits_cleanup.py`
+  - `tests/test_stream_loader_http_hls_limits_restart.py`
 - Electron/FastAPI desktop runtime:
   - `frontend/electron/main.mjs`
   - `frontend/electron/fastApiStartupOrchestrator.mjs`
@@ -107,9 +123,17 @@ module families and the matching tests:
   - `frontend/src/bridge/contractDetectors.ts`
   - `frontend/src/bridge/contractSessionSnapshot.ts`
   - `frontend/src/bridge/transport.ts`
+  - `frontend/src/bridge/contract.testSupport.ts`
   - `frontend/src/bridge/contract.success.test.ts`
   - `frontend/src/bridge/contract.errors.test.ts`
-  - `frontend/src/bridge/contract.session-snapshot.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
+- frontend operator state presentation:
+  - `frontend/src/components/SessionStatusPanel.tsx`
+  - `frontend/src/components/SessionStatusPanel.test.tsx`
+  - `frontend/src/presenters/alertFeed.ts`
+  - `frontend/src/presenters/alertFeed.test.ts`
 - MCP alert-query surface:
   - `src/api_auth.py`
   - `src/api_rate_limit.py`
@@ -127,24 +151,99 @@ module families and the matching tests:
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`
+    - router-scoped `401` policy, invalid/missing-key consistency, and
+      protected-versus-public route scope
   - `tests/test_api_alert_route_rate_limit_policy.py`
+    - router-scoped limiter policy, stable `429` plus `Retry-After`, and proof
+      that public routes remain usable after protected-route throttling
   - `tests/test_api_alert_route_contracts.py`
-  - `tests/test_alert_query_service.py`
-  - `tests/test_alert_timeline_service.py`
-  - `tests/test_alert_incident_summary_service.py`
+  - `tests/test_alert_query_service_read.py`
+    - shared raw alert-log read semantics and degradation on corrupt or
+      unreadable persisted input
+  - `tests/test_alert_query_service_filter.py`
+    - shared raw filtered alert semantics, including invalid time-filter
+      validation, inclusive/open-ended time bounds, ordering, and
+      missing-session failures
+  - `tests/test_alert_query_service_summary.py`
+    - shared raw numeric alert summary semantics, including empty-summary
+      behavior, timestamp-bound handling, and summary-specific validation
+  - `tests/alert_incident_service_test_support.py`
+    - tiny shared typed-access, stable empty-result, and time-filter helper
+      seams for the split grouped incident suites
+  - `tests/test_alert_timeline_service_grouping.py`
+    - grouped incident timeline semantics for merge and non-merge rules,
+      deterministic ordering, stable grouped `source_names`, transitive
+      adjacent grouping, malformed-row degradation, and a light scaling guard
+  - `tests/test_alert_timeline_service_filters.py`
+    - grouped incident timeline filter and validation semantics, including
+      raw-filter reuse before grouping, invalid and inverted time filters,
+      missing sessions, unknown-filter empty results, and inclusive/open-ended
+      time bounds
+  - `tests/test_alert_incident_summary_service_contracts.py`
+    - grouped incident summary semantics for counts, categories, narrative
+      shaping, deterministic tie-breaking, and explicit raw-versus-grouped
+      count separation when some rows cannot form incidents cleanly
+  - `tests/test_alert_incident_summary_service_filters.py`
+    - grouped incident summary filter and validation semantics, including
+      filtered-empty grouped results, invalid and inverted time filters,
+      missing sessions, and unknown-filter empty grouped summaries
   - `tests/test_api_session_alerts.py`
   - `tests/test_api_session_alert_incidents.py`
   - `tests/test_mcp_server_contracts.py`
-  - `tests/test_mcp_server_alerts.py`
+  - `tests/test_mcp_server_alerts_behavior.py`
+  - `tests/test_mcp_server_alerts_errors.py`
   - `tests/test_mcp_fastapi_boundary_split.py`
-  - `tests/test_mcp_server_incidents.py`
+  - `tests/test_mcp_fastapi_parity_behavior.py`
+  - `tests/test_mcp_fastapi_parity_edges.py`
+  - `tests/test_mcp_server_incidents_behavior.py`
+  - `tests/test_mcp_server_incidents_errors.py`
   - read them in that order if you want the cleanest path from shared raw alert
     service and grouped incident service,
     to HTTP adapter, to MCP adapter, to the split test ownership
+  - `tests/test_mcp_server_alerts_behavior.py` owns raw MCP no-alert,
+    filtered-data, and unknown-filter empty behavior, with payload-shaping
+    expectations kept separate from MCP-facing error translation
+  - `tests/test_mcp_server_alerts_errors.py` owns raw MCP missing-session,
+    invalid-range, and invalid-timestamp error mapping
+  - `tests/test_mcp_server_incidents_behavior.py` owns grouped MCP no-alert,
+    filtered-data, and unknown-filter empty behavior, with grouped output
+    shaping kept separate from grouped MCP error translation
+  - `tests/test_mcp_server_incidents_errors.py` owns grouped MCP missing-session,
+    invalid-range, and invalid-timestamp error mapping
   - `tests/api_alert_test_support.py` owns the repeated FastAPI alerts-router
     setup seams
   - `tests/test_mcp_fastapi_boundary_split.py` owns the current
-    “FastAPI protected, stdio MCP local-trust” boundary rule
+    “FastAPI protected, stdio MCP local-trust” boundary rule, including grouped
+    MCP tools under `share`, the combined raw list/summary direct-boundary
+    check, the stronger grouped `share` plus direct-protection regression, and
+    the small cross-surface smoke path where protected HTTP and local MCP read
+    the same persisted alert data together
+  - `tests/mcp_fastapi_parity_test_support.py` owns the tiny shared setup and
+    parity-assertion seams for the split FastAPI/MCP parity suites
+  - it is intentionally limited to protected-route setup, persisted parity
+    fixture setup, and cross-surface meaning helpers
+  - `tests/test_mcp_fastapi_parity_behavior.py` owns the current normal
+    FastAPI/MCP parity slice for one shared fixture session across raw alert
+    totals and grouped incident totals
+  - that parity slice includes filtered reads, known empty sessions,
+    unknown-filter no-match reads, and one shared time-bounded query
+  - `tests/test_mcp_fastapi_parity_edges.py` owns the current validation and
+    ordering parity slice, including invalid time-filter validation,
+    inverted ranges, inclusive/open-ended time bounds, and same-timestamp
+    grouped ordering
+  - `tests/test_mcp_server_contracts.py` also keeps one explicit “exactly four
+    current tools” guard for the read-only MCP surface, alongside the
+    structural registration, schema, and stdio launch-wiring checks
+  - CI ownership now centers on `.github/ci_test_targets.json` and the shared
+    Python seam in `.github/scripts/ci_target_manifest.py`
+  - `.github/scripts/check_main_pr_consistency.py` owns the narrower main-PR
+    policy layer
+  - `.github/scripts/check_ci_target_drift.py` is the high-signal drift guard
+    for workflow, policy, and CI-facing docs
+  - use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the short CI
+    ownership handoff
+  - use [testing-and-validation.md](./testing-and-validation.md) for the full
+    lane, filter, split-suite, and validation model
 
 ## Current Stable Contracts
 

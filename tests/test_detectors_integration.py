@@ -1,14 +1,25 @@
-"""Integration tests for detectors using tiny real media fixtures."""
+"""Real-media detector integration tests.
+
+These tests exercise the detector layer against checked-in media fixtures and
+therefore require real ``ffmpeg``/``ffprobe`` binaries. They stay out of the
+fast backend lane and belong in the slower weekly media-validation path.
+"""
 
 from pathlib import Path
 
+import pytest
+
 from detectors import analyze_video_blur, analyze_video_metrics
+
+pytestmark = pytest.mark.slow
 
 
 def test_video_metrics_detects_black_screen_in_real_mp4(
     media_fixture_dir: Path,
+    ffmpeg_available,
 ) -> None:
     """Black-screen detector should flag the permanent black-trigger clip."""
+    _ = ffmpeg_available
     video_path = media_fixture_dir / "video_files" / "black_trigger.mp4"
 
     result = analyze_video_metrics(video_path)
@@ -23,8 +34,10 @@ def test_video_metrics_detects_black_screen_in_real_mp4(
 
 def test_video_metrics_detects_black_screen_in_real_ts_segment(
     media_fixture_dir: Path,
+    ffmpeg_available,
 ) -> None:
     """Black-screen detector should work on the permanent black-trigger segment."""
+    _ = ffmpeg_available
     segment_path = (
         media_fixture_dir
         / "video_segments"
@@ -40,8 +53,12 @@ def test_video_metrics_detects_black_screen_in_real_ts_segment(
     assert result["black_ratio"] >= 0.9
 
 
-def test_video_blur_detects_real_blurry_video(media_fixture_dir: Path) -> None:
+def test_video_blur_detects_real_blurry_video(
+    media_fixture_dir: Path,
+    ffmpeg_available,
+) -> None:
     """Blur detector should flag the permanent blurred clip."""
+    _ = ffmpeg_available
     blurry_video = media_fixture_dir / "video_files" / "blur_trigger.mp4"
 
     result = analyze_video_blur(blurry_video)

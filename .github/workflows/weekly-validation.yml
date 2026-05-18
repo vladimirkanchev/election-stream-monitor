@@ -20,16 +20,43 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg=7:6.1.1-3ubuntu5
+
+      - name: Show ffmpeg version
+        run: ffmpeg -version | head -n 1
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      - name: Run slow e2e media tests
+      # `weekly_slow_real_media` lanes still resolve through the same shared
+      # manifest contract as the protected PR lanes, but they own the slow and
+      # real-media boundary on purpose. Manifest validation enforces that the
+      # shared weekly groups stay here instead of drifting into
+      # `contract_boundary` or `fast_synthetic`. That keeps the
+      # `contract_boundary` lane fast enough for PR work while preserving
+      # deeper weekly confidence. The same shared lane model lives in
+      # `ci_target_manifest.py`, backed by `.github/ci_test_targets.json`.
+      # Weekly lanes share the same manifest validator, including the explicit
+      # path-existence inventory/scope contract that the dedicated
+      # `check_ci_test_paths_exist.py` guard consumes for inline and
+      # policy-owned test expectations. Unlike the protected PR lanes, weekly
+      # lanes stop at manifest validation and do not run the existence/drift
+      # guard sequence before their heavier suites.
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Run weekly_slow_real_media slow e2e media tests
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "e2e and slow" tests/test_e2e_*.py -q 2>&1 | tee ci-artifacts/slow-e2e.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider -m "slow" \
+            $(python3 .github/scripts/read_ci_test_targets.py weekly_slow_media --separator space) \
+            -q 2>&1 | tee ci-artifacts/slow-e2e.log
 
       - name: Upload slow e2e log
         if: failure()
@@ -58,11 +85,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      - name: Run deeper api_stream validation
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Run weekly_slow_real_media api_stream deep validation
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_stream_loader_http_hls_*.py tests/test_session_runner_api_stream_*.py tests/test_api_stream_local_validation.py -q 2>&1 | tee ci-artifacts/api-stream-deep.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
+            $(python3 .github/scripts/read_ci_test_targets.py weekly_api_stream_deep --separator space) \
+            -q 2>&1 | tee ci-artifacts/api-stream-deep.log
 
       - name: Upload api_stream deep validation log
         if: failure()
@@ -91,11 +123,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[test]
 
-      - name: Run lifecycle-focused backend tests
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Run weekly_slow_real_media lifecycle backend tests
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider tests/test_session_runner_lifecycle.py tests/test_session_runner_execution.py tests/test_session_runner_terminal.py tests/test_session_runner_local.py tests/test_session_runner_api_stream_basic.py tests/test_session_io.py -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
+            $(python3 .github/scripts/read_ci_test_targets.py weekly_lifecycle --separator space) \
+            -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
 
       - name: Upload lifecycle deep validation log
         if: failure()

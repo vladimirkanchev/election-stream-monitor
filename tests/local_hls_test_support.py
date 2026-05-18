@@ -7,10 +7,11 @@ HTTP server used by multiple HLS-oriented test families.
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
+from typing import Mapping
 
 
 @contextmanager
-def _serve_local_hls(routes: dict[str, object]):
+def _serve_local_hls(routes: Mapping[str, object]):
     route_state = _RouteState(routes)
 
     class Handler(BaseHTTPRequestHandler):
@@ -40,7 +41,7 @@ def _serve_local_hls(routes: dict[str, object]):
 
 
 class _RouteState:
-    def __init__(self, routes: dict[str, object]) -> None:
+    def __init__(self, routes: Mapping[str, object]) -> None:
         self._routes = {
             path: (list(spec) if isinstance(spec, list) else [spec])
             for path, spec in routes.items()

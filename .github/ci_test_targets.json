@@ -1,0 +1,384 @@
+{
+  "version": 1,
+  "description": "Canonical inventory of the duplicated CI-critical explicit test target groups used by the current CI hardening slice.",
+  "format": {
+    "type": "json",
+    "chosen_for": [
+      "easy parsing from Python scripts",
+      "easy consumption from workflow shell steps via python3",
+      "stable, explicit structure for grouped test targets"
+    ]
+  },
+  "group_naming": {
+    "style": "stable top-level snake_case groups",
+    "glossary": {
+      "backend_contract": "Focused backend contract, alert-route, session-service, and split alert/MCP contract suites used by the protected CI lane.",
+      "mcp_fastapi_parity": "FastAPI-versus-MCP boundary and parity suites over the shared alert and incident read seam.",
+      "frontend_contract": "Bridge and frontend contract suites used by the CI-facing frontend contract lane.",
+      "weekly_slow_media": "Real-media and detector-integration suites reserved for the weekly slow lane.",
+      "weekly_api_stream_deep": "Heavier api_stream and HTTP/HLS regression suites reserved for the weekly deep-validation lane.",
+      "weekly_lifecycle": "Lifecycle-heavy session runner and persistence suites reserved for the weekly lifecycle lane."
+    },
+    "notes": [
+      "Group names stay short and stable for workflow, policy, and docs consumers.",
+      "Weekly-heavy targets stay as top-level groups so consumers do not need nested manifest knowledge."
+    ]
+  },
+  "ownership_notes": [
+    "This manifest covers only duplicated CI-critical explicit test target groups.",
+    "It stays narrower than the full CI configuration surface.",
+    "validate_ci_test_targets.py protects that boundary.",
+    "The current ci.yml inventory does not need additional selector groups: broad shared contract consumers are already manifest-backed, while the remaining smoke path stays intentionally inline.",
+    "This file is the canonical owner of CI lane-category definitions.",
+    "ci_target_manifest.py is the shared Python access seam for those definitions, not a second owner."
+  ],
+  "lane_categories": {
+    "fast_synthetic": {
+      "includes": [
+        "lightweight synthetic backend validation in backend-tests",
+        "fast pytest marker filters such as not e2e and not slow",
+        "quick feedback intended for normal PR and branch work"
+      ],
+      "excludes": [
+        "shared contract/boundary target groups",
+        "real-media or ffmpeg-dependent coverage",
+        "weekly-only deep lifecycle or api_stream suites"
+      ]
+    },
+    "contract_boundary": {
+      "includes": [
+        "shared manifest-backed backend and frontend contract groups",
+        "reader-backed test-and-build ownership",
+        "the tiny integration-smoke local inline exception"
+      ],
+      "excludes": [
+        "broad backend fast-lane selectors",
+        "weekly-only slow or real-media suites",
+        "security, lint, typecheck, packaging, and audit jobs"
+      ]
+    },
+    "weekly_slow_real_media": {
+      "includes": [
+        "weekly_slow_media",
+        "weekly_api_stream_deep",
+        "weekly_lifecycle",
+        "slow, real-media, ffmpeg-dependent, and heavier confidence-building coverage"
+      ],
+      "excludes": [
+        "fast PR feedback lanes",
+        "protected contract-lane equality checks",
+        "tiny local smoke paths"
+      ]
+    }
+  },
+  "group_lane_categories": {
+    "backend_contract": "contract_boundary",
+    "mcp_fastapi_parity": "contract_boundary",
+    "frontend_contract": "contract_boundary",
+    "weekly_slow_media": "weekly_slow_real_media",
+    "weekly_api_stream_deep": "weekly_slow_real_media",
+    "weekly_lifecycle": "weekly_slow_real_media"
+  },
+  "inventory_sources": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/weekly-validation.yml",
+    ".github/scripts/check_main_pr_consistency.py",
+    "docs/testing-and-validation.md"
+  ],
+  "ownership_boundary": {
+    "included_target_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract",
+      "weekly_slow_media",
+      "weekly_api_stream_deep",
+      "weekly_lifecycle"
+    ],
+    "excluded_target_categories": [
+      "full fast-lane backend selectors such as pytest -m filters",
+      "simple one-off smoke jobs",
+      "lint, typecheck, packaging, and audit jobs",
+      "job trigger path filters"
+    ],
+    "current_consumers": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/weekly-validation.yml",
+      ".github/scripts/check_main_pr_consistency.py",
+      "docs/testing-and-validation.md"
+    ]
+  },
+  "ci_yml_selector_inventory": {
+    "missing_groups": [],
+    "status": "complete for current ci.yml workflow consumers",
+    "notes": [
+      "test-and-build already resolves the broad shared backend and frontend contract consumers from stable manifest groups.",
+      "integration-smoke remains a deliberate inline one-off path and does not justify a reusable selector group."
+    ]
+  },
+  "path_existence_inventory": {
+    "workflow_manifest_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract",
+      "weekly_slow_media",
+      "weekly_api_stream_deep",
+      "weekly_lifecycle"
+    ],
+    "workflow_inline_test_paths": [
+      "tests/test_e2e_local_session.py"
+    ],
+    "policy_manifest_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract"
+    ],
+    "policy_only_test_paths": [
+      "tests/test_api_boundary_validation.py",
+      "tests/test_mcp_server_alerts_behavior.py",
+      "tests/test_mcp_server_alerts_errors.py",
+      "tests/test_mcp_server_incidents_behavior.py",
+      "tests/test_mcp_server_incidents_errors.py",
+      "tests/test_stream_loader_contracts.py",
+      "tests/test_stream_loader_http_hls_policy.py",
+      "tests/test_stream_loader_http_hls_playlist.py",
+      "tests/test_stream_loader_http_hls_fetch.py",
+      "tests/test_stream_loader_http_hls_materialize.py",
+      "tests/test_stream_loader_http_hls_core_provider.py",
+      "tests/test_stream_loader_http_hls_core_progression.py",
+      "tests/test_stream_loader_http_hls_reconnect_recovery.py",
+      "tests/test_stream_loader_http_hls_reconnect_state.py",
+      "tests/test_stream_loader_http_hls_limits_runtime.py",
+      "tests/test_stream_loader_http_hls_limits_cleanup.py",
+      "tests/test_stream_loader_http_hls_limits_restart.py",
+      "tests/test_session_runner_api_stream_completion.py",
+      "tests/test_session_runner_api_stream_cancellation.py",
+      "tests/test_session_runner_execution_local.py",
+      "tests/test_session_runner_execution_api_stream.py",
+      "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
+      "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
+      "frontend/src/hooks/usePlaybackSource.test.tsx",
+      "frontend/electron/playbackSourcePolicy.test.mjs",
+      "frontend/electron/localMediaRequestPolicy.test.mjs",
+      "frontend/electron/bridgeResponses.test.mjs",
+      "frontend/electron/fastApiFallback.test.mjs",
+      "frontend/electron/fastApiRuntimePolicy.test.mjs",
+      "frontend/electron/fastApiClient.test.mjs",
+      "frontend/electron/fastApiProcessManager.test.mjs",
+      "frontend/electron/fastApiStartupOrchestrator.test.mjs",
+      "frontend/electron/localMediaResponses.test.mjs"
+    ],
+    "notes": [
+      "This inventory is the full current surface for the CI path-existence self-check.",
+      "It intentionally includes the one inline smoke-path exception and the narrower policy-only test paths from check_main_pr_consistency.py."
+    ]
+  },
+  "path_existence_boundary": {
+    "included_path_categories": [
+      "manifest target entries",
+      "inline workflow test paths",
+      "policy-only test paths"
+    ],
+    "excluded_path_categories": [
+      "non-test source paths",
+      "docs expectations",
+      "glob-like selectors if they appear later"
+    ],
+    "notes": [
+      "The existence self-check is a narrow structural guard for CI-owned test paths.",
+      "It should not expand into a general repo linter or source-path validator."
+    ]
+  },
+  "guarded_split_suite_areas": {
+    "backend_contract_and_session_service": {
+      "patterns": [
+        "tests/test_api_boundary_*.py",
+        "tests/test_api_alert_route_*.py",
+        "tests/test_api_session_alert*.py",
+        "tests/test_alert_query_service_*.py",
+        "tests/test_alert_timeline_service_*.py",
+        "tests/test_alert_incident_summary_service_*.py",
+        "tests/test_api_server_cli_*.py",
+        "tests/test_mcp_server_*.py",
+        "tests/test_session_service_*.py",
+        "tests/test_session_cli_*.py"
+      ],
+      "registration_surfaces": [
+        "shared_manifest",
+        "policy_owned"
+      ],
+      "rationale": "Shared backend contract and session-service split suites feed protected contract ownership and should not gain new files without explicit CI registration."
+    },
+    "api_stream_and_hls_boundary": {
+      "patterns": [
+        "tests/test_stream_loader*.py",
+        "tests/test_session_runner_api_stream*.py"
+      ],
+      "registration_surfaces": [
+        "shared_manifest",
+        "policy_owned"
+      ],
+      "rationale": "api_stream and HTTP/HLS split suites are contract-sensitive and policy-sensitive, so new files here should be reviewed against manifest and consistency ownership."
+    },
+    "frontend_contract_and_hook_boundary": {
+      "patterns": [
+        "frontend/src/bridge/*.test.ts",
+        "frontend/src/hooks/useMonitoringSession*.test.tsx",
+        "frontend/src/hooks/usePlaybackSource*.test.tsx"
+      ],
+      "registration_surfaces": [
+        "shared_manifest",
+        "policy_owned"
+      ],
+      "rationale": "Frontend bridge and monitoring/playback hook contract suites are part of the protected boundary lane and need explicit registration when they split further."
+    },
+    "local_only_policy_areas": {
+      "patterns": [
+        "frontend/electron/*.test.mjs"
+      ],
+      "registration_surfaces": [
+        "local_only_policy"
+      ],
+      "rationale": "Electron local-only policy suites are intentionally guarded even when they stay outside shared manifest groups."
+    }
+  },
+  "split_suite_registration_contract": {
+    "manifest_owned_rule": "If a new guarded split suite belongs to a shared CI target group, the manifest target inventory must be updated.",
+    "policy_owned_rule": "If a new guarded split suite is owned by the main PR policy layer, check_main_pr_consistency.py ownership must be updated through the manifest-backed or policy-only owner seam.",
+    "docs_rule": "Docs should change only when the ownership meaning changes, such as a new guarded area, a new shared ownership category, or a policy-boundary change.",
+    "excluded_cases": [
+      "unguarded test files outside the guarded split-suite surface",
+      "docs-only wording refreshes that do not change CI ownership meaning",
+      "new files that stay outside shared manifest groups and outside policy-owned expectations"
+    ]
+  },
+  "split_suite_detection_strategy": {
+    "mode": "changed_files_in_pr_ci",
+    "source": "inspect changed files in protected PR CI instead of scanning the full repo state",
+    "rationale": "This keeps the future registration guard high-signal, cheaper to maintain, and easier to understand than historical repo inference.",
+    "rejected_alternatives": [
+      "full historical repo inference over every guarded path",
+      "broad repo-wide registration policing for all test files"
+    ]
+  },
+  "split_suite_docs_enforcement": {
+    "required_when": [
+      "ownership model changes",
+      "a new guarded split-suite category appears",
+      "policy-boundary meaning changes"
+    ],
+    "excluded_cases": [
+      "ordinary split-file additions that stay within an existing guarded area and ownership model",
+      "manifest or policy-owner additions that do not change CI ownership meaning",
+      "new guarded files that satisfy registration through existing shared manifest or policy-owner seams"
+    ],
+    "rationale": "Docs enforcement should stay high-signal so split-suite registration does not create routine docs busywork."
+  },
+  "alignment_contract_inventory": {
+    "workflow_to_manifest": [
+      "the shared reader-backed contract groups in ci.yml test-and-build must match the protected alignment group set"
+    ],
+    "policy_to_workflow": [
+      "manifest groups consumed by manifest-backed ContractGate entries in check_main_pr_consistency.py must match the shared reader-backed contract groups in ci.yml test-and-build"
+    ],
+    "docs_to_manifest": [
+      "docs/testing-and-validation.md must mention every stable manifest group and the core manifest ownership references",
+      "docs/README.md must mention every stable manifest group and the core manifest ownership references",
+      "docs/contracts.md must mention every stable manifest group and the core manifest ownership references"
+    ],
+    "notes": [
+      "This inventory records the exact alignment contract currently enforced by check_ci_target_drift.py.",
+      "It is intentionally narrower than a general docs-correctness review and narrower than path-existence validation."
+    ]
+  },
+  "alignment_boundary": {
+    "protected_workflow_groups": [
+      "backend_contract",
+      "mcp_fastapi_parity",
+      "frontend_contract"
+    ],
+    "excluded_alignment_categories": [
+      "weekly-only manifest groups",
+      "tiny inline smoke paths",
+      "non-manifest workflow behavior"
+    ],
+    "notes": [
+      "Alignment is intentionally anchored to the protected shared contract lane in ci.yml and the manifest-backed policy groups in check_main_pr_consistency.py.",
+      "Weekly-only groups, the inline integration smoke path, and broader workflow behavior should not be forced into the same equality rule."
+    ]
+  },
+  "targets": {
+    "backend_contract": [
+      "tests/test_api_boundary_contracts.py",
+      "tests/test_api_boundary_sessions_read.py",
+      "tests/test_api_boundary_sessions_start.py",
+      "tests/test_api_boundary_sessions_cancel.py",
+      "tests/test_api_alert_route_contracts.py",
+      "tests/test_api_session_alerts.py",
+      "tests/test_api_session_alert_incidents.py",
+      "tests/test_alert_query_service_read.py",
+      "tests/test_alert_query_service_filter.py",
+      "tests/test_alert_query_service_summary.py",
+      "tests/test_alert_timeline_service_grouping.py",
+      "tests/test_alert_timeline_service_filters.py",
+      "tests/test_alert_incident_summary_service_contracts.py",
+      "tests/test_alert_incident_summary_service_filters.py",
+      "tests/test_api_server_cli_runtime.py",
+      "tests/test_api_server_cli_routes.py",
+      "tests/test_api_server_cli_output.py",
+      "tests/test_mcp_server_contracts.py",
+      "tests/test_session_service_start.py",
+      "tests/test_session_service_worker.py",
+      "tests/test_session_service_read_cancel.py",
+      "tests/test_session_cli_tooling.py"
+    ],
+    "mcp_fastapi_parity": [
+      "tests/test_mcp_fastapi_boundary_split.py",
+      "tests/test_mcp_fastapi_parity_behavior.py",
+      "tests/test_mcp_fastapi_parity_edges.py"
+    ],
+    "frontend_contract": [
+      "frontend/src/bridge/contract.success.test.ts",
+      "frontend/src/bridge/contract.errors.test.ts",
+      "frontend/src/bridge/contract.session-snapshot.shape.test.ts",
+      "frontend/src/bridge/contract.session-snapshot.malformed.test.ts",
+      "frontend/src/bridge/contract.session-snapshot.collections.test.ts",
+      "frontend/src/bridge/transport.test.ts",
+      "frontend/src/uiErrors.test.ts"
+    ],
+    "weekly_slow_media": [
+      "tests/test_e2e_local_session.py",
+      "tests/test_e2e_local_session_real_media.py",
+      "tests/test_e2e_session_ground_truth_api_stream.py",
+      "tests/test_e2e_session_ground_truth_local.py",
+      "tests/test_detectors_integration.py"
+    ],
+    "weekly_api_stream_deep": [
+      "tests/test_stream_loader_http_hls_core_playlist.py",
+      "tests/test_stream_loader_http_hls_core_progression.py",
+      "tests/test_stream_loader_http_hls_core_provider.py",
+      "tests/test_stream_loader_http_hls_fetch.py",
+      "tests/test_stream_loader_http_hls_limits_cleanup.py",
+      "tests/test_stream_loader_http_hls_limits_restart.py",
+      "tests/test_stream_loader_http_hls_limits_runtime.py",
+      "tests/test_stream_loader_http_hls_materialize.py",
+      "tests/test_stream_loader_http_hls_playlist.py",
+      "tests/test_stream_loader_http_hls_policy.py",
+      "tests/test_stream_loader_http_hls_reconnect_recovery.py",
+      "tests/test_stream_loader_http_hls_reconnect_state.py",
+      "tests/test_session_runner_api_stream_cancellation.py",
+      "tests/test_session_runner_api_stream_completion.py",
+      "tests/test_session_runner_api_stream_http_hls_lifecycle.py",
+      "tests/test_session_runner_api_stream_http_hls_failures.py",
+      "tests/test_api_stream_local_validation.py"
+    ],
+    "weekly_lifecycle": [
+      "tests/test_session_runner_lifecycle.py",
+      "tests/test_session_runner_execution_local.py",
+      "tests/test_session_runner_execution_api_stream.py",
+      "tests/test_session_runner_terminal.py",
+      "tests/test_session_runner_local.py",
+      "tests/test_session_runner_api_stream_progress.py",
+      "tests/test_session_io.py"
+    ]
+  }
+}

@@ -28,7 +28,7 @@ Those contracts are documented in:
 For now, a small practical release process is enough:
 
 1. update the version in `pyproject.toml` and any matching frontend metadata if
-   needed
+   needed, plus any user-facing release references such as `README.md`
 2. add the important change notes to [CHANGELOG.md](../CHANGELOG.md)
 3. rerun the main verification commands
 4. tag and publish from a known-good commit

@@ -4,6 +4,7 @@ This file owns the rate-limiting side of the shared alerts-router boundary:
 
 - principal, IP, and local-fallback limiter identities
 - budget sharing across the protected route family
+- proof that unrelated public routes stay usable after protected-route throttling
 - rate-limit logging and host-fallback behavior
 - downstream `400` and `404` outcomes after boundary admission
 - exact fixed-window behavior at the real HTTP layer
@@ -17,6 +18,8 @@ alerts-router throttling rules and edge cases.
 import hashlib
 import logging
 
+import httpx
+
 from tests.api_alert_test_support import (
     build_api_key_headers,
     build_rate_limit_exceeded_payload,
@@ -28,6 +31,35 @@ from tests.api_boundary_test_support import request
 
 
 # Principal-strategy and fixed-window behavior
+
+
+def _assert_rate_limit_exceeded(
+    response: httpx.Response,
+    *,
+    retry_after: str | None = None,
+) -> None:
+    """Assert the shared protected-route `429` payload and optional retry-after value."""
+    assert response.status_code == 429
+    assert response.json() == build_rate_limit_exceeded_payload(
+        "Too many requests for the configured window."
+    )
+    if retry_after is not None:
+        assert response.headers["Retry-After"] == retry_after
+
+
+def _exhaust_alert_route_budget() -> tuple[httpx.Response, httpx.Response]:
+    """Spend one caller's raw-alert budget and return the admitted and rejected responses."""
+    first_response = request(
+        "GET",
+        "/sessions/session-123/alerts",
+        headers=build_api_key_headers(),
+    )
+    second_response = request(
+        "GET",
+        "/sessions/session-123/alerts",
+        headers=build_api_key_headers(),
+    )
+    return first_response, second_response
 
 
 def test_get_session_alerts_returns_429_after_exceeding_rate_limit(monkeypatch) -> None:
@@ -55,10 +87,32 @@ def test_get_session_alerts_returns_429_after_exceeding_rate_limit(monkeypatch) 
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
-    assert third_response.status_code == 429
-    assert third_response.json() == build_rate_limit_exceeded_payload(
-        "Too many requests for the configured window."
-    )
+    _assert_rate_limit_exceeded(third_response)
+
+
+def test_health_route_remains_usable_after_alert_route_hits_rate_limit(monkeypatch) -> None:
+    """A protected-route 429 should not change unrelated unprotected route behavior."""
+    install_rate_limited_alert_routes(monkeypatch)
+
+    first_alert_response, second_alert_response = _exhaust_alert_route_budget()
+    health_response = request("GET", "/health")
+
+    assert first_alert_response.status_code == 200
+    _assert_rate_limit_exceeded(second_alert_response)
+    assert health_response.status_code == 200
+    assert health_response.json() == {"status": "ok"}
+
+
+def test_docs_route_remains_usable_after_alert_route_hits_rate_limit(monkeypatch) -> None:
+    """Protected-route rate limits should not spill into public documentation routes."""
+    install_rate_limited_alert_routes(monkeypatch)
+
+    first_alert_response, second_alert_response = _exhaust_alert_route_budget()
+    docs_response = request("GET", "/docs")
+
+    assert first_alert_response.status_code == 200
+    _assert_rate_limit_exceeded(second_alert_response)
+    assert docs_response.status_code == 200
 
 
 def test_get_session_alerts_reopens_budget_exactly_at_window_boundary(monkeypatch) -> None:
@@ -381,6 +435,50 @@ def test_get_session_alert_incident_summary_maps_rate_limit_to_429(
     assert second_response.json() == build_rate_limit_exceeded_payload(
         "Too many requests for the configured window."
     )
+
+
+def test_get_session_alert_timeline_returns_stable_429_contract(monkeypatch) -> None:
+    """Timeline routes should keep the same 429 payload shape and retry-after contract."""
+    install_rate_limited_alert_routes(
+        monkeypatch,
+        window_seconds=17,
+    )
+
+    first_response = request(
+        "GET",
+        "/sessions/session-123/alerts/timeline",
+        headers=build_api_key_headers(),
+    )
+    second_response = request(
+        "GET",
+        "/sessions/session-123/alerts/timeline",
+        headers=build_api_key_headers(),
+    )
+
+    assert first_response.status_code == 200
+    _assert_rate_limit_exceeded(second_response, retry_after="17")
+
+
+def test_get_session_alert_summary_returns_stable_429_contract(monkeypatch) -> None:
+    """Summary routes should keep the same 429 payload shape and Retry-After header."""
+    install_rate_limited_alert_routes(
+        monkeypatch,
+        window_seconds=19,
+    )
+
+    first_response = request(
+        "GET",
+        "/sessions/session-123/alerts/summary",
+        headers=build_api_key_headers(),
+    )
+    second_response = request(
+        "GET",
+        "/sessions/session-123/alerts/summary",
+        headers=build_api_key_headers(),
+    )
+
+    assert first_response.status_code == 200
+    _assert_rate_limit_exceeded(second_response, retry_after="19")
 
 
 def test_authenticated_missing_session_requests_count_against_rate_limit_budget(

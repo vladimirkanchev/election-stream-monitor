@@ -66,6 +66,14 @@ Current alerts-router protection scope:
 - `GET /sessions/{session_id}/alerts/timeline`
 - `GET /sessions/{session_id}/alerts/incident-summary`
 
+Current unaffected public routes:
+
+- `GET /health` stays outside the alerts-router auth/rate-limit boundary
+- `GET /detectors` stays outside the alerts-router auth boundary
+- FastAPI docs and schema endpoints remain public today:
+  - `GET /docs`
+  - `GET /openapi.json`
+
 Current alerts-router rate-limit rule:
 
 - default identity strategy is authenticated principal, keyed by
@@ -79,6 +87,13 @@ Current alerts-router rate-limit rule:
   - `status_detail = "Too many requests for the configured window."`
 - `429` responses also include `Retry-After` with a coarse whole-window number
   of seconds so clients can retry later without guessing the current budget
+- current boundary tests also lock down that public health/docs surfaces remain
+  usable after one protected alert route has exhausted its budget
+- current CLI route tests also lock down that `GET /detectors` and
+  `GET /openapi.json` remain public even when CLI-prepared `share` mode enables
+  alerts-router protection
+- current auth-policy tests also lock down that invalid and missing API-key
+  failures stay aligned across the protected alerts route family
 
 Current limitation:
 
@@ -126,6 +141,17 @@ session lifecycle and playback-resolution bridge operations.
 
 Python CLI commands remain available as tooling/debugging commands, not as the
 normal Electron runtime backend path.
+
+The current CLI-focused test slice reflects that role:
+
+- runtime tests protect mode/default resolution and fail-fast config behavior
+- output tests protect operator-facing startup guidance, including custom
+  listen-address reflection for manual `share` and `local` startup
+- route tests protect the real `local`/`share` boundary behavior without
+  treating the CLI as the primary desktop runtime path
+- route tests also keep the current public-surface split explicit:
+  protected alerts routes versus open `/health`, `/docs`, `/openapi.json`,
+  and `/detectors`
 
 ## Session Ownership
 
@@ -303,6 +329,10 @@ needs prose or operator-facing explanation, that should be added in a higher
 layer such as an MCP or agent workflow rather than changing the core alert
 query contract.
 
+The summary keeps the same top-level key set even when the filtered result set
+is empty. Clients should receive zero counts plus `null` timestamp bounds
+instead of a special reduced envelope.
+
 This route is currently protected by the same router-level `X-API-Key`
 dependency as the rest of the alerts router.
 It also participates in the same router-level request budget when FastAPI rate
@@ -321,6 +351,9 @@ optional alert filters:
 The route remains a thin adapter over the shared alert service. Grouping rules
 stay deterministic and intentionally simple: ordered alert rows with matching
 `detector_id`, `severity`, and `title`, plus a fixed gap threshold.
+
+When no grouped incidents remain after filtering, the route still returns the
+same top-level envelope with an empty `entries` list.
 
 This route is currently protected by the same router-level `X-API-Key`
 dependency as the other alerts routes.
@@ -346,6 +379,10 @@ limiting is enabled.
 
 This route is distinct from `/alerts/summary`. The older summary route reports
 raw alert counts only; this route reports grouped incident semantics.
+
+Like the other protected alert routes, the grouped summary keeps a stable
+envelope for empty results so clients do not need a separate "no incidents"
+response parser.
 
 This route is currently protected by the same router-level `X-API-Key`
 dependency as the rest of the alerts router.

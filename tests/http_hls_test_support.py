@@ -14,9 +14,11 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
+from typing import Callable, Iterator, Sequence, TypeAlias
 
 import pytest
 
+from analyzer_contract import AnalysisSlice
 import config
 import stream_loader_http_hls
 from stream_loader import (
@@ -25,9 +27,16 @@ from stream_loader import (
     cleanup_api_stream_temp_session_dir,
     collect_api_stream_slices,
 )
+from stream_loader_contracts import ApiStreamSourceContract
 
 _HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 _TS_CONTENT_TYPE = "video/mp2t"
+RouteHeaders: TypeAlias = dict[str, str]
+RouteResponse: TypeAlias = tuple[int, str | bytes, str] | tuple[
+    int, str | bytes, str, RouteHeaders
+]
+RouteSpec: TypeAlias = RouteResponse | list[RouteResponse]
+DynamicRouteBuilder: TypeAlias = Callable[[str], dict[str, RouteSpec]]
 
 
 def no_sleep(_: float) -> None:
@@ -81,12 +90,16 @@ def media_playlist(
     return playlist(*lines)
 
 
-def build_http_hls_source(base_url: str, playlist_path: str):
+def build_http_hls_source(base_url: str, playlist_path: str) -> ApiStreamSourceContract:
     """Build one validated source contract from a served local playlist path."""
     return build_api_stream_source_contract(f"{base_url}{playlist_path}")
 
 
-def collect_http_hls_slices(base_url: str, playlist_path: str, session_id: str):
+def collect_http_hls_slices(
+    base_url: str,
+    playlist_path: str,
+    session_id: str,
+) -> list[AnalysisSlice]:
     """Collect all slices for one source URL through the public loader seam."""
     source = build_http_hls_source(base_url, playlist_path)
     loader = HttpHlsApiStreamLoader(session_id)
@@ -99,7 +112,7 @@ def cleanup_http_hls_session(session_id: str) -> None:
 
 
 def assert_slice_identity(
-    slices,
+    slices: Sequence[AnalysisSlice],
     *,
     source_names: list[str] | None = None,
     window_indexes: list[int] | None = None,
@@ -112,10 +125,10 @@ def assert_slice_identity(
 
 
 @contextmanager
-def serve_dynamic_local_hls(build_routes):
+def serve_dynamic_local_hls(build_routes: DynamicRouteBuilder) -> Iterator[str]:
     """Serve dynamic HLS routes when the response bodies depend on the base URL."""
     route_counts: dict[str, int] = {}
-    routes: dict[str, list[object]] = {}
+    routes: dict[str, list[RouteResponse]] = {}
 
     def next_response(path: str) -> tuple[int, str | bytes, str, dict[str, str]]:
         sequence = routes.get(path)

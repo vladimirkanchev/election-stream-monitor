@@ -29,9 +29,13 @@ Primary sources:
 - [`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py)
 - [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py)
 - [`src/session_runner.py`](../src/session_runner.py)
-- [`tests/test_stream_loader_http_hls_reconnect.py`](../tests/test_stream_loader_http_hls_reconnect.py)
-- [`tests/test_stream_loader_http_hls_limits.py`](../tests/test_stream_loader_http_hls_limits.py)
-- [`tests/test_session_runner_api_stream_http_hls.py`](../tests/test_session_runner_api_stream_http_hls.py)
+- [`tests/test_stream_loader_http_hls_reconnect_recovery.py`](../tests/test_stream_loader_http_hls_reconnect_recovery.py)
+- [`tests/test_stream_loader_http_hls_reconnect_state.py`](../tests/test_stream_loader_http_hls_reconnect_state.py)
+- [`tests/test_stream_loader_http_hls_limits_runtime.py`](../tests/test_stream_loader_http_hls_limits_runtime.py)
+- [`tests/test_stream_loader_http_hls_limits_cleanup.py`](../tests/test_stream_loader_http_hls_limits_cleanup.py)
+- [`tests/test_stream_loader_http_hls_limits_restart.py`](../tests/test_stream_loader_http_hls_limits_restart.py)
+- [`tests/test_session_runner_api_stream_http_hls_lifecycle.py`](../tests/test_session_runner_api_stream_http_hls_lifecycle.py)
+- [`tests/test_session_runner_api_stream_http_hls_failures.py`](../tests/test_session_runner_api_stream_http_hls_failures.py)
 
 ## Reviewer Checklist
 

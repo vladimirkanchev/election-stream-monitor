@@ -15,6 +15,8 @@ Use this file as the quick restart note if you come back after a break.
 - FastAPI is the owned runtime backend for the main Electron session flow
 - session service / CLI share the same backend session mechanics
 - the HTTP/HLS loader is split into focused helper modules
+- CI ownership and workflow targeting now have stronger drift guards and
+  focused regression coverage
 - `src/main.py` is a legacy local developer harness, not a normal runtime path
 - image mode was removed because it was not tested
 
@@ -47,6 +49,10 @@ Then jump to the area you want:
 - `api_stream` got stricter source validation and clearer failure semantics
 - the HTTP/HLS loader was split into focused playlist, fetch, materialize, and
   policy helpers
+- CI/CD ownership, workflow targeting, and split-suite registration checks were
+  tightened
+- focused regression coverage was expanded around alert-query services,
+  incident grouping, FastAPI/MCP boundaries, and CI helper behavior
 - `main.py` was demoted to a legacy local developer harness
 - observability, trust policy, operator UX, and transport/session tests were
   expanded
@@ -86,6 +92,7 @@ pytest -q
 - review the current git state before the next commit
 - if you continue code work, focus first on:
   - detector growth
+  - alert/session persistence cleanup and PostgreSQL-seam preparation
   - `api_stream` hardening
   - FastAPI boundary polish
   - operator UX polish

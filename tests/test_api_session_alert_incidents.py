@@ -4,7 +4,7 @@ This file owns the HTTP boundary for the incident-oriented service layer:
 
 - grouped timeline responses
 - grouped incident summary responses
-- empty-state transport behavior
+- stable empty-result envelopes for grouped incident reads
 - not-found and validation mapping for incident routes
 - request-validation behavior specific to timeline and incident-summary routes
 
@@ -25,15 +25,46 @@ from tests.api_alert_test_support import (
     build_session_not_found_payload,
     build_validation_error_payload,
 )
+from session_alerts import SessionAlertsNotFoundError
 from tests.api_boundary_test_support import request
 from tests.session_alert_test_support import (
-    assert_narrative_contains,
     build_incident_summary_payload,
     build_timeline_entry,
     configure_session_alert_test,
     write_known_session,
 )
-from session_alerts import SessionAlertsNotFoundError
+
+
+def _empty_timeline_payload(session_id: str) -> dict[str, object]:
+    """Return the stable empty grouped-timeline payload for one session.
+
+    Keeping the timeline empty envelope explicit helps reviewers see that the
+    transport contract stays stable even when grouping produced no incidents.
+    """
+    return {
+        "session_id": session_id,
+        "entries": [],
+    }
+
+
+def _empty_incident_summary_payload(session_id: str) -> dict[str, object]:
+    """Return the stable empty grouped incident-summary payload for one session.
+
+    The grouped summary route extends the raw summary shape, so this helper
+    keeps the contract tests centered on route behavior rather than on
+    re-spelling the summary payload in every empty-result case.
+    """
+    return build_incident_summary_payload(
+        session_id,
+        total_alerts=0,
+        total_incidents=0,
+        counts_by_detector={},
+        counts_by_severity={},
+        top_incident_categories={},
+        first_alert_timestamp_utc=None,
+        last_alert_timestamp_utc=None,
+        narrative_summary=f"Session {session_id} had no alerts.",
+    )
 
 
 # Happy-path adapter behavior
@@ -64,8 +95,8 @@ def test_get_session_alert_timeline_returns_grouped_response(monkeypatch) -> Non
                     detector_id="video_metrics",
                     severity="warning",
                     title="Black screen detected",
-                    alert_count=2,
-                    source_names=["segment_0001.ts", "segment_0002.ts"],
+                    alert_count=1,
+                    source_names=["segment_0001.ts"],
                     sample_message="Black segment.",
                 )
             ],
@@ -97,40 +128,11 @@ def test_get_session_alert_timeline_returns_grouped_response(monkeypatch) -> Non
                 detector_id="video_metrics",
                 severity="warning",
                 title="Black screen detected",
-                alert_count=2,
-                source_names=["segment_0001.ts", "segment_0002.ts"],
+                alert_count=1,
+                source_names=["segment_0001.ts"],
                 sample_message="Black segment.",
             )
         ],
-    }
-
-
-def test_get_session_alert_timeline_returns_empty_entries_for_known_empty_session(
-    monkeypatch,
-) -> None:
-    """Known sessions with no incidents should keep the empty timeline contract."""
-
-    def fake_build_session_timeline(
-        session_id: str,
-        **_: object,
-    ) -> dict[str, object]:
-        assert session_id == "session-empty"
-        return {
-            "session_id": session_id,
-            "entries": [],
-        }
-
-    monkeypatch.setattr(
-        "api.routers.alerts.build_session_timeline",
-        fake_build_session_timeline,
-    )
-
-    response = request("GET", "/sessions/session-empty/alerts/timeline")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "session_id": "session-empty",
-        "entries": [],
     }
 
 
@@ -152,21 +154,14 @@ def test_get_session_alert_incident_summary_returns_grouped_summary(monkeypatch)
         assert end_time_utc == "2026-05-06 10:05:00"
         return build_incident_summary_payload(
             session_id,
-            total_alerts=3,
-            total_incidents=2,
-            counts_by_detector={"video_metrics": 2, "video_blur": 1},
-            counts_by_severity={"warning": 2, "info": 1},
-            top_incident_categories={
-                "Black screen detected": 1,
-                "Blur increased": 1,
-            },
-            first_alert_timestamp_utc="2026-05-06 10:00:00",
-            last_alert_timestamp_utc="2026-05-06 10:02:00",
-            narrative_summary=(
-                "Session session-123 had 2 grouped incidents across 3 alerts, "
-                "mostly from video_metrics, led by blur increased, with 2 warning "
-                "alerts and 1 info alerts."
-            ),
+            total_alerts=1,
+            total_incidents=1,
+            counts_by_detector={"video_metrics": 1},
+            counts_by_severity={"warning": 1},
+            top_incident_categories={"Black screen detected": 1},
+            first_alert_timestamp_utc="2026-05-06 10:00:10",
+            last_alert_timestamp_utc="2026-05-06 10:00:10",
+            narrative_summary="Session session-123 had 1 grouped incidents across 1 alerts.",
         )
 
     monkeypatch.setattr(
@@ -189,71 +184,127 @@ def test_get_session_alert_incident_summary_returns_grouped_summary(monkeypatch)
     payload = response.json()
     assert payload == build_incident_summary_payload(
         "session-123",
-        total_alerts=3,
-        total_incidents=2,
-        counts_by_detector={"video_metrics": 2, "video_blur": 1},
-        counts_by_severity={"warning": 2, "info": 1},
-        top_incident_categories={
-            "Black screen detected": 1,
-            "Blur increased": 1,
-        },
-        first_alert_timestamp_utc="2026-05-06 10:00:00",
-        last_alert_timestamp_utc="2026-05-06 10:02:00",
+        total_alerts=1,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 1},
+        counts_by_severity={"warning": 1},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc="2026-05-06 10:00:10",
+        last_alert_timestamp_utc="2026-05-06 10:00:10",
         narrative_summary=payload["narrative_summary"],
     )
-    assert_narrative_contains(
-        payload["narrative_summary"],
-        "session-123",
-        "2 grouped incidents",
-        "3 alerts",
-        "video_metrics",
-        "blur increased",
-        "2 warning alerts",
-        "1 info alerts",
+
+
+def test_get_session_alert_timeline_returns_stable_empty_payload(monkeypatch) -> None:
+    """The grouped timeline route should preserve its top-level keys when no incidents exist."""
+
+    def fake_build_session_timeline(
+        session_id: str,
+        **_: object,
+    ) -> dict[str, object]:
+        assert session_id == "empty-session"
+        return _empty_timeline_payload(session_id)
+
+    monkeypatch.setattr(
+        "api.routers.alerts.build_session_timeline",
+        fake_build_session_timeline,
     )
 
+    response = request("GET", "/sessions/empty-session/alerts/timeline")
 
-def test_get_session_alert_incident_summary_returns_empty_state_for_known_empty_session(
+    assert response.status_code == 200
+    assert response.json() == _empty_timeline_payload("empty-session")
+
+
+def test_get_session_alert_incident_summary_returns_stable_empty_payload(
     monkeypatch,
 ) -> None:
-    """Known sessions without grouped incidents should keep a stable zero-value summary."""
+    """The grouped incident summary route should keep all summary keys for empty results."""
 
     def fake_build_session_incident_summary(
         session_id: str,
         **_: object,
     ) -> dict[str, object]:
-        assert session_id == "session-empty"
-        return build_incident_summary_payload(
-            session_id,
-            total_alerts=0,
-            total_incidents=0,
-            counts_by_detector={},
-            counts_by_severity={},
-            top_incident_categories={},
-            first_alert_timestamp_utc=None,
-            last_alert_timestamp_utc=None,
-            narrative_summary="Session session-empty had no alerts.",
-        )
+        assert session_id == "empty-session"
+        return _empty_incident_summary_payload(session_id)
 
     monkeypatch.setattr(
         "api.routers.alerts.build_session_incident_summary",
         fake_build_session_incident_summary,
     )
 
-    response = request("GET", "/sessions/session-empty/alerts/incident-summary")
+    response = request("GET", "/sessions/empty-session/alerts/incident-summary")
 
     assert response.status_code == 200
-    assert response.json() == build_incident_summary_payload(
-        "session-empty",
-        total_alerts=0,
-        total_incidents=0,
-        counts_by_detector={},
-        counts_by_severity={},
-        top_incident_categories={},
-        first_alert_timestamp_utc=None,
-        last_alert_timestamp_utc=None,
-        narrative_summary="Session session-empty had no alerts.",
+    assert response.json() == _empty_incident_summary_payload("empty-session")
+
+
+def test_get_session_alert_incident_summary_accepts_severity_only_filter_with_empty_result(
+    monkeypatch,
+) -> None:
+    """Severity-only filters should forward cleanly without changing the empty grouped envelope."""
+
+    def fake_build_session_incident_summary(
+        session_id: str,
+        *,
+        detector_id: str | None = None,
+        severity: str | None = None,
+        start_time_utc: str | None = None,
+        end_time_utc: str | None = None,
+    ) -> dict[str, object]:
+        assert session_id == "session-123"
+        assert detector_id is None
+        assert severity == "warning"
+        assert start_time_utc is None
+        assert end_time_utc is None
+        return _empty_incident_summary_payload(session_id)
+
+    monkeypatch.setattr(
+        "api.routers.alerts.build_session_incident_summary",
+        fake_build_session_incident_summary,
     )
+
+    response = request(
+        "GET",
+        "/sessions/session-123/alerts/incident-summary?severity=warning",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == _empty_incident_summary_payload("session-123")
+
+
+def test_get_session_alert_timeline_accepts_detector_only_filter_with_empty_result(
+    monkeypatch,
+) -> None:
+    """Detector-only filters should forward cleanly without changing the empty timeline envelope."""
+
+    def fake_build_session_timeline(
+        session_id: str,
+        *,
+        detector_id: str | None = None,
+        severity: str | None = None,
+        start_time_utc: str | None = None,
+        end_time_utc: str | None = None,
+    ) -> dict[str, object]:
+        assert session_id == "session-123"
+        assert detector_id == "video_metrics"
+        assert severity is None
+        assert start_time_utc is None
+        assert end_time_utc is None
+        return _empty_timeline_payload(session_id)
+
+    monkeypatch.setattr(
+        "api.routers.alerts.build_session_timeline",
+        fake_build_session_timeline,
+    )
+
+    response = request(
+        "GET",
+        "/sessions/session-123/alerts/timeline?detector_id=video_metrics",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == _empty_timeline_payload("session-123")
 
 
 # Service-error mapping

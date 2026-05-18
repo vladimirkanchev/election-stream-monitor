@@ -6,13 +6,16 @@ boundary scenarios instead of long literal-comparison fixtures.
 
 It intentionally covers both the raw alert routes and the grouped incident
 routes because they share the same FastAPI error envelope plus the same
-router-level auth and rate-limit seams.
+router-level auth and rate-limit seams. The helpers also use the repo's exact
+literal auth and limiter types so route tests stay aligned with the production
+boundary vocabulary under mypy.
 """
 
 from collections.abc import Mapping
 
+from api_boundary_config import ApiAuthMode, ApiRateLimitStrategy
 from config import ApiAuthSettings, ApiRateLimitSettings
-from api_auth import AuthPrincipal, AuthenticationError
+from api_auth import AuthPrincipal, AuthenticationError, AuthType
 from api_rate_limit import reset_api_rate_limit_state
 from tests.session_alert_test_support import (
     build_alert_summary_payload,
@@ -86,14 +89,16 @@ def build_api_key_headers(api_key: str = "valid-key") -> dict[str, str]:
 
 def build_test_auth_principal(
     *,
-    auth_type: str = "api_key",
+    auth_type: AuthType = "api_key",
     subject: str = "api-key:test",
     key_id: str | None = "test",
 ) -> AuthPrincipal:
     """Return one small authenticated principal for route-boundary tests.
 
     Route tests do not care about real key fingerprints, only that the auth
-    seam returned an authenticated caller object.
+    seam returned an authenticated caller object. The typed ``auth_type``
+    parameter keeps the support helper aligned with the production principal
+    contract instead of accepting arbitrary strings.
     """
     return AuthPrincipal(
         auth_type=auth_type,
@@ -136,13 +141,15 @@ def install_api_auth_settings(
     monkeypatch,
     *,
     enabled: bool,
-    mode: str = "api_key",
+    mode: ApiAuthMode = "api_key",
     allowed_api_keys: tuple[str, ...] = (),
 ) -> None:
     """Patch the shared auth-settings seam used by the real alert router auth path.
 
     This helper is for tests that exercise the actual `api_auth.py` logic
-    rather than monkeypatching the router-level auth call directly.
+    rather than monkeypatching the router-level auth call directly. Using the
+    ``ApiAuthMode`` alias keeps the test configuration seam aligned with the
+    production boundary's accepted auth-mode vocabulary.
     """
     monkeypatch.setattr(
         "api_auth.get_api_auth_settings",
@@ -158,7 +165,7 @@ def install_api_rate_limit_settings(
     monkeypatch,
     *,
     enabled: bool,
-    strategy: str = "principal",
+    strategy: ApiRateLimitStrategy = "principal",
     window_seconds: int = 60,
     max_requests: int = 100,
 ) -> None:
@@ -168,7 +175,8 @@ def install_api_rate_limit_settings(
     `api_rate_limit.py`, then reuses the resolved context for logging and
     `Retry-After`. Keeping the patch at the shared limiter seam lets the route
     tests describe one consistent configuration without reaching into router
-    internals.
+    internals. Using the ``ApiRateLimitStrategy`` alias keeps the helper
+    synchronized with the production limiter vocabulary.
     """
 
     settings = ApiRateLimitSettings(
@@ -218,7 +226,7 @@ def install_rate_limited_alert_routes(
     *,
     auth_enabled: bool = True,
     allowed_api_keys: tuple[str, ...] = ("valid-key",),
-    strategy: str = "principal",
+    strategy: ApiRateLimitStrategy = "principal",
     max_requests: int = 1,
     window_seconds: int = 60,
     rate_limit_enabled: bool = True,

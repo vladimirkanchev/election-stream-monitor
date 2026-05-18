@@ -28,6 +28,22 @@ jobs:
           lfs: true
           fetch-depth: 0
 
+      # Path-filter model:
+      # - `backend` / `frontend`: broad convenience scopes
+      # - `contract` / `workflow`: narrower high-signal scopes
+      # - `docs`: docs-oriented policy scope
+      # Current review result:
+      # - `frontend` excludes the docs-only `frontend/README.md` handoff
+      # - `contract` includes the refined session/stream and bridge boundary files
+      # Task-8 split-suite guard:
+      # - guarded split-suite registration is defined in `.github/ci_test_targets.json`
+      # - the live guard inspects changed files in protected PR CI,
+      #   not the whole repo
+      # - docs updates for split-suite registration stay high-signal only:
+      #   ownership-model changes, new guarded categories, or policy-boundary changes
+      # Focused regression coverage lives in
+      # `tests/test_ci_test_target_scripts.py`.
+      # Protected `main` PR lanes still run the fuller validation set.
       - name: Detect changed paths
         id: filter
         uses: dorny/paths-filter@v4
@@ -38,6 +54,7 @@ jobs:
               - 'tests/**'
             frontend:
               - 'frontend/**'
+              - '!frontend/README.md'
             docs:
               - 'docs/**'
               - 'README.md'
@@ -49,14 +66,22 @@ jobs:
               - 'pyproject.toml'
             contract:
               - 'src/source_validation.py'
+              - 'src/stream_loader.py'
               - 'src/session_io.py'
               - 'src/session_models.py'
               - 'src/alert_rules.py'
               - 'src/stream_loader_contracts.py'
+              - 'src/stream_loader_http_hls.py'
               - 'src/api/routers/sessions.py'
               - 'src/api/schemas.py'
+              - 'src/session_runner.py'
+              - 'src/session_runner_progress.py'
+              - 'src/session_service.py'
               - 'frontend/src/bridge/**'
+              - 'frontend/src/hooks/useMonitoringSession*.tsx'
+              - 'frontend/src/hooks/usePlaybackSource*.tsx'
               - 'frontend/src/types.ts'
+              - 'frontend/src/uiErrors.ts'
 
   main-pr-consistency:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
@@ -74,7 +99,38 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run main PR consistency checks
+      # Keep the owner/consumer contract healthy before evaluating policy.
+      # Protected main-PR order is:
+      # 1. manifest structure/scope
+      # 2. CI-owned test-path existence
+      # 3. workflow/policy drift
+      # 4. split-suite registration for newly added guarded files
+      # 5. narrower PR gate policy
+      - name: Validate CI test target manifest structure and boundary
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      # Fail early on missing CI-owned test paths before broader alignment or
+      # policy checks have a chance to become noisier.
+      - name: Check CI-owned test path existence
+        run: python .github/scripts/check_ci_test_paths_exist.py
+
+      # Prove that the protected contract lane and the main-PR policy still
+      # consume the same shared manifest groups through one explicit alignment
+      # model. Weekly-only groups and the inline smoke path are intentionally
+      # outside this equality rule. Workflow-side extraction now tolerates
+      # light shell-formatting changes, and policy-side extraction reads from
+      # the explicit owner helper in `check_main_pr_consistency.py`.
+      - name: Check CI target drift and workflow-policy alignment
+        run: python .github/scripts/check_ci_target_drift.py
+
+      # This guard is intentionally PR-scoped because task-8 registration
+      # strategy is based on newly added guarded files in the current PR range.
+      - name: Check split-suite registration for new guarded files
+        run: python .github/scripts/check_split_suite_registration.py origin/${{ github.base_ref }}...HEAD
+
+      # Run the narrower PR policy only after the manifest and its consumers
+      # are known to be aligned.
+      - name: Run manifest-backed main PR gate policy
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
   frontend-checkpoint:
@@ -100,6 +156,12 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - run on broad `frontend` changes
+      # - also run on broad `backend` changes because this checkpoint catches
+      #   cross-surface session-flow regressions
+      # - also run on narrower `contract` changes
+      # - protected `main` PRs still force this lane on
       - name: Install Python dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
@@ -136,16 +198,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install ffmpeg
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg=7:6.1.1-3ubuntu5
-
-      - name: Show ffmpeg version
-        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: ffmpeg -version | head -n 1
-
+      # Trigger model:
+      # - run on broad `backend` changes
+      # - also run on narrower `contract` changes
+      # - protected `main` PRs still force this lane on
       - name: Run editable-install packaging check
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
@@ -164,12 +220,17 @@ jobs:
         run: |
           python -c "import api.app, api.routers.sessions, session_service, session_cli"
 
-      - name: Run backend tests
+      - name: Run fast_synthetic backend tests
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q 2>&1 | tee ci-artifacts/backend-tests.log
+          # Keep the `fast_synthetic` lane lightweight. Manifest validation
+          # enforces that no shared manifest groups drift into this lane.
+          # Slow or real-media suites must stay in the
+          # `weekly_slow_real_media` lanes, while shared contract ownership
+          # lives in the `contract_boundary` lane.
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -m "not e2e and not slow" 2>&1 | tee ci-artifacts/backend-tests.log
 
       - name: Skip backend tests
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -231,6 +292,10 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - run on broad `frontend` changes
+      # - also run on narrower `contract` changes
+      # - protected `main` PRs still force this lane on
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         working-directory: frontend
@@ -305,6 +370,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - broad `backend` and `frontend` scopes can contribute here because
+      #   this PR-only lane sits near the shared contract boundary
+      # - narrower `contract` changes should reliably wake it
+      # - protected `main` PRs still force it on
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
@@ -472,6 +542,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           lfs: true
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -485,6 +556,11 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
+      # Trigger model:
+      # - broad `frontend` and `backend` scopes can contribute here because
+      #   the protected contract lane still validates shared boundary suites
+      # - narrower `contract` changes should reliably wake it
+      # - protected `main` PRs still force it on
       - name: Install Python dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
@@ -496,12 +572,63 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Run backend contract checks
-        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_api_boundary_contracts.py tests/test_api_boundary_sessions.py tests/test_api_alert_route_contracts.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_alert_query_service.py tests/test_alert_timeline_service.py tests/test_alert_incident_summary_service.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_mcp_server_contracts.py tests/test_mcp_fastapi_boundary_split.py tests/test_session_service.py tests/test_session_cli_tooling.py
+      # This validator now protects both the shared selector boundary and the
+      # explicit path-existence inventory/scope that the dedicated
+      # `check_ci_test_paths_exist.py` guard consumes, including the inline
+      # smoke-path exception and the policy-only test ownership surface.
+      # Protected contract-lane order is:
+      # 1. manifest structure/scope
+      # 2. CI-owned test-path existence
+      # 3. workflow/policy drift alignment
+      # 4. split-suite registration for newly added guarded files
+      # 5. broader shared contract suites
+      - name: Validate manifest-backed CI target groups
+        run: python .github/scripts/validate_ci_test_targets.py
 
-      - name: Run frontend contract checks
+      # Fail on missing CI-owned test paths before running the broader
+      # `contract_boundary` suites in this protected lane.
+      - name: Check CI-owned test path existence
+        run: python .github/scripts/check_ci_test_paths_exist.py
+
+      # Keep the shared `contract_boundary` lane aligned with the same
+      # manifest-backed policy and docs ownership model before running the
+      # heavier contract suites below. The lane-ownership helper seam lives in
+      # `ci_target_manifest.py`, where the manifest-backed lane model and
+      # lane-to-group queries stay centralized. That seam is covered from the
+      # project side by `tests/test_ci_test_target_scripts.py`.
+      - name: Check CI target drift and workflow-policy alignment
+        run: python .github/scripts/check_ci_target_drift.py
+
+      # This guard stays PR-only because task-8 registration strategy is
+      # defined in terms of newly added guarded files in the current PR range.
+      - name: Check split-suite registration for new guarded files
+        if: github.event_name == 'pull_request'
+        run: python .github/scripts/check_split_suite_registration.py origin/${{ github.base_ref }}...HEAD
+
+      # The canonical manifest is already complete for this workflow lane:
+      # no extra ci.yml selector groups are missing for the broad shared
+      # contract coverage that runs here. Manifest validation also enforces
+      # that these shared groups stay in `contract_boundary`, not in
+      # `weekly_slow_real_media` or `fast_synthetic`.
+      # This protected lane stays separate from `fast_synthetic` and
+      # `weekly_slow_real_media`, so selector ownership is concentrated in one
+      # explicit contract/boundary place.
+      # This is the remaining broad pytest consumer in ci.yml. Keep its target
+      # list manifest-backed so split or renamed suites do not have to be
+      # maintained inline here.
+      - name: Run contract_boundary backend contract checks via shared target reader
+        run: |
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \
+            $(python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space) \
+            $(python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
+
+      # Frontend `contract_boundary` coverage follows the same shared-target
+      # pattern. The shared lane owns the bridge/transport/ui-errors contract
+      # suites; narrower monitoring/playback hook expectations stay in the
+      # main-PR policy layer.
+      - name: Run contract_boundary frontend contract checks via shared target reader
         working-directory: frontend
-        run: npm run test -- src/bridge/contract.success.test.ts src/bridge/contract.errors.test.ts src/bridge/contract.session-snapshot.test.ts src/bridge/transport.test.ts src/uiErrors.test.ts
+        run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
 
   docs-consistency:
     if: github.event_name == 'pull_request' && github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.contract == 'true')
@@ -521,7 +648,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run docs and workflow consistency checks
+      # Trigger model:
+      # - run only on non-`main` PRs
+      # - `docs` and `workflow` are the primary triggers here
+      # - narrower `contract` changes also wake this lane because the docs and
+      #   workflow policy around the protected boundary must stay aligned
+      # The docs/workflow consistency lane uses the same manifest contract as
+      # the main PR policy lane.
+      # It validates the same selector boundary plus the inline/policy
+      # test-path ownership contract before checking broader workflow-policy
+      # drift. Order stays:
+      # 1. manifest structure/scope
+      # 2. CI-owned test-path existence
+      # 3. workflow/policy drift
+      # 4. split-suite registration for newly added guarded files
+      # 5. narrower docs/workflow gate policy
+      - name: Validate CI test target manifest structure and boundary
+        run: python .github/scripts/validate_ci_test_targets.py
+
+      - name: Check CI-owned test path existence
+        run: python .github/scripts/check_ci_test_paths_exist.py
+
+      - name: Check CI target drift and workflow-policy alignment
+        run: python .github/scripts/check_ci_target_drift.py
+
+      - name: Check split-suite registration for new guarded files
+        run: python .github/scripts/check_split_suite_registration.py origin/${{ github.base_ref }}...HEAD
+
+      - name: Run manifest-backed docs and workflow gate policy
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
   integration-smoke:
@@ -541,15 +695,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg=7:6.1.1-3ubuntu5
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .[test]
 
+      # Keep only genuinely small one-off workflow lists inline. This smoke
+      # path is intentionally narrow, does not represent reusable shared CI
+      # ownership, and would add more noise than value if extracted.
       - name: Run integration smoke test
         run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_e2e_local_session.py

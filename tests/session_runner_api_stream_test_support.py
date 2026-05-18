@@ -14,12 +14,13 @@ Reading guide:
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 import config
 import processor
 import session_runner
 import stream_loader_http_hls
-from analyzer_contract import AnalysisSlice, AnalyzerRegistration
+from analyzer_contract import AnalysisSlice, AnalyzerRegistration, InputMode, StoreName
 from session_io import request_session_cancel
 from tests.local_hls_test_support import _serve_local_hls  # noqa: F401
 from stream_loader import FakeApiStreamEvent, HttpHlsApiStreamLoader, StaticApiStreamLoader
@@ -29,9 +30,9 @@ from stream_loader import FakeApiStreamEvent, HttpHlsApiStreamLoader, StaticApiS
 class DummyStore:
     """Minimal in-memory store used by session-runner integration tests."""
 
-    rows: list[dict] = field(default_factory=list)
+    rows: list[dict[str, object]] = field(default_factory=list)
 
-    def add_row(self, row: dict) -> None:
+    def add_row(self, row: dict[str, object]) -> None:
         """Record one persisted row for later assertions."""
         self.rows.append(row)
 
@@ -453,10 +454,12 @@ def _assert_basic_completed_snapshot(
     result_count: int,
 ) -> None:
     """Assert the common completed-session progress shape for live runner tests."""
-    assert snapshot["progress"]["status"] == "completed"
-    assert snapshot["progress"]["processed_count"] == processed_count
-    assert snapshot["progress"]["current_item"] == current_item
-    assert len(snapshot["results"]) == result_count
+    progress = cast(dict[str, object], snapshot["progress"])
+    results = cast(list[dict[str, object]], snapshot["results"])
+    assert progress["status"] == "completed"
+    assert progress["processed_count"] == processed_count
+    assert progress["current_item"] == current_item
+    assert len(results) == result_count
 
 
 def _assert_basic_cancelled_snapshot(
@@ -467,19 +470,21 @@ def _assert_basic_cancelled_snapshot(
     result_count: int,
 ) -> None:
     """Assert the common cancelled-session progress shape for live runner tests."""
-    assert snapshot["progress"]["status"] == "cancelled"
-    assert snapshot["progress"]["processed_count"] == processed_count
-    assert snapshot["progress"]["current_item"] == current_item
-    assert len(snapshot["results"]) == result_count
+    progress = cast(dict[str, object], snapshot["progress"])
+    results = cast(list[dict[str, object]], snapshot["results"])
+    assert progress["status"] == "cancelled"
+    assert progress["processed_count"] == processed_count
+    assert progress["current_item"] == current_item
+    assert len(results) == result_count
 
 
 def _patch_processor_with_analyzer(
     monkeypatch,
     *,
     analyzer_name: str,
-    store_name: str,
+    store_name: StoreName,
     analyzer,
-    supported_modes: tuple[str, ...],
+    supported_modes: tuple[InputMode, ...],
 ) -> None:
     """Install one analyzer registration plus in-memory stores for runner tests."""
     monkeypatch.setattr(

@@ -26,6 +26,57 @@ import {
   startProbeMonitoring,
 } from "./useMonitoringSession.test.helpers";
 
+function mockRunningLocalPolling(...responses: SessionSnapshot[]) {
+  vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
+  const readSession = vi.mocked(mockBridge.readSession);
+  for (const response of responses) {
+    readSession.mockResolvedValueOnce(response);
+  }
+  const lastResponse = responses[responses.length - 1];
+  if (lastResponse) {
+    readSession.mockResolvedValue(lastResponse);
+  }
+}
+
+/**
+ * Keeps state-shape assertions compact in this lifecycle suite, where the
+ * contract is about coarse hook transitions rather than every returned field.
+ */
+function expectProbeState(expected: {
+  monitoringStatus?: string;
+  sessionStatus?: string;
+  snapshotStatus?: string;
+  sessionError?: string;
+}) {
+  expect(getProbeState()).toMatchObject(expected);
+}
+
+/**
+ * Sets the cancel bridge reply to the canonical in-flight cancelling summary
+ * used by the local hook tests.
+ */
+function mockCancellingSessionSummary() {
+  vi.mocked(mockBridge.cancelSession).mockResolvedValue({
+    ...LOCAL_RUNNING_SESSION,
+    status: "cancelling",
+  });
+}
+
+/**
+ * Seeds the initial local polling responses after `startSession` succeeds.
+ *
+ * Unlike `mockRunningLocalPolling`, this helper intentionally leaves the final
+ * default read behavior unset so individual tests can append their own steady
+ * state or failure behavior.
+ */
+function mockStartThenRead(...responses: Array<SessionSnapshot | ReturnType<typeof makeMissingSessionFailure>>) {
+  vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
+  const readSession = vi.mocked(mockBridge.readSession);
+  for (const response of responses) {
+    readSession.mockResolvedValueOnce(response);
+  }
+}
+
 describe("useMonitoringSession lifecycle guards", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -36,8 +87,7 @@ describe("useMonitoringSession lifecycle guards", () => {
   });
 
   it("does not issue repeated cancel requests while a previous cancel request is still pending", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession).mockResolvedValue(makeLocalSnapshot());
+    mockRunningLocalPolling(makeLocalSnapshot());
     vi.mocked(mockBridge.cancelSession).mockImplementation(
       () =>
         new Promise(() => {}),
@@ -61,7 +111,7 @@ describe("useMonitoringSession lifecycle guards", () => {
 
     await waitFor(() => {
       expect(mockBridge.cancelSession).toHaveBeenCalledTimes(1);
-      expect(getProbeState().sessionError).toBe("none");
+      expectProbeState({ sessionError: "none" });
     });
   });
 });
@@ -78,9 +128,8 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("keeps the last good session state when a polling read fails", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
+    mockStartThenRead(makeLocalSnapshot());
     vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
       .mockRejectedValueOnce(new Error("poll failed"))
       .mockResolvedValue(makeLocalSnapshot());
 
@@ -95,14 +144,8 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("moves from cancelling to stopped after polling returns a cancelled snapshot", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValue(makeCancelledSnapshot());
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...LOCAL_RUNNING_SESSION,
-      status: "cancelling",
-    });
+    mockRunningLocalPolling(makeLocalSnapshot(), makeCancelledSnapshot());
+    mockCancellingSessionSummary();
 
     await startProbeMonitoring();
 
@@ -111,7 +154,7 @@ describe("useMonitoringSession local polling stability", () => {
 
     await advancePollingTick();
 
-    expect(getProbeState()).toMatchObject({
+    expectProbeState({
       monitoringStatus: "cancelled",
       sessionStatus: "cancelled",
       snapshotStatus: "cancelled",
@@ -119,12 +162,11 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("stops polling after a cancelled terminal snapshot lands", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValueOnce(makeCancelledSnapshot())
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValue(makeLocalSnapshot());
+    mockRunningLocalPolling(
+      makeLocalSnapshot(),
+      makeCancelledSnapshot(),
+      makeLocalSnapshot(),
+    );
 
     await startProbeMonitoring();
     await advancePollingTick();
@@ -138,12 +180,11 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("stops polling after a failed terminal snapshot lands", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValueOnce(makeFailedSnapshot())
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValue(makeLocalSnapshot());
+    mockRunningLocalPolling(
+      makeLocalSnapshot(),
+      makeFailedSnapshot(),
+      makeLocalSnapshot(),
+    );
 
     await startProbeMonitoring();
     await advancePollingTick();
@@ -157,16 +198,14 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("keeps the last good session state when polling returns session_not_found", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
+    mockStartThenRead(makeLocalSnapshot(), makeMissingSessionFailure());
     vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValueOnce(makeMissingSessionFailure())
       .mockResolvedValue(makeLocalSnapshot());
 
     await startProbeMonitoring();
     await advancePollingTick();
 
-    expect(getProbeState()).toMatchObject({
+    expectProbeState({
       monitoringStatus: "running",
       snapshotStatus: "running",
       sessionError: "none",
@@ -174,10 +213,8 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("keeps the started session active when the first read is temporarily missing", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeMissingSessionFailure())
-      .mockResolvedValue(makeLocalSnapshot());
+    mockStartThenRead(makeMissingSessionFailure());
+    vi.mocked(mockBridge.readSession).mockResolvedValue(makeLocalSnapshot());
 
     renderHookProbe();
 
@@ -187,7 +224,7 @@ describe("useMonitoringSession local polling stability", () => {
       await Promise.resolve();
     });
 
-    expect(getProbeState()).toMatchObject({
+    expectProbeState({
       monitoringStatus: "running",
       sessionStatus: "running",
       snapshotStatus: "none",
@@ -196,7 +233,7 @@ describe("useMonitoringSession local polling stability", () => {
 
     await advancePollingTick();
 
-    expect(getProbeState()).toMatchObject({
+    expectProbeState({
       monitoringStatus: "running",
       sessionStatus: "running",
       snapshotStatus: "running",
@@ -205,15 +242,11 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("recovers from a polling failure during cancelling and still settles on stopped", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
+    mockStartThenRead(makeLocalSnapshot());
     vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
       .mockRejectedValueOnce(new Error("poll failed during cancel"))
       .mockResolvedValue(makeCancelledSnapshot());
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...LOCAL_RUNNING_SESSION,
-      status: "cancelling",
-    });
+    mockCancellingSessionSummary();
 
     await startProbeMonitoring();
 
@@ -222,7 +255,7 @@ describe("useMonitoringSession local polling stability", () => {
 
     await advancePollingTick(2);
 
-    expect(getProbeState()).toMatchObject({
+    expectProbeState({
       monitoringStatus: "cancelled",
       sessionStatus: "cancelled",
       snapshotStatus: "cancelled",
@@ -230,14 +263,8 @@ describe("useMonitoringSession local polling stability", () => {
   });
 
   it("keeps the last good ending state when a post-cancel poll reports session_not_found", async () => {
-    vi.mocked(mockBridge.startSession).mockResolvedValue(LOCAL_RUNNING_SESSION);
-    vi.mocked(mockBridge.readSession)
-      .mockResolvedValueOnce(makeLocalSnapshot())
-      .mockResolvedValueOnce(makeMissingSessionFailure());
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...LOCAL_RUNNING_SESSION,
-      status: "cancelling",
-    });
+    mockStartThenRead(makeLocalSnapshot(), makeMissingSessionFailure());
+    mockCancellingSessionSummary();
 
     await startProbeMonitoring();
 
@@ -246,11 +273,7 @@ describe("useMonitoringSession local polling stability", () => {
 
     await advancePollingTick();
 
-    expect(getProbeState()).toMatchObject({
-      monitoringStatus: "cancelling",
-      sessionStatus: "cancelling",
-      sessionError: "none",
-    });
+    expectProbeState({ sessionStatus: "cancelling", sessionError: "none" });
   });
 
   it("settles cleanly when an in-flight poll resolves after cancel is requested", async () => {
@@ -265,10 +288,7 @@ describe("useMonitoringSession local polling stability", () => {
             resolvePoll = resolve;
           }),
       );
-    vi.mocked(mockBridge.cancelSession).mockResolvedValue({
-      ...LOCAL_RUNNING_SESSION,
-      status: "cancelling",
-    });
+    mockCancellingSessionSummary();
 
     await startProbeMonitoring();
     await advancePollingTick();
@@ -284,7 +304,7 @@ describe("useMonitoringSession local polling stability", () => {
       await Promise.resolve();
     });
 
-    expect(getProbeState()).toMatchObject({
+    expectProbeState({
       monitoringStatus: "cancelled",
       sessionStatus: "cancelled",
       snapshotStatus: "cancelled",

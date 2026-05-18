@@ -167,8 +167,12 @@ Useful focused tests for this split now include:
 
 - `frontend/src/bridge/contract.success.test.ts`
 - `frontend/src/bridge/contract.errors.test.ts`
-- `frontend/src/bridge/contract.session-snapshot.test.ts`
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+- `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+- `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
 - `frontend/src/bridge/transport.test.ts`
+- `frontend/src/components/SessionStatusPanel.test.tsx`
+- `frontend/src/presenters/alertFeed.test.ts`
 - `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
 - `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
 - `frontend/src/hooks/usePlaybackSource.test.tsx`
@@ -181,6 +185,13 @@ Useful focused tests for this split now include:
 - `frontend/electron/fastApiRuntimePolicy.test.mjs`
 - `frontend/electron/fastApiStartupOrchestrator.test.mjs`
 - `frontend/electron/playbackSourcePolicy.test.mjs`
+
+For the operator-facing React layer, the current focused seams are:
+
+- `frontend/src/components/SessionStatusPanel.test.tsx`
+  - lifecycle, reconnect, and playback-diagnostic wording shown in the status panel
+- `frontend/src/presenters/alertFeed.test.ts`
+  - playback-aware alert visibility and timestamp labeling rules
 - `frontend/electron/localMediaResponses.test.mjs`
 - `frontend/electron/localMediaRequestPolicy.test.mjs`
 - `frontend/electron/hlsProxy.test.mjs`

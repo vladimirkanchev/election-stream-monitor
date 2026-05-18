@@ -548,10 +548,22 @@ If you change FastAPI request/response semantics, review these together:
 - `frontend/src/bridge/contractErrors.ts`
 - `frontend/src/bridge/transport.ts`
 - `frontend/src/types.ts`
+- `frontend/src/bridge/contract.testSupport.ts`
 - `docs/contracts.md`
 - `tests/test_api_boundary_contracts.py`
-- `tests/test_api_boundary_sessions.py`
+- `tests/test_api_boundary_sessions_read.py`
+- `tests/test_api_boundary_sessions_start.py`
+- `tests/test_api_boundary_sessions_cancel.py`
 - `frontend/src/bridge/contract.success.test.ts`
 - `frontend/src/bridge/contract.errors.test.ts`
-- `frontend/src/bridge/contract.session-snapshot.test.ts`
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+- `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+- `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
 - `frontend/electron/bridgeResponses.test.mjs`
+
+For operator-facing renderer copy and playback-aligned alert visibility, review:
+
+- `frontend/src/components/SessionStatusPanel.tsx`
+- `frontend/src/components/SessionStatusPanel.test.tsx`
+- `frontend/src/presenters/alertFeed.ts`
+- `frontend/src/presenters/alertFeed.test.ts`
