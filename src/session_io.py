@@ -11,7 +11,10 @@ session contract:
 - optional `worker.log` for backend-owned detached worker diagnostics
 
 These helpers keep the snapshot shape stable even when persisted files are
-missing, malformed, or only partially written.
+missing, malformed, or only partially written. Alert persistence now has one
+internal seam in `session_alert_store.py`, but this module still owns the
+broader session-artifact contract and keeps the existing `append_alert(...)`
+entrypoint stable for current callers.
 """
 
 import json
@@ -143,8 +146,15 @@ def append_result(event: ResultEvent) -> None:
 
 
 def append_alert(event: AlertEvent) -> None:
-    """Append one validated alert event to `alerts.jsonl`."""
-    _append_jsonl(get_session_dir(event.session_id) / "alerts.jsonl", event.to_dict())
+    """Append one validated alert event through the shared alert store seam.
+
+    This remains the compatibility write entrypoint for existing session-runner
+    call sites while the alert persistence refactor is still in progress.
+    Session metadata, progress, and result persistence remain owned here.
+    """
+    from session_alert_store import DEFAULT_SESSION_ALERT_STORE
+
+    DEFAULT_SESSION_ALERT_STORE.append_alert(event)
 
 
 def read_api_stream_seen_chunk_keys(session_id: str) -> set[tuple[str, int, str]]:

@@ -1,4 +1,4 @@
-"""Read-only raw session alert query helpers shared by API and MCP adapters.
+"""Read-only raw alert-query services shared by API and MCP adapters.
 
 This module intentionally stays transport-agnostic and focused on the raw
 persisted alert seam:
@@ -9,43 +9,41 @@ persisted alert seam:
 
 Grouped timeline and incident-summary behavior lives in
 `session_alert_incidents.py` so the raw alert path stays smaller and easier to
-scan. This module is the source of truth for the persisted alert row contract
-and for the deterministic raw numeric summary built on top of it.
+scan. The public entrypoints in this module accept an optional alert store seam
+while still defaulting to the file-backed implementation.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
-import json
-from pathlib import Path
-from typing import TypedDict, cast
+from typing import TypedDict
 
 from logger import get_logger
-from session_io import get_session_dir, session_exists
-from session_models import EventSeverity, parse_alert_event_payload
+from session_alert_store import (
+    AlertEventPayload,
+    DEFAULT_SESSION_ALERT_STORE,
+    SessionAlertsNotFoundError,
+    SessionAlertStore,
+)
 
 ALERT_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 logger = get_logger(__name__)
-
-
-class AlertEventPayload(TypedDict):
-    """Validated persisted alert row shared by the alert-query read models."""
-
-    session_id: str
-    timestamp_utc: str
-    detector_id: str
-    title: str
-    message: str
-    severity: EventSeverity
-    source_name: str
-    window_index: int | None
-    window_start_sec: float | None
+__all__ = [
+    "ALERT_TIMESTAMP_FORMAT",
+    "AlertSummaryPayload",
+    "SessionAlertsNotFoundError",
+    "build_alert_summary_payload",
+    "filter_session_alert_events",
+    "read_alert_timestamp_or_none",
+    "read_session_alert_events",
+    "summarize_session_alert_events",
+]
 
 
 class AlertSummaryPayload(TypedDict):
-    """Stable raw alert summary payload returned by the shared alert service."""
+    """Stable numeric summary returned by the raw alert-query service."""
 
     session_id: str
     total_alerts: int
@@ -55,11 +53,11 @@ class AlertSummaryPayload(TypedDict):
     last_alert_timestamp_utc: str | None
 
 
-class SessionAlertsNotFoundError(ValueError):
-    """Raised when one requested session has no persisted metadata snapshot."""
-
-
-def read_session_alert_events(session_id: str) -> list[AlertEventPayload]:
+def read_session_alert_events(
+    session_id: str,
+    *,
+    store: SessionAlertStore = DEFAULT_SESSION_ALERT_STORE,
+) -> list[AlertEventPayload]:
     """Return persisted alert events for one known session.
 
     Query semantics intentionally mirror the broader session snapshot layer:
@@ -67,8 +65,12 @@ def read_session_alert_events(session_id: str) -> list[AlertEventPayload]:
     - missing `session.json` means the session is not known
     - missing `alerts.jsonl` on a known session means no persisted alerts yet
     - malformed alert rows are ignored instead of failing the whole read
+
+    The optional store seam keeps the current file-backed implementation as the
+    default while letting future storage backends reuse the same read-model
+    logic.
     """
-    return _read_alert_jsonl(_get_alerts_file_path(session_id))
+    return store.read_session_alert_events(session_id)
 
 
 def filter_session_alert_events(
@@ -78,14 +80,16 @@ def filter_session_alert_events(
     severity: str | None = None,
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
+    store: SessionAlertStore = DEFAULT_SESSION_ALERT_STORE,
 ) -> list[AlertEventPayload]:
     """Return persisted alerts that match the requested session-scoped filters.
 
     Filters are deliberately limited to the current persisted alert contract so
     the same helper can back both HTTP and MCP query surfaces without leaking
-    transport-specific semantics into the service layer.
+    transport-specific semantics into the service layer. The storage seam stays
+    limited to fetching validated raw alert rows.
     """
-    alerts = read_session_alert_events(session_id)
+    alerts = read_session_alert_events(session_id, store=store)
     start_time, end_time = _parse_time_range(
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
@@ -110,11 +114,13 @@ def summarize_session_alert_events(
     severity: str | None = None,
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
+    store: SessionAlertStore = DEFAULT_SESSION_ALERT_STORE,
 ) -> AlertSummaryPayload:
     """Return a deterministic summary of one session's filtered alert events.
 
     This is the raw alert summary read model. It intentionally stays separate
-    from the grouped incident summary in `session_alert_incidents.py`.
+    from the grouped incident summary in `session_alert_incidents.py`, even
+    when the underlying alert rows come from a different store implementation.
     """
     alerts = filter_session_alert_events(
         session_id,
@@ -122,6 +128,7 @@ def summarize_session_alert_events(
         severity=severity,
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
+        store=store,
     )
     return build_alert_summary_payload(session_id, alerts)
 
@@ -173,7 +180,7 @@ def _collect_alert_summary_parts(
 def _summarize_alert_time_bounds(
     parsed_times: list[datetime],
 ) -> tuple[str | None, str | None]:
-    """Return formatted first/last alert timestamps for one filtered alert set."""
+    """Return formatted first/last timestamps for one filtered alert set."""
     if not parsed_times:
         return None, None
     return (
@@ -196,47 +203,12 @@ def read_alert_timestamp_or_none(alert: AlertEventPayload) -> datetime | None:
         return None
 
 
-def _get_alerts_file_path(session_id: str) -> Path:
-    """Return the persisted alert log path for one known session."""
-    if not session_exists(session_id):
-        raise SessionAlertsNotFoundError(session_id)
-    return get_session_dir(session_id) / "alerts.jsonl"
-
-
-def _read_alert_jsonl(file_path: Path) -> list[AlertEventPayload]:
-    """Read one JSONL alert log and ignore malformed rows safely."""
-    if not file_path.exists():
-        return []
-
-    try:
-        lines = file_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        logger.warning("Ignoring unreadable alert log: %s", file_path)
-        return []
-
-    alerts: list[AlertEventPayload] = []
-    for line_number, line in enumerate(lines, start=1):
-        if not line.strip():
-            continue
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            logger.warning("Ignoring unreadable alert line: %s:%d", file_path, line_number)
-            continue
-        parsed = parse_alert_event_payload(payload)
-        if parsed is None:
-            logger.warning("Ignoring malformed alert line: %s:%d", file_path, line_number)
-            continue
-        alerts.append(cast(AlertEventPayload, parsed))
-    return alerts
-
-
 def _parse_time_range(
     *,
     start_time_utc: str | None,
     end_time_utc: str | None,
 ) -> tuple[datetime | None, datetime | None]:
-    """Parse and validate an optional inclusive time range."""
+    """Parse and validate one optional inclusive UTC time range."""
     start_time = _parse_optional_timestamp(start_time_utc, field_name="start_time_utc")
     end_time = _parse_optional_timestamp(end_time_utc, field_name="end_time_utc")
     if start_time is not None and end_time is not None and start_time > end_time:
@@ -249,7 +221,7 @@ def _parse_optional_timestamp(
     *,
     field_name: str,
 ) -> datetime | None:
-    """Parse one optional timestamp using the persisted alert time format."""
+    """Parse one optional UTC timestamp using the persisted alert time format."""
     if timestamp_utc is None:
         return None
     return _parse_alert_timestamp(timestamp_utc, field_name=field_name)
