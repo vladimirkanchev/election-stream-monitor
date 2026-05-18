@@ -1030,7 +1030,7 @@ Dedicated backend typecheck:
 
 ```bash
 uv sync --extra typecheck
-MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
 Use `uv sync --extra typecheck` to make sure the local typecheck env has the
@@ -1039,6 +1039,16 @@ Use `MYPYPATH=src` so mypy resolves the flat `src/` modules as source files
 rather than treating them like installed third-party packages.
 Use this after changing the Python contracts that sit closest to the frontend
 bridge, session lifecycle, or alert-rule boundary.
+
+Focused alert-query typecheck slice:
+
+```bash
+.venv/bin/mypy src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
+```
+
+Use this shorter command when you are only tightening the alert-query read
+models or adapter typing and want a faster local signal than the larger
+curated backend list.
 
 Primary backend lint check:
 
@@ -1059,11 +1069,21 @@ Advisory backend pyright check:
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e .[typecheck]
-.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback
 without making it the required branch gate yet.
+
+Focused alert-query pyright slice:
+
+```bash
+.venv/bin/pyright --project pyrightconfig.json src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
+```
+
+Use this when the change stays inside the shared alert-query slice and you want
+the narrowest pyright signal that still matches the branch's current typing
+focus.
 
 ### Repo-Local Skill Tests
 
