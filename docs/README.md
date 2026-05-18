@@ -46,6 +46,7 @@ Use this shortcut map before editing code:
   - `src/api_rate_limit.py`
   - `src/api/alert_route_policy.py`
   - `src/esm_mcp/`
+  - `src/session_alert_store.py`
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
 - adding a detector:
@@ -138,9 +139,11 @@ module families and the matching tests:
   - `src/api_auth.py`
   - `src/api_rate_limit.py`
   - `src/api/alert_route_policy.py`
+  - `src/session_alert_store.py`
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
   - `src/session_alert_adapter.py`
+  - `src/session_io.py`
   - `src/api/schemas.py`
   - `src/api/routers/alerts.py`
   - `src/esm_mcp/server.py`
@@ -148,6 +151,12 @@ module families and the matching tests:
   - `tests/session_alert_test_support.py`
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
+  - `tests/test_session_alert_store.py`
+    - file-backed seam contract for the current default alert store
+  - `tests/test_session_io.py`
+    - compatibility write-entry and write-to-read seam coverage
+  - `tests/test_session_runner_execution_local.py`
+    - local execution-path coverage for runner-written alerts through the seam
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`
@@ -197,9 +206,8 @@ module families and the matching tests:
   - `tests/test_mcp_fastapi_parity_edges.py`
   - `tests/test_mcp_server_incidents_behavior.py`
   - `tests/test_mcp_server_incidents_errors.py`
-  - read them in that order if you want the cleanest path from shared raw alert
-    service and grouped incident service,
-    to HTTP adapter, to MCP adapter, to the split test ownership
+  - read them in that order if you want the cleanest path from the shared
+    alert store seam and raw/grouped services to HTTP and MCP adapters
   - `tests/test_mcp_server_alerts_behavior.py` owns raw MCP no-alert,
     filtered-data, and unknown-filter empty behavior, with payload-shaping
     expectations kept separate from MCP-facing error translation

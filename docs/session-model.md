@@ -99,7 +99,16 @@ not whole-file based.
 
 Append-only alert events for the session.
 
-These are the alerts shown in the frontend.
+These are still the alerts shown in the frontend, but they now sit behind one
+explicit internal seam:
+
+- `src/session_alert_store.py` owns append/read behavior for raw alert rows
+- `src/session_io.py::append_alert(...)` remains the compatibility write entrypoint
+- `src/session_alerts.py` owns raw filtering and numeric summaries
+- `src/session_alert_incidents.py` owns grouped incident views
+
+The default implementation is still file-backed, so the persisted JSONL shape
+stays the same while the code is prepared for a later storage replacement.
 
 ### `results.jsonl`
 
@@ -167,6 +176,11 @@ Current write behavior is:
 - `results.jsonl`
   - append-only detector result event log
 
+Alert writes now go through the same narrow seam as alert reads:
+`src/session_io.py::append_alert(...)` remains the compatibility entrypoint,
+while `src/session_alert_store.py` owns the default file-backed append/read
+behavior for one session's raw alert rows.
+
 ### Meaning of the persisted data
 
 - `session.json`
@@ -180,6 +194,28 @@ Current write behavior is:
 - `api_stream_seen_chunks.jsonl`
   - persisted de-duplication keys so reconnects and reruns can skip replayed
     live chunks
+
+### Alert storage boundary
+
+Alert persistence now has one explicit internal boundary:
+
+- `src/session_alert_store.py`
+  - owns appending and reading validated raw alert rows for one session
+  - currently uses the file-backed `alerts.jsonl` implementation by default
+- `src/session_io.py`
+  - keeps `append_alert(...)` as the compatibility write entrypoint over that
+    store seam
+- `src/session_alerts.py`
+  - owns raw alert filtering, timestamp handling, and numeric summaries
+- `src/session_alert_incidents.py`
+  - owns grouped incident timelines and grouped incident summaries
+
+The practical result is simple:
+
+- writes and reads now go through the same seam
+- the persisted JSONL contract stays unchanged
+- a future PostgreSQL alert store can replace the file-backed implementation
+  without moving filtering or grouping into the storage layer
 
 ### Important field semantics
 

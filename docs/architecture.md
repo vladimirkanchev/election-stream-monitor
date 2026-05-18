@@ -77,21 +77,39 @@ It is now:
 The new MCP surface follows the same adapter pattern:
 
 - [`src/esm_mcp/server.py`](../src/esm_mcp/server.py) is a read-only MCP adapter
+- [`src/session_alert_store.py`](../src/session_alert_store.py) defines the
+  narrow alert persistence seam and currently provides the default file-backed
+  `alerts.jsonl` implementation
+- [`src/session_io.py`](../src/session_io.py) still exposes
+  `append_alert(...)` as the compatibility write entrypoint and now delegates
+  that write through the store seam
 - [`src/session_alert_adapter.py`](../src/session_alert_adapter.py) keeps the
   small shared adapter mechanics reused by FastAPI and MCP
 - [`src/session_alerts.py`](../src/session_alerts.py) owns persisted raw alert
-  query/filter/summary logic
+  query/filter/summary logic and applies those read models over the store seam
 - [`src/session_alert_incidents.py`](../src/session_alert_incidents.py) owns
   grouped incident timeline and incident-summary read models built on the raw
-  alert service
+  alert service rather than the storage layer directly
 - MCP tools call the shared service directly rather than routing through HTTP
 
-The alert-query slice now has three distinct read models over that same
-persisted alert seam:
+The alert-query slice now has one explicit persistence seam and three read
+models over it:
 
 - raw alert-event list
 - raw numeric alert summary
 - grouped incident timeline and grouped incident summary
+
+Today that means:
+
+- `src/session_io.py::append_alert(...)` is still the compatibility write
+  entrypoint
+- that write now delegates into `src/session_alert_store.py`
+- raw and grouped readers use the same seam while keeping filtering,
+  summaries, and grouping outside the store
+
+That split keeps the current JSONL behavior intact while making a later
+PostgreSQL-backed alert store a bounded replacement instead of a larger
+read-model rewrite.
 
 The first FastAPI authentication seam follows the same boundary-oriented style:
 

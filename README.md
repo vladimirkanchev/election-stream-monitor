@@ -93,7 +93,8 @@ Still not:
 MCP is still a local `stdio` query surface over local alert and session data.
 FastAPI auth and rate limiting currently apply only to the alerts routes.
 Current work is centered on detector growth, MCP tooling, runtime hardening,
-and early PostgreSQL integration for alert and session data.
+and preparation for PostgreSQL-backed alert persistence and later session
+persistence work.
 
 ## FastAPI Access Modes
 
@@ -181,6 +182,8 @@ results, and gives the UI something stable to poll:
 
 - a session is created when monitoring starts
 - progress, alerts, and results are written to local JSON / JSONL files
+- alert reads and writes now share one explicit backend seam while staying
+  file-backed by default
 - the frontend polls those snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 

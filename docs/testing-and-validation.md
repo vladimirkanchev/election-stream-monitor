@@ -720,10 +720,10 @@ It currently covers:
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents
 
-Focused alert-query, incident, and MCP validation:
+Focused alert-query, seam, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_session_alert_store.py tests/test_session_io.py tests/test_session_runner_execution_local.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -766,13 +766,66 @@ The current functionality under that slice is:
 - grouped incident summaries
 - stdio MCP launch wiring over the same shared service seam
 
+Current alert persistence contract to preserve before storage refactors:
+
+- seam owner:
+  - `src/session_alert_store.py`
+    - defines the narrow storage contract for append/read raw alert rows only
+    - currently includes the default file-backed `alerts.jsonl` implementation
+    - filtering, summaries, and grouped incidents stay outside the store seam
+  - `src/session_alerts.py` and `src/session_alert_incidents.py`
+    - public read-model entrypoints accept the store seam explicitly while still
+      defaulting to the file-backed implementation
+- write entrypoint:
+  - `src/session_io.py`
+    - `append_alert(...)` remains the compatibility write entrypoint and now
+      delegates to the default alert store implementation
+- read entrypoints:
+  - `src/session_alerts.py`
+    - raw persisted alert reads, filtering, and numeric summaries
+  - `src/session_alert_incidents.py`
+    - grouped timeline and incident-summary reads built on the raw alert layer
+  - `src/session_alert_adapter.py`
+    - shared FastAPI/MCP adapter seam for filter forwarding and domain-error mapping
+- preserved semantics:
+  - persisted alert row shape stays the validated `AlertEvent` payload written by
+    `append_alert(...)`
+  - missing `session.json` remains an unknown-session failure
+  - missing `alerts.jsonl` on a known session remains a stable empty alert history
+  - malformed or unreadable alert-log rows remain ignorable without failing the whole read
+  - filter, raw-summary, grouped-timeline, and grouped-summary meanings stay unchanged
+- current tests that prove this contract:
+  - `tests/test_session_alert_store.py`
+  - `tests/test_session_io.py`
+  - `tests/test_alert_query_service_read.py`
+  - `tests/test_alert_query_service_filter.py`
+  - `tests/test_alert_query_service_summary.py`
+  - `tests/test_alert_timeline_service_grouping.py`
+  - `tests/test_alert_timeline_service_filters.py`
+  - `tests/test_alert_incident_summary_service_contracts.py`
+  - `tests/test_alert_incident_summary_service_filters.py`
+  - `tests/test_session_alert_adapter.py`
+  - `tests/test_api_session_alerts.py`
+  - `tests/test_api_session_alert_incidents.py`
+
 The current test split is:
 
 - `tests/session_alert_test_support.py`
   - shared file-backed session/alert setup helpers for this slice
+- `tests/test_session_alert_store.py`
+  - file-backed alert-store contract coverage for raw reads, malformed-row
+    tolerance, missing-session failures, repeated-read stability,
+    append-order behavior, append/read round-trips, and parity with the raw
+    and grouped alert read models
+- `tests/test_session_io.py`
+  - compatibility write-entry coverage showing `append_alert(...)` delegates to
+    the default alert-store seam without widening into broader session
+    persistence changes
+  - also covers write-to-read seam integration through the shared raw and
+    grouped readers
 - `tests/api_alert_test_support.py`
   - shared FastAPI alert-route payload builders plus boundary setup helpers for
-    auth, limiter, and simple successful route responses
+  auth, limiter, and simple successful route responses
 - `tests/mcp_alert_test_support.py`
   - shared in-memory MCP session helpers for the alert-tool tests
 - `tests/alert_query_service_test_support.py`
@@ -849,10 +902,13 @@ The current test split is:
     failures, and unknown-filter empty grouped summaries
 - `tests/test_api_session_alerts.py`
   - FastAPI adapter behavior for raw alert list and summary routes
-  - includes stable empty-result envelopes and filter-forwarding coverage
+  - includes stable empty-result envelopes, filter-forwarding coverage, real
+    file-backed seam reads, and raw FastAPI/MCP optional-window-field parity
 - `tests/test_api_session_alert_incidents.py`
   - FastAPI adapter behavior for timeline and grouped incident summary routes
-  - includes stable empty-result envelopes and grouped filter-forwarding coverage
+  - includes stable empty-result envelopes, grouped filter-forwarding
+    coverage, real file-backed seam reads, and grouped malformed-row boundary
+    parity
 - `tests/test_mcp_server_contracts.py`
   - structural MCP registration and launch-wiring coverage, including stable
     tool names/count, read-only server instructions, schema basics, and stdio
@@ -861,7 +917,9 @@ The current test split is:
   - tiny shared setup and result helpers for the split raw MCP behavior/error suites
   - intentionally limited to filesystem seams plus success/error assertion helpers
 - `tests/test_mcp_server_alerts_behavior.py`
-  - MCP raw alert-query and raw-summary behavior through the real in-memory MCP session
+  - MCP raw alert-query and raw-summary behavior through the real in-memory
+    MCP session
+  - includes real file-backed seam reads
   - includes known-session empty payloads, filtered raw MCP list/summary alignment,
     and raw unknown-filter empty payloads
   - keeps usable payload behavior separate from MCP-facing error translation
@@ -901,9 +959,14 @@ The current test split is:
   - intentionally limited to grouped-session setup plus success/error assertion helpers
 - `tests/test_mcp_server_incidents_behavior.py`
   - MCP grouped timeline and incident-summary behavior
-  - includes known-session empty grouped payloads, filtered grouped MCP alignment,
-    and unknown-filter empty grouped payloads
+  - includes known-session empty grouped payloads, filtered grouped MCP
+    alignment, unknown-filter empty grouped payloads, and real file-backed
+    seam reads
   - keeps grouped payload behavior separate from grouped MCP error translation
+- `tests/test_session_runner_execution_local.py`
+  - finite-slice execution coverage for alert persistence through the shared
+    seam, including boundary visibility, append-order preservation, and
+    cancel-before-next-slice behavior
 - `tests/test_mcp_server_incidents_errors.py`
   - grouped MCP tool-level error mapping
   - includes missing-session failures plus grouped invalid time-range and
@@ -1043,12 +1106,12 @@ bridge, session lifecycle, or alert-rule boundary.
 Focused alert-query typecheck slice:
 
 ```bash
-.venv/bin/mypy src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
+.venv/bin/mypy src/session_alert_store.py src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
 ```
 
-Use this shorter command when you are only tightening the alert-query read
-models or adapter typing and want a faster local signal than the larger
-curated backend list.
+Use this shorter command when you are only tightening the alert persistence
+and alert-query slice or the shared adapter typing and want a faster local
+signal than the larger curated backend list.
 
 Primary backend lint check:
 
@@ -1078,12 +1141,12 @@ without making it the required branch gate yet.
 Focused alert-query pyright slice:
 
 ```bash
-.venv/bin/pyright --project pyrightconfig.json src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
+.venv/bin/pyright --project pyrightconfig.json src/session_alert_store.py src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
 ```
 
-Use this when the change stays inside the shared alert-query slice and you want
-the narrowest pyright signal that still matches the branch's current typing
-focus.
+Use this when the change stays inside the shared alert persistence and
+alert-query slice and you want the narrowest pyright signal that still matches
+the branch's current typing focus.
 
 ### Repo-Local Skill Tests
 
