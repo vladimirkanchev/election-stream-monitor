@@ -10,6 +10,18 @@ stage.
 - ongoing transport, session, and operational hardening
 - continued frontend/operator UX refinement
 
+## [0.3.1] - 2026-05-18
+
+CI/CD hardening and test-coverage follow-up release.
+
+Highlights:
+
+- stronger CI ownership and drift guards for workflow targets, path existence,
+  split-suite registration, and frontend contract targeting
+- short CI maintainer guide plus tighter CI/project doc alignment
+- expanded and refactored focused CI-helper regression coverage
+- alert-query slice cleanup with tighter typing and direct adapter seam tests
+
 ## [0.3.0] - 2026-05-09
 
 FastAPI boundary and MCP feature update.

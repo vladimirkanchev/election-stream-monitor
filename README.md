@@ -13,7 +13,7 @@ It also includes a small local MCP server with read-only alert tools.
 
 Status:
 
-- desktop-first prototype
+- desktop-first advanced prototype/pre-pilot
 - local-first workflow
 - three input modes
 - two built-in detectors
@@ -79,7 +79,10 @@ This works best for:
 
 - local development
 - demos
-- desktop use
+- desktop-backed monitoring use
+
+The repo now also has stronger CI guardrails and more focused regression
+coverage across alerts, contracts, and workflow targeting.
 
 Still not:
 
@@ -87,9 +90,10 @@ Still not:
 - shared-store production throttling
 - remote MCP authentication or limiter coverage
 
-MCP is still a local `stdio` query surface over local alert/session data.
-FastAPI auth and rate limiting apply only to the alerts routes. Most of the
-current work is still around new detectors and MCP tools.
+MCP is still a local `stdio` query surface over local alert and session data.
+FastAPI auth and rate limiting currently apply only to the alerts routes.
+Current work is centered on detector growth, MCP tooling, runtime hardening,
+and early PostgreSQL integration for alert and session data.
 
 ## FastAPI Access Modes
 
@@ -355,9 +359,6 @@ Local MCP server:
 PYTHONPATH=src python -m esm_mcp
 ```
 
-This runs over local `stdio`, so use an MCP client instead of a browser or
-HTTP port. See [docs/mcp-server.md](./docs/mcp-server.md).
-
 This runs the MCP server over local `stdio`, so connect to it with an MCP
 client rather than a browser or HTTP port. See [docs/mcp-server.md](./docs/mcp-server.md).
 
@@ -437,6 +438,8 @@ Some public streams still reject automated fetching. See
 
 The test coverage is in good shape for where the project is right now,
 including the backend, frontend, FastAPI boundary, and Electron runtime.
+The repo also now has stronger focused regression coverage across alerts,
+incident grouping, FastAPI/MCP boundaries and CI ownership checks.
 
 Quick local confidence check:
 
@@ -472,8 +475,9 @@ references are:
 
 ## Versioning And Releases
 
-- the project is still in an early `0.3.0` stage
-- expect active iteration rather than strict stability
+- the project is now in an early `0.3.1` stage
+- expect active iteration, with improving internal stability rather than strict
+  long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)
   and [CHANGELOG.md](./CHANGELOG.md)
 
@@ -481,7 +485,6 @@ references are:
 
 Useful references:
 
-- [data/README.md](./data/README.md)
 - [tests/fixtures/](./tests/fixtures)
 
 Outputs are stored locally in files, not a database:
@@ -533,6 +536,8 @@ The main CI workflow is path-aware and runs the fast checks the repo relies on:
 - backend lint
 - frontend checks
 - contract and docs consistency checks
+- CI ownership and drift guards for target manifests, owned test paths, and
+  split-suite registration
 
 It runs on feature-branch pushes and pull requests. Pull requests into `main`
 get stricter checks.
@@ -543,6 +548,8 @@ The weekly validation workflow runs slower, deeper checks:
 - deeper `api_stream` and lifecycle checks
 - security audits
 - dependency and packaging checks
+
+The CI model now also keeps frontend and backend test targeting more explicit, which makes refactors and split-suite changes safer.
 
 ## Security Notes
 

@@ -21,7 +21,15 @@ context before going deeper into the docs or code.
 
 ## High-Priority Next Work
 
-### 1. Detector growth through the current explicit pattern
+### 1. Alert/session persistence cleanup before PostgreSQL
+
+Keep the next persistence work focused on:
+
+- cleaning the alert/session persistence seam before database work
+- improving typing and test coverage around alert-query and incident services
+- preparing a PostgreSQL-backed path without widening the current runtime model
+
+### 2. Detector growth through the current explicit pattern
 
 Most useful next candidates:
 
@@ -30,7 +38,7 @@ Most useful next candidates:
 - missing segment / broken continuity
 - missing audio / silent stream
 
-### 2. Alert-rule growth without overcomplicating the rule layer
+### 3. Alert-rule growth without overcomplicating the rule layer
 
 Keep the rule layer in [`src/alert_rules.py`](./src/alert_rules.py):
 
@@ -39,7 +47,7 @@ Keep the rule layer in [`src/alert_rules.py`](./src/alert_rules.py):
 - session-local for rolling state only
 - easy to tune from explicit thresholds
 
-### 3. More operational hardening for `api_stream`
+### 4. More operational hardening for `api_stream`
 
 Continue improving:
 
@@ -48,7 +56,7 @@ Continue improving:
 - session reason/detail semantics
 - real-provider confidence and playback diagnostics
 
-### 4. Service-boundary preparation
+### 5. Service-boundary preparation
 
 The next service-friendly work should stay focused on:
 
