@@ -16,20 +16,49 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
-from typing import cast
+from typing import TypedDict
 
 from session_alerts import (
     ALERT_TIMESTAMP_FORMAT,
     AlertEventPayload,
+    AlertSummaryPayload,
     build_alert_summary_payload,
     filter_session_alert_events,
     read_alert_timestamp_or_none,
 )
+from session_models import EventSeverity
 
 TIMELINE_GROUP_GAP_SECONDS = 60
 
-AlertTimelinePayload = dict[str, object]
-IncidentSummaryPayload = dict[str, object]
+
+class AlertTimelineEntryPayload(TypedDict):
+    """Stable grouped-incident entry returned by the timeline read model."""
+
+    start_time_utc: str
+    end_time_utc: str
+    detector_id: str
+    severity: EventSeverity
+    title: str
+    alert_count: int
+    source_names: list[str]
+    sample_message: str
+
+
+class AlertTimelinePayload(TypedDict):
+    """Grouped incident timeline payload returned by the shared alert service."""
+
+    session_id: str
+    entries: list[AlertTimelineEntryPayload]
+
+
+class IncidentSummaryPayload(AlertSummaryPayload):
+    """Grouped incident summary built on top of the raw alert summary base."""
+
+    total_incidents: int
+    top_incident_categories: dict[str, int]
+    narrative_summary: str
+
+
 IncidentAlertGroup = list[tuple[datetime, AlertEventPayload]]
 SortableAlertEvent = tuple[datetime, int, AlertEventPayload]
 
@@ -48,7 +77,7 @@ def build_session_timeline(
     from the shared raw alert filter path and then applies one stable grouping
     rule over the resulting alert rows.
     """
-    alerts = filter_session_alert_events(
+    alerts = _read_filtered_session_alerts(
         session_id,
         detector_id=detector_id,
         severity=severity,
@@ -76,7 +105,7 @@ def build_session_incident_summary(
     layers grouped-incident counts, top categories, and one short narrative
     convenience field on top.
     """
-    alerts = filter_session_alert_events(
+    alerts = _read_filtered_session_alerts(
         session_id,
         detector_id=detector_id,
         severity=severity,
@@ -86,8 +115,6 @@ def build_session_incident_summary(
     incidents = _group_alerts_into_incidents(alerts)
     base_summary = build_alert_summary_payload(session_id, alerts)
     top_incident_categories = _count_incident_categories(incidents)
-    counts_by_detector = cast(dict[str, int], base_summary["counts_by_detector"])
-    counts_by_severity = cast(dict[str, int], base_summary["counts_by_severity"])
     return {
         **base_summary,
         "total_incidents": len(incidents),
@@ -96,11 +123,34 @@ def build_session_incident_summary(
             session_id=session_id,
             alerts=alerts,
             incidents=incidents,
-            counts_by_detector=counts_by_detector,
-            counts_by_severity=counts_by_severity,
+            counts_by_detector=base_summary["counts_by_detector"],
+            counts_by_severity=base_summary["counts_by_severity"],
             top_incident_categories=top_incident_categories,
         ),
     }
+
+
+def _read_filtered_session_alerts(
+    session_id: str,
+    *,
+    detector_id: str | None,
+    severity: str | None,
+    start_time_utc: str | None,
+    end_time_utc: str | None,
+) -> list[AlertEventPayload]:
+    """Return the shared filtered alert set used by the incident read models.
+
+    The timeline and grouped summary deliberately start from the exact same raw
+    alert filter behavior so incident-only logic stays limited to grouping and
+    incident-specific shaping.
+    """
+    return filter_session_alert_events(
+        session_id,
+        detector_id=detector_id,
+        severity=severity,
+        start_time_utc=start_time_utc,
+        end_time_utc=end_time_utc,
+    )
 
 
 def _group_alerts_into_incidents(alerts: list[AlertEventPayload]) -> list[IncidentAlertGroup]:
@@ -158,16 +208,16 @@ def _alerts_belong_to_same_incident(
     current_time: datetime,
 ) -> bool:
     """Return whether two alerts should collapse into one grouped incident."""
-    if previous_alert.get("detector_id") != current_alert.get("detector_id"):
+    if previous_alert["detector_id"] != current_alert["detector_id"]:
         return False
-    if previous_alert.get("severity") != current_alert.get("severity"):
+    if previous_alert["severity"] != current_alert["severity"]:
         return False
-    if previous_alert.get("title") != current_alert.get("title"):
+    if previous_alert["title"] != current_alert["title"]:
         return False
     return (current_time - previous_time).total_seconds() <= TIMELINE_GROUP_GAP_SECONDS
 
 
-def _build_timeline_entry(group: IncidentAlertGroup) -> AlertEventPayload:
+def _build_timeline_entry(group: IncidentAlertGroup) -> AlertTimelineEntryPayload:
     """Convert one grouped incident into the stable timeline entry shape."""
     first_time, first_alert = group[0]
     last_time, _ = group[-1]
@@ -207,10 +257,13 @@ def _count_incident_categories(
     counts: Counter[str] = Counter()
     for group in incidents:
         _, first_alert = group[0]
-        title = first_alert.get("title")
-        if isinstance(title, str):
-            counts[title] += 1
+        counts[first_alert["title"]] += 1
     return dict(counts)
+
+
+def _dominant_count_key(counts: dict[str, int]) -> str:
+    """Return the stable highest-count key, breaking ties lexicographically."""
+    return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
 
 
 def _build_narrative_summary(
@@ -237,16 +290,10 @@ def _build_narrative_summary(
             "valid timestamps."
         )
 
-    dominant_detector = max(
-        counts_by_detector.items(),
-        key=lambda item: (item[1], item[0]),
-    )[0]
+    dominant_detector = _dominant_count_key(counts_by_detector)
     warning_count = counts_by_severity.get("warning", 0)
     info_count = counts_by_severity.get("info", 0)
-    top_category = max(
-        top_incident_categories.items(),
-        key=lambda item: (item[1], item[0]),
-    )[0]
+    top_category = _dominant_count_key(top_incident_categories)
     return (
         f"Session {session_id} had {len(incidents)} grouped incidents across "
         f"{len(alerts)} alerts, mostly from {dominant_detector}, led by "

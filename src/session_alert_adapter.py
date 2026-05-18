@@ -32,6 +32,8 @@ class AlertFilterKwargs(TypedDict):
 
 
 ServiceReturn = TypeVar("ServiceReturn", covariant=True)
+AlertNotFoundMapper = Callable[[str], Exception]
+AlertValidationErrorMapper = Callable[[ValueError], Exception]
 
 
 class AlertServiceCallable(Protocol[ServiceReturn]):
@@ -79,8 +81,8 @@ def call_alert_service(
     *,
     session_id: str,
     filter_kwargs: AlertFilterKwargs,
-    map_not_found: Callable[[str], Exception],
-    map_validation_error: Callable[[ValueError], Exception],
+    map_not_found: AlertNotFoundMapper,
+    map_validation_error: AlertValidationErrorMapper,
 ) -> ServiceReturn:
     """Call one shared alert service and map domain errors for one transport.
 
@@ -90,6 +92,9 @@ def call_alert_service(
     - ``ValueError`` for invalid filter inputs or invalid persisted timestamps
 
     The adapters decide how those failures should surface to their callers.
+    Keeping the mapper callables named at the type level makes the transport
+    responsibility a little clearer at the call site without changing the
+    current thin-adapter design.
     """
     try:
         return service_fn(session_id, **filter_kwargs)

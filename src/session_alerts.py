@@ -19,16 +19,40 @@ from collections import Counter
 from datetime import datetime
 import json
 from pathlib import Path
+from typing import TypedDict, cast
 
 from logger import get_logger
 from session_io import get_session_dir, session_exists
-from session_models import parse_alert_event_payload
+from session_models import EventSeverity, parse_alert_event_payload
 
 ALERT_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 logger = get_logger(__name__)
-AlertEventPayload = dict[str, object]
-AlertSummaryPayload = dict[str, object]
+
+
+class AlertEventPayload(TypedDict):
+    """Validated persisted alert row shared by the alert-query read models."""
+
+    session_id: str
+    timestamp_utc: str
+    detector_id: str
+    title: str
+    message: str
+    severity: EventSeverity
+    source_name: str
+    window_index: int | None
+    window_start_sec: float | None
+
+
+class AlertSummaryPayload(TypedDict):
+    """Stable raw alert summary payload returned by the shared alert service."""
+
+    session_id: str
+    total_alerts: int
+    counts_by_detector: dict[str, int]
+    counts_by_severity: dict[str, int]
+    first_alert_timestamp_utc: str | None
+    last_alert_timestamp_utc: str | None
 
 
 class SessionAlertsNotFoundError(ValueError):
@@ -111,25 +135,8 @@ def build_alert_summary_payload(
     This helper stays public because the grouped incident module reuses the raw
     summary as its numeric base truth.
     """
-    counts_by_detector: Counter[str] = Counter()
-    counts_by_severity: Counter[str] = Counter()
-    parsed_times: list[datetime] = []
-
-    for alert in alerts:
-        detector_id = alert.get("detector_id")
-        if isinstance(detector_id, str):
-            counts_by_detector[detector_id] += 1
-
-        severity = alert.get("severity")
-        if isinstance(severity, str):
-            counts_by_severity[severity] += 1
-
-        alert_time = read_alert_timestamp_or_none(alert)
-        if alert_time is not None:
-            parsed_times.append(alert_time)
-
-    first_alert = min(parsed_times).strftime(ALERT_TIMESTAMP_FORMAT) if parsed_times else None
-    last_alert = max(parsed_times).strftime(ALERT_TIMESTAMP_FORMAT) if parsed_times else None
+    counts_by_detector, counts_by_severity, parsed_times = _collect_alert_summary_parts(alerts)
+    first_alert, last_alert = _summarize_alert_time_bounds(parsed_times)
     return {
         "session_id": session_id,
         "total_alerts": len(alerts),
@@ -140,6 +147,41 @@ def build_alert_summary_payload(
     }
 
 
+def _collect_alert_summary_parts(
+    alerts: list[AlertEventPayload],
+) -> tuple[Counter[str], Counter[str], list[datetime]]:
+    """Collect the reusable pieces needed by the raw alert summary model.
+
+    Keeping this separate makes the public summary builder easier to scan while
+    preserving the current one-pass aggregation over detector counts, severity
+    counts, and valid alert timestamps.
+    """
+    counts_by_detector: Counter[str] = Counter()
+    counts_by_severity: Counter[str] = Counter()
+    parsed_times: list[datetime] = []
+
+    for alert in alerts:
+        counts_by_detector[alert["detector_id"]] += 1
+        counts_by_severity[alert["severity"]] += 1
+        alert_time = read_alert_timestamp_or_none(alert)
+        if alert_time is not None:
+            parsed_times.append(alert_time)
+
+    return counts_by_detector, counts_by_severity, parsed_times
+
+
+def _summarize_alert_time_bounds(
+    parsed_times: list[datetime],
+) -> tuple[str | None, str | None]:
+    """Return formatted first/last alert timestamps for one filtered alert set."""
+    if not parsed_times:
+        return None, None
+    return (
+        min(parsed_times).strftime(ALERT_TIMESTAMP_FORMAT),
+        max(parsed_times).strftime(ALERT_TIMESTAMP_FORMAT),
+    )
+
+
 def read_alert_timestamp_or_none(alert: AlertEventPayload) -> datetime | None:
     """Return one parsed alert timestamp or ``None`` when the payload is unusable.
 
@@ -147,13 +189,10 @@ def read_alert_timestamp_or_none(alert: AlertEventPayload) -> datetime | None:
     same persisted alert row contract and should not duplicate timestamp
     parsing or warning behavior.
     """
-    timestamp_utc = alert.get("timestamp_utc")
-    if not isinstance(timestamp_utc, str):
-        return None
     try:
-        return _parse_alert_timestamp(timestamp_utc, field_name="alert.timestamp_utc")
+        return _parse_alert_timestamp(alert["timestamp_utc"], field_name="alert.timestamp_utc")
     except ValueError:
-        logger.warning("Ignoring alert with unparseable timestamp: %s", timestamp_utc)
+        logger.warning("Ignoring alert with unparseable timestamp: %s", alert["timestamp_utc"])
         return None
 
 
@@ -188,7 +227,7 @@ def _read_alert_jsonl(file_path: Path) -> list[AlertEventPayload]:
         if parsed is None:
             logger.warning("Ignoring malformed alert line: %s:%d", file_path, line_number)
             continue
-        alerts.append(parsed)
+        alerts.append(cast(AlertEventPayload, parsed))
     return alerts
 
 
@@ -240,9 +279,9 @@ def _matches_alert_filters(
     timestamps are excluded from time-bound queries rather than failing the
     whole read.
     """
-    if detector_id is not None and alert.get("detector_id") != detector_id:
+    if detector_id is not None and alert["detector_id"] != detector_id:
         return False
-    if severity is not None and alert.get("severity") != severity:
+    if severity is not None and alert["severity"] != severity:
         return False
 
     if start_time is None and end_time is None:
