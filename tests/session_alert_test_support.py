@@ -1,7 +1,7 @@
-"""Shared helpers for alert-store seam and boundary tests.
+"""Shared helpers for alert-store seam, runtime-selection, and boundary tests.
 
-These helpers keep the Task-1 and Task-2 alert-store tests explicit while
-removing repeated session setup and payload boilerplate.
+These helpers keep the Task-1, Task-2, and Task-3 alert-store tests explicit
+while removing repeated session setup and payload boilerplate.
 """
 
 from __future__ import annotations
@@ -96,6 +96,24 @@ def select_runtime_postgres_store(
         lambda: store,
     )
     clear_default_session_alert_store_cache()
+
+
+def install_runtime_postgres_session_alerts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    session_id: str,
+    alerts: list[AlertEventPayload],
+) -> None:
+    """Route one known session through a runtime-selected Postgres alert store.
+
+    Task-3 runtime tests use this to keep session snapshots, CLI reads, and
+    FastAPI session routes aligned with the currently selected alert backend
+    without repeating the same session-root bootstrap code.
+    """
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+    select_runtime_postgres_store(monkeypatch, StaticAlertStore(session_id, alerts))
 
 
 def build_live_runtime_postgres_store(

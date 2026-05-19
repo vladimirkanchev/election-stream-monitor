@@ -1,10 +1,11 @@
-"""Tests for session file helpers and persisted session artifacts.
+"""Tests for session file helpers and the snapshot-facing alert seam.
 
-This suite still owns the file-backed session contract while Task 1 keeps only
-alert persistence behind the new seam.
+This suite still owns the broader file-backed session contract while alert
+persistence now flows through the shared store seam.
 """
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import config
@@ -12,6 +13,7 @@ import pytest
 import session_alert_store
 from session_alert_incidents import build_session_timeline
 from session_alerts import read_session_alert_events, summarize_session_alert_events
+from session_alert_store import clear_default_session_alert_store_cache
 from session_io import (
     append_alert,
     append_result,
@@ -30,20 +32,89 @@ from session_models import (
     ResultEvent,
     SessionMetadata,
     SessionProgress,
+    SessionStatus,
 )
+from tests.session_alert_test_support import (
+    StaticAlertStore,
+    build_normalized_alert,
+    install_runtime_postgres_session_alerts,
+    select_runtime_postgres_store,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in snapshot tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
+
+
+def _session_metadata(
+    session_id: str,
+    *,
+    mode: str = "video_segments",
+    input_path: str = "/tmp/input",
+    selected_detectors: list[str] | None = None,
+    status: SessionStatus = "running",
+) -> SessionMetadata:
+    """Build one small metadata fixture for snapshot and lifecycle tests."""
+    return SessionMetadata(
+        session_id=session_id,
+        mode=mode,
+        input_path=input_path,
+        selected_detectors=selected_detectors or ["video_metrics"],
+        status=status,
+    )
+
+
+def _snapshot_alert(
+    *,
+    session_id: str,
+    timestamp_utc: str,
+    source_name: str,
+    message: str,
+    window_index: int | None = None,
+    window_start_sec: float | None = None,
+) -> AlertEvent:
+    """Build one alert event using the stable snapshot defaults in this suite."""
+    return AlertEvent(
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        detector_id="video_metrics",
+        title="Black screen detected",
+        message=message,
+        severity="warning",
+        source_name=source_name,
+        window_index=window_index,
+        window_start_sec=window_start_sec,
+    )
+
+
+def _status_transition_metadata(current_status: SessionStatus, next_status: SessionStatus) -> SessionMetadata:
+    """Build one metadata fixture for lifecycle-transition persistence checks."""
+    return _session_metadata(
+        f"session-{current_status}-to-{next_status}",
+        status=current_status,
+    )
+
+
+def _empty_snapshot_contract() -> dict[str, object]:
+    """Build the stable empty snapshot shape used across this suite."""
+    return {
+        "session": None,
+        "progress": None,
+        "alerts": [],
+        "results": [],
+        "latest_result": None,
+    }
 
 
 def test_session_io_writes_and_reads_snapshot(monkeypatch, tmp_path: Path) -> None:
     """Session helpers should persist metadata, progress, alerts, and results."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
 
-    metadata = SessionMetadata(
-        session_id="session-123",
-        mode="video_segments",
-        input_path="/tmp/input",
-        selected_detectors=["video_metrics"],
-        status="pending",
-    )
+    metadata = _session_metadata("session-123", status="pending")
     initialize_session(metadata)
     write_session_progress(SessionProgress.initial(session_id="session-123", total_count=3))
     append_result(
@@ -54,14 +125,11 @@ def test_session_io_writes_and_reads_snapshot(monkeypatch, tmp_path: Path) -> No
         )
     )
     append_alert(
-        AlertEvent(
+        _snapshot_alert(
             session_id="session-123",
             timestamp_utc="2026-03-30 12:00:00",
-            detector_id="video_metrics",
-            title="Black screen detected",
-            message="Black content detected.",
-            severity="warning",
             source_name="segment_0001.ts",
+            message="Black content detected.",
         )
     )
 
@@ -203,13 +271,7 @@ def test_read_session_snapshot_returns_stable_empty_contract_for_missing_session
 
     snapshot = read_session_snapshot("session-missing")
 
-    assert snapshot == {
-        "session": None,
-        "progress": None,
-        "alerts": [],
-        "results": [],
-        "latest_result": None,
-    }
+    assert snapshot == _empty_snapshot_contract()
 
 
 def test_session_snapshot_preserves_result_order_and_latest_result(
@@ -263,36 +325,27 @@ def test_session_snapshot_preserves_alert_fields_and_append_order(
     """Alert events should keep their playback-alignment fields in append order."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
 
-    metadata = SessionMetadata(
-        session_id="session-alerts",
-        mode="video_segments",
+    metadata = _session_metadata(
+        "session-alerts",
         input_path="/tmp/segments",
-        selected_detectors=["video_metrics"],
-        status="running",
     )
     initialize_session(metadata)
     write_session_progress(SessionProgress.initial(session_id="session-alerts", total_count=2))
     append_alert(
-        AlertEvent(
+        _snapshot_alert(
             session_id="session-alerts",
             timestamp_utc="2026-03-30 12:00:00",
-            detector_id="video_metrics",
-            title="Black screen detected",
             message="First segment alert.",
-            severity="warning",
             source_name="segment_0001.ts",
             window_index=0,
             window_start_sec=0.0,
         )
     )
     append_alert(
-        AlertEvent(
+        _snapshot_alert(
             session_id="session-alerts",
             timestamp_utc="2026-03-30 12:00:01",
-            detector_id="video_metrics",
-            title="Black screen detected",
             message="Second segment alert.",
-            severity="warning",
             source_name="segment_0002.ts",
             window_index=1,
             window_start_sec=1.0,
@@ -309,8 +362,224 @@ def test_session_snapshot_preserves_alert_fields_and_append_order(
     assert [alert["window_start_sec"] for alert in snapshot["alerts"]] == [0.0, 1.0]
 
 
+def test_session_snapshot_reads_alerts_through_the_default_alert_store_seam(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Snapshots should source alerts from the active alert store, not only JSONL."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = _session_metadata(
+        "session-snapshot-store-read",
+        input_path="/tmp/segments",
+    )
+    initialize_session(metadata)
+    write_session_progress(
+        SessionProgress.initial(session_id="session-snapshot-store-read", total_count=1)
+    )
+
+    class FakeAlertStore:
+        def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
+            raise AssertionError("snapshot test should not append alerts")
+
+        def read_session_alert_events(self, session_id: str) -> list[dict[str, object]]:
+            assert session_id == "session-snapshot-store-read"
+            return [
+                {
+                    "session_id": session_id,
+                    "timestamp_utc": "2026-05-19 10:00:00",
+                    "detector_id": "video_metrics",
+                    "title": "Black screen detected",
+                    "message": "Returned by the active alert store seam.",
+                    "severity": "warning",
+                    "source_name": "segment_0001.ts",
+                    "window_index": None,
+                    "window_start_sec": None,
+                }
+            ]
+
+    monkeypatch.setattr(session_alert_store, "DEFAULT_SESSION_ALERT_STORE", FakeAlertStore())
+
+    snapshot = read_session_snapshot("session-snapshot-store-read")
+
+    assert snapshot["alerts"] == [
+        {
+            "session_id": "session-snapshot-store-read",
+            "timestamp_utc": "2026-05-19 10:00:00",
+            "detector_id": "video_metrics",
+            "title": "Black screen detected",
+            "message": "Returned by the active alert store seam.",
+            "severity": "warning",
+            "source_name": "segment_0001.ts",
+            "window_index": None,
+            "window_start_sec": None,
+        }
+    ]
+
+
+def test_session_snapshot_propagates_unexpected_runtime_alert_store_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Unexpected alert-store failures should stay visible instead of being flattened."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = _session_metadata("session-snapshot-store-failure")
+    initialize_session(metadata)
+
+    class FailingAlertStore:
+        def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
+            raise AssertionError("snapshot failure test should not append alerts")
+
+        def read_session_alert_events(self, session_id: str) -> list[dict[str, object]]:
+            assert session_id == "session-snapshot-store-failure"
+            raise RuntimeError("database read failed")
+
+    monkeypatch.setattr(session_alert_store, "DEFAULT_SESSION_ALERT_STORE", FailingAlertStore())
+
+    with pytest.raises(RuntimeError, match="database read failed"):
+        read_session_snapshot("session-snapshot-store-failure")
+
+
+def test_session_snapshot_keeps_known_session_empty_alerts_in_runtime_postgres_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Known sessions without alerts should still expose ``alerts: []`` in Postgres mode."""
+    session_id = "session-snapshot-runtime-postgres-empty"
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    install_runtime_postgres_session_alerts(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        alerts=[],
+    )
+    snapshot = read_session_snapshot(session_id)
+
+    assert snapshot["session"] is not None
+    assert snapshot["alerts"] == []
+
+
+def test_session_snapshot_ignores_store_alerts_when_session_metadata_is_missing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Snapshot reads should stay empty when session metadata is missing, even if the store has alerts."""
+    session_id = "session-snapshot-missing-metadata-store-alerts"
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    select_runtime_postgres_store(
+        monkeypatch,
+        StaticAlertStore(
+            session_id,
+            [
+                build_normalized_alert(
+                    session_id,
+                    timestamp_utc="2026-05-19 23:30:00",
+                    detector_id="video_metrics",
+                    title="Should stay hidden",
+                    message="Metadata still gates snapshot visibility.",
+                    severity="warning",
+                    source_name="segment_0001.ts",
+                )
+            ],
+        ),
+    )
+    snapshot = read_session_snapshot(session_id)
+
+    assert snapshot == _empty_snapshot_contract()
+
+
+def test_session_snapshot_ignores_store_alerts_when_session_metadata_is_malformed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Malformed session metadata should still gate snapshot alerts even when the active store is healthy."""
+    session_id = "session-snapshot-malformed-metadata-store-alerts"
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    session_dir = tmp_path / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "mode": "video_segments",
+                "input_path": "/tmp/input",
+                "selected_detectors": ["video_metrics"],
+                "status": "not-a-real-status",
+            }
+        ),
+        encoding="utf-8",
+    )
+    select_runtime_postgres_store(
+        monkeypatch,
+        StaticAlertStore(
+            session_id,
+            [
+                build_normalized_alert(
+                    session_id,
+                    timestamp_utc="2026-05-19 23:35:00",
+                    detector_id="video_metrics",
+                    title="Should stay hidden",
+                    message="Malformed metadata still wins for snapshot visibility.",
+                    severity="warning",
+                    source_name="segment_0001.ts",
+                )
+            ],
+        ),
+    )
+    snapshot = read_session_snapshot(session_id)
+
+    assert snapshot == _empty_snapshot_contract()
+
+
+def test_session_snapshot_keeps_file_backed_results_and_seam_backed_alerts_together_in_postgres_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Snapshot reads should preserve the intended hybrid contract in Postgres mode."""
+    session_id = "session-snapshot-runtime-postgres-hybrid"
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    metadata = _session_metadata(session_id)
+    initialize_session(metadata)
+    write_session_progress(SessionProgress.initial(session_id=session_id, total_count=1))
+    append_result(
+        ResultEvent(
+            session_id=session_id,
+            detector_id="video_metrics",
+            payload={"source_name": "segment_0001.ts", "black_ratio": 0.8},
+        )
+    )
+    alerts = [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 23:50:00",
+            detector_id="video_metrics",
+            title="Hybrid snapshot alert",
+            message="Read through the runtime-selected Postgres seam.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    ]
+    select_runtime_postgres_store(
+        monkeypatch,
+        StaticAlertStore(session_id, alerts),
+    )
+    snapshot = read_session_snapshot(session_id)
+
+    assert snapshot["session"] is not None
+    assert snapshot["results"] == [
+        {
+            "session_id": session_id,
+            "detector_id": "video_metrics",
+            "payload": {"source_name": "segment_0001.ts", "black_ratio": 0.8},
+        }
+    ]
+    assert snapshot["latest_result"] == snapshot["results"][-1]
+    assert snapshot["alerts"] == alerts
+
+
 def test_append_alert_uses_the_default_alert_store_seam(monkeypatch, tmp_path: Path) -> None:
-    """The compatibility write helper should delegate to the default alert store."""
+    """The compatibility write helper should delegate directly to the default alert store."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
     observed: list[AlertEvent] = []
 
@@ -320,14 +589,11 @@ def test_append_alert_uses_the_default_alert_store_seam(monkeypatch, tmp_path: P
 
     monkeypatch.setattr(session_alert_store, "DEFAULT_SESSION_ALERT_STORE", FakeAlertStore())
 
-    event = AlertEvent(
+    event = _snapshot_alert(
         session_id="session-store-write",
         timestamp_utc="2026-03-30 12:00:00",
-        detector_id="video_metrics",
-        title="Black screen detected",
-        message="Delegated through the store seam.",
-        severity="warning",
         source_name="segment_0001.ts",
+        message="Delegated through the store seam.",
     )
 
     append_alert(event)
@@ -342,23 +608,14 @@ def test_append_alert_round_trips_through_the_shared_alert_read_models(
     """The compatibility write entrypoint should feed the same seam used by alert readers."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
 
-    metadata = SessionMetadata(
-        session_id="session-alert-round-trip",
-        mode="video_segments",
-        input_path="/tmp/input",
-        selected_detectors=["video_metrics"],
-        status="running",
-    )
+    metadata = _session_metadata("session-alert-round-trip")
     initialize_session(metadata)
 
     append_alert(
-        AlertEvent(
+        _snapshot_alert(
             session_id="session-alert-round-trip",
             timestamp_utc="2026-05-06 10:00:00",
-            detector_id="video_metrics",
-            title="Black screen detected",
             message="Round-trip through the compatibility write seam.",
-            severity="warning",
             source_name="segment_0001.ts",
         )
     )
@@ -423,13 +680,7 @@ def test_update_session_status_persists_valid_lifecycle_transitions(
     """Valid backend lifecycle transitions should persist updated metadata."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
 
-    metadata = SessionMetadata(
-        session_id=f"session-{current_status}-to-{next_status}",
-        mode="video_segments",
-        input_path="/tmp/input",
-        selected_detectors=["video_metrics"],
-        status=current_status,
-    )
+    metadata = _status_transition_metadata(current_status, next_status)
     initialize_session(metadata)
 
     updated = update_session_status(metadata, next_status)
@@ -459,13 +710,7 @@ def test_update_session_status_rejects_invalid_terminal_transitions(
     """Terminal sessions should not transition back into other lifecycle states."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
 
-    metadata = SessionMetadata(
-        session_id=f"session-{current_status}-to-{next_status}",
-        mode="video_segments",
-        input_path="/tmp/input",
-        selected_detectors=["video_metrics"],
-        status=current_status,
-    )
+    metadata = _status_transition_metadata(current_status, next_status)
 
     with pytest.raises(
         InvalidSessionTransitionError,

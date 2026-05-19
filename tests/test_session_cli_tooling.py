@@ -1,4 +1,4 @@
-"""Tests for the tooling/debugging session CLI commands.
+"""Tests for the tooling/debugging session CLI commands and snapshot wiring.
 
 These cases treat the CLI as a thin adapter over `session_service.py`.
 They keep the supported command surface explicit without duplicating the
@@ -10,18 +10,72 @@ worker exception is re-raised into the redirected worker log path.
 """
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 import session_cli
+from session_alert_store import clear_default_session_alert_store_cache
 from session_models import SessionMetadata
+from tests.session_alert_test_support import (
+    FailingReadAlertStore,
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    build_alert_event,
+    build_live_runtime_postgres_store,
+    build_normalized_alert,
+    build_unique_session_id,
+    close_store_if_possible,
+    install_runtime_postgres_session_alerts,
+    select_runtime_postgres_store,
+)
 
 # Electron runtime bridge behavior is covered separately in frontend/electron tests.
 
 
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in CLI tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
+
+
 def _set_argv(monkeypatch, *args: str) -> None:
+    """Install one CLI argv sequence for the next `session_cli.main()` call."""
     monkeypatch.setattr("sys.argv", ["session_cli.py", *args])
+
+
+def _read_session_payload(
+    monkeypatch,
+    capsys,
+    *,
+    session_id: str,
+) -> dict[str, object]:
+    """Run the CLI read-session command and parse its stable JSON payload."""
+    _set_argv(monkeypatch, "read-session", "--session-id", session_id)
+    session_cli.main()
+    return json.loads(capsys.readouterr().out)
+
+
+def _cli_snapshot_alert(
+    session_id: str,
+    *,
+    timestamp_utc: str,
+    title: str,
+    message: str,
+    source_name: str,
+) -> dict[str, object]:
+    """Build one normalized CLI snapshot alert payload."""
+    return build_normalized_alert(
+        session_id,
+        timestamp_utc=timestamp_utc,
+        detector_id="video_metrics",
+        title=title,
+        message=message,
+        severity="warning",
+        source_name=source_name,
+    )
 
 
 def _pending_metadata(
@@ -30,6 +84,7 @@ def _pending_metadata(
     input_path: str,
     selected_detectors: list[str],
 ) -> SessionMetadata:
+    """Build one pending session metadata payload for start-session tests."""
     return SessionMetadata(
         session_id=session_id,
         mode=mode,
@@ -230,6 +285,125 @@ def test_read_session_returns_existing_snapshot_shape(monkeypatch, capsys) -> No
         "results": [],
         "latest_result": None,
     }
+
+
+def test_read_session_uses_the_runtime_selected_postgres_alert_store(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    """Read-session should print seam-backed alerts when Postgres mode is selected."""
+    session_id = "session-cli-runtime-postgres"
+    alerts = [
+        _cli_snapshot_alert(
+            session_id,
+            timestamp_utc="2026-05-19 23:15:00",
+            title="CLI snapshot alert",
+            message="Returned through the runtime-selected Postgres seam.",
+            source_name="segment_0001.ts",
+        )
+    ]
+    install_runtime_postgres_session_alerts(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        alerts=alerts,
+    )
+    payload = _read_session_payload(monkeypatch, capsys, session_id=session_id)
+
+    assert payload["alerts"] == alerts
+
+
+def test_read_session_propagates_runtime_postgres_alert_store_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Read-session should fail loudly when the active seam-backed read fails."""
+    session_id = "session-cli-runtime-postgres-failure"
+    install_runtime_postgres_session_alerts(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        alerts=[],
+    )
+    select_runtime_postgres_store(
+        monkeypatch,
+        FailingReadAlertStore(session_id, "database read failed"),
+    )
+
+    _set_argv(monkeypatch, "read-session", "--session-id", session_id)
+    with pytest.raises(RuntimeError, match="database read failed"):
+        session_cli.main()
+
+
+def test_read_session_and_service_snapshot_stay_aligned_for_known_empty_alerts_in_postgres_mode(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    """CLI and shared session service should keep the same known-empty snapshot contract."""
+    import session_service
+
+    session_id = "session-cli-runtime-postgres-empty"
+    install_runtime_postgres_session_alerts(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        alerts=[],
+    )
+    service_snapshot = session_service.read_session_snapshot_or_none(session_id)
+    payload = _read_session_payload(monkeypatch, capsys, session_id=session_id)
+
+    assert service_snapshot is not None
+    assert service_snapshot["alerts"] == []
+    assert payload["alerts"] == []
+    assert payload["session"] == service_snapshot["session"]
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL CLI snapshot smoke test is opt-in.",
+)
+def test_live_runtime_postgres_read_session_reads_alerts_from_the_active_backend(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    """The CLI snapshot command should follow the live runtime-selected backend."""
+    session_id = build_unique_session_id("session-cli-runtime-postgres-live")
+    store = build_live_runtime_postgres_store(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+    )
+    _set_argv(monkeypatch, "read-session", "--session-id", session_id)
+    expected_alerts = [
+        _cli_snapshot_alert(
+            session_id,
+            timestamp_utc="2026-05-19 23:45:00",
+            title="Live CLI snapshot alert",
+            message="Read through the live runtime-selected Postgres backend.",
+            source_name="segment_0001.ts",
+        )
+    ]
+
+    try:
+        store.append_alert(
+            build_alert_event(
+                session_id,
+                timestamp_utc="2026-05-19 23:45:00",
+                detector_id="video_metrics",
+                title="Live CLI snapshot alert",
+                message="Read through the live runtime-selected Postgres backend.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            )
+        )
+        payload = _read_session_payload(monkeypatch, capsys, session_id=session_id)
+    finally:
+        close_store_if_possible(store)
+
+    assert payload["alerts"] == expected_alerts
 
 
 def test_run_session_logs_useful_failure_context_before_reraising(monkeypatch) -> None:

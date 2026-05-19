@@ -1,11 +1,30 @@
-"""Focused tests for shared session read/cancel helpers and empty snapshot semantics."""
+"""Focused tests for shared session read/cancel helpers and snapshot semantics.
+
+The Task-3 additions in this file keep the shared session service aligned with
+the runtime-selected alert seam used by the snapshot, API, and CLI layers.
+"""
+
+from collections.abc import Iterator
+from typing import cast
 
 import pytest
 
 import session_service
 from analyzer_contract import InputMode
+from session_alert_store import clear_default_session_alert_store_cache
 from session_models import SessionStatus
-from typing import cast
+from tests.session_alert_test_support import (
+    build_normalized_alert,
+    install_runtime_postgres_session_alerts,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in service tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def _session(
@@ -92,6 +111,35 @@ def test_read_session_returns_none_when_missing(monkeypatch) -> None:
     snapshot = session_service.read_session_snapshot_or_none("missing-session")
 
     assert snapshot is None
+
+
+def test_read_session_returns_seam_backed_alerts_in_runtime_postgres_mode(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The shared session service should expose seam-backed alerts in Postgres mode."""
+    session_id = "session-service-runtime-postgres"
+    alerts = [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 23:10:00",
+            detector_id="video_metrics",
+            title="Service snapshot alert",
+            message="Read through the shared snapshot service seam.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    ]
+    install_runtime_postgres_session_alerts(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        alerts=alerts,
+    )
+    snapshot = session_service.read_session_snapshot_or_none(session_id)
+
+    assert snapshot is not None
+    assert snapshot["alerts"] == alerts
 
 
 def test_cancel_failed_error_exposes_current_status() -> None:
