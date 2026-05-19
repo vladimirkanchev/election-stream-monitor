@@ -1,15 +1,22 @@
 """Focused tests for finite-slice execution over the alert persistence seam."""
 
+from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
+import pytest
 from tests.api_boundary_test_support import request
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import assert_mcp_tool_success
-from tests.session_alert_test_support import build_normalized_alert
+from tests.session_alert_test_support import (
+    build_alert_summary_payload,
+    build_normalized_alert,
+)
+from session_alert_store import AlertEventPayload, clear_default_session_alert_store_cache
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
 from session_io import initialize_session, read_session_snapshot
 from session_alerts import read_session_alert_events
-from session_models import SessionMetadata, SessionProgress
+from session_models import AlertEvent, SessionMetadata, SessionProgress
 import session_runner_execution
 from tests.session_runner_execution_test_support import (
     build_metadata,
@@ -18,6 +25,14 @@ from tests.session_runner_execution_test_support import (
     configure_session_output,
     persist_session_state,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in runner tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def _identity_finalizer(**kwargs):
@@ -39,6 +54,16 @@ def _configure_local_execution_session(
     return metadata, progress
 
 
+def _select_runtime_postgres_store(monkeypatch, store: "MemoryRuntimeAlertStore") -> None:
+    """Route runner alert writes and reads through one patched Postgres-mode store."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: store,
+    )
+    clear_default_session_alert_store_cache()
+
+
 def _warning_alert_entry(
     session_id: str,
     *,
@@ -58,6 +83,33 @@ def _warning_alert_entry(
         "severity": "warning",
         "source_name": source_name,
     }
+
+
+class MemoryRuntimeAlertStore:
+    """Small write-capable store for runner tests that switch to Postgres mode."""
+
+    def __init__(self) -> None:
+        self._alerts_by_session: dict[str, list[AlertEventPayload]] = {}
+
+    def append_alert(self, event: AlertEvent) -> None:
+        """Persist one normalized alert row in memory for one session."""
+        self._alerts_by_session.setdefault(event.session_id, []).append(
+            build_normalized_alert(
+                event.session_id,
+                timestamp_utc=event.timestamp_utc,
+                detector_id=event.detector_id,
+                title=event.title,
+                message=event.message,
+                severity=event.severity,
+                source_name=event.source_name,
+                window_index=event.window_index,
+                window_start_sec=event.window_start_sec,
+            )
+        )
+
+    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+        """Return the in-memory normalized alert rows for one session."""
+        return list(self._alerts_by_session.get(session_id, []))
 
 
 def test_run_analyzers_for_slice_filters_kwargs_for_simple_bundle_runner(
@@ -373,6 +425,172 @@ def test_process_discovered_slices_runner_written_alert_is_visible_through_fasta
     assert response.status_code == 200
     assert response.json() == expected_payload
     assert_mcp_tool_success(mcp_result, expected_payload=expected_payload)
+
+
+def test_process_discovered_slices_runner_written_alert_is_visible_through_runtime_postgres_backend(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Runner-persisted alerts should stay readable when the runtime backend is switched to Postgres."""
+    metadata, progress = _configure_local_execution_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-execution-runtime-postgres-boundary-parity",
+    )
+    runtime_store = MemoryRuntimeAlertStore()
+    _select_runtime_postgres_store(monkeypatch, runtime_store)
+    slices = [build_slice(tmp_path, "segment_0001.ts")]
+    monkeypatch.setattr(
+        session_runner_execution,
+        "is_session_cancel_requested",
+        lambda session_id: False,
+    )
+
+    def fake_bundle_runner(**kwargs):
+        return {
+            "results": [],
+            "alerts": [
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:05:00",
+                    title="Runtime Postgres boundary alert",
+                    message="Persisted by the runner through the runtime-selected backend.",
+                    source_name="segment_0001.ts",
+                )
+            ],
+        }
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=["video_metrics"],
+        input_slices=slices,
+        bundle_runner=fake_bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=_identity_finalizer,
+    )
+
+    expected_payload = {
+        "session_id": metadata.session_id,
+        "alerts": [
+            build_normalized_alert(
+                metadata.session_id,
+                timestamp_utc="2026-05-06 10:05:00",
+                detector_id="video_metrics",
+                title="Runtime Postgres boundary alert",
+                message="Persisted by the runner through the runtime-selected backend.",
+                severity="warning",
+                source_name="segment_0001.ts",
+                window_index=None,
+                window_start_sec=None,
+            )
+        ],
+    }
+    response = request("GET", f"/sessions/{metadata.session_id}/alerts")
+    mcp_result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": metadata.session_id},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == expected_payload
+    assert_mcp_tool_success(mcp_result, expected_payload=expected_payload)
+
+
+def test_process_discovered_slices_runtime_postgres_alerts_keep_fastapi_list_and_summary_aligned(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Runner-persisted alerts should keep the FastAPI list and summary routes aligned in Postgres mode."""
+    metadata, progress = _configure_local_execution_session(
+        monkeypatch,
+        tmp_path,
+        session_id="session-execution-runtime-postgres-api-summary",
+    )
+    runtime_store = MemoryRuntimeAlertStore()
+    _select_runtime_postgres_store(monkeypatch, runtime_store)
+    slices = [build_slice(tmp_path, "segment_0001.ts")]
+    monkeypatch.setattr(
+        session_runner_execution,
+        "is_session_cancel_requested",
+        lambda session_id: False,
+    )
+
+    def fake_bundle_runner(**kwargs):
+        return {
+            "results": [],
+            "alerts": [
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:06:00",
+                    title="Runtime Postgres API summary alert",
+                    message="First runner alert for list/summary coherence.",
+                    source_name="segment_0001.ts",
+                ),
+                _warning_alert_entry(
+                    metadata.session_id,
+                    timestamp_utc="2026-05-06 10:06:10",
+                    title="Runtime Postgres API summary alert",
+                    message="Second runner alert for list/summary coherence.",
+                    source_name="segment_0002.ts",
+                ),
+            ],
+        }
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=["video_metrics"],
+        input_slices=slices,
+        bundle_runner=fake_bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=_identity_finalizer,
+    )
+
+    list_response = request("GET", f"/sessions/{metadata.session_id}/alerts")
+    summary_response = request("GET", f"/sessions/{metadata.session_id}/alerts/summary")
+
+    assert list_response.status_code == 200
+    assert list_response.json() == {
+        "session_id": metadata.session_id,
+        "alerts": [
+            build_normalized_alert(
+                metadata.session_id,
+                timestamp_utc="2026-05-06 10:06:00",
+                detector_id="video_metrics",
+                title="Runtime Postgres API summary alert",
+                message="First runner alert for list/summary coherence.",
+                severity="warning",
+                source_name="segment_0001.ts",
+                window_index=None,
+                window_start_sec=None,
+            ),
+            build_normalized_alert(
+                metadata.session_id,
+                timestamp_utc="2026-05-06 10:06:10",
+                detector_id="video_metrics",
+                title="Runtime Postgres API summary alert",
+                message="Second runner alert for list/summary coherence.",
+                severity="warning",
+                source_name="segment_0002.ts",
+                window_index=None,
+                window_start_sec=None,
+            ),
+        ],
+    }
+    assert summary_response.status_code == 200
+    assert summary_response.json() == build_alert_summary_payload(
+        metadata.session_id,
+        total_alerts=2,
+        counts_by_detector={"video_metrics": 2},
+        counts_by_severity={"warning": 2},
+        first_alert_timestamp_utc="2026-05-06 10:06:00",
+        last_alert_timestamp_utc="2026-05-06 10:06:10",
+    )
 
 
 def test_process_discovered_slices_preserves_alert_append_order_in_raw_reads(

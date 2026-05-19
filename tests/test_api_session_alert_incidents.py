@@ -4,23 +4,48 @@ This file owns payload shaping, empty-result behavior, request validation, and
 error mapping for grouped timeline and incident-summary endpoints.
 """
 
+from collections.abc import Iterator
+from typing import cast
+
+import pytest
+
+from session_alert_store import clear_default_session_alert_store_cache
+from session_alerts import SessionAlertsNotFoundError
 from tests.api_alert_test_support import (
     assert_request_validation_payload,
+    build_internal_error_payload,
     build_session_not_found_payload,
     build_validation_error_payload,
 )
-from session_alerts import SessionAlertsNotFoundError
 from tests.api_boundary_test_support import request
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_incidents_test_support import assert_mcp_tool_success
 from tests.session_alert_test_support import (
+    AlertLogRow,
+    FailingReadAlertStore,
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    StaticAlertStore,
+    build_alert_event,
+    build_live_runtime_postgres_store,
+    build_normalized_alert,
+    build_unique_session_id,
+    close_store_if_possible,
     build_persisted_alert,
     build_incident_summary_payload,
     build_timeline_entry,
     configure_session_alert_test,
+    select_runtime_postgres_store,
     write_alert_log,
     write_known_session,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in grouped route tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def _write_real_grouped_alert_session(
@@ -28,7 +53,7 @@ def _write_real_grouped_alert_session(
     tmp_path,
     *,
     session_id: str,
-    alert_rows: list[dict[str, object]],
+    alert_rows: list[AlertLogRow],
 ) -> None:
     """Persist one real session for grouped FastAPI and MCP boundary tests."""
     session_root = configure_session_alert_test(monkeypatch, tmp_path)
@@ -48,16 +73,19 @@ def _expected_incident_summary_with_runtime_narrative(
     narrative_summary: str,
 ) -> dict[str, object]:
     """Build one grouped summary while preserving the runtime narrative sentence."""
-    return build_incident_summary_payload(
-        session_id,
-        total_alerts=total_alerts,
-        total_incidents=total_incidents,
-        counts_by_detector=counts_by_detector,
-        counts_by_severity=counts_by_severity,
-        top_incident_categories=top_incident_categories,
-        first_alert_timestamp_utc=first_alert_timestamp_utc,
-        last_alert_timestamp_utc=last_alert_timestamp_utc,
-        narrative_summary=narrative_summary,
+    return cast(
+        dict[str, object],
+        build_incident_summary_payload(
+            session_id,
+            total_alerts=total_alerts,
+            total_incidents=total_incidents,
+            counts_by_detector=counts_by_detector,
+            counts_by_severity=counts_by_severity,
+            top_incident_categories=top_incident_categories,
+            first_alert_timestamp_utc=first_alert_timestamp_utc,
+            last_alert_timestamp_utc=last_alert_timestamp_utc,
+            narrative_summary=narrative_summary,
+        ),
     )
 
 
@@ -71,16 +99,19 @@ def _empty_timeline_payload(session_id: str) -> dict[str, object]:
 
 def _empty_incident_summary_payload(session_id: str) -> dict[str, object]:
     """Return the stable empty grouped incident-summary payload for one session."""
-    return build_incident_summary_payload(
-        session_id,
-        total_alerts=0,
-        total_incidents=0,
-        counts_by_detector={},
-        counts_by_severity={},
-        top_incident_categories={},
-        first_alert_timestamp_utc=None,
-        last_alert_timestamp_utc=None,
-        narrative_summary=f"Session {session_id} had no alerts.",
+    return cast(
+        dict[str, object],
+        build_incident_summary_payload(
+            session_id,
+            total_alerts=0,
+            total_incidents=0,
+            counts_by_detector={},
+            counts_by_severity={},
+            top_incident_categories={},
+            first_alert_timestamp_utc=None,
+            last_alert_timestamp_utc=None,
+            narrative_summary=f"Session {session_id} had no alerts.",
+        ),
     )
 
 
@@ -169,16 +200,19 @@ def test_get_session_alert_incident_summary_returns_grouped_summary(monkeypatch)
         assert severity == "warning"
         assert start_time_utc == "2026-05-06 10:00:00"
         assert end_time_utc == "2026-05-06 10:05:00"
-        return build_incident_summary_payload(
-            session_id,
-            total_alerts=1,
-            total_incidents=1,
-            counts_by_detector={"video_metrics": 1},
-            counts_by_severity={"warning": 1},
-            top_incident_categories={"Black screen detected": 1},
-            first_alert_timestamp_utc="2026-05-06 10:00:10",
-            last_alert_timestamp_utc="2026-05-06 10:00:10",
-            narrative_summary="Session session-123 had 1 grouped incidents across 1 alerts.",
+        return cast(
+            dict[str, object],
+            build_incident_summary_payload(
+                session_id,
+                total_alerts=1,
+                total_incidents=1,
+                counts_by_detector={"video_metrics": 1},
+                counts_by_severity={"warning": 1},
+                top_incident_categories={"Black screen detected": 1},
+                first_alert_timestamp_utc="2026-05-06 10:00:10",
+                last_alert_timestamp_utc="2026-05-06 10:00:10",
+                narrative_summary="Session session-123 had 1 grouped incidents across 1 alerts.",
+            ),
         )
 
     monkeypatch.setattr(
@@ -363,6 +397,241 @@ def test_get_session_alert_incident_summary_reads_the_real_file_backed_seam(
         top_incident_categories={"Black screen detected": 1, "Blur increased": 1},
         first_alert_timestamp_utc="2026-05-06 10:00:00",
         last_alert_timestamp_utc="2026-05-06 10:02:00",
+        narrative_summary=payload["narrative_summary"],
+    )
+
+
+def test_get_session_alert_incident_summary_uses_runtime_selected_postgres_backend(
+    monkeypatch,
+) -> None:
+    """The grouped FastAPI route should honor Postgres runtime selection without caller churn."""
+    store = StaticAlertStore(
+        "session-runtime-postgres-api-incidents",
+        [
+            build_normalized_alert(
+                "session-runtime-postgres-api-incidents",
+                timestamp_utc="2026-05-19 19:10:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First grouped runtime alert.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_normalized_alert(
+                "session-runtime-postgres-api-incidents",
+                timestamp_utc="2026-05-19 19:10:20",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second grouped runtime alert.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+    select_runtime_postgres_store(monkeypatch, store)
+
+    response = request(
+        "GET",
+        "/sessions/session-runtime-postgres-api-incidents/alerts/incident-summary",
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == _expected_incident_summary_with_runtime_narrative(
+        "session-runtime-postgres-api-incidents",
+        total_alerts=2,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 2},
+        counts_by_severity={"warning": 2},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc="2026-05-19 19:10:00",
+        last_alert_timestamp_utc="2026-05-19 19:10:20",
+        narrative_summary=payload["narrative_summary"],
+    )
+
+
+def test_get_session_alert_timeline_returns_internal_error_when_runtime_postgres_read_fails_after_startup(
+    monkeypatch,
+) -> None:
+    """Grouped FastAPI routes should surface post-startup Postgres read failures clearly."""
+
+    select_runtime_postgres_store(
+        monkeypatch,
+        FailingReadAlertStore(
+            "session-runtime-postgres-grouped-read-error",
+            "database grouped read failed",
+        ),
+    )
+
+    response = request(
+        "GET",
+        "/sessions/session-runtime-postgres-grouped-read-error/alerts/timeline",
+    )
+
+    assert response.status_code == 500
+    assert response.json() == build_internal_error_payload(
+        "database grouped read failed"
+    )
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL grouped alert-route smoke test is opt-in.",
+)
+def test_live_runtime_postgres_grouped_routes_follow_actual_startup_path(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The real runtime-selected Postgres backend should drive grouped FastAPI routes."""
+    session_id = build_unique_session_id("session-runtime-postgres-api-incidents-live")
+    store = build_live_runtime_postgres_store(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+    )
+    try:
+        store.append_alert(
+            build_alert_event(
+                session_id,
+                timestamp_utc="2026-05-19 21:10:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First live grouped alert.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            )
+        )
+        store.append_alert(
+            build_alert_event(
+                session_id,
+                timestamp_utc="2026-05-19 21:10:20",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second live grouped alert.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            )
+        )
+
+        timeline_response = request("GET", f"/sessions/{session_id}/alerts/timeline")
+        summary_response = request(
+            "GET",
+            f"/sessions/{session_id}/alerts/incident-summary",
+        )
+    finally:
+        close_store_if_possible(store)
+
+    assert timeline_response.status_code == 200
+    assert timeline_response.json() == {
+        "session_id": session_id,
+        "entries": [
+            build_timeline_entry(
+                start_time_utc="2026-05-19 21:10:00",
+                end_time_utc="2026-05-19 21:10:20",
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=2,
+                source_names=["segment_0001.ts", "segment_0002.ts"],
+                sample_message="First live grouped alert.",
+            )
+        ],
+    }
+    assert summary_response.status_code == 200
+    payload = summary_response.json()
+    assert payload == _expected_incident_summary_with_runtime_narrative(
+        session_id,
+        total_alerts=2,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 2},
+        counts_by_severity={"warning": 2},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc="2026-05-19 21:10:00",
+        last_alert_timestamp_utc="2026-05-19 21:10:20",
+        narrative_summary=payload["narrative_summary"],
+    )
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL grouped alert-route smoke test is opt-in.",
+)
+def test_live_runtime_postgres_grouped_routes_handle_optional_window_fields(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Grouped live Postgres reads should stay stable when alert rows mix optional window fields."""
+    session_id = build_unique_session_id(
+        "session-runtime-postgres-windowed-incidents-live"
+    )
+    store = build_live_runtime_postgres_store(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+    )
+    try:
+        store.append_alert(
+            build_alert_event(
+                session_id,
+                timestamp_utc="2026-05-19 21:12:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Windowed grouped alert.",
+                severity="warning",
+                source_name="segment_0001.ts",
+                window_index=2,
+                window_start_sec=10.5,
+            )
+        )
+        store.append_alert(
+            build_alert_event(
+                session_id,
+                timestamp_utc="2026-05-19 21:12:20",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Windowless grouped alert.",
+                severity="warning",
+                source_name="segment_0002.ts",
+                window_index=None,
+                window_start_sec=None,
+            )
+        )
+
+        timeline_response = request("GET", f"/sessions/{session_id}/alerts/timeline")
+        summary_response = request(
+            "GET",
+            f"/sessions/{session_id}/alerts/incident-summary",
+        )
+    finally:
+        close_store_if_possible(store)
+
+    assert timeline_response.status_code == 200
+    assert timeline_response.json() == {
+        "session_id": session_id,
+        "entries": [
+            build_timeline_entry(
+                start_time_utc="2026-05-19 21:12:00",
+                end_time_utc="2026-05-19 21:12:20",
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=2,
+                source_names=["segment_0001.ts", "segment_0002.ts"],
+                sample_message="Windowed grouped alert.",
+            )
+        ],
+    }
+    assert summary_response.status_code == 200
+    payload = summary_response.json()
+    assert payload == _expected_incident_summary_with_runtime_narrative(
+        session_id,
+        total_alerts=2,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 2},
+        counts_by_severity={"warning": 2},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc="2026-05-19 21:12:00",
+        last_alert_timestamp_utc="2026-05-19 21:12:20",
         narrative_summary=payload["narrative_summary"],
     )
 

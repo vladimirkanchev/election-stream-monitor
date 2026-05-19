@@ -1,24 +1,43 @@
-"""Small helpers for the alert persistence seam test layer.
+"""Shared helpers for alert-store seam and boundary tests.
 
-The helpers here keep the Task-1 seam tests explicit while avoiding repeated
-JSONL setup and payload boilerplate across raw, grouped, API, and MCP tests.
+These helpers keep the Task-1 and Task-2 alert-store tests explicit while
+removing repeated session setup and payload boilerplate.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
+import os
 from pathlib import Path
 from typing import cast
+from uuid import uuid4
 
 import config
 import pytest
 from session_alert_incidents import AlertTimelineEntryPayload, IncidentSummaryPayload
 from session_alerts import AlertSummaryPayload
-from session_alert_store import AlertEventPayload, SessionAlertStore
+from session_alert_store import (
+    AlertEventPayload,
+    SessionAlertStore,
+    clear_default_session_alert_store_cache,
+    get_default_session_alert_store,
+)
+from session_alert_store_postgres import PostgresSessionAlertStore
+from session_alert_store_postgres_config import (
+    POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV,
+    POSTGRES_ALERT_DATABASE_URL_ENV,
+)
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
 from session_models import AlertEvent, EventSeverity
 
 AlertPayload = dict[str, object]
 AlertLogRow = AlertPayload | str
+SessionRootBuilder = Callable[[pytest.MonkeyPatch, Path], Path]
+REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED = (
+    os.getenv("POSTGRES_ALERT_STORE_REAL_SMOKE") == "1"
+    and bool(os.getenv(POSTGRES_ALERT_DATABASE_URL_ENV))
+)
 
 
 class StaticAlertStore(SessionAlertStore):
@@ -39,6 +58,24 @@ class StaticAlertStore(SessionAlertStore):
         return self._alerts
 
 
+class FailingReadAlertStore(SessionAlertStore):
+    """Small failing store used to prove runtime-selected read failures surface cleanly."""
+
+    def __init__(self, session_id: str, message: str) -> None:
+        """Keep one expected session id plus one stable read failure message."""
+        self._session_id = session_id
+        self._message = message
+
+    def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
+        """Reject writes so the helper stays focused on read-path failures."""
+        raise AssertionError("append_alert should not be called in this read-path test")
+
+    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+        """Raise the configured runtime failure for the expected test session."""
+        assert session_id == self._session_id
+        raise RuntimeError(self._message)
+
+
 def configure_session_alert_test(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -46,6 +83,53 @@ def configure_session_alert_test(
     """Point one test at an isolated temporary session-output root."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
     return tmp_path
+
+
+def select_runtime_postgres_store(
+    monkeypatch: pytest.MonkeyPatch,
+    store: SessionAlertStore,
+) -> None:
+    """Route the default alert-store seam through one Postgres-selected store."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: store,
+    )
+    clear_default_session_alert_store_cache()
+
+
+def build_live_runtime_postgres_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    session_id: str,
+    session_root_builder: SessionRootBuilder | None = None,
+) -> PostgresSessionAlertStore:
+    """Build one live runtime-selected Postgres store over a known session."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
+    build_session_root = session_root_builder or configure_session_alert_test
+    session_root = build_session_root(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+    clear_default_session_alert_store_cache()
+    return cast(PostgresSessionAlertStore, get_default_session_alert_store())
+
+
+def close_store_if_possible(store: object) -> None:
+    """Close one optional live Postgres store or connection without concrete typing."""
+    close = getattr(store, "close", None)
+    if callable(close):
+        close()
+        return
+    connection = getattr(store, "_connection", None)
+    close = getattr(connection, "close", None)
+    if callable(close):
+        close()
+
+
+def build_unique_session_id(prefix: str) -> str:
+    """Build one unique session id for live runtime or database smoke tests."""
+    return f"{prefix}-{uuid4().hex}"
 
 
 def build_persisted_alert(
@@ -104,6 +188,32 @@ def build_normalized_alert(
     alert.setdefault("window_index", None)
     alert.setdefault("window_start_sec", None)
     return cast(AlertEventPayload, alert)
+
+
+def build_alert_event(
+    session_id: str,
+    *,
+    timestamp_utc: str,
+    detector_id: str,
+    title: str,
+    message: str,
+    severity: EventSeverity,
+    source_name: str,
+    window_index: int | None = None,
+    window_start_sec: float | None = None,
+) -> AlertEvent:
+    """Build one concrete alert event for store and service seam tests."""
+    return AlertEvent(
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        detector_id=detector_id,
+        title=title,
+        message=message,
+        severity=severity,
+        source_name=source_name,
+        window_index=window_index,
+        window_start_sec=window_start_sec,
+    )
 
 
 def build_timeline_entry(

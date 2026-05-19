@@ -12,11 +12,23 @@ drift easier to spot: payload regressions fail in one place, error-translation
 regressions fail in another.
 """
 
+from collections.abc import Iterator
+
 import esm_mcp.alert_tools as alert_tools
 import pytest
+from session_alert_store import clear_default_session_alert_store_cache
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
 from session_alerts import SessionAlertsNotFoundError
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import assert_mcp_tool_error
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in raw MCP error tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def _assert_raw_tool_maps_service_error(
@@ -116,3 +128,22 @@ def test_raw_mcp_alert_tools_report_invalid_timestamp_format_as_tool_error(
         service_error=ValueError(expected_message),
         expected_message=expected_message,
     )
+
+
+def test_query_session_alerts_tool_reports_runtime_postgres_bootstrap_failure(
+    monkeypatch,
+) -> None:
+    """Explicit Postgres mode should surface bootstrap failures as MCP tool errors."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: (_ for _ in ()).throw(RuntimeError("postgres bootstrap failed")),
+    )
+    clear_default_session_alert_store_cache()
+
+    result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": "session-runtime-postgres-mcp-error"},
+    )
+
+    assert_mcp_tool_error(result, expected_message="postgres bootstrap failed")
