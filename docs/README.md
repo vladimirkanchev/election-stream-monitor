@@ -47,6 +47,8 @@ Use this shortcut map before editing code:
   - `src/api/alert_route_policy.py`
   - `src/esm_mcp/`
   - `src/session_alert_store.py`
+  - `src/session_alert_store_postgres.py`
+  - `src/session_alert_store_postgres_config.py`
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
 - adding a detector:
@@ -143,6 +145,13 @@ module families and the matching tests:
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
   - `src/session_alert_adapter.py`
+  - `src/session_alert_store_runtime_config.py`
+    - explicit runtime selection for the default alert store:
+      `ESM_ALERT_STORE_BACKEND=file|postgres`
+  - `src/session_alert_store_postgres.py`
+    - concrete PostgreSQL alert backend plus schema/bootstrap helpers
+  - `src/session_alert_store_postgres_config.py`
+    - narrow env/config parsing for the PostgreSQL alert-store bootstrap path
   - `src/session_io.py`
   - `src/api/schemas.py`
   - `src/api/routers/alerts.py`
@@ -153,6 +162,19 @@ module families and the matching tests:
   - `tests/mcp_alert_test_support.py`
   - `tests/test_session_alert_store.py`
     - file-backed seam contract for the current default alert store
+  - `tests/test_session_alert_store_runtime.py`
+    - runtime backend selection plus caller-stability coverage for the default
+      alert seam
+  - `tests/test_session_alert_store_runtime_config.py`
+    - explicit `file` versus `postgres` backend-mode config coverage
+  - `tests/test_session_alert_store_parity.py`
+    - file-store versus PostgreSQL-store parity over the shared alert seam and
+      read-model layer
+  - `tests/test_session_alert_store_postgres.py`
+    - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
+      second backend's read/write drift-sensitive behavior
+  - `tests/test_session_alert_store_postgres_config.py`
+    - narrow env/config coverage for the PostgreSQL alert-store bootstrap path
   - `tests/test_session_io.py`
     - compatibility write-entry and write-to-read seam coverage
   - `tests/test_session_runner_execution_local.py`

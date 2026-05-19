@@ -36,7 +36,7 @@ Use this document when you need to answer:
 ## Short version
 
 The project is a local-first modular monolith with explicit detector
-registration and file-backed session state.
+registration, file-backed session state, and opt-in PostgreSQL alert storage.
 
 In practice that means:
 
@@ -78,8 +78,17 @@ The new MCP surface follows the same adapter pattern:
 
 - [`src/esm_mcp/server.py`](../src/esm_mcp/server.py) is a read-only MCP adapter
 - [`src/session_alert_store.py`](../src/session_alert_store.py) defines the
-  narrow alert persistence seam and currently provides the default file-backed
-  `alerts.jsonl` implementation
+  narrow alert persistence seam and now owns the centralized runtime default
+  store selection
+- [`src/session_alert_store_runtime_config.py`](../src/session_alert_store_runtime_config.py)
+  owns the explicit `file` versus `postgres` backend-mode selection for that
+  default store through `ESM_ALERT_STORE_BACKEND`
+- [`src/session_alert_store_postgres.py`](../src/session_alert_store_postgres.py)
+  now freezes the PostgreSQL alert-table contract, owns the small
+  connection/bootstrap path, and includes the concrete
+  `PostgresSessionAlertStore` second backend over the existing seam
+- [`src/session_alert_store_postgres_config.py`](../src/session_alert_store_postgres_config.py)
+  owns the narrow Postgres alert-store env/config parsing used by that bootstrap path
 - [`src/session_io.py`](../src/session_io.py) still exposes
   `append_alert(...)` as the compatibility write entrypoint and now delegates
   that write through the store seam
@@ -107,9 +116,19 @@ Today that means:
 - raw and grouped readers use the same seam while keeping filtering,
   summaries, and grouping outside the store
 
-That split keeps the current JSONL behavior intact while making a later
-PostgreSQL-backed alert store a bounded replacement instead of a larger
-read-model rewrite.
+That split kept the current JSONL behavior intact while making the PostgreSQL
+alert store a bounded replacement instead of a larger read-model rewrite.
+
+Today that PostgreSQL path is implemented and can be selected explicitly at
+runtime, while the default alert backend still stays file-backed.
+
+The current PostgreSQL alert mapping is intentionally column-first rather than
+JSONB-first:
+
+- every current `AlertEventPayload` field maps to its own table column
+- `window_index` and `window_start_sec` stay nullable
+- append-order reads are preserved through `ORDER BY id ASC`
+- filtering and summary behavior still stay above the storage seam
 
 The first FastAPI authentication seam follows the same boundary-oriented style:
 

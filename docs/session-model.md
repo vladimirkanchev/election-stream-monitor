@@ -14,8 +14,8 @@ payload catalog; see [architecture.md](./architecture.md) and
 ## At a glance
 
 - sessions are the persisted contract between backend and frontend
-- persistence is file-backed today, but the session meaning should survive
-  later storage changes
+- session snapshots stay file-backed today
+- alert storage is file-backed by default and can now switch to PostgreSQL
 - monitoring session state and playback state are related but intentionally
   separate
 
@@ -108,7 +108,7 @@ explicit internal seam:
 - `src/session_alert_incidents.py` owns grouped incident views
 
 The default implementation is still file-backed, so the persisted JSONL shape
-stays the same while the code is prepared for a later storage replacement.
+stays the same while the code can also use the current PostgreSQL alert store.
 
 ### `results.jsonl`
 
@@ -213,9 +213,22 @@ Alert persistence now has one explicit internal boundary:
 The practical result is simple:
 
 - writes and reads now go through the same seam
-- the persisted JSONL contract stays unchanged
-- a future PostgreSQL alert store can replace the file-backed implementation
-  without moving filtering or grouping into the storage layer
+- the persisted JSONL contract stays unchanged in the default mode
+- the PostgreSQL alert store can be enabled without moving filtering or
+  grouping into the storage layer
+
+The current PostgreSQL alert path keeps that contract narrow too:
+
+- the PostgreSQL alert table is `session_alert_events`
+- the runtime backend mode now switches explicitly between `file` and
+  `postgres` through `ESM_ALERT_STORE_BACKEND`
+- each current alert field maps to its own column rather than a JSON payload
+- `window_index` and `window_start_sec` remain nullable
+- read order should preserve append order through `ORDER BY id ASC`
+- `timestamp_utc` should be materialized back into the current
+  `%Y-%m-%d %H:%M:%S` string contract on reads
+- a concrete `PostgresSessionAlertStore` now exists behind the same seam, and
+  runtime selection can opt into it without changing the alert readers
 
 ### Important field semantics
 

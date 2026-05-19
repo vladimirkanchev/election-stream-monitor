@@ -67,8 +67,9 @@ and talks to a local FastAPI backend for session control, detector loading,
 and playback-source resolution.
 
 Electron still owns the desktop-only work: app startup, local media serving,
-the HLS proxy path, and the UI bridge. Local alert and session data stay on
-disk and are polled by the UI while a run is active.
+the HLS proxy path, and the UI bridge. Session snapshots stay on disk and are
+polled by the UI while a run is active. Alerts still use the same local JSONL
+flow by default and can now be switched to PostgreSQL explicitly.
 
 There is also a small local MCP server for read-only alert queries over that
 same local data.
@@ -93,8 +94,9 @@ Still not:
 MCP is still a local `stdio` query surface over local alert and session data.
 FastAPI auth and rate limiting currently apply only to the alerts routes.
 Current work is centered on detector growth, MCP tooling, runtime hardening,
-and preparation for PostgreSQL-backed alert persistence and later session
-persistence work.
+and PostgreSQL-backed alert persistence for alerts. That backend is now
+implemented behind the alert store seam, but file remains the default.
+Use `ESM_ALERT_STORE_BACKEND=postgres` to opt into PostgreSQL explicitly.
 
 ## FastAPI Access Modes
 
@@ -181,9 +183,11 @@ This part writes the session files, updates progress, stores alerts and
 results, and gives the UI something stable to poll:
 
 - a session is created when monitoring starts
-- progress, alerts, and results are written to local JSON / JSONL files
-- alert reads and writes now share one explicit backend seam while staying
-  file-backed by default
+- progress and results are written to local JSON / JSONL files
+- alert reads and writes now share one explicit backend seam
+- file-backed alerts remain the default
+- PostgreSQL alert storage can now be enabled explicitly without changing the
+  alert readers
 - the frontend polls those snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
@@ -209,9 +213,9 @@ In practice, the flow looks like this:
 3. FastAPI starts and manages sessions, validates sources, resolves playback
    inputs, and hands the monitoring work to the backend services and worker
    process.
-4. Detectors and alert rules process the media, while local alert and session
-   data keep progress, results, and alerts that the UI can poll in near real
-   time and MCP tools can query separately.
+4. Detectors and alert rules process the media, while local session snapshots
+   and the shared alert store keep progress, results, and alerts that the UI
+   can poll in near real time and MCP tools can query separately.
 
 FastAPI and MCP are separate adapters over the same local alert/session data.
 FastAPI owns the main desktop-backed HTTP/runtime path, while MCP stays a
