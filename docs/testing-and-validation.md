@@ -738,6 +738,15 @@ smokes are opt-in and currently need:
 - `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
 - usually `ESM_ALERT_STORE_BACKEND=postgres`
 
+Use the live smokes when you need confidence in the real database path:
+
+- connection/bootstrap behavior
+- real SQL insert/read behavior
+- snapshot/API/CLI behavior over the active Postgres backend
+
+Use the synthetic suites for normal branch work. They are cheaper, faster, and
+already cover most seam, parity, and boundary behavior.
+
 The fast backend CI lane intentionally stays synthetic and contract-focused.
 The real-media `ffmpeg`/`ffprobe` fixture coverage lives in the slower weekly
 e2e validation path rather than in the normal branch-push backend test job.
@@ -773,7 +782,7 @@ The current functionality under that slice is:
 - grouped incident summaries
 - stdio MCP launch wiring over the same shared service seam
 
-Current alert persistence contract to preserve before storage refactors:
+Current alert persistence contract to preserve:
 
 - seam owner:
   - `src/session_alert_store.py`
@@ -796,6 +805,8 @@ Current alert persistence contract to preserve before storage refactors:
   - `src/session_io.py`
     - `append_alert(...)` remains the compatibility write entrypoint and now
       delegates to the default alert store implementation
+    - session snapshots keep metadata, progress, and results file-backed, but
+      now read their `alerts` field through that same runtime-selected seam
 - read entrypoints:
   - `src/session_alerts.py`
     - raw persisted alert reads, filtering, and numeric summaries
@@ -857,8 +868,9 @@ The current test split is:
   - compatibility write-entry coverage showing `append_alert(...)` delegates to
     the default alert-store seam without widening into broader session
     persistence changes
-  - also covers write-to-read seam integration through the shared raw and
-    grouped readers
+  - also covers write-to-read seam integration plus the hybrid snapshot path
+    where metadata/progress/results remain file-backed and alerts follow the
+    active backend
 - `tests/api_alert_test_support.py`
   - shared FastAPI alert-route payload builders plus boundary setup helpers for
   auth, limiter, and simple successful route responses
@@ -1248,6 +1260,8 @@ Backend/API contract checks:
   - playback-resolution behavior
 - `tests/test_api_boundary_sessions_read.py`
   - session read-route behavior
+  - runtime-selected alert-backend parity between the session snapshot route
+    and the dedicated alert routes
 - `tests/test_api_boundary_sessions_start.py`
   - session start-route behavior
 - `tests/test_api_boundary_sessions_cancel.py`
@@ -1260,6 +1274,7 @@ Backend/API contract checks:
   - shared read/cancel service behavior
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
+  - runtime-selected alert-backend behavior for `read-session`
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - populated session snapshot response shape

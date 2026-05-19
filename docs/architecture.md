@@ -36,7 +36,8 @@ Use this document when you need to answer:
 ## Short version
 
 The project is a local-first modular monolith with explicit detector
-registration, file-backed session state, and opt-in PostgreSQL alert storage.
+registration, file-backed session state, and opt-in PostgreSQL alert storage
+for alerts.
 
 In practice that means:
 
@@ -112,15 +113,17 @@ Today that means:
 
 - `src/session_io.py::append_alert(...)` is still the compatibility write
   entrypoint
-- that write now delegates into `src/session_alert_store.py`
-- raw and grouped readers use the same seam while keeping filtering,
-  summaries, and grouping outside the store
+- the default alert backend is selected centrally in
+  `src/session_alert_store.py`
+- raw alert readers, grouped incident readers, the session snapshot route, and
+  the CLI all follow that same alert-store seam
+- filtering, summaries, and grouped incident logic still stay in Python above
+  the storage layer
 
 That split kept the current JSONL behavior intact while making the PostgreSQL
 alert store a bounded replacement instead of a larger read-model rewrite.
-
-Today that PostgreSQL path is implemented and can be selected explicitly at
-runtime, while the default alert backend still stays file-backed.
+PostgreSQL can now be selected explicitly at runtime, while the default alert
+backend still stays file-backed.
 
 The current PostgreSQL alert mapping is intentionally column-first rather than
 JSONB-first:

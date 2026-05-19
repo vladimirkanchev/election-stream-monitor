@@ -68,8 +68,14 @@ and playback-source resolution.
 
 Electron still owns the desktop-only work: app startup, local media serving,
 the HLS proxy path, and the UI bridge. Session snapshots stay on disk and are
-polled by the UI while a run is active. Alerts still use the same local JSONL
-flow by default and can now be switched to PostgreSQL explicitly.
+polled by the UI while a run is active.
+
+Today the alert backend works like this:
+
+- file-backed alerts remain the default
+- PostgreSQL alert storage is available as an opt-in backend
+- the main session snapshot, the dedicated alert routes, and the MCP tools now
+  all read alerts through the same backend seam
 
 There is also a small local MCP server for read-only alert queries over that
 same local data.
@@ -95,8 +101,8 @@ MCP is still a local `stdio` query surface over local alert and session data.
 FastAPI auth and rate limiting currently apply only to the alerts routes.
 Current work is centered on detector growth, MCP tooling, runtime hardening,
 and PostgreSQL-backed alert persistence for alerts. That backend is now
-implemented behind the alert store seam, but file remains the default.
-Use `ESM_ALERT_STORE_BACKEND=postgres` to opt into PostgreSQL explicitly.
+implemented behind the alert store seam, but file remains the default. Use
+`ESM_ALERT_STORE_BACKEND=postgres` to opt into PostgreSQL explicitly.
 
 ## FastAPI Access Modes
 
@@ -185,9 +191,9 @@ results, and gives the UI something stable to poll:
 - a session is created when monitoring starts
 - progress and results are written to local JSON / JSONL files
 - alert reads and writes now share one explicit backend seam
-- file-backed alerts remain the default
-- PostgreSQL alert storage can now be enabled explicitly without changing the
-  alert readers
+- file-backed alerts remain the default, with PostgreSQL available as an opt-in backend
+- the session snapshot still keeps metadata, progress, and results file-backed
+- the snapshot `alerts` field now follows the active alert backend too
 - the frontend polls those snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 

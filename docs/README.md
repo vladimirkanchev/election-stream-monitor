@@ -22,6 +22,8 @@ Use this shortcut map before editing code:
   - [session-model.md](./session-model.md)
   - [contracts.md](./contracts.md)
   - [architecture.md](./architecture.md)
+  - `src/session_io.py`
+  - `tests/test_session_io.py`
 - changing frontend bridge normalization or UI transport handling:
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
@@ -51,6 +53,7 @@ Use this shortcut map before editing code:
   - `src/session_alert_store_postgres_config.py`
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
+  - `src/session_io.py`
 - adding a detector:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
 - adding an alert rule:
