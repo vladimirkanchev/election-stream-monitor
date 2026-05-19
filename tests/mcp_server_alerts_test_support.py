@@ -12,7 +12,7 @@ setup noise in the split suites without hiding the actual raw tool contracts.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from tests.mcp_alert_test_support import tool_error_text
 from tests.session_alert_test_support import (
@@ -33,7 +33,7 @@ def write_raw_alert_tool_session(
 def assert_mcp_tool_success(
     result: Any,
     *,
-    expected_payload: dict[str, object],
+    expected_payload: Mapping[str, object],
 ) -> None:
     """Assert one successful raw MCP result against its structured payload.
 

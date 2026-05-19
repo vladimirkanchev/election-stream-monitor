@@ -21,7 +21,7 @@ from tests.session_alert_test_support import (
     write_alert_log,
     write_known_session,
 )
-from session_models import AlertEvent
+from session_models import AlertEvent, EventSeverity
 
 
 def _file_store() -> FileSessionAlertStore:
@@ -36,7 +36,7 @@ def _store_event(
     detector_id: str,
     title: str,
     message: str,
-    severity: str,
+    severity: EventSeverity,
     source_name: str,
     window_index: int | None = None,
     window_start_sec: float | None = None,
