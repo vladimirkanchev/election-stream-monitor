@@ -129,17 +129,13 @@ def _build_postgres_default_session_alert_store() -> SessionAlertStore:
 class _DefaultSessionAlertStoreProxy:
     """Runtime-resolved proxy that preserves the existing alert-store call path."""
 
-    def _store(self) -> SessionAlertStore:
-        """Resolve the current default store for one proxy operation."""
-        return get_default_session_alert_store()
-
     def append_alert(self, event: AlertEvent) -> None:
         """Append one alert through the currently selected default store backend."""
-        self._store().append_alert(event)
+        get_default_session_alert_store().append_alert(event)
 
     def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
         """Read alerts through the currently selected default store backend."""
-        return self._store().read_session_alert_events(session_id)
+        return get_default_session_alert_store().read_session_alert_events(session_id)
 
 
 DEFAULT_SESSION_ALERT_STORE: SessionAlertStore = _DefaultSessionAlertStoreProxy()

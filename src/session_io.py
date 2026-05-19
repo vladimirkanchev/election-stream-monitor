@@ -1,4 +1,4 @@
-"""Session-file helpers for the local monitoring bridge.
+"""Session-file helpers for the local monitoring bridge and snapshot contract.
 
 The frontend does not read these files directly. Instead, backend helpers write
 and read a small set of session artifacts that together form the current local
@@ -13,19 +13,22 @@ session contract:
 These helpers keep the snapshot shape stable even when persisted files are
 missing, malformed, or only partially written. Alert persistence now has one
 internal seam in `session_alert_store.py`, but this module still owns the
-broader session-artifact contract and keeps the existing `append_alert(...)`
-entrypoint stable for current callers.
+broader session-artifact contract:
+
+- metadata, progress, and results stay file-backed here
+- snapshot alerts follow the active alert store
+- `append_alert(...)` remains the compatibility write entrypoint for callers
 """
 
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import cast
 
 import config
 from logger import get_logger
 from session_models import (
     AlertEvent,
-    parse_alert_event_payload,
     parse_result_event_payload,
     parse_session_metadata_payload,
     parse_session_progress_payload,
@@ -148,9 +151,9 @@ def append_result(event: ResultEvent) -> None:
 def append_alert(event: AlertEvent) -> None:
     """Append one validated alert event through the shared alert store seam.
 
-    This remains the compatibility write entrypoint for existing session-runner
-    call sites while the alert persistence refactor is still in progress.
-    Session metadata, progress, and result persistence remain owned here.
+    This remains the compatibility write entrypoint for current session-runner
+    call sites. Session metadata, progress, and result persistence remain
+    owned here.
     """
     from session_alert_store import DEFAULT_SESSION_ALERT_STORE
 
@@ -219,7 +222,12 @@ def append_api_stream_seen_chunk_key(
 
 
 def read_session_snapshot(session_id: str) -> dict[str, object]:
-    """Read one stable frontend snapshot assembled from persisted session files.
+    """Read one stable frontend snapshot from the current hybrid persistence path.
+
+    Metadata, progress, and results still come from the file-backed session
+    directory. The snapshot `alerts` field now follows the active alert-store
+    seam so session snapshots stay aligned with the dedicated alert-query
+    surfaces when PostgreSQL is enabled.
 
     Missing or malformed artifacts degrade to the empty snapshot shape rather
     than surfacing partially parsed internal state.
@@ -227,7 +235,7 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
     session_dir = get_session_dir(session_id)
     metadata = parse_session_metadata_payload(_read_json_file(session_dir / "session.json"))
     progress = parse_session_progress_payload(_read_json_file(session_dir / "progress.json"))
-    alerts = _read_jsonl_file(session_dir / "alerts.jsonl", parser=parse_alert_event_payload)
+    alerts = _read_snapshot_alerts(session_id, metadata=metadata)
     results = _read_jsonl_file(session_dir / "results.jsonl", parser=parse_result_event_payload)
     return _build_session_snapshot(
         metadata=metadata,
@@ -235,6 +243,34 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
         alerts=alerts,
         results=results,
     )
+
+
+def _read_snapshot_alerts(
+    session_id: str,
+    *,
+    metadata: dict[str, object] | None,
+) -> list[dict[str, object]]:
+    """Read snapshot alerts through the shared alert seam when the session is known.
+
+    The broader snapshot remains mostly file-backed, but its `alerts` field now
+    follows the active alert store so session snapshots do not drift from the
+    dedicated alert-query surfaces when PostgreSQL is enabled. Missing or
+    malformed session metadata still degrades to the stable empty snapshot
+    shape instead of raising. Unexpected backend failures are allowed to
+    surface so API and CLI callers can report real runtime-store problems.
+    """
+    if metadata is None:
+        return []
+
+    from session_alert_store import DEFAULT_SESSION_ALERT_STORE, SessionAlertsNotFoundError
+
+    try:
+        return cast(
+            list[dict[str, object]],
+            DEFAULT_SESSION_ALERT_STORE.read_session_alert_events(session_id),
+        )
+    except SessionAlertsNotFoundError:
+        return []
 
 
 def _append_jsonl(file_path: Path, payload: dict[str, object]) -> None:
