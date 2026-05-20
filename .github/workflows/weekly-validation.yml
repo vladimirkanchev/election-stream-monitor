@@ -264,3 +264,75 @@ jobs:
           python -m venv /tmp/esm-packaging-weekly
           /tmp/esm-packaging-weekly/bin/python -m pip install --upgrade pip setuptools wheel
           /tmp/esm-packaging-weekly/bin/python -m pip install --no-deps --no-build-isolation -e .
+
+  postgres-alert-backend-confidence:
+    if: ${{ secrets.ESM_POSTGRES_ALERT_DATABASE_URL != '' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run weekly live Postgres backend confidence bundle
+        env:
+          ESM_POSTGRES_ALERT_DATABASE_URL: ${{ secrets.ESM_POSTGRES_ALERT_DATABASE_URL }}
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          python3 scripts/postgres_alert_weekly_backend_confidence.py 2>&1 | tee ci-artifacts/postgres-alert-backend-confidence.log
+
+      - name: Upload live Postgres backend confidence log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-alert-backend-confidence-${{ github.run_id }}
+          path: ci-artifacts/postgres-alert-backend-confidence.log
+          retention-days: 7
+
+  postgres-alert-runtime-operator-confidence:
+    if: ${{ secrets.ESM_POSTGRES_ALERT_DATABASE_URL != '' }}
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run weekly live Postgres runtime/operator-flow bundle
+        env:
+          ESM_POSTGRES_ALERT_DATABASE_URL: ${{ secrets.ESM_POSTGRES_ALERT_DATABASE_URL }}
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py 2>&1 | tee ci-artifacts/postgres-alert-runtime-operator-confidence.log
+
+      - name: Upload live Postgres runtime/operator confidence log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-alert-runtime-operator-confidence-${{ github.run_id }}
+          path: ci-artifacts/postgres-alert-runtime-operator-confidence.log
+          retention-days: 7
