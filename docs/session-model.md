@@ -16,7 +16,8 @@ payload catalog; see [architecture.md](./architecture.md) and
 - sessions are the persisted contract between backend and frontend
 - session snapshots are still built from local session files
 - metadata, progress, and results stay file-backed today
-- alert storage is file-backed by default and can now switch to PostgreSQL
+- alert storage stays file-backed by default for this branch phase and can now
+  switch to PostgreSQL
 - the snapshot `alerts` field now follows that same alert backend
 - monitoring session state and playback state are related but intentionally
   separate
@@ -197,7 +198,7 @@ Alert persistence now has one explicit internal boundary:
 
 - `src/session_alert_store.py`
   - owns appending and reading validated raw alert rows for one session
-  - defaults to the file-backed `alerts.jsonl` implementation
+  - defaults to the file-backed alert backend in this branch phase
 - `src/session_io.py`
   - keeps `append_alert(...)` as the compatibility write entrypoint
   - keeps session snapshot assembly file-backed for metadata, progress, and results
@@ -212,9 +213,13 @@ Practical effect:
 - writes and reads now go through the same alert seam
 - the dedicated alert routes/tools and the general session snapshot now agree
   on the active alert backend
-- the persisted JSONL contract stays unchanged in the default mode
+- the default file-backed mode keeps the persisted `alerts.jsonl` contract
+  unchanged
 - the PostgreSQL alert store can be enabled without moving filtering or
   grouping into the storage layer
+- the current rollout state is simple:
+  - file is still the default backend
+  - PostgreSQL is the supported opt-in backend
 
 The current PostgreSQL alert path keeps that contract narrow too:
 

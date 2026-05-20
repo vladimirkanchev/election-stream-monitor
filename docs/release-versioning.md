@@ -33,6 +33,15 @@ For now, a small practical release process is enough:
 3. rerun the main verification commands
 4. tag and publish from a known-good commit
 
+When a release includes alert-storage changes, state the rollout mode
+explicitly in the release notes:
+
+- file-backed alerts remain the default backend
+- PostgreSQL alerts are supported behind `ESM_ALERT_STORE_BACKEND=postgres`
+
+That keeps releases honest about the current rollout state and avoids
+implying a project-wide default flip too early.
+
 ## Current Project Stage
 
 The current versioning posture matches the actual project state:

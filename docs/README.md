@@ -4,6 +4,9 @@ This folder is the internal reference set for contributors, reviewers, and
 people using AI-assisted tools for coding and development. Use it as the
 intent layer for the current repo state, not as end-user documentation.
 
+If you want the gentlest product-level overview first, start with the root
+[`README.md`](../README.md) and come back here for the maintainer view.
+
 ## Best First Reads
 
 If you are new to the repo, read these in order:
@@ -17,6 +20,12 @@ If you are new to the repo, read these in order:
 ## Best Entry Points For Coding Agents
 
 Use this shortcut map before editing code:
+
+For the current alert-storage rollout state, use:
+
+- [architecture.md](./architecture.md) for the storage split and current rollout decision
+- [session-model.md](./session-model.md) for snapshot and persistence semantics
+- [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
 
 - changing session snapshot or polling behavior:
   - [session-model.md](./session-model.md)
@@ -183,9 +192,20 @@ module families and the matching tests:
     - compatibility write-entry and write-to-read seam coverage
   - `tests/test_session_runner_execution_local.py`
     - local execution-path coverage for runner-written alerts through the seam
+      plus the live weekly runtime/operator-flow runner confidence anchor
+  - `scripts/postgres_alert_weekly_backend_confidence.py`
+    - opt-in weekly/manual live Postgres backend-confidence runner for store,
+      raw/grouped FastAPI, and grouped MCP checks
+  - `scripts/postgres_alert_weekly_runtime_operator_confidence.py`
+    - opt-in weekly/manual live Postgres runtime/operator-flow runner for
+      runner writes, snapshot reads, and CLI session reads
   - `scripts/postgres_alert_weekly_confidence.py`
-    - small opt-in weekly/manual live Postgres confidence runner for store,
-      grouped FastAPI, snapshot, and CLI alert-path checks
+    - umbrella runner that executes both weekly/manual live Postgres
+      confidence bundles in order
+  - `.github/workflows/weekly-validation.yml`
+    - scheduled weekly automation can run both live Postgres confidence
+      bundles when `ESM_POSTGRES_ALERT_DATABASE_URL` is configured as a repo
+      secret
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`

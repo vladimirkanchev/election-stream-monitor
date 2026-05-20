@@ -125,6 +125,12 @@ alert store a bounded replacement instead of a larger read-model rewrite.
 PostgreSQL can now be selected explicitly at runtime, while the default alert
 backend still stays file-backed.
 
+The current rollout decision is explicit:
+
+- file-backed alerts remain the default backend
+- PostgreSQL alert storage is real, tested, and opt-in
+- this branch does not yet flip the project-wide alert default
+
 The current PostgreSQL alert mapping is intentionally column-first rather than
 JSONB-first:
 

@@ -736,7 +736,8 @@ smokes are opt-in and currently need:
 
 - `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
 - `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
-- usually `ESM_ALERT_STORE_BACKEND=postgres`
+- usually `ESM_ALERT_STORE_BACKEND=postgres` when the test exercises the
+  runtime-selected backend path rather than the store in isolation
 
 Use the live smokes when you need confidence in the real database path:
 
@@ -754,29 +755,61 @@ For this branch, the smallest useful live checks are:
 Use the synthetic suites for normal branch work. They are cheaper, faster, and
 already cover most seam, parity, and boundary behavior.
 
-For weekly/manual rollout confidence, use the small live-Postgres alert bundle:
+For weekly/manual rollout confidence, the live Postgres path is split into two
+focused bundles:
+
+- backend confidence
+  - store bootstrap and real append/read round-trips
+  - timestamp/order drift-sensitive checks
+  - raw/grouped FastAPI route checks
+  - grouped MCP agreement over the active backend
+- runtime/operator-flow confidence
+  - runner-written alerts through the live Postgres backend
+  - session snapshot reads over the active backend
+  - CLI `read-session` behavior over the active backend
+
+Use either bundle directly:
+
+```bash
+ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
+python3 scripts/postgres_alert_weekly_backend_confidence.py
+```
+
+```bash
+ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
+python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py
+```
+
+Or run both with the umbrella helper:
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
 python3 scripts/postgres_alert_weekly_confidence.py
 ```
 
-That bundle keeps the live path intentionally small and representative:
+The umbrella helper runs both bundles in order.
 
-- store bootstrap and real append/read round-trip
-- grouped FastAPI route behavior over the active Postgres backend
-- session snapshot reads over the active Postgres backend
-- CLI `read-session` behavior over the active Postgres backend
+Use the backend bundle when:
 
-Use it when:
+- you want stronger real-DB confidence in storage and grouped query behavior
+- you are comparing seeded alert behavior across the main public readers
+
+Use the runtime/operator-flow bundle when:
+
+- you want confidence in runner-written alerts under real Postgres mode
+- you want to sanity-check snapshot and CLI behavior before a rollout or demo
+
+Use the umbrella helper when:
 
 - you want one repeatable weekly confidence pass
 - you are preparing a rollout or demo with `ESM_ALERT_STORE_BACKEND=postgres`
 - you want extra real-DB confidence before changing backend defaults later
 
-The other live Postgres tests are still useful for deeper manual follow-up,
-but they are no longer the minimum path for routine branch or weekly
-confidence.
+The scheduled `weekly-validation` workflow can also run the backend and
+runtime/operator bundles automatically when the repository secret
+`ESM_POSTGRES_ALERT_DATABASE_URL` is configured. Without that secret, those
+weekly live-Postgres jobs stay skipped and the rest of the weekly workflow
+continues normally.
 
 Do not treat it as a normal branch-push requirement. The synthetic seam,
 parity, and boundary suites remain the primary everyday validation path.
@@ -822,7 +855,7 @@ Current alert persistence contract to preserve:
   - `src/session_alert_store.py`
     - defines the narrow storage contract for append/read raw alert rows only
     - owns the runtime-selected default alert store and still defaults to the
-      file-backed `alerts.jsonl` implementation
+      file-backed alert backend in this branch phase
     - filtering, summaries, and grouped incidents stay outside the store seam
   - `src/session_alert_store_runtime_config.py`
     - owns explicit `file` versus `postgres` backend selection for that default
@@ -852,7 +885,8 @@ Current alert persistence contract to preserve:
   - persisted alert row shape stays the validated `AlertEvent` payload written by
     `append_alert(...)`
   - missing `session.json` remains an unknown-session failure
-  - missing `alerts.jsonl` on a known session remains a stable empty alert history
+  - missing the file-backed `alerts.jsonl` log on a known session remains a
+    stable empty alert history
   - malformed or unreadable alert-log rows remain ignorable without failing the whole read
   - filter, raw-summary, grouped-timeline, and grouped-summary meanings stay unchanged
 - current tests that prove this contract:

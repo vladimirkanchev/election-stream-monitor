@@ -66,6 +66,13 @@ Most people will use the project through the Electron app. Electron starts
 and talks to a local FastAPI backend for session control, detector loading,
 and playback-source resolution.
 
+If you just need the simplest current-picture summary:
+
+- session metadata, progress, and results stay on local disk
+- alerts use one shared backend seam
+- file-backed alerts are still the default
+- PostgreSQL alerts are supported when you opt in explicitly
+
 Electron still owns the desktop-only work: app startup, local media serving,
 the HLS proxy path, and the UI bridge. Session snapshots stay on disk and are
 polled by the UI while a run is active.
@@ -103,9 +110,20 @@ Current work is centered on detector growth, MCP tooling, runtime hardening,
 and PostgreSQL-backed alert persistence for alerts. That backend is now
 implemented behind the alert store seam, but file remains the default. Use
 `ESM_ALERT_STORE_BACKEND=postgres` to opt into PostgreSQL explicitly.
+
 Routine branch validation stays synthetic by default. For one small real-DB
-weekly/manual confidence pass, use
-`python3 scripts/postgres_alert_weekly_confidence.py`.
+weekly/manual confidence pass, use either:
+
+- `python3 scripts/postgres_alert_weekly_backend_confidence.py`
+- `python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py`
+
+or run both with:
+
+- `python3 scripts/postgres_alert_weekly_confidence.py`
+
+If the repository secret `ESM_POSTGRES_ALERT_DATABASE_URL` is configured, the
+scheduled weekly workflow can run those two Postgres confidence bundles
+automatically.
 
 ## FastAPI Access Modes
 
@@ -194,7 +212,8 @@ results, and gives the UI something stable to poll:
 - a session is created when monitoring starts
 - progress and results are written to local JSON / JSONL files
 - alert reads and writes now share one explicit backend seam
-- file-backed alerts remain the default, with PostgreSQL available as an opt-in backend
+- file-backed alerts remain the default, with PostgreSQL available when you
+  opt in
 - the session snapshot still keeps metadata, progress, and results file-backed
 - the snapshot `alerts` field now follows the active alert backend too
 - the frontend polls those snapshots through Electron and the local FastAPI backend
@@ -491,7 +510,7 @@ references are:
 
 ## Versioning And Releases
 
-- the project is now in an early `0.3.1` stage
+- the project is now in an early `0.4.0` stage
 - expect active iteration, with improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)
