@@ -10,7 +10,7 @@ persisted alert seam:
 Grouped timeline and incident-summary behavior lives in
 `session_alert_incidents.py` so the raw alert path stays smaller and easier to
 scan. The public entrypoints in this module accept an optional alert store seam
-while still defaulting to the file-backed implementation.
+while still defaulting to the runtime-selected alert store.
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ def read_session_alert_events(
     - missing `alerts.jsonl` on a known session means no persisted alerts yet
     - malformed alert rows are ignored instead of failing the whole read
 
-    The optional store seam keeps the current file-backed implementation as the
-    default while letting future storage backends reuse the same read-model
+    The optional store seam keeps the current default backend behind one stable
+    read-model path while letting alternate alert stores reuse the same query
     logic.
     """
     return store.read_session_alert_events(session_id)

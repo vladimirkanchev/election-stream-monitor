@@ -1,8 +1,13 @@
 """Shared alert persistence seam.
 
 This module owns the storage boundary for session-scoped raw alert events and
-the default backend selection used by current callers. Query behavior stays in
-the alert read-model modules.
+the centralized default backend selection used by current callers.
+
+Current rollout state:
+
+- file-backed `alerts.jsonl` remains the default alert backend
+- PostgreSQL is implemented as the supported opt-in backend
+- query behavior still lives in the alert read-model modules
 """
 
 from __future__ import annotations
@@ -87,7 +92,11 @@ _FILE_SESSION_ALERT_STORE = FileSessionAlertStore()
 
 @lru_cache(maxsize=1)
 def get_default_session_alert_store() -> SessionAlertStore:
-    """Return the cached default alert store for the current runtime mode."""
+    """Return the cached default alert store for the current runtime mode.
+
+    The normal branch-default resolution remains the file-backed store unless
+    runtime config explicitly opts into PostgreSQL.
+    """
     return _build_default_session_alert_store(get_alert_store_runtime_settings())
 
 
@@ -127,7 +136,11 @@ def _build_postgres_default_session_alert_store() -> SessionAlertStore:
 
 
 class _DefaultSessionAlertStoreProxy:
-    """Runtime-resolved proxy that preserves the existing alert-store call path."""
+    """Runtime-resolved proxy that preserves the existing alert-store call path.
+
+    Callers keep using one stable seam while runtime config decides whether the
+    branch runs with the default file backend or the opt-in PostgreSQL backend.
+    """
 
     def append_alert(self, event: AlertEvent) -> None:
         """Append one alert through the currently selected default store backend."""

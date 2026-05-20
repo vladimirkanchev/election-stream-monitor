@@ -1,4 +1,11 @@
-"""Runtime backend selection for the alert persistence seam."""
+"""Runtime backend selection for the alert persistence seam.
+
+The current rollout decision is explicit:
+
+- `file` remains the default alert backend
+- `postgres` is the supported opt-in backend through
+  `ESM_ALERT_STORE_BACKEND=postgres`
+"""
 
 from __future__ import annotations
 
@@ -23,13 +30,17 @@ class AlertStoreRuntimeConfigurationError(RuntimeError):
 
 @dataclass(frozen=True)
 class AlertStoreRuntimeSettings:
-    """Structured settings for default alert-store selection."""
+    """Structured settings for default alert-store selection.
+
+    These settings intentionally keep file-backed alert storage as the default
+    rollout mode until PostgreSQL becomes the broader project default later.
+    """
 
     backend: AlertStoreBackend
 
 
 def _parse_backend_env(name: str, default: AlertStoreBackend) -> AlertStoreBackend:
-    """Parse one backend env var and fall back to the default on invalid values."""
+    """Parse one backend env var and fall back to the safe default on invalid values."""
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
@@ -42,7 +53,11 @@ def _parse_backend_env(name: str, default: AlertStoreBackend) -> AlertStoreBacke
 
 @lru_cache(maxsize=1)
 def get_alert_store_runtime_settings() -> AlertStoreRuntimeSettings:
-    """Return cached runtime backend-selection settings."""
+    """Return cached runtime backend-selection settings.
+
+    Missing or invalid backend env values resolve to the branch default:
+    file-backed alert storage.
+    """
     return AlertStoreRuntimeSettings(
         backend=_parse_backend_env(
             ALERT_STORE_BACKEND_ENV,
