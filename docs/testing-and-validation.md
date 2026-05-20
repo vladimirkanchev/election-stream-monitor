@@ -744,8 +744,42 @@ Use the live smokes when you need confidence in the real database path:
 - real SQL insert/read behavior
 - snapshot/API/CLI behavior over the active Postgres backend
 
+For this branch, the smallest useful live checks are:
+
+- store-level smoke:
+  - `tests/test_session_alert_store_postgres.py::test_real_postgres_alert_store_smoke_round_trip`
+- representative public-surface smoke:
+  - `tests/test_api_session_alert_incidents.py::test_live_runtime_postgres_grouped_routes_follow_actual_startup_path`
+
 Use the synthetic suites for normal branch work. They are cheaper, faster, and
 already cover most seam, parity, and boundary behavior.
+
+For weekly/manual rollout confidence, use the small live-Postgres alert bundle:
+
+```bash
+ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
+python3 scripts/postgres_alert_weekly_confidence.py
+```
+
+That bundle keeps the live path intentionally small and representative:
+
+- store bootstrap and real append/read round-trip
+- grouped FastAPI route behavior over the active Postgres backend
+- session snapshot reads over the active Postgres backend
+- CLI `read-session` behavior over the active Postgres backend
+
+Use it when:
+
+- you want one repeatable weekly confidence pass
+- you are preparing a rollout or demo with `ESM_ALERT_STORE_BACKEND=postgres`
+- you want extra real-DB confidence before changing backend defaults later
+
+The other live Postgres tests are still useful for deeper manual follow-up,
+but they are no longer the minimum path for routine branch or weekly
+confidence.
+
+Do not treat it as a normal branch-push requirement. The synthetic seam,
+parity, and boundary suites remain the primary everyday validation path.
 
 The fast backend CI lane intentionally stays synthetic and contract-focused.
 The real-media `ffmpeg`/`ffprobe` fixture coverage lives in the slower weekly
@@ -857,8 +891,9 @@ The current test split is:
   - explicit runtime backend-mode config coverage for `file` versus `postgres`
 - `tests/test_session_alert_store_parity.py`
   - shared file-store versus PostgreSQL-store parity for raw reads,
-    known-empty and unknown-session behavior, filtered summaries, grouped
-    timelines, grouped summaries, and the file-only malformed-row subset path
+    filtered raw reads, known-empty and unknown-session behavior, filtered
+    summaries, grouped timelines, grouped summaries, grouped filtered reads,
+    grouped time-bounded reads, and the file-only malformed-row subset path
 - `tests/test_session_alert_store_postgres.py`
   - PostgreSQL alert-store contract coverage for schema/bootstrap plus the
     concrete second backend's read/write drift-sensitive behavior

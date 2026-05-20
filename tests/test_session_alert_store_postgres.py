@@ -1,7 +1,8 @@
-"""Contract and bootstrap tests for the PostgreSQL alert store.
+"""Store-level contract and bootstrap tests for the PostgreSQL alert store.
 
-These tests stay below the service layer and focus on schema/bootstrap work,
-SQL mapping, row normalization, and preserved unknown-session parity.
+This file owns the concrete Postgres backend below the service and boundary
+layers: schema/bootstrap behavior, SQL mapping, row normalization, preserved
+unknown-session parity, and the canonical opt-in live store smoke path.
 """
 
 from __future__ import annotations
@@ -602,7 +603,7 @@ def test_postgres_session_alert_store_propagates_read_failures(
 def test_real_postgres_alert_store_smoke_round_trip(
     monkeypatch,
 ) -> None:
-    """A real PostgreSQL connection should support schema init and one round-trip read."""
+    """Canonical opt-in store-level smoke for schema init and one live round trip."""
     session_id = build_unique_session_id("real-postgres-smoke")
     _mark_known_sessions(monkeypatch, session_id)
     connection = connect_postgres_alert_store()
@@ -642,7 +643,7 @@ def test_real_postgres_alert_store_smoke_round_trip(
 def test_real_postgres_alert_store_preserves_exact_timestamp_round_trip(
     monkeypatch,
 ) -> None:
-    """A live PostgreSQL round trip should preserve the shared timestamp string format exactly."""
+    """Live round trips should preserve the shared timestamp string format exactly."""
     session_id = build_unique_session_id("real-postgres-timestamp")
     expected_timestamp = "2026-05-19 20:15:45"
     _mark_known_sessions(monkeypatch, session_id)
@@ -672,7 +673,7 @@ def test_real_postgres_alert_store_preserves_exact_timestamp_round_trip(
 def test_real_postgres_alert_store_preserves_append_order_for_same_timestamp_alerts(
     monkeypatch,
 ) -> None:
-    """A live PostgreSQL read should stay append-ordered even when timestamps are identical."""
+    """Live reads should stay append-ordered even when timestamps are identical."""
     session_id = build_unique_session_id("real-postgres-same-timestamp")
     shared_timestamp = "2026-05-19 20:20:00"
     _mark_known_sessions(monkeypatch, session_id)

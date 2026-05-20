@@ -172,7 +172,8 @@ module families and the matching tests:
     - explicit `file` versus `postgres` backend-mode config coverage
   - `tests/test_session_alert_store_parity.py`
     - file-store versus PostgreSQL-store parity over the shared alert seam and
-      read-model layer
+      read-model layer, including filtered raw reads plus grouped filtered and
+      time-bounded parity
   - `tests/test_session_alert_store_postgres.py`
     - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
       second backend's read/write drift-sensitive behavior
@@ -182,6 +183,9 @@ module families and the matching tests:
     - compatibility write-entry and write-to-read seam coverage
   - `tests/test_session_runner_execution_local.py`
     - local execution-path coverage for runner-written alerts through the seam
+  - `scripts/postgres_alert_weekly_confidence.py`
+    - small opt-in weekly/manual live Postgres confidence runner for store,
+      grouped FastAPI, snapshot, and CLI alert-path checks
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`
@@ -236,11 +240,15 @@ module families and the matching tests:
   - `tests/test_mcp_server_alerts_behavior.py` owns raw MCP no-alert,
     filtered-data, and unknown-filter empty behavior, with payload-shaping
     expectations kept separate from MCP-facing error translation
+  - `tests/test_api_session_alert_incidents.py` owns grouped FastAPI route
+    behavior, grouped filter binding, runtime-selected Postgres wiring, and
+    the small live grouped-route smokes
   - `tests/test_mcp_server_alerts_errors.py` owns raw MCP missing-session,
     invalid-range, and invalid-timestamp error mapping
   - `tests/test_mcp_server_incidents_behavior.py` owns grouped MCP no-alert,
-    filtered-data, and unknown-filter empty behavior, with grouped output
-    shaping kept separate from grouped MCP error translation
+    filtered-data, runtime-selected Postgres grouped reads, and small live
+    grouped-tool smokes, with grouped output shaping kept separate from
+    grouped MCP error translation
   - `tests/test_mcp_server_incidents_errors.py` owns grouped MCP missing-session,
     invalid-range, and invalid-timestamp error mapping
   - `tests/api_alert_test_support.py` owns the repeated FastAPI alerts-router

@@ -103,6 +103,9 @@ Current work is centered on detector growth, MCP tooling, runtime hardening,
 and PostgreSQL-backed alert persistence for alerts. That backend is now
 implemented behind the alert store seam, but file remains the default. Use
 `ESM_ALERT_STORE_BACKEND=postgres` to opt into PostgreSQL explicitly.
+Routine branch validation stays synthetic by default. For one small real-DB
+weekly/manual confidence pass, use
+`python3 scripts/postgres_alert_weekly_confidence.py`.
 
 ## FastAPI Access Modes
 
