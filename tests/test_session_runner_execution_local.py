@@ -714,18 +714,21 @@ def test_live_runtime_postgres_runner_written_alerts_stay_aligned_across_snapsho
         last_alert_timestamp_utc="2026-05-20 09:00:10",
     )
     assert timeline_response.status_code == 200
-    assert timeline_response.json() == [
-        {
-            "start_time_utc": "2026-05-20 09:00:00",
-            "end_time_utc": "2026-05-20 09:00:10",
-            "detector_id": "video_metrics",
-            "severity": "warning",
-            "title": "Live runtime alert",
-            "alert_count": 2,
-            "source_names": ["segment_0001.ts", "segment_0002.ts"],
-            "sample_message": "First runner-written alert persisted through live Postgres.",
-        }
-    ]
+    assert timeline_response.json() == {
+        "session_id": metadata.session_id,
+        "entries": [
+            {
+                "start_time_utc": "2026-05-20 09:00:00",
+                "end_time_utc": "2026-05-20 09:00:10",
+                "detector_id": "video_metrics",
+                "severity": "warning",
+                "title": "Live runtime alert",
+                "alert_count": 2,
+                "source_names": ["segment_0001.ts", "segment_0002.ts"],
+                "sample_message": "First runner-written alert persisted through live Postgres.",
+            }
+        ],
+    }
 
 
 def test_process_discovered_slices_preserves_alert_append_order_in_raw_reads(
