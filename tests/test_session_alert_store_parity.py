@@ -1,8 +1,9 @@
-"""Parity tests shared by the file-backed and PostgreSQL alert stores.
+"""Shared backend-equivalence tests for the alert-store seam.
 
-These tests keep the comparison narrow: both stores get the same validated
-events, shared readers go through the same seam, and backend-specific
-corruption behavior stays outside the parity matrix.
+This file is the main Task-4 parity contract for file-backed and PostgreSQL
+alert storage. It stays deliberately below API/MCP/CLI boundaries and focuses
+on raw, filtered, grouped, and time-bounded read-model behavior that must not
+drift when storage changes.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from session_alert_store_postgres import (
 )
 from session_alerts import (
     AlertSummaryPayload,
+    filter_session_alert_events,
     read_session_alert_events,
     summarize_session_alert_events,
 )
@@ -56,7 +58,7 @@ ParityResult = TypeVar(
 
 
 class InMemoryPostgresParityCursor:
-    """Tiny cursor that simulates only the SQL used by the alert store seam."""
+    """Tiny cursor that simulates only the SQL used by the Postgres store."""
 
     def __init__(self, connection: "InMemoryPostgresParityConnection") -> None:
         self._connection = connection
@@ -75,7 +77,7 @@ class InMemoryPostgresParityCursor:
         """Close the synthetic cursor without extra cleanup work."""
 
     def execute(self, query: str, params: object | None = None) -> object:
-        """Handle the two SQL operations used by the concrete Postgres store."""
+        """Handle the insert and read queries used by the concrete Postgres store."""
         if query == POSTGRES_ALERT_EVENTS_INSERT_SQL:
             assert isinstance(params, tuple)
             self._connection.append_inserted_row(params)
@@ -95,7 +97,7 @@ class InMemoryPostgresParityCursor:
 
 
 class InMemoryPostgresParityConnection:
-    """Minimal in-memory connection for backend parity tests."""
+    """Minimal in-memory connection for backend-equivalence tests."""
 
     def __init__(self) -> None:
         self._rows: list[tuple[object, ...]] = []
@@ -156,6 +158,114 @@ class StorePair:
     session_id: str
     file_store: SessionAlertStore
     postgres_store: SessionAlertStore
+
+
+def _filtered_parity_events(session_id: str) -> list[AlertEvent]:
+    """Return one mixed alert set shared by the filtered raw-read and summary checks."""
+    return [
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:00",
+            detector_id="video_metrics",
+            title="Early metric warning",
+            message="Outside the requested time window.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:10",
+            detector_id="video_blur",
+            title="Blur info",
+            message="Wrong detector for the filtered read model.",
+            severity="info",
+            source_name="segment_0002.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:20",
+            detector_id="video_metrics",
+            title="Late metric warning",
+            message="Expected filtered match.",
+            severity="warning",
+            source_name="segment_0003.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:25",
+            detector_id="video_metrics",
+            title="Metric info",
+            message="Right detector but wrong severity.",
+            severity="info",
+            source_name="segment_0004.ts",
+        ),
+    ]
+
+
+def _grouped_parity_events(session_id: str) -> list[AlertEvent]:
+    """Return one alert set shared by grouped timeline and grouped summary parity."""
+    return [
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="First grouped incident row.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:20",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Second grouped incident row.",
+            severity="warning",
+            source_name="segment_0002.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:02:00",
+            detector_id="video_blur",
+            title="Blur increased",
+            message="Second grouped incident.",
+            severity="info",
+            source_name="segment_0003.ts",
+        ),
+    ]
+
+
+def _filtered_grouped_parity_events(session_id: str) -> list[AlertEvent]:
+    """Return one alert set shared by the grouped detector/severity filter checks."""
+    return [
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:10:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Expected grouped filtered result.",
+            severity="warning",
+            source_name="segment_0101.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:10:10",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Wrong severity for the grouped filter.",
+            severity="info",
+            source_name="segment_0102.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 12:10:20",
+            detector_id="video_blur",
+            title="Blur increased",
+            message="Wrong detector for the grouped filter.",
+            severity="warning",
+            source_name="segment_0103.ts",
+        ),
+    ]
 
 
 def _mark_known_postgres_sessions(
@@ -303,35 +413,7 @@ def test_file_and_postgres_alert_stores_match_filtered_summary_behavior(
         monkeypatch,
         tmp_path,
         session_id="parity-summary",
-        events=[
-            build_alert_event(
-                "parity-summary",
-                timestamp_utc="2026-05-19 12:00:00",
-                detector_id="video_metrics",
-                title="Early metric warning",
-                message="Outside the requested time window.",
-                severity="warning",
-                source_name="segment_0001.ts",
-            ),
-            build_alert_event(
-                "parity-summary",
-                timestamp_utc="2026-05-19 12:00:10",
-                detector_id="video_blur",
-                title="Blur info",
-                message="Wrong detector for the filtered summary.",
-                severity="info",
-                source_name="segment_0002.ts",
-            ),
-            build_alert_event(
-                "parity-summary",
-                timestamp_utc="2026-05-19 12:00:20",
-                detector_id="video_metrics",
-                title="Late metric warning",
-                message="Expected filtered match.",
-                severity="warning",
-                source_name="segment_0003.ts",
-            ),
-        ],
+        events=_filtered_parity_events("parity-summary"),
     )
 
     summary = _assert_store_pair_parity(
@@ -356,6 +438,43 @@ def test_file_and_postgres_alert_stores_match_filtered_summary_behavior(
     }
 
 
+def test_file_and_postgres_alert_stores_match_filtered_raw_read_behavior(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Filtered raw reads should stay identical across both store backends."""
+    pair = _build_store_pair(
+        monkeypatch,
+        tmp_path,
+        session_id="parity-filtered-read",
+        events=_filtered_parity_events("parity-filtered-read"),
+    )
+
+    filtered_alerts = _assert_store_pair_parity(
+        pair,
+        lambda store: filter_session_alert_events(
+            pair.session_id,
+            detector_id="video_metrics",
+            severity="warning",
+            start_time_utc="2026-05-19 12:00:05",
+            end_time_utc="2026-05-19 12:00:25",
+            store=store,
+        ),
+    )
+
+    assert filtered_alerts == [
+        build_normalized_alert(
+            "parity-filtered-read",
+            timestamp_utc="2026-05-19 12:00:20",
+            detector_id="video_metrics",
+            title="Late metric warning",
+            message="Expected filtered match.",
+            severity="warning",
+            source_name="segment_0003.ts",
+        )
+    ]
+
+
 def test_file_and_postgres_alert_stores_match_grouped_timeline_behavior(
     monkeypatch,
     tmp_path: Path,
@@ -365,35 +484,7 @@ def test_file_and_postgres_alert_stores_match_grouped_timeline_behavior(
         monkeypatch,
         tmp_path,
         session_id="parity-timeline",
-        events=[
-            build_alert_event(
-                "parity-timeline",
-                timestamp_utc="2026-05-19 12:00:00",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="First alert in the incident.",
-                severity="warning",
-                source_name="segment_0001.ts",
-            ),
-            build_alert_event(
-                "parity-timeline",
-                timestamp_utc="2026-05-19 12:00:20",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="Second alert in the incident.",
-                severity="warning",
-                source_name="segment_0002.ts",
-            ),
-            build_alert_event(
-                "parity-timeline",
-                timestamp_utc="2026-05-19 12:02:00",
-                detector_id="video_blur",
-                title="Blur increased",
-                message="New incident after the grouping gap.",
-                severity="info",
-                source_name="segment_0003.ts",
-            ),
-        ],
+        events=_grouped_parity_events("parity-timeline"),
     )
 
     timeline = _assert_store_pair_parity(
@@ -410,7 +501,7 @@ def test_file_and_postgres_alert_stores_match_grouped_timeline_behavior(
             "title": "Black screen detected",
             "alert_count": 2,
             "source_names": ["segment_0001.ts", "segment_0002.ts"],
-            "sample_message": "First alert in the incident.",
+            "sample_message": "First grouped incident row.",
         },
         {
             "start_time_utc": "2026-05-19 12:02:00",
@@ -420,7 +511,7 @@ def test_file_and_postgres_alert_stores_match_grouped_timeline_behavior(
             "title": "Blur increased",
             "alert_count": 1,
             "source_names": ["segment_0003.ts"],
-            "sample_message": "New incident after the grouping gap.",
+            "sample_message": "Second grouped incident.",
         },
     ]
 
@@ -434,35 +525,7 @@ def test_file_and_postgres_alert_stores_match_grouped_incident_summary_behavior(
         monkeypatch,
         tmp_path,
         session_id="parity-incident-summary",
-        events=[
-            build_alert_event(
-                "parity-incident-summary",
-                timestamp_utc="2026-05-19 12:00:00",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="First grouped incident.",
-                severity="warning",
-                source_name="segment_0001.ts",
-            ),
-            build_alert_event(
-                "parity-incident-summary",
-                timestamp_utc="2026-05-19 12:00:10",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="Still the first grouped incident.",
-                severity="warning",
-                source_name="segment_0002.ts",
-            ),
-            build_alert_event(
-                "parity-incident-summary",
-                timestamp_utc="2026-05-19 12:02:00",
-                detector_id="video_blur",
-                title="Blur increased",
-                message="Second grouped incident.",
-                severity="info",
-                source_name="segment_0003.ts",
-            ),
-        ],
+        events=_grouped_parity_events("parity-incident-summary"),
     )
 
     summary = _assert_store_pair_parity(
@@ -484,6 +547,140 @@ def test_file_and_postgres_alert_stores_match_grouped_incident_summary_behavior(
         "Black screen detected": 1,
         "Blur increased": 1,
     }
+
+
+def test_file_and_postgres_alert_stores_match_time_bounded_grouped_timeline_behavior(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Time-bounded grouped timelines should stay identical across both backends."""
+    pair = _build_store_pair(
+        monkeypatch,
+        tmp_path,
+        session_id="parity-time-bounded-timeline",
+        events=_grouped_parity_events("parity-time-bounded-timeline"),
+    )
+
+    timeline = _assert_store_pair_parity(
+        pair,
+        lambda store: build_session_timeline(
+            pair.session_id,
+            start_time_utc="2026-05-19 12:00:10",
+            end_time_utc="2026-05-19 12:01:00",
+            store=store,
+        ),
+    )
+
+    assert timeline["entries"] == [
+        {
+            "start_time_utc": "2026-05-19 12:00:20",
+            "end_time_utc": "2026-05-19 12:00:20",
+            "detector_id": "video_metrics",
+            "severity": "warning",
+            "title": "Black screen detected",
+            "alert_count": 1,
+            "source_names": ["segment_0002.ts"],
+            "sample_message": "Second grouped incident row.",
+        }
+    ]
+
+
+def test_file_and_postgres_alert_stores_match_time_bounded_grouped_incident_summary_behavior(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Time-bounded grouped summaries should stay identical across both backends."""
+    pair = _build_store_pair(
+        monkeypatch,
+        tmp_path,
+        session_id="parity-time-bounded-incident-summary",
+        events=_grouped_parity_events("parity-time-bounded-incident-summary"),
+    )
+
+    summary = _assert_store_pair_parity(
+        pair,
+        lambda store: build_session_incident_summary(
+            pair.session_id,
+            start_time_utc="2026-05-19 12:00:10",
+            end_time_utc="2026-05-19 12:01:00",
+            store=store,
+        ),
+    )
+
+    assert summary["total_alerts"] == 1
+    assert summary["total_incidents"] == 1
+    assert summary["counts_by_detector"] == {"video_metrics": 1}
+    assert summary["counts_by_severity"] == {"warning": 1}
+    assert summary["top_incident_categories"] == {"Black screen detected": 1}
+    assert summary["first_alert_timestamp_utc"] == "2026-05-19 12:00:20"
+    assert summary["last_alert_timestamp_utc"] == "2026-05-19 12:00:20"
+
+
+def test_file_and_postgres_alert_stores_match_filtered_grouped_timeline_behavior(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Filtered grouped timelines should stay identical across both backends."""
+    pair = _build_store_pair(
+        monkeypatch,
+        tmp_path,
+        session_id="parity-filtered-timeline",
+        events=_filtered_grouped_parity_events("parity-filtered-timeline"),
+    )
+
+    timeline = _assert_store_pair_parity(
+        pair,
+        lambda store: build_session_timeline(
+            pair.session_id,
+            detector_id="video_metrics",
+            severity="warning",
+            store=store,
+        ),
+    )
+
+    assert timeline["entries"] == [
+        {
+            "start_time_utc": "2026-05-19 12:10:00",
+            "end_time_utc": "2026-05-19 12:10:00",
+            "detector_id": "video_metrics",
+            "severity": "warning",
+            "title": "Black screen detected",
+            "alert_count": 1,
+            "source_names": ["segment_0101.ts"],
+            "sample_message": "Expected grouped filtered result.",
+        }
+    ]
+
+
+def test_file_and_postgres_alert_stores_match_filtered_grouped_incident_summary_behavior(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Filtered grouped summaries should stay identical across both backends."""
+    pair = _build_store_pair(
+        monkeypatch,
+        tmp_path,
+        session_id="parity-filtered-incident-summary",
+        events=_filtered_grouped_parity_events("parity-filtered-incident-summary"),
+    )
+
+    summary = _assert_store_pair_parity(
+        pair,
+        lambda store: build_session_incident_summary(
+            pair.session_id,
+            detector_id="video_metrics",
+            severity="warning",
+            store=store,
+        ),
+    )
+
+    assert summary["total_alerts"] == 1
+    assert summary["total_incidents"] == 1
+    assert summary["counts_by_detector"] == {"video_metrics": 1}
+    assert summary["counts_by_severity"] == {"warning": 1}
+    assert summary["top_incident_categories"] == {"Black screen detected": 1}
+    assert summary["first_alert_timestamp_utc"] == "2026-05-19 12:10:00"
+    assert summary["last_alert_timestamp_utc"] == "2026-05-19 12:10:00"
 
 
 def test_file_malformed_rows_match_postgres_clean_subset_where_corruption_has_no_equivalent(

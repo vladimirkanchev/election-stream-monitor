@@ -1,16 +1,10 @@
-"""Behavior tests for grouped MCP incident timeline and summary tools.
+"""MCP behavior tests for grouped incident timeline and summary tools.
 
-This file owns the usable grouped MCP payload surface:
-
-- grouped timeline and grouped incident-summary success payloads
-- known-session no-alert grouped outputs
-- filtered grouped outputs
-- known-session unknown-filter empty grouped outputs
-
-It intentionally keeps grouped payload behavior separate from grouped MCP
-error translation so incident/timeline output drift is easier to review on its
-own. Negative-path grouped MCP transport mapping lives in
-``test_mcp_server_incidents_errors.py``.
+This file owns the successful grouped MCP payload surface: grouped results,
+filter-preserving reads, runtime-selected backend wiring, and the small opt-in
+live Postgres grouped tool smokes. Grouped MCP error translation stays in
+`test_mcp_server_incidents_errors.py` so behavior drift and failure mapping
+remain easy to review separately.
 """
 
 from collections.abc import Iterator
@@ -19,7 +13,11 @@ from typing import cast
 
 import esm_mcp.alert_tools as alert_tools
 import pytest
-from session_alert_store import clear_default_session_alert_store_cache
+
+from session_alert_store import (
+    AlertEventPayload,
+    clear_default_session_alert_store_cache,
+)
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_incidents_test_support import (
     assert_mcp_tool_success,
@@ -183,6 +181,154 @@ def test_summarize_session_alert_incidents_tool_returns_grouped_summary(
     )
 
 
+def _runtime_grouped_mcp_alerts(session_id: str) -> list[AlertEventPayload]:
+    """Return one stable grouped-alert set for runtime-selected grouped MCP checks."""
+    return [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:30:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="First grouped runtime MCP alert.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:30:20",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Second grouped runtime MCP alert.",
+            severity="warning",
+            source_name="segment_0002.ts",
+        ),
+    ]
+
+
+def _single_grouped_timeline_payload(
+    session_id: str,
+    *,
+    start_time_utc: str,
+    end_time_utc: str,
+    source_names: list[str],
+    sample_message: str,
+) -> dict[str, object]:
+    """Return one grouped timeline payload for a single merged incident."""
+    return {
+        "session_id": session_id,
+        "entries": [
+            build_timeline_entry(
+                start_time_utc=start_time_utc,
+                end_time_utc=end_time_utc,
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=2,
+                source_names=source_names,
+                sample_message=sample_message,
+            )
+        ],
+    }
+
+
+def _single_grouped_summary_payload(
+    session_id: str,
+    *,
+    first_alert_timestamp_utc: str,
+    last_alert_timestamp_utc: str,
+    narrative_summary: str,
+) -> dict[str, object]:
+    """Return one grouped summary payload for a single merged incident."""
+    return cast(
+        dict[str, object],
+        build_incident_summary_payload(
+            session_id,
+            total_alerts=2,
+            total_incidents=1,
+            counts_by_detector={"video_metrics": 2},
+            counts_by_severity={"warning": 2},
+            top_incident_categories={"Black screen detected": 1},
+            first_alert_timestamp_utc=first_alert_timestamp_utc,
+            last_alert_timestamp_utc=last_alert_timestamp_utc,
+            narrative_summary=narrative_summary,
+        ),
+    )
+
+
+def _runtime_filtered_grouped_mcp_alerts(session_id: str) -> list[AlertEventPayload]:
+    """Return one grouped MCP alert set with exactly one detector/severity match."""
+    return [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 21:55:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Expected grouped filtered result.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 21:55:10",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Wrong severity for the grouped filter.",
+            severity="info",
+            source_name="segment_0002.ts",
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 21:55:20",
+            detector_id="video_blur",
+            title="Blur increased",
+            message="Wrong detector for the grouped filter.",
+            severity="warning",
+            source_name="segment_0003.ts",
+        ),
+    ]
+
+
+def _single_filtered_grouped_timeline_payload(session_id: str) -> dict[str, object]:
+    """Return one grouped MCP timeline payload for the filtered single-alert incident."""
+    return {
+        "session_id": session_id,
+        "entries": [
+            build_timeline_entry(
+                start_time_utc="2026-05-19 21:55:00",
+                end_time_utc="2026-05-19 21:55:00",
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=1,
+                source_names=["segment_0001.ts"],
+                sample_message="Expected grouped filtered result.",
+            )
+        ],
+    }
+
+
+def _single_filtered_grouped_summary_payload(
+    session_id: str,
+    *,
+    narrative_summary: str,
+) -> dict[str, object]:
+    """Return one grouped MCP summary payload for the filtered single-alert incident."""
+    return cast(
+        dict[str, object],
+        build_incident_summary_payload(
+            session_id,
+            total_alerts=1,
+            total_incidents=1,
+            counts_by_detector={"video_metrics": 1},
+            counts_by_severity={"warning": 1},
+            top_incident_categories={"Black screen detected": 1},
+            first_alert_timestamp_utc="2026-05-19 21:55:00",
+            last_alert_timestamp_utc="2026-05-19 21:55:00",
+            narrative_summary=narrative_summary,
+        ),
+    )
+
+
 def test_query_session_alert_timeline_tool_returns_empty_entries_for_known_session_without_alerts(
     monkeypatch,
     tmp_path: Path,
@@ -336,26 +482,7 @@ def test_grouped_mcp_alert_tools_use_runtime_selected_postgres_backend(
     """The grouped MCP tools should honor Postgres runtime selection without caller churn."""
     store = StaticAlertStore(
         "session-runtime-postgres-mcp-incidents",
-        [
-            build_normalized_alert(
-                "session-runtime-postgres-mcp-incidents",
-                timestamp_utc="2026-05-19 19:30:00",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="First grouped runtime MCP alert.",
-                severity="warning",
-                source_name="segment_0001.ts",
-            ),
-            build_normalized_alert(
-                "session-runtime-postgres-mcp-incidents",
-                timestamp_utc="2026-05-19 19:30:20",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="Second grouped runtime MCP alert.",
-                severity="warning",
-                source_name="segment_0002.ts",
-            ),
-        ],
+        _runtime_grouped_mcp_alerts("session-runtime-postgres-mcp-incidents"),
     )
     select_runtime_postgres_store(monkeypatch, store)
 
@@ -371,33 +498,62 @@ def test_grouped_mcp_alert_tools_use_runtime_selected_postgres_backend(
 
     assert_mcp_tool_success(
         timeline_result,
-        expected_payload={
-            "session_id": "session-runtime-postgres-mcp-incidents",
-            "entries": [
-                build_timeline_entry(
-                    start_time_utc="2026-05-19 19:30:00",
-                    end_time_utc="2026-05-19 19:30:20",
-                    detector_id="video_metrics",
-                    severity="warning",
-                    title="Black screen detected",
-                    alert_count=2,
-                    source_names=["segment_0001.ts", "segment_0002.ts"],
-                    sample_message="First grouped runtime MCP alert.",
-                )
-            ],
-        },
+        expected_payload=_single_grouped_timeline_payload(
+            "session-runtime-postgres-mcp-incidents",
+            start_time_utc="2026-05-19 19:30:00",
+            end_time_utc="2026-05-19 19:30:20",
+            source_names=["segment_0001.ts", "segment_0002.ts"],
+            sample_message="First grouped runtime MCP alert.",
+        ),
     )
     assert_mcp_tool_success(
         summary_result,
-        expected_payload=build_incident_summary_payload(
+        expected_payload=_single_grouped_summary_payload(
             "session-runtime-postgres-mcp-incidents",
-            total_alerts=2,
-            total_incidents=1,
-            counts_by_detector={"video_metrics": 2},
-            counts_by_severity={"warning": 2},
-            top_incident_categories={"Black screen detected": 1},
             first_alert_timestamp_utc="2026-05-19 19:30:00",
             last_alert_timestamp_utc="2026-05-19 19:30:20",
+            narrative_summary=summary_payload["narrative_summary"],
+        ),
+    )
+
+
+def test_grouped_mcp_alert_tools_preserve_filtered_results_in_runtime_selected_postgres_mode(
+    monkeypatch,
+) -> None:
+    """Grouped MCP tools should keep filtered results stable in runtime-selected Postgres mode."""
+    session_id = "session-runtime-postgres-mcp-filtered-incidents"
+    store = StaticAlertStore(
+        session_id,
+        _runtime_filtered_grouped_mcp_alerts(session_id),
+    )
+    select_runtime_postgres_store(monkeypatch, store)
+
+    timeline_result = call_mcp_tool(
+        "query_session_alert_timeline",
+        {
+            "session_id": session_id,
+            "detector_id": "video_metrics",
+            "severity": "warning",
+        },
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alert_incidents",
+        {
+            "session_id": session_id,
+            "detector_id": "video_metrics",
+            "severity": "warning",
+        },
+    )
+    summary_payload = summary_result.structuredContent
+
+    assert_mcp_tool_success(
+        timeline_result,
+        expected_payload=_single_filtered_grouped_timeline_payload(session_id),
+    )
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=_single_filtered_grouped_summary_payload(
+            session_id,
             narrative_summary=summary_payload["narrative_summary"],
         ),
     )
@@ -501,129 +657,22 @@ def test_live_runtime_postgres_mcp_raw_and_grouped_tools_agree(
     )
     assert_mcp_tool_success(
         timeline_result,
-        expected_payload={
-            "session_id": session_id,
-            "entries": [
-                build_timeline_entry(
-                    start_time_utc="2026-05-19 21:30:00",
-                    end_time_utc="2026-05-19 21:30:20",
-                    detector_id="video_metrics",
-                    severity="warning",
-                    title="Black screen detected",
-                    alert_count=2,
-                    source_names=["segment_0001.ts", "segment_0002.ts"],
-                    sample_message="First live grouped MCP alert.",
-                )
-            ],
-        },
+        expected_payload=_single_grouped_timeline_payload(
+            session_id,
+            start_time_utc="2026-05-19 21:30:00",
+            end_time_utc="2026-05-19 21:30:20",
+            source_names=["segment_0001.ts", "segment_0002.ts"],
+            sample_message="First live grouped MCP alert.",
+        ),
     )
     grouped_summary_payload = grouped_summary_result.structuredContent
     assert_mcp_tool_success(
         grouped_summary_result,
-        expected_payload=build_incident_summary_payload(
+        expected_payload=_single_grouped_summary_payload(
             session_id,
-            total_alerts=2,
-            total_incidents=1,
-            counts_by_detector={"video_metrics": 2},
-            counts_by_severity={"warning": 2},
-            top_incident_categories={"Black screen detected": 1},
             first_alert_timestamp_utc="2026-05-19 21:30:00",
             last_alert_timestamp_utc="2026-05-19 21:30:20",
             narrative_summary=grouped_summary_payload["narrative_summary"],
-        ),
-    )
-
-
-@pytest.mark.skipif(
-    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
-    reason="Real PostgreSQL grouped parity smoke test is opt-in.",
-)
-def test_live_runtime_postgres_grouped_api_and_mcp_boundaries_stay_aligned(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    """Live Postgres grouped API and MCP readers should expose the same summary facts."""
-    from tests.api_boundary_test_support import request
-
-    session_id = build_unique_session_id("session-runtime-postgres-grouped-parity-live")
-    store = build_live_runtime_postgres_store(
-        monkeypatch,
-        tmp_path,
-        session_id=session_id,
-        session_root_builder=write_incident_tool_session,
-    )
-    try:
-        store.append_alert(
-            build_alert_event(
-                session_id,
-                timestamp_utc="2026-05-19 21:50:00",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="First grouped parity row.",
-                severity="warning",
-                source_name="segment_0001.ts",
-            )
-        )
-        store.append_alert(
-            build_alert_event(
-                session_id,
-                timestamp_utc="2026-05-19 21:50:20",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="Second grouped parity row.",
-                severity="warning",
-                source_name="segment_0002.ts",
-            )
-        )
-        store.append_alert(
-            build_alert_event(
-                session_id,
-                timestamp_utc="2026-05-19 21:51:00",
-                detector_id="video_blur",
-                title="Blur increased",
-                message="Separate grouped parity incident.",
-                severity="info",
-                source_name="segment_0003.ts",
-            )
-        )
-
-        api_response = request(
-            "GET",
-            f"/sessions/{session_id}/alerts/incident-summary",
-        )
-        mcp_result = call_mcp_tool(
-            "summarize_session_alert_incidents",
-            {"session_id": session_id},
-        )
-    finally:
-        close_store_if_possible(store)
-
-    assert api_response.status_code == 200
-    api_payload = api_response.json()
-    mcp_payload = mcp_result.structuredContent
-    assert api_payload == build_incident_summary_payload(
-        session_id,
-        total_alerts=3,
-        total_incidents=2,
-        counts_by_detector={"video_metrics": 2, "video_blur": 1},
-        counts_by_severity={"warning": 2, "info": 1},
-        top_incident_categories={"Black screen detected": 1, "Blur increased": 1},
-        first_alert_timestamp_utc="2026-05-19 21:50:00",
-        last_alert_timestamp_utc="2026-05-19 21:51:00",
-        narrative_summary=api_payload["narrative_summary"],
-    )
-    assert_mcp_tool_success(
-        mcp_result,
-        expected_payload=build_incident_summary_payload(
-            session_id,
-            total_alerts=3,
-            total_incidents=2,
-            counts_by_detector={"video_metrics": 2, "video_blur": 1},
-            counts_by_severity={"warning": 2, "info": 1},
-            top_incident_categories={"Black screen detected": 1, "Blur increased": 1},
-            first_alert_timestamp_utc="2026-05-19 21:50:00",
-            last_alert_timestamp_utc="2026-05-19 21:51:00",
-            narrative_summary=mcp_payload["narrative_summary"],
         ),
     )
 

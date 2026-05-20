@@ -1,7 +1,8 @@
-"""Focused FastAPI tests for grouped alert-route transport behavior.
+"""FastAPI boundary tests for grouped alert routes.
 
-This file owns payload shaping, empty-result behavior, request validation, and
-error mapping for grouped timeline and incident-summary endpoints.
+This file owns grouped timeline and incident-summary route behavior, including
+payload shaping, filter binding, runtime-selected backend wiring, and the
+small opt-in live Postgres smokes for the grouped HTTP surface.
 """
 
 from collections.abc import Iterator
@@ -9,8 +10,12 @@ from typing import cast
 
 import pytest
 
-from session_alert_store import clear_default_session_alert_store_cache
+from session_alert_store import (
+    AlertEventPayload,
+    clear_default_session_alert_store_cache,
+)
 from session_alerts import SessionAlertsNotFoundError
+from session_models import AlertEvent
 from tests.api_alert_test_support import (
     assert_request_validation_payload,
     build_internal_error_payload,
@@ -55,7 +60,7 @@ def _write_real_grouped_alert_session(
     session_id: str,
     alert_rows: list[AlertLogRow],
 ) -> None:
-    """Persist one real session for grouped FastAPI and MCP boundary tests."""
+    """Persist one real grouped-alert session for the shared boundary checks."""
     session_root = configure_session_alert_test(monkeypatch, tmp_path)
     write_known_session(session_root, session_id, alert_rows=alert_rows)
 
@@ -112,6 +117,177 @@ def _empty_incident_summary_payload(session_id: str) -> dict[str, object]:
             last_alert_timestamp_utc=None,
             narrative_summary=f"Session {session_id} had no alerts.",
         ),
+    )
+
+
+def _runtime_grouped_postgres_alerts(session_id: str) -> list[AlertEventPayload]:
+    """Return one stable grouped-alert set for runtime-selected grouped-route checks."""
+    return [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:10:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="First grouped runtime alert.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:10:20",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Second grouped runtime alert.",
+            severity="warning",
+            source_name="segment_0002.ts",
+        ),
+    ]
+
+
+def _runtime_filtered_grouped_postgres_alerts(
+    session_id: str,
+) -> list[AlertEventPayload]:
+    """Return one grouped alert set with exactly one detector/severity filter match."""
+    return [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:20:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Expected grouped filtered result.",
+            severity="warning",
+            source_name="segment_0101.ts",
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:20:10",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Wrong severity for the grouped filter.",
+            severity="info",
+            source_name="segment_0102.ts",
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 19:20:20",
+            detector_id="video_blur",
+            title="Blur increased",
+            message="Wrong detector for the grouped filter.",
+            severity="warning",
+            source_name="segment_0103.ts",
+        ),
+    ]
+
+
+def _runtime_filtered_grouped_postgres_events(session_id: str) -> list[AlertEvent]:
+    """Return live grouped alert events for the filtered Postgres route smoke."""
+    return [
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 19:20:00",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Expected grouped filtered result.",
+            severity="warning",
+            source_name="segment_0101.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 19:20:10",
+            detector_id="video_metrics",
+            title="Black screen detected",
+            message="Wrong severity for the grouped filter.",
+            severity="info",
+            source_name="segment_0102.ts",
+        ),
+        build_alert_event(
+            session_id,
+            timestamp_utc="2026-05-19 19:20:20",
+            detector_id="video_blur",
+            title="Blur increased",
+            message="Wrong detector for the grouped filter.",
+            severity="warning",
+            source_name="segment_0103.ts",
+        ),
+    ]
+
+
+def _single_incident_timeline_payload(
+    session_id: str,
+    *,
+    start_time_utc: str,
+    end_time_utc: str,
+    source_names: list[str],
+    sample_message: str,
+    alert_count: int = 2,
+) -> dict[str, object]:
+    """Return one grouped timeline payload for a single merged incident."""
+    return {
+        "session_id": session_id,
+        "entries": [
+            build_timeline_entry(
+                start_time_utc=start_time_utc,
+                end_time_utc=end_time_utc,
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=alert_count,
+                source_names=source_names,
+                sample_message=sample_message,
+            )
+        ],
+    }
+
+
+def _single_incident_summary_with_runtime_narrative(
+    session_id: str,
+    *,
+    first_alert_timestamp_utc: str,
+    last_alert_timestamp_utc: str,
+    narrative_summary: str,
+) -> dict[str, object]:
+    """Return one grouped summary payload for a single merged incident."""
+    return _expected_incident_summary_with_runtime_narrative(
+        session_id,
+        total_alerts=2,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 2},
+        counts_by_severity={"warning": 2},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc=first_alert_timestamp_utc,
+        last_alert_timestamp_utc=last_alert_timestamp_utc,
+        narrative_summary=narrative_summary,
+    )
+
+
+def _single_filtered_incident_timeline_payload(session_id: str) -> dict[str, object]:
+    """Return one grouped timeline payload for the filtered single-alert incident."""
+    return _single_incident_timeline_payload(
+        session_id,
+        start_time_utc="2026-05-19 19:20:00",
+        end_time_utc="2026-05-19 19:20:00",
+        source_names=["segment_0101.ts"],
+        sample_message="Expected grouped filtered result.",
+        alert_count=1,
+    )
+
+
+def _single_filtered_incident_summary_with_runtime_narrative(
+    session_id: str,
+    *,
+    narrative_summary: str,
+) -> dict[str, object]:
+    """Return one grouped summary payload for a filtered single-alert incident."""
+    return _expected_incident_summary_with_runtime_narrative(
+        session_id,
+        total_alerts=1,
+        total_incidents=1,
+        counts_by_detector={"video_metrics": 1},
+        counts_by_severity={"warning": 1},
+        top_incident_categories={"Black screen detected": 1},
+        first_alert_timestamp_utc="2026-05-19 19:20:00",
+        last_alert_timestamp_utc="2026-05-19 19:20:00",
+        narrative_summary=narrative_summary,
     )
 
 
@@ -401,72 +577,134 @@ def test_get_session_alert_incident_summary_reads_the_real_file_backed_seam(
     )
 
 
-def test_get_session_alert_incident_summary_uses_runtime_selected_postgres_backend(
+@pytest.mark.parametrize(
+    ("session_id", "route_path", "expected_kind"),
+    [
+        (
+            "session-runtime-postgres-api-incidents",
+            "/sessions/session-runtime-postgres-api-incidents/alerts/incident-summary",
+            "incident-summary",
+        ),
+        (
+            "session-runtime-postgres-api-timeline",
+            "/sessions/session-runtime-postgres-api-timeline/alerts/timeline",
+            "timeline",
+        ),
+    ],
+)
+def test_grouped_fastapi_routes_use_runtime_selected_postgres_backend(
     monkeypatch,
+    session_id: str,
+    route_path: str,
+    expected_kind: str,
 ) -> None:
-    """The grouped FastAPI route should honor Postgres runtime selection without caller churn."""
-    store = StaticAlertStore(
-        "session-runtime-postgres-api-incidents",
-        [
-            build_normalized_alert(
-                "session-runtime-postgres-api-incidents",
-                timestamp_utc="2026-05-19 19:10:00",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="First grouped runtime alert.",
-                severity="warning",
-                source_name="segment_0001.ts",
-            ),
-            build_normalized_alert(
-                "session-runtime-postgres-api-incidents",
-                timestamp_utc="2026-05-19 19:10:20",
-                detector_id="video_metrics",
-                title="Black screen detected",
-                message="Second grouped runtime alert.",
-                severity="warning",
-                source_name="segment_0002.ts",
-            ),
-        ],
+    """Grouped FastAPI routes should honor runtime-selected Postgres without caller churn."""
+    select_runtime_postgres_store(
+        monkeypatch,
+        StaticAlertStore(session_id, _runtime_grouped_postgres_alerts(session_id)),
     )
-    select_runtime_postgres_store(monkeypatch, store)
 
-    response = request(
-        "GET",
-        "/sessions/session-runtime-postgres-api-incidents/alerts/incident-summary",
-    )
+    response = request("GET", route_path)
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload == _expected_incident_summary_with_runtime_narrative(
-        "session-runtime-postgres-api-incidents",
-        total_alerts=2,
-        total_incidents=1,
-        counts_by_detector={"video_metrics": 2},
-        counts_by_severity={"warning": 2},
-        top_incident_categories={"Black screen detected": 1},
-        first_alert_timestamp_utc="2026-05-19 19:10:00",
-        last_alert_timestamp_utc="2026-05-19 19:10:20",
-        narrative_summary=payload["narrative_summary"],
+
+    if expected_kind == "incident-summary":
+        assert payload == _single_incident_summary_with_runtime_narrative(
+            session_id,
+            first_alert_timestamp_utc="2026-05-19 19:10:00",
+            last_alert_timestamp_utc="2026-05-19 19:10:20",
+            narrative_summary=payload["narrative_summary"],
+        )
+        return
+
+    assert payload == _single_incident_timeline_payload(
+        session_id,
+        start_time_utc="2026-05-19 19:10:00",
+        end_time_utc="2026-05-19 19:10:20",
+        source_names=["segment_0001.ts", "segment_0002.ts"],
+        sample_message="First grouped runtime alert.",
     )
 
 
-def test_get_session_alert_timeline_returns_internal_error_when_runtime_postgres_read_fails_after_startup(
+@pytest.mark.parametrize(
+    ("session_id", "route_path", "expected_kind"),
+    [
+        (
+            "session-runtime-postgres-api-filtered-incidents",
+            (
+                "/sessions/session-runtime-postgres-api-filtered-incidents/"
+                "alerts/incident-summary?detector_id=video_metrics&severity=warning"
+            ),
+            "incident-summary",
+        ),
+        (
+            "session-runtime-postgres-api-filtered-timeline",
+            (
+                "/sessions/session-runtime-postgres-api-filtered-timeline/"
+                "alerts/timeline?detector_id=video_metrics&severity=warning"
+            ),
+            "timeline",
+        ),
+    ],
+)
+def test_grouped_fastapi_routes_preserve_filtered_results_in_runtime_selected_postgres_mode(
     monkeypatch,
+    session_id: str,
+    route_path: str,
+    expected_kind: str,
+) -> None:
+    """Grouped FastAPI routes should keep filtered results stable in Postgres mode."""
+    select_runtime_postgres_store(
+        monkeypatch,
+        StaticAlertStore(session_id, _runtime_filtered_grouped_postgres_alerts(session_id)),
+    )
+
+    response = request("GET", route_path)
+
+    assert response.status_code == 200
+    payload = response.json()
+    if expected_kind == "incident-summary":
+        assert payload == _single_filtered_incident_summary_with_runtime_narrative(
+            session_id,
+            narrative_summary=payload["narrative_summary"],
+        )
+        return
+
+    assert payload == _single_filtered_incident_timeline_payload(session_id)
+
+
+@pytest.mark.parametrize(
+    ("session_id", "route_path"),
+    [
+        (
+            "session-runtime-postgres-grouped-read-error",
+            "/sessions/session-runtime-postgres-grouped-read-error/alerts/timeline",
+        ),
+        (
+            "session-runtime-postgres-grouped-summary-read-error",
+            (
+                "/sessions/session-runtime-postgres-grouped-summary-read-error/"
+                "alerts/incident-summary"
+            ),
+        ),
+    ],
+)
+def test_grouped_fastapi_routes_return_internal_error_when_runtime_postgres_read_fails_after_startup(
+    monkeypatch,
+    session_id: str,
+    route_path: str,
 ) -> None:
     """Grouped FastAPI routes should surface post-startup Postgres read failures clearly."""
-
     select_runtime_postgres_store(
         monkeypatch,
         FailingReadAlertStore(
-            "session-runtime-postgres-grouped-read-error",
+            session_id,
             "database grouped read failed",
         ),
     )
 
-    response = request(
-        "GET",
-        "/sessions/session-runtime-postgres-grouped-read-error/alerts/timeline",
-    )
+    response = request("GET", route_path)
 
     assert response.status_code == 500
     assert response.json() == build_internal_error_payload(
@@ -482,7 +720,7 @@ def test_live_runtime_postgres_grouped_routes_follow_actual_startup_path(
     monkeypatch,
     tmp_path,
 ) -> None:
-    """The real runtime-selected Postgres backend should drive grouped FastAPI routes."""
+    """Representative opt-in public-surface smoke for runtime-selected Postgres routes."""
     session_id = build_unique_session_id("session-runtime-postgres-api-incidents-live")
     store = build_live_runtime_postgres_store(
         monkeypatch,
@@ -522,30 +760,17 @@ def test_live_runtime_postgres_grouped_routes_follow_actual_startup_path(
         close_store_if_possible(store)
 
     assert timeline_response.status_code == 200
-    assert timeline_response.json() == {
-        "session_id": session_id,
-        "entries": [
-            build_timeline_entry(
-                start_time_utc="2026-05-19 21:10:00",
-                end_time_utc="2026-05-19 21:10:20",
-                detector_id="video_metrics",
-                severity="warning",
-                title="Black screen detected",
-                alert_count=2,
-                source_names=["segment_0001.ts", "segment_0002.ts"],
-                sample_message="First live grouped alert.",
-            )
-        ],
-    }
+    assert timeline_response.json() == _single_incident_timeline_payload(
+        session_id,
+        start_time_utc="2026-05-19 21:10:00",
+        end_time_utc="2026-05-19 21:10:20",
+        source_names=["segment_0001.ts", "segment_0002.ts"],
+        sample_message="First live grouped alert.",
+    )
     assert summary_response.status_code == 200
     payload = summary_response.json()
-    assert payload == _expected_incident_summary_with_runtime_narrative(
+    assert payload == _single_incident_summary_with_runtime_narrative(
         session_id,
-        total_alerts=2,
-        total_incidents=1,
-        counts_by_detector={"video_metrics": 2},
-        counts_by_severity={"warning": 2},
-        top_incident_categories={"Black screen detected": 1},
         first_alert_timestamp_utc="2026-05-19 21:10:00",
         last_alert_timestamp_utc="2026-05-19 21:10:20",
         narrative_summary=payload["narrative_summary"],
@@ -606,32 +831,67 @@ def test_live_runtime_postgres_grouped_routes_handle_optional_window_fields(
         close_store_if_possible(store)
 
     assert timeline_response.status_code == 200
-    assert timeline_response.json() == {
-        "session_id": session_id,
-        "entries": [
-            build_timeline_entry(
-                start_time_utc="2026-05-19 21:12:00",
-                end_time_utc="2026-05-19 21:12:20",
-                detector_id="video_metrics",
-                severity="warning",
-                title="Black screen detected",
-                alert_count=2,
-                source_names=["segment_0001.ts", "segment_0002.ts"],
-                sample_message="Windowed grouped alert.",
-            )
-        ],
-    }
+    assert timeline_response.json() == _single_incident_timeline_payload(
+        session_id,
+        start_time_utc="2026-05-19 21:12:00",
+        end_time_utc="2026-05-19 21:12:20",
+        source_names=["segment_0001.ts", "segment_0002.ts"],
+        sample_message="Windowed grouped alert.",
+    )
     assert summary_response.status_code == 200
     payload = summary_response.json()
-    assert payload == _expected_incident_summary_with_runtime_narrative(
+    assert payload == _single_incident_summary_with_runtime_narrative(
         session_id,
-        total_alerts=2,
-        total_incidents=1,
-        counts_by_detector={"video_metrics": 2},
-        counts_by_severity={"warning": 2},
-        top_incident_categories={"Black screen detected": 1},
         first_alert_timestamp_utc="2026-05-19 21:12:00",
         last_alert_timestamp_utc="2026-05-19 21:12:20",
+        narrative_summary=payload["narrative_summary"],
+    )
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL grouped filtered route smoke test is opt-in.",
+)
+def test_live_runtime_postgres_grouped_routes_preserve_filtered_results(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Live Postgres grouped FastAPI routes should keep detector/severity filters stable."""
+    session_id = build_unique_session_id("session-runtime-postgres-api-filtered-live")
+    store = build_live_runtime_postgres_store(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+    )
+    try:
+        for event in _runtime_filtered_grouped_postgres_events(session_id):
+            store.append_alert(event)
+
+        timeline_response = request(
+            "GET",
+            (
+                f"/sessions/{session_id}/alerts/timeline"
+                "?detector_id=video_metrics&severity=warning"
+            ),
+        )
+        summary_response = request(
+            "GET",
+            (
+                f"/sessions/{session_id}/alerts/incident-summary"
+                "?detector_id=video_metrics&severity=warning"
+            ),
+        )
+    finally:
+        close_store_if_possible(store)
+
+    assert timeline_response.status_code == 200
+    assert timeline_response.json() == _single_filtered_incident_timeline_payload(
+        session_id
+    )
+    assert summary_response.status_code == 200
+    payload = summary_response.json()
+    assert payload == _single_filtered_incident_summary_with_runtime_narrative(
+        session_id,
         narrative_summary=payload["narrative_summary"],
     )
 
