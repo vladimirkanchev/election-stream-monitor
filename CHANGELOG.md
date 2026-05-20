@@ -5,12 +5,14 @@ All notable changes to this project should be documented in this file.
 The format is intentionally lightweight and practical for the current project
 stage.
 
-## [Unreleased]
+## [0.4.0] - 2026-05-20
 
 - ongoing transport, session, and operational hardening
 - continued frontend/operator UX refinement
 - PostgreSQL alert storage is now implemented and supported as an opt-in
   backend, while file-backed alerts remain the default rollout mode
+
+## [Unreleased]
 
 ## [0.3.1] - 2026-05-18
 
