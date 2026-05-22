@@ -67,13 +67,10 @@ This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier.
 
 Feature branches now rely on CI feedback rather than required branch
-protection. The underlying fast jobs still run, and the `feature-gate` job
-provides one easy-to-scan summary context for pull requests.
-The protected CI workflow runs on pull requests, and feature-branch pushes now
-also trigger it so branch work gets feedback before a PR exists. `main` stays
-out of the push trigger, which avoids duplicate status contexts on the protected
-branch. Stale PR runs are also canceled automatically with GitHub Actions
-concurrency.
+protection. The protected workflow still runs on pull requests and now also
+runs on feature-branch pushes so branch work gets feedback before a PR exists.
+`main` stays out of the push trigger to avoid duplicate status contexts, and
+stale PR runs are canceled automatically with GitHub Actions concurrency.
 
 The workflow is now path-aware:
 
@@ -116,7 +113,7 @@ Filter intent:
 - narrower high-signal scopes: `contract`, `workflow`
 - docs-oriented policy scope: `docs`
 
-`backend` and `frontend` are intentionally coarse. `contract` is the curated
+`backend` and `frontend` stay intentionally coarse. `contract` is the curated
 cross-boundary signal and should be read more precisely.
 
 Current contract-filter refinement result:
@@ -196,8 +193,7 @@ Those checks are complementary:
 
 The chosen manifest format is JSON. That keeps the source of truth easy to read
 in Python tooling and straightforward to consume from workflow shell steps via
-`python3`, without coupling the repo to an extra YAML parser or to a Python-only
-module import seam.
+`python3`, without adding an extra YAML parser dependency.
 
 Stable target groups:
 
@@ -755,6 +751,41 @@ For this branch, the smallest useful live checks are:
 Use the synthetic suites for normal branch work. They are cheaper, faster, and
 already cover most seam, parity, and boundary behavior.
 
+For local live-Postgres validation, start PostgreSQL outside the Python
+scripts. The scripts assume the database is already running and reachable.
+
+Local options:
+
+- local PostgreSQL service
+  - start the service with your normal OS tooling
+  - make sure a test database such as `election_stream_monitor` exists
+- local Docker container
+  - start a disposable container and map `5432:5432`
+
+Example Docker startup:
+
+```bash
+docker run --name esm-postgres-test \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=election_stream_monitor \
+  -p 5432:5432 \
+  -d postgres:16
+```
+
+Example local env for the live checks:
+
+```bash
+export ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
+export ESM_ALERT_STORE_BACKEND=postgres
+export POSTGRES_ALERT_STORE_REAL_SMOKE=1
+```
+
+Quick connection sanity check before the longer bundles:
+
+```bash
+.venv/bin/python -c "import psycopg; psycopg.connect('postgresql://postgres:postgres@localhost:5432/election_stream_monitor').close(); print('ok')"
+```
+
 For weekly/manual rollout confidence, the live Postgres path is split into two
 focused bundles:
 
@@ -805,11 +836,10 @@ Use the umbrella helper when:
 - you are preparing a rollout or demo with `ESM_ALERT_STORE_BACKEND=postgres`
 - you want extra real-DB confidence before changing backend defaults later
 
-The scheduled `weekly-validation` workflow can also run the backend and
-runtime/operator bundles automatically when the repository secret
-`ESM_POSTGRES_ALERT_DATABASE_URL` is configured. Without that secret, those
-weekly live-Postgres jobs stay skipped and the rest of the weekly workflow
-continues normally.
+The scheduled `weekly-validation` workflow also runs the backend and
+runtime/operator bundles automatically with a disposable `postgres:16` service
+container. CI does not rely on a shared external database for those weekly
+checks.
 
 Do not treat it as a normal branch-push requirement. The synthetic seam,
 parity, and boundary suites remain the primary everyday validation path.

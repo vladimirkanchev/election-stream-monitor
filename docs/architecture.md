@@ -79,8 +79,8 @@ The new MCP surface follows the same adapter pattern:
 
 - [`src/esm_mcp/server.py`](../src/esm_mcp/server.py) is a read-only MCP adapter
 - [`src/session_alert_store.py`](../src/session_alert_store.py) defines the
-  narrow alert persistence seam and now owns the centralized runtime default
-  store selection
+  narrow alert persistence interface and now owns the centralized runtime
+  default store selection
 - [`src/session_alert_store_runtime_config.py`](../src/session_alert_store_runtime_config.py)
   owns the explicit `file` versus `postgres` backend-mode selection for that
   default store through `ESM_ALERT_STORE_BACKEND`
@@ -92,17 +92,18 @@ The new MCP surface follows the same adapter pattern:
   owns the narrow Postgres alert-store env/config parsing used by that bootstrap path
 - [`src/session_io.py`](../src/session_io.py) still exposes
   `append_alert(...)` as the compatibility write entrypoint and now delegates
-  that write through the store seam
+  that write through the store interface
 - [`src/session_alert_adapter.py`](../src/session_alert_adapter.py) keeps the
   small shared adapter mechanics reused by FastAPI and MCP
 - [`src/session_alerts.py`](../src/session_alerts.py) owns persisted raw alert
-  query/filter/summary logic and applies those read models over the store seam
+  query/filter/summary logic and applies those read models over the store
+  interface
 - [`src/session_alert_incidents.py`](../src/session_alert_incidents.py) owns
   grouped incident timeline and incident-summary read models built on the raw
   alert service rather than the storage layer directly
 - MCP tools call the shared service directly rather than routing through HTTP
 
-The alert-query slice now has one explicit persistence seam and three read
+The alert-query slice now has one explicit persistence interface and three read
 models over it:
 
 - raw alert-event list
@@ -116,20 +117,14 @@ Today that means:
 - the default alert backend is selected centrally in
   `src/session_alert_store.py`
 - raw alert readers, grouped incident readers, the session snapshot route, and
-  the CLI all follow that same alert-store seam
+  the CLI all follow that same shared alert backend
 - filtering, summaries, and grouped incident logic still stay in Python above
   the storage layer
 
 That split kept the current JSONL behavior intact while making the PostgreSQL
 alert store a bounded replacement instead of a larger read-model rewrite.
-PostgreSQL can now be selected explicitly at runtime, while the default alert
-backend still stays file-backed.
-
-The current rollout decision is explicit:
-
-- file-backed alerts remain the default backend
-- PostgreSQL alert storage is real, tested, and opt-in
-- this branch does not yet flip the project-wide alert default
+PostgreSQL can now be selected explicitly at runtime, while file-backed alerts
+remain the tested default backend for this branch.
 
 The current PostgreSQL alert mapping is intentionally column-first rather than
 JSONB-first:
@@ -137,9 +132,9 @@ JSONB-first:
 - every current `AlertEventPayload` field maps to its own table column
 - `window_index` and `window_start_sec` stay nullable
 - append-order reads are preserved through `ORDER BY id ASC`
-- filtering and summary behavior still stay above the storage seam
+- filtering and summary behavior still stay above the storage interface
 
-The first FastAPI authentication seam follows the same boundary-oriented style:
+The first FastAPI authentication split follows the same boundary-oriented style:
 
 - [`src/api_auth.py`](../src/api_auth.py) owns request-authentication mechanics
   for the HTTP API boundary
@@ -149,12 +144,12 @@ The first FastAPI authentication seam follows the same boundary-oriented style:
 - [`src/config.py`](../src/config.py) owns the small structured auth settings
   object used by that boundary
 - [`src/config.py`](../src/config.py) also owns the first structured
-  rate-limit settings seam so later request counting can stay out of route
+  rate-limit settings layer so later request counting can stay out of route
   bodies
 - [`src/api_rate_limit.py`](../src/api_rate_limit.py) owns the current
   principal-aware fixed-window limiter and keeps its local in-memory store
   replaceable
-- the alerts router currently applies both seams through a router dependency
+- the alerts router currently applies both pieces through a router dependency
   instead of a global app-wide middleware
 - the current `429` rate-limit error vocabulary is defined and enforced at the
   same API boundary

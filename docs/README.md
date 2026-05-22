@@ -23,7 +23,7 @@ Use this shortcut map before editing code:
 
 For the current alert-storage rollout state, use:
 
-- [architecture.md](./architecture.md) for the storage split and current rollout decision
+- [architecture.md](./architecture.md) for the storage split and rollout decision
 - [session-model.md](./session-model.md) for snapshot and persistence semantics
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
 
@@ -47,7 +47,7 @@ For the current alert-storage rollout state, use:
     - `tests/test_api_server_cli_runtime.py`
     - `tests/test_api_server_cli_output.py`
     - `tests/test_api_server_cli_routes.py`
-- changing MCP alert-query tools or local MCP launch wiring:
+- changing MCP alert-reading tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
   - [mcp-server.md](./mcp-server.md)
@@ -173,26 +173,27 @@ module families and the matching tests:
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
   - `tests/test_session_alert_store.py`
-    - file-backed seam contract for the current default alert store
+    - file-backed contract for the current default alert store
   - `tests/test_session_alert_store_runtime.py`
     - runtime backend selection plus caller-stability coverage for the default
-      alert seam
+      alert backend
   - `tests/test_session_alert_store_runtime_config.py`
     - explicit `file` versus `postgres` backend-mode config coverage
   - `tests/test_session_alert_store_parity.py`
-    - file-store versus PostgreSQL-store parity over the shared alert seam and
-      read-model layer, including filtered raw reads plus grouped filtered and
-      time-bounded parity
+    - file-store versus PostgreSQL-store parity over the shared alert backend
+      and read-model layer, including filtered raw reads plus grouped filtered
+      and time-bounded parity
   - `tests/test_session_alert_store_postgres.py`
     - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
       second backend's read/write drift-sensitive behavior
   - `tests/test_session_alert_store_postgres_config.py`
     - narrow env/config coverage for the PostgreSQL alert-store bootstrap path
   - `tests/test_session_io.py`
-    - compatibility write-entry and write-to-read seam coverage
+    - compatibility write-entry and write-to-read coverage
   - `tests/test_session_runner_execution_local.py`
-    - local execution-path coverage for runner-written alerts through the seam
-      plus the live weekly runtime/operator-flow runner confidence anchor
+    - local execution-path coverage for runner-written alerts through the
+      shared alert backend plus the live weekly runtime/operator-flow runner
+      confidence anchor
   - `scripts/postgres_alert_weekly_backend_confidence.py`
     - opt-in weekly/manual live Postgres backend-confidence runner for store,
       raw/grouped FastAPI, and grouped MCP checks
@@ -203,9 +204,8 @@ module families and the matching tests:
     - umbrella runner that executes both weekly/manual live Postgres
       confidence bundles in order
   - `.github/workflows/weekly-validation.yml`
-    - scheduled weekly automation can run both live Postgres confidence
-      bundles when `ESM_POSTGRES_ALERT_DATABASE_URL` is configured as a repo
-      secret
+    - scheduled weekly automation runs both live Postgres confidence bundles
+      against a disposable GitHub Actions Postgres service container
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`

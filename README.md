@@ -8,29 +8,19 @@ election-related media sources.
 It watches polling-station streams, archived recordings, or segmented video
 feeds and surfaces the quality problems that matter during monitoring.
 
-Today it runs as a desktop-first Electron app with a local FastAPI backend.
-It also includes a small local MCP server with read-only alert tools.
+Today it is a desktop-first advanced prototype with:
 
-Status:
+- a React/Electron app and local FastAPI backend
+- three input modes: local video files, local segmented/HLS-style folders, and direct remote `api_stream` inputs
+- two built-in detectors: `Black Screen` and `Blur Check`
+- a small local MCP server with read-only alert-query tools
+- selectable alert backend: file by default, PostgreSQL opt-in
 
-- desktop-first advanced prototype/pre-pilot
-- local-first workflow
-- three input modes
-- two built-in detectors
-
-Works today:
-
-- local `.mp4` files and local `.ts` segment folders with `index.m3u8`
-- direct remote `.m3u8` / `.mp4` `api_stream` inputs
-- built-in `Black Screen` and `Blur Check` monitoring
-- Electron desktop UI with a local FastAPI-backed backend
-- FastAPI API-key auth and rate limiting for shared demo access
-- local MCP server with 4 alert-query tools
-
-**Quick try:** run `npm run dev`, choose `video_files`, and test with a local `.mp4`.
-
-**Best fit today:** local development, demos, and small desktop-backed
+It works best today for local development, demos, and small desktop-backed
 monitoring runs.
+
+**Quick try:** run `npm run dev`, choose `video_files`, and test with a local
+`.mp4`.
 
 The project is intentionally small. I want it to stay readable, useful, and
 easy to extend without turning into a much heavier platform too early.
@@ -40,12 +30,14 @@ easy to extend without turning into a much heavier platform too early.
 This project exists to support more transparent election observation in
 Bulgaria with a practical local-first workflow.
 
-If a stream goes black, blurry, broken, or just becomes too low quality, that
-is not only a technical issue. It can stop people from following elections in
-real time and make public oversight harder when it matters most.
+If a stream goes black, blurry, broken, or becomes too low quality, that is
+not only a technical issue. It can make real-time observation harder and
+reduce public oversight when it matters most.
 
-It also gives me a place to build video analysis and streaming tools around a
-real civic use case instead of a purely abstract demo.
+It also gives users a practical way to add new video detectors around a real
+civic use case. With an AI-assisted coding agent, they can describe the
+monitoring problem they want to catch in plain language instead of needing
+strong manual coding skills or deep video-processing knowledge.
 
 ## Where To Start
 
@@ -53,39 +45,39 @@ A good place to start:
 
 - this README for the big picture
 - [Running The Project](./README.md#running-the-project) to try it locally
+- [Current Capabilities](./README.md#current-capabilities) for the current user-facing feature set
 - [docs/architecture.md](./docs/architecture.md) for the current system shape
-- [docs/contracts.md](./docs/contracts.md) for important backend and frontend contracts
-- [docs/session-model.md](./docs/session-model.md) for session lifecycle and persisted state
-- [docs/fastapi-boundary.md](./docs/fastapi-boundary.md) for FastAPI/MCP boundary and access modes
 - [docs/frontend-architecture.md](./docs/frontend-architecture.md) for frontend and playback details
+- [docs/mcp-server.md](./docs/mcp-server.md) for the local MCP server and alert-reading tools
 - [docs/README.md](./docs/README.md) for the full docs map
+
+If you want to extend the project, see [docs/adding-an-analyzer.md](./docs/adding-an-analyzer.md),
+[docs/adding-an-alert-rule.md](./docs/adding-an-alert-rule.md), and the
+deeper internal docs for [API and data rules](./docs/contracts.md),
+[session state](./docs/session-model.md), [FastAPI access details](./docs/fastapi-boundary.md),
+and [testing and validation](./docs/testing-and-validation.md).
 
 ## Desktop Runtime Summary
 
 Most people will use the project through the Electron app. Electron starts
 and talks to a local FastAPI backend for session control, detector loading,
-and playback-source resolution.
-
-If you just need the simplest current-picture summary:
-
-- session metadata, progress, and results stay on local disk
-- alerts use one shared backend seam
-- file-backed alerts are still the default
-- PostgreSQL alerts are supported when you opt in explicitly
+playback-source resolution, and alert/session reads.
 
 Electron still owns the desktop-only work: app startup, local media serving,
-the HLS proxy path, and the UI bridge. Session snapshots stay on disk and are
-polled by the UI while a run is active.
+the HLS proxy path, and the UI bridge. Session snapshots are polled by the UI
+while a run is active.
 
-Today the alert backend works like this:
+Today the local app works like this:
 
-- file-backed alerts remain the default
-- PostgreSQL alert storage is available as an opt-in backend
-- the main session snapshot, the dedicated alert routes, and the MCP tools now
-  all read alerts through the same backend seam
+- session metadata, progress, and results stay on local disk
+- alerts use one shared backend: file-backed by default, PostgreSQL as an
+  explicit opt-in backend
+- the session snapshot, alert routes, grouped incident routes, and MCP tools
+  all read alerts through that shared alert backend
 
-There is also a small local MCP server for read-only alert queries over that
-same local data.
+FastAPI auth and rate limiting are available for shared access. `local` mode
+keeps them off by default, while `share` mode turns them on for the alerts
+HTTP routes. MCP remains a separate local `stdio` tool surface.
 
 ## Current Readiness
 
@@ -96,83 +88,70 @@ This works best for:
 - desktop-backed monitoring use
 
 The repo now also has stronger CI guardrails and more focused regression
-coverage across alerts, contracts, and workflow targeting.
+coverage across alerts, API/data rules, and workflow targeting.
 
 Still not:
 
 - multi-worker distributed rate limiting
 - shared-store production throttling
 - remote MCP authentication or limiter coverage
+- broad detector coverage for real election-stream failure modes
 
-MCP is still a local `stdio` query surface over local alert and session data.
-FastAPI auth and rate limiting currently apply only to the alerts routes.
-Current work is centered on detector growth, MCP tooling, runtime hardening,
-and PostgreSQL-backed alert persistence for alerts. That backend is now
-implemented behind the alert store seam, but file remains the default. Use
-`ESM_ALERT_STORE_BACKEND=postgres` to opt into PostgreSQL explicitly.
+MCP is still a local `stdio` tool surface over local alert and session data.
+FastAPI auth and rate limiting currently protect the alerts HTTP routes in
+`share` mode, not the whole local runtime. PostgreSQL-backed alerts now use
+the same shared alert backend, but file remains the default.
 
-Routine branch validation stays synthetic by default. For one small real-DB
-weekly/manual confidence pass, use either:
-
-- `python3 scripts/postgres_alert_weekly_backend_confidence.py`
-- `python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py`
-
-or run both with:
-
-- `python3 scripts/postgres_alert_weekly_confidence.py`
-
-If the repository secret `ESM_POSTGRES_ALERT_DATABASE_URL` is configured, the
-scheduled weekly workflow can run those two Postgres confidence bundles
-automatically.
+For local startup, use [Running The Project](./README.md#running-the-project).
+For live Postgres validation and weekly confidence runs, use
+[docs/testing-and-validation.md](./docs/testing-and-validation.md).
 
 ## FastAPI Access Modes
 
 ### Local mode
-
-For normal local development and desktop use:
 
 ```bash
 . .venv/bin/activate
 PYTHONPATH=src python -m api_server_cli local
 ```
 
-By default, auth and rate limiting are off.
+Auth and rate limiting are off by default. These examples use the default
+file-backed alert backend.
 
 ### Share mode
-
-For temporary demo or shared access:
 
 ```bash
 . .venv/bin/activate
 PYTHONPATH=src python -m api_server_cli share
 ```
 
-By default, auth and rate limiting are on. If you do not pass `--api-key`,
-the CLI generates one and prints it once with `X-API-Key` guidance.
-
-Optional manual key:
+Auth and rate limiting are on by default. If you do not pass `--api-key`, the
+CLI generates one and prints it once.
 
 ```bash
 . .venv/bin/activate
 PYTHONPATH=src python -m api_server_cli share --api-key my-demo-key
 ```
 
-You can also generate your own stronger key first; see
-[Running The Project](./README.md#running-the-project).
+Use any long random string for `my-demo-key`.
+Quick strong-key generator:
 
-`share` mode is for temporary demo/shared access only. MCP remains local
-`stdio` and stays outside FastAPI auth and rate limiting.
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+```
 
-The current protected FastAPI scope is the alerts surface:
-`/sessions/{session_id}/alerts`, `/alerts/summary`, `/alerts/timeline`, and
-`/alerts/incident-summary`.
+`share` mode is for temporary local/demo sharing, not production deployment.
+These examples keep the default file-backed alert backend.
+
+`share` mode is for temporary demo/shared access only. It protects the alerts
+HTTP routes. MCP remains a separate local `stdio` tool surface.
 
 ## Current Capabilities
 
 ### Backend
 
-The backend validates input, runs sessions, executes detectors and rules, and
-writes local session state that the frontend can read.
+The backend checks inputs, runs sessions, executes detectors and rules, and
+writes the local session state the frontend reads.
 
 ### Detection
 
@@ -180,19 +159,18 @@ Detectors measure what is happening. Rules decide when that becomes an alert.
 Current built-ins:
 
 - `Black Screen`
-  - mainly from frames sampled from video files, segment streams, and
-    `api_stream` sources
+  - sampled from video files, segment streams, and `api_stream` sources
   - the picture goes fully black or almost black for long enough to matter
 - `Blur Check`
-  - looks for frames that are too soft, smeared, or out of focus
-  - details disappear and the image stops looking sharp
+  - looks for frames that are too soft or out of focus
+  - detail disappears and the image stops looking sharp
 
 ### Frontend
 
 In the UI you can:
 
-- a setup panel for source mode, path, and detector selection
-- clear `Start Monitoring` and `End Monitoring` controls
+- choose a source mode, path, and detector set
+- use clear `Start Monitoring` and `End Monitoring` controls
 - playback for local files, local HLS-style folders, local `.mp4` files, and
   remote HLS streams through the local Electron HLS proxy
 - a live alert feed showing issues as they are raised
@@ -206,17 +184,12 @@ center/right, and session state and alerts below.
 
 ### Session Model
 
-This part writes the session files, updates progress, stores alerts and
-results, and gives the UI something stable to poll:
+This part keeps the session state stable enough for the UI to refresh:
 
 - a session is created when monitoring starts
 - progress and results are written to local JSON / JSONL files
-- alert reads and writes now share one explicit backend seam
-- file-backed alerts remain the default, with PostgreSQL available when you
-  opt in
-- the session snapshot still keeps metadata, progress, and results file-backed
-- the snapshot `alerts` field now follows the active alert backend too
-- the frontend polls those snapshots through Electron and the local FastAPI backend
+- alerts use one shared alert backend: file by default, PostgreSQL when you opt in
+- the frontend polls session snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
 The current feature set is still narrow, but easy to extend.
@@ -230,7 +203,9 @@ The current feature set is still narrow, but easy to extend.
 ## Architecture At A Glance
 
 This is still one local-first project, not a distributed platform, but the
-main boundaries are there on purpose.
+main splits between frontend, backend, and tools are there on purpose. That
+fits the current project stage: an advanced prototype moving toward pre-pilot,
+with clearer responsibilities than broad operational maturity.
 
 In practice, the flow looks like this:
 
@@ -238,16 +213,16 @@ In practice, the flow looks like this:
 2. The frontend and Electron handle the visible workflow: setup, playback,
    status, alerts, and desktop-only jobs like local media serving and the HLS
    proxy path.
-3. FastAPI starts and manages sessions, validates sources, resolves playback
+3. FastAPI starts and manages sessions, checks sources, resolves playback
    inputs, and hands the monitoring work to the backend services and worker
    process.
-4. Detectors and alert rules process the media, while local session snapshots
-   and the shared alert store keep progress, results, and alerts that the UI
-   can poll in near real time and MCP tools can query separately.
+4. Detectors and alert rules process the media, while local session state and
+   the shared alert backend keep progress, results, and alerts. File-backed
+   alerts stay the default, with PostgreSQL available as an opt-in backend.
 
-FastAPI and MCP are separate adapters over the same local alert/session data.
-FastAPI owns the main desktop-backed HTTP/runtime path, while MCP stays a
-local read-only query surface over that persisted data.
+FastAPI and MCP are separate entry points over the same local alert/session
+data. FastAPI owns the main desktop-backed HTTP path, while MCP stays a local
+read-only tool surface over the same saved data.
 
 The diagram below shows the same flow in one picture.
 
@@ -257,9 +232,9 @@ The diagram below shows the same flow in one picture.
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
 - **FastAPI** owns the monitoring backend: session control, source validation, stream resolution, detector/rule execution, and session-state updates. In `share` mode, it also applies API-key auth and rate limiting to the alerts routes.
-- **MCP** remains a separate local `stdio` read-only alert-query surface. It queries local alert/session data and stays outside FastAPI auth and rate limiting.
-- **Local alert and session data** persist progress, results, and alerts for the local-first runtime. The UI polls that data through the Electron/FastAPI flow, and MCP tools query it separately.
-- **Shared read/query seam** stays backend-owned: FastAPI and MCP are adapters over the same persisted alert/session data rather than separate stores or independent monitoring pipelines.
+- **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
+- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime.
+- **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation
 
@@ -303,11 +278,10 @@ tools, install the `dev` extra:
 pip install -e .[dev]
 ```
 
-Install extras:
-
-- `pip install -e .` for backend runtime dependencies
-- `pip install -e .[test]` for backend runtime plus test tooling
-- `pip install -e .[dev]` for backend runtime plus test, Ruff, and type-check tools
+Frontend dependencies are installed under [`frontend/`](./frontend).
+PostgreSQL is optional and only needed for the opt-in alert backend or live
+Postgres validation.
+For normal local use, start the Electron app rather than the backend alone.
 
 The normal app startup path is Electron. Direct FastAPI startup is covered
 below in [Running The Project](./README.md#running-the-project).
@@ -333,7 +307,9 @@ The repo includes a small set of repo-local Codex skills under
 Use these skills when you want quick repo-aware help with summaries, incident
 timelines, root-cause suggestions, or test-coverage gaps.
 
-These are lightweight text helpers, not a separate plugin framework.
+These are mainly for AI-assisted contributors and debugging workflows. They
+are lightweight text helpers, not a separate plugin framework, and they are
+not required to run the project.
 
 ## Running The Project
 
@@ -343,8 +319,6 @@ Normal desktop app:
 npm run dev
 ```
 
-This starts the Vite frontend, Electron, and the local FastAPI backend.
-
 Backend only:
 
 ```bash
@@ -352,14 +326,13 @@ Backend only:
 PYTHONPATH=src python -m api_server_cli local
 ```
 
-If you want the browser-only frontend in this split setup, run:
+Browser-only frontend for UI work:
 
 ```bash
 npm --prefix frontend run dev:web
 ```
 
-Use that browser path for UI work and frontend debugging. It does not replace
-the normal Electron desktop flow.
+This does not replace the normal Electron desktop flow.
 
 Temporary shared demo access:
 
@@ -369,8 +342,7 @@ PYTHONPATH=src python -m api_server_cli share
 ```
 
 `share` mode turns on API-key auth and rate limiting. If you do not pass a
-manual key, the CLI generates one and prints it once. Send that key in the
-`X-API-Key` header when calling the protected alerts routes. See
+manual key, the CLI generates one and prints it once. See
 [FastAPI Access Modes](./README.md#fastapi-access-modes).
 
 If you want Electron to use a separately started `share` backend:
@@ -379,7 +351,7 @@ If you want Electron to use a separately started `share` backend:
 ELECTION_API_BASE_URL=http://127.0.0.1:8002 npm run dev
 ```
 
-If you want to generate your own stronger key first:
+Stronger key generator:
 
 ```bash
 python -c "import secrets; print('esm_demo_' + secrets.token_urlsafe(24))"
@@ -394,8 +366,8 @@ Local MCP server:
 PYTHONPATH=src python -m esm_mcp
 ```
 
-This runs the MCP server over local `stdio`, so connect to it with an MCP
-client rather than a browser or HTTP port. See [docs/mcp-server.md](./docs/mcp-server.md).
+This runs the MCP server over local `stdio`. See
+[docs/mcp-server.md](./docs/mcp-server.md).
 
 Quick first run:
 
@@ -406,7 +378,7 @@ Quick first run:
 
 Sample local inputs are listed in [Example Inputs](./README.md#example-inputs).
 
-Frontend only:
+Frontend build:
 
 ```bash
 npm run build
@@ -437,7 +409,7 @@ Tested with:
 
 If you are trying the app for the first time, start with `video_files`.
 
-Useful local examples:
+Useful repo-local examples:
 
 - `tests/fixtures/media/video_files/`
 - `tests/fixtures/media/video_segments/`
@@ -461,20 +433,18 @@ Some public streams still reject automated fetching. See
   deployment.
 - MCP is still a local `stdio` read-only query surface over local alert/session
   data, outside that FastAPI protection.
-- The desktop workflow is tuned mainly for Ubuntu/Linux, so other platforms
-  may need extra work.
-- Packaging is still early, so this is closer to a developer-run app than a
-  polished desktop release.
-- Detector coverage is still narrow, with a current focus on black-screen and
-  blur-related issues.
-- The backend is still local-first and single-process in practice.
+- The desktop workflow is tuned mainly for Ubuntu/Linux.
+- Packaging is still early and closer to a developer-run app than a polished release.
+- Detector coverage is still narrow, with a current focus on black-screen and blur-related issues.
+- PostgreSQL alert storage is opt-in and still requires manual local database setup.
+- The backend remains local-first and single-process in practice.
 
 ## Tests And Validation
 
-The test coverage is in good shape for where the project is right now,
-including the backend, frontend, FastAPI boundary, and Electron runtime.
-The repo also now has stronger focused regression coverage across alerts,
-incident grouping, FastAPI/MCP boundaries and CI ownership checks.
+Test coverage is in good shape for the current project stage, including the
+backend, frontend, FastAPI boundary, and Electron runtime. The repo also has
+focused regression coverage across alerts, incident grouping, and key
+FastAPI/MCP boundary behavior.
 
 Quick local confidence check:
 
@@ -486,10 +456,9 @@ npm --prefix frontend run test
 npm run build
 ```
 
-That default backend pass keeps the normal fast lane focused on unit and
-service-level coverage. Run the dedicated e2e commands from
-[`docs/testing-and-validation.md`](./docs/testing-and-validation.md) when you
-want the snapshot smoke or slower real-media checks.
+That fast pass focuses on unit and service-level coverage. Use
+[`docs/testing-and-validation.md`](./docs/testing-and-validation.md) for the
+slower e2e, snapshot-smoke, and live-validation checks.
 
 For more detail:
 
@@ -498,11 +467,11 @@ For more detail:
 
 ## Docs
 
-For the full docs map, start with [docs/README.md](./docs/README.md). The main
-references are:
+For the authoritative owner docs, start with
+[docs/README.md](./docs/README.md). The main deep dives are:
 
 - [docs/architecture.md](./docs/architecture.md) for the current system shape
-- [docs/contracts.md](./docs/contracts.md) for backend and frontend boundaries
+- [docs/contracts.md](./docs/contracts.md) for backend and frontend API/data rules
 - [docs/session-model.md](./docs/session-model.md) for session lifecycle and local state
 - [docs/fastapi-boundary.md](./docs/fastapi-boundary.md) for FastAPI/MCP boundary and access modes
 - [docs/frontend-architecture.md](./docs/frontend-architecture.md) for frontend and playback
@@ -511,7 +480,7 @@ references are:
 ## Versioning And Releases
 
 - the project is now in an early `0.4.0` stage
-- expect active iteration, with improving internal stability rather than strict
+- expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)
   and [CHANGELOG.md](./CHANGELOG.md)
@@ -522,20 +491,21 @@ Useful references:
 
 - [tests/fixtures/](./tests/fixtures)
 
-Outputs are stored locally in files, not a database:
+Outputs are still local-first:
 
 - detector metrics: `data/metrics/`
-- per-session progress, results, and alerts: `data/sessions/`
+- per-session metadata, progress, and results: `data/sessions/`
+- alerts: file-backed by default, with PostgreSQL available as an opt-in backend
 
 ## Repo Layout
 
 Quick map:
 
-- `src/` — Python backend, detectors, sessions, stream loading, FastAPI
-- `frontend/` — React/Electron app, playback, frontend tests
-- `tests/` — automated tests, fixtures, helpers
-- `docs/` — architecture, contracts, workflow notes
-- `data/` — local metrics, session data, sample inputs
+- `src/` — Python backend, detectors, sessions, stream loading, and FastAPI
+- `frontend/` — React/Electron app, playback, and frontend tests
+- `tests/` — automated tests, fixtures, and helpers
+- `docs/` — architecture, contracts, and workflow notes
+- `data/` — local metrics, session outputs, and sample inputs
 - `scripts/` — small developer and repo utilities
 - `.agents/` — repo-local Codex skills
 - `.github/` — CI and repo automation
@@ -545,11 +515,11 @@ Quick map:
 What I would work on next:
 
 - add more detectors and keep alerts easy to tune
-- improve debugging and status information
-- keep improving the local Electron + FastAPI app
+- improve runtime debugging and status information
+- keep hardening the local Electron + FastAPI app
 - add more MCP tools and strengthen security carefully
+- decide when PostgreSQL-backed alerts should stay opt-in or become the default
 - make packaging and releases easier over time
-- keep the project desktop-first without rushing into service complexity
 
 ## Feedback Welcome On
 
@@ -570,21 +540,18 @@ The main CI workflow is path-aware and runs the fast checks the repo relies on:
 - backend tests and packaging smoke
 - backend lint
 - frontend checks
-- contract and docs consistency checks
-- CI ownership and drift guards for target manifests, owned test paths, and
-  split-suite registration
+- API/data rules, docs, and CI drift checks
 
 It runs on feature-branch pushes and pull requests. Pull requests into `main`
-get stricter checks.
+get stricter checks, while the weekly workflow runs the slower deep checks:
 
-The weekly validation workflow runs slower, deeper checks:
+- slow end-to-end media tests and deeper `api_stream` / lifecycle checks
+- weekly live PostgreSQL alert-confidence checks
+- security, dependency, and packaging checks
+- failure-only logs, plus persisted session files for the weekly lifecycle lane
 
-- slow end-to-end media tests
-- deeper `api_stream` and lifecycle checks
-- security audits
-- dependency and packaging checks
-
-The CI model now also keeps frontend and backend test targeting more explicit, which makes refactors and split-suite changes safer.
+CI also keeps frontend and backend test targeting explicit, which makes
+refactors and split-suite changes safer.
 
 ## Security Notes
 
@@ -596,12 +563,14 @@ Remote media fetching is intentionally limited:
 - local or private-network targets are blocked by default unless deliberately
   allowed, for example `localhost`, `127.0.0.1`, `192.168.x.x`, or `10.x.x.x`
 
-The current backend security story is still pretty narrow:
+The current backend security scope is still intentionally narrow:
 
 - FastAPI `share` mode adds API-key auth and rate limiting on the alerts routes
 - FastAPI `local` mode keeps auth and rate limiting off
-- MCP remains a local `stdio` read-only query surface over local alert/session
+- MCP remains a local `stdio` read-only tool surface over local alert/session
   data, outside FastAPI auth and rate limiting
+- PostgreSQL-backed alerts do not change that boundary by themselves; they only
+  change where alert data is stored
 - session outputs stay on local disk for review and debugging
 
 Owning files:
@@ -617,7 +586,7 @@ This repo leans toward:
 
 - explicit detector and alert-rule registration
 - clear Electron, FastAPI, and MCP boundaries
-- simple local session and output files
+- simple local session files and selectable alert backend
 - readable code over heavy abstraction
 
 The easiest extension points are:
@@ -635,7 +604,7 @@ Useful contributions right now include:
 
 - new detectors and alert rules for real stream problems
 - playback and runtime fixes, especially around difficult public streams
-- FastAPI and MCP tool improvements
+- FastAPI, MCP, and alert-query improvements
 - better docs, tests, and first-run usability
 
 Small focused contributions are especially helpful here.
