@@ -34,6 +34,7 @@ from tests.session_alert_test_support import (
     build_unique_session_id,
     close_store_if_possible,
     configure_session_alert_test,
+    install_runtime_postgres_bootstrap_failure,
     select_runtime_postgres_store,
     write_known_session,
 )
@@ -80,6 +81,14 @@ def _empty_alert_summary_payload(session_id: str) -> dict[str, object]:
             last_alert_timestamp_utc=None,
         ),
     )
+
+
+def _assert_runtime_postgres_bootstrap_failure_response(route_path: str) -> None:
+    """Assert the stable raw-alert `500` envelope for one bootstrap failure."""
+    response = request("GET", route_path)
+
+    assert response.status_code == 500
+    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
 
 
 # Happy-path adapter behavior
@@ -360,21 +369,21 @@ def test_get_session_alerts_uses_runtime_selected_postgres_backend(
     }
 
 
-def test_get_session_alerts_returns_internal_error_when_runtime_postgres_bootstrap_fails(
+@pytest.mark.parametrize(
+    "route_path",
+    [
+        "/sessions/session-runtime-postgres-api-error/alerts",
+        "/sessions/session-runtime-postgres-api-error/alerts/summary",
+    ],
+)
+def test_raw_alert_routes_keep_the_same_bootstrap_failure_envelope(
     monkeypatch,
+    route_path: str,
 ) -> None:
-    """Explicit Postgres mode should surface bootstrap failures through the API error envelope."""
-    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setattr(
-        "session_alert_store._build_postgres_default_session_alert_store",
-        lambda: (_ for _ in ()).throw(RuntimeError("postgres bootstrap failed")),
-    )
-    clear_default_session_alert_store_cache()
+    """Raw alert routes should share the same runtime Postgres bootstrap-failure envelope."""
+    install_runtime_postgres_bootstrap_failure(monkeypatch)
 
-    response = request("GET", "/sessions/session-runtime-postgres-api-error/alerts")
-
-    assert response.status_code == 500
-    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
+    _assert_runtime_postgres_bootstrap_failure_response(route_path)
 
 
 def test_get_session_alerts_falls_back_to_file_backend_for_invalid_runtime_backend_env(

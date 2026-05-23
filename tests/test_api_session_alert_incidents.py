@@ -39,6 +39,7 @@ from tests.session_alert_test_support import (
     build_incident_summary_payload,
     build_timeline_entry,
     configure_session_alert_test,
+    install_runtime_postgres_bootstrap_failure,
     select_runtime_postgres_store,
     write_alert_log,
     write_known_session,
@@ -710,6 +711,29 @@ def test_grouped_fastapi_routes_return_internal_error_when_runtime_postgres_read
     assert response.json() == build_internal_error_payload(
         "database grouped read failed"
     )
+
+
+@pytest.mark.parametrize(
+    "route_path",
+    [
+        "/sessions/session-runtime-postgres-grouped-bootstrap-error/alerts/timeline",
+        (
+            "/sessions/session-runtime-postgres-grouped-bootstrap-error/"
+            "alerts/incident-summary"
+        ),
+    ],
+)
+def test_grouped_fastapi_routes_keep_the_same_bootstrap_failure_envelope(
+    monkeypatch,
+    route_path: str,
+) -> None:
+    """Grouped FastAPI routes should share the same bootstrap-failure 500 envelope."""
+    install_runtime_postgres_bootstrap_failure(monkeypatch)
+
+    response = request("GET", route_path)
+
+    assert response.status_code == 500
+    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
 
 
 @pytest.mark.skipif(
