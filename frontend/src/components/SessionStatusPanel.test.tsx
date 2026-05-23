@@ -185,6 +185,7 @@ describe("SessionStatusPanel monitoring UX", () => {
   it("shows completed live runs and idle-bounded completion warnings separately", () => {
     renderPanel({
       sessionStatus: "completed",
+      playbackStatus: "stopped",
       progress: buildProgress({
         status: "completed",
         status_reason: "idle_poll_budget_exhausted",
@@ -196,7 +197,7 @@ describe("SessionStatusPanel monitoring UX", () => {
     expect(
       screen.getByText("Monitoring stopped after the live stream stopped sending new video."),
     ).toBeTruthy();
-    expectVisibleText("The bounded live monitoring run completed for the current stream.");
+    expectVisibleText("Monitoring ended.");
     expect(
       screen.getByText(
         "The live stream stopped sending new video, so monitoring has ended.",
@@ -204,9 +205,10 @@ describe("SessionStatusPanel monitoring UX", () => {
     ).toBeTruthy();
   });
 
-  it("shows finished-cleanly live completion without the idle warning messaging", () => {
+  it("keeps completed live messaging in progress until playback stops", () => {
     renderPanel({
       sessionStatus: "completed",
+      playbackStatus: "playing",
       progress: buildProgress({
         status: "completed",
         status_reason: "completed",
@@ -215,12 +217,27 @@ describe("SessionStatusPanel monitoring UX", () => {
       }),
     });
 
-    expectVisibleText("Finished cleanly");
-    expect(
-      screen.getByText("The live monitoring run reached a normal completion point."),
-    ).toBeTruthy();
-    expectVisibleText("The bounded live monitoring run completed for the current stream.");
+    expectVisibleText("Current state");
+    expectVisibleText("Monitoring is in progress.");
+    expectTextHidden("Monitoring ended.");
+  });
+
+  it("shows simplified live completion once playback has stopped", () => {
+    renderPanel({
+      sessionStatus: "completed",
+      playbackStatus: "stopped",
+      progress: buildProgress({
+        status: "completed",
+        status_reason: "completed",
+        status_detail: null,
+        current_item: null,
+      }),
+    });
+
+    expectVisibleText("Current state");
+    expectVisibleText("Monitoring ended.");
     expectTextHidden("Ended after going quiet");
+    expectTextHidden("Finished cleanly");
   });
 
   it("shows a short local playback warning when the playlist has gaps", () => {
@@ -240,6 +257,115 @@ describe("SessionStatusPanel monitoring UX", () => {
 
     expectVisibleText("Playback warning");
     expectVisibleText("Playlist has gaps. Playback may be incomplete.");
+    expectVisibleText("Monitoring finished, but playback may be incomplete.");
+    expectTextHidden("Monitoring finished successfully for the current source.");
+  });
+
+  it("shows simplified local loading, running, and stopping messages", () => {
+    const { rerender } = renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "starting",
+      progress: buildProgress({
+        status: "pending",
+        current_item: null,
+      }),
+      playbackLive: false,
+    });
+
+    expectVisibleText("Monitoring is starting.");
+
+    rerender(
+      <SessionStatusPanel
+        {...buildPanelProps({
+          source: VIDEO_SEGMENTS_SOURCE,
+          sessionStatus: "running",
+          progress: buildProgress({
+            status: "running",
+            current_item: "segment_0002.ts",
+          }),
+          playbackLive: false,
+        })}
+      />,
+    );
+
+    expectVisibleText("Monitoring is in progress.");
+
+    rerender(
+      <SessionStatusPanel
+        {...buildPanelProps({
+          source: VIDEO_SEGMENTS_SOURCE,
+          sessionStatus: "cancelling",
+          progress: buildProgress({
+            status: "cancelling",
+            current_item: "segment_0002.ts",
+          }),
+          playbackLive: false,
+        })}
+      />,
+    );
+
+    expectVisibleText("Monitoring ended.");
+  });
+
+  it("keeps local completed messaging in a catch-up state until playback reaches the end", () => {
+    renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "completed",
+      progress: buildProgress({
+        status: "completed",
+        processed_count: 4,
+        total_count: 4,
+        current_item: "segment_0004.ts",
+      }),
+      playbackLive: false,
+      playbackTime: 5,
+      playbackDuration: 10,
+    });
+
+    expectVisibleText("Current state");
+    expectVisibleText("Monitoring is in progress.");
+    expect(screen.queryByText("Monitoring is in progress.")).not.toBeNull();
+    expectTextHidden("Monitoring ended.");
+  });
+
+  it("shows finished-local messaging once playback reaches the end", () => {
+    renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "completed",
+      progress: buildProgress({
+        status: "completed",
+        processed_count: 4,
+        total_count: 4,
+        current_item: "segment_0004.ts",
+      }),
+      playbackLive: false,
+      playbackTime: 10,
+      playbackDuration: 10,
+    });
+
+    expectVisibleText("Monitoring ended.");
+    expectVisibleText("Current state");
+  });
+
+  it("shows ended-local messaging after the user stops playback before the natural end", () => {
+    renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "completed",
+      progress: buildProgress({
+        status: "completed",
+        processed_count: 4,
+        total_count: 4,
+        current_item: "segment_0004.ts",
+      }),
+      playbackLive: false,
+      playbackTime: 5,
+      playbackDuration: 10,
+      playbackStatus: "stopped",
+    });
+
+    expectVisibleText("Current state");
+    expectVisibleText("Monitoring ended.");
+    expectTextHidden("Monitoring is in progress.");
   });
 
   it("renders a reconnecting cue separately from terminal diagnostics", () => {
@@ -266,7 +392,7 @@ describe("SessionStatusPanel monitoring UX", () => {
 
     expectTextHidden("Recovering");
     expectTextHidden("Trying to reconnect to the live stream.");
-    expect(screen.getByText("Live monitoring is active and currently analyzing live-window-002.")).toBeTruthy();
+    expect(screen.getByText("Live monitoring is active.")).toBeTruthy();
   });
 
   it("renders terminal monitoring diagnostics from api stream failure metadata", () => {
@@ -355,6 +481,8 @@ describe("SessionStatusPanel monitoring UX", () => {
         "Monitoring finished, but one or more local playlist segments were missing or could not be analyzed.",
       ),
     ).toBeTruthy();
+    expectVisibleText("Monitoring finished with missing local items.");
+    expectTextHidden("Monitoring finished successfully for the current source.");
     expectDiagnosticOrder(container, [
       "Monitoring Only 9 of 10 local playlist segments were analyzed. One or more items were missing or unreadable.",
     ]);
@@ -370,7 +498,7 @@ describe("SessionStatusPanel monitoring UX", () => {
       }),
     });
 
-    expect(screen.getByText("Live monitoring is active for the current stream.")).toBeTruthy();
+    expect(screen.getByText("Live monitoring is active.")).toBeTruthy();
     expect(screen.getByText("Live, waiting for the first chunk")).toBeTruthy();
   });
 
