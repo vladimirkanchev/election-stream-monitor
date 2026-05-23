@@ -176,7 +176,7 @@ module families and the matching tests:
     - file-backed contract for the current default alert store
   - `tests/test_session_alert_store_runtime.py`
     - runtime backend selection plus caller-stability coverage for the default
-      alert backend
+      alert backend, including cache recovery after failed Postgres bootstrap
   - `tests/test_session_alert_store_runtime_config.py`
     - explicit `file` versus `postgres` backend-mode config coverage
   - `tests/test_session_alert_store_parity.py`
@@ -187,7 +187,8 @@ module families and the matching tests:
     - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
       second backend's read/write drift-sensitive behavior
   - `tests/test_session_alert_store_postgres_config.py`
-    - narrow env/config coverage for the PostgreSQL alert-store bootstrap path
+    - narrow env/config, cache-behavior, and URL-validation coverage for the
+      PostgreSQL alert-store bootstrap path
   - `tests/test_session_io.py`
     - compatibility write-entry and write-to-read coverage
   - `tests/test_session_runner_execution_local.py`
@@ -261,10 +262,11 @@ module families and the matching tests:
     filtered-data, and unknown-filter empty behavior, with payload-shaping
     expectations kept separate from MCP-facing error translation
   - `tests/test_api_session_alert_incidents.py` owns grouped FastAPI route
-    behavior, grouped filter binding, runtime-selected Postgres wiring, and
-    the small live grouped-route smokes
+    behavior, grouped filter binding, runtime-selected Postgres wiring,
+    bootstrap-failure parity, and the small live grouped-route smokes
   - `tests/test_mcp_server_alerts_errors.py` owns raw MCP missing-session,
-    invalid-range, and invalid-timestamp error mapping
+    invalid-range, invalid-timestamp, and runtime Postgres bootstrap-failure
+    error mapping
   - `tests/test_mcp_server_incidents_behavior.py` owns grouped MCP no-alert,
     filtered-data, runtime-selected Postgres grouped reads, and small live
     grouped-tool smokes, with grouped output shaping kept separate from

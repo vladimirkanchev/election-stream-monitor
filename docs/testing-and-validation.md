@@ -11,6 +11,20 @@ For a shorter CI ownership handoff, use
 
 ## Routine Validation
 
+Use two explicit backend modes when validating this branch:
+
+- everyday synthetic checks
+  - force `ESM_ALERT_STORE_BACKEND=file`
+  - leave `POSTGRES_ALERT_STORE_REAL_SMOKE` unset or `0`
+- live Postgres confidence
+  - set `ESM_ALERT_STORE_BACKEND=postgres`
+  - set `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
+  - provide `ESM_POSTGRES_ALERT_DATABASE_URL`
+
+The fast PR/branch CI workflow now pins the synthetic path to the file-backed
+alert backend. The weekly workflow owns the real Postgres confidence jobs and
+overrides that default in its dedicated live-DB lanes.
+
 ## CI Shape
 
 The current GitHub Actions workflow uses three practical layers:
@@ -942,7 +956,9 @@ The current test split is:
 
 - `tests/session_alert_test_support.py`
   - shared session/alert setup helpers for this slice, including runtime
-    Postgres smoke helpers
+    Postgres smoke helpers and the shared
+    `install_runtime_postgres_bootstrap_failure(...)` helper for deterministic
+    boundary-failure tests
 - `tests/test_session_alert_store.py`
   - file-backed alert-store contract coverage for raw reads, malformed-row
     tolerance, missing-session failures, repeated-read stability,
@@ -951,6 +967,8 @@ The current test split is:
 - `tests/test_session_alert_store_runtime.py`
   - runtime default-backend selection plus caller-stability coverage for the
     raw alert reader and compatibility write seam
+  - also covers cache recovery after failed Postgres bootstrap plus explicit
+    backend switching with cache clears
 - `tests/test_session_alert_store_runtime_config.py`
   - explicit runtime backend-mode config coverage for `file` versus `postgres`
 - `tests/test_session_alert_store_parity.py`
@@ -962,7 +980,8 @@ The current test split is:
   - PostgreSQL alert-store contract coverage for schema/bootstrap plus the
     concrete second backend's read/write drift-sensitive behavior
 - `tests/test_session_alert_store_postgres_config.py`
-  - narrow Postgres env/config loading and validation coverage
+  - narrow Postgres env/config loading, cache behavior, and URL validation
+    coverage
 - `tests/test_session_io.py`
   - compatibility write-entry coverage showing `append_alert(...)` delegates to
     the default alert-store seam without widening into broader session
@@ -1050,12 +1069,13 @@ The current test split is:
 - `tests/test_api_session_alerts.py`
   - FastAPI adapter behavior for raw alert list and summary routes
   - includes stable empty-result envelopes, filter-forwarding coverage, real
-    file-backed seam reads, and raw FastAPI/MCP optional-window-field parity
+    file-backed seam reads, raw FastAPI/MCP optional-window-field parity, and
+    shared runtime Postgres bootstrap-failure envelope coverage
 - `tests/test_api_session_alert_incidents.py`
   - FastAPI adapter behavior for timeline and grouped incident summary routes
   - includes stable empty-result envelopes, grouped filter-forwarding
-    coverage, real file-backed seam reads, and grouped malformed-row boundary
-    parity
+    coverage, real file-backed seam reads, grouped malformed-row boundary
+    parity, and grouped runtime Postgres bootstrap-failure envelope coverage
 - `tests/test_mcp_server_contracts.py`
   - structural MCP registration and launch-wiring coverage, including stable
     tool names/count, read-only server instructions, schema basics, and stdio

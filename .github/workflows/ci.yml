@@ -6,6 +6,13 @@ on:
       - main
   pull_request:
 
+env:
+  # Fast PR/branch CI stays on the default synthetic path. Real Postgres
+  # confidence belongs to the weekly workflow, which overrides these values in
+  # its dedicated live-DB jobs.
+  ESM_ALERT_STORE_BACKEND: file
+  POSTGRES_ALERT_STORE_REAL_SMOKE: "0"
+
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
