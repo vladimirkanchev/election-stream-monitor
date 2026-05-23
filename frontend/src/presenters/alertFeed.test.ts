@@ -158,6 +158,39 @@ describe("filterAlertsForPlayback", () => {
     ).toEqual([]);
   });
 
+  it("still reveals segment alerts from segment timing when the current item is unknown", () => {
+    const alerts: AlertEvent[] = [
+      buildAlert({
+        detector_id: "video_metrics",
+        title: "Black screen detected",
+        source_name: "segment_0001.ts",
+      }),
+      buildAlert({
+        timestamp_utc: "2026-04-02 10:00:01",
+        detector_id: "video_metrics",
+        title: "Black screen detected",
+        source_name: "segment_0002.ts",
+        window_index: 1,
+      }),
+    ];
+
+    expect(
+      visibleAlertSources({
+        alerts,
+        sourceKind: "video_segments",
+        playbackTime: 1.1,
+        playbackDuration: 6,
+        playbackLive: false,
+        totalAnalysisCount: 6,
+        currentPlaybackItem: null,
+        segmentStartTimes: {
+          "segment_0001.ts": 1,
+          "segment_0002.ts": 2,
+        },
+      }),
+    ).toEqual(["segment_0001.ts"]);
+  });
+
   it("reveals all alerts immediately during live playback", () => {
     const alerts: AlertEvent[] = [
       buildAlert({ message: "live-first", source_name: "live-window-001" }),
