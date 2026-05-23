@@ -1,7 +1,7 @@
-"""Focused tests for PostgreSQL alert-store settings.
+"""Focused tests for PostgreSQL alert-store bootstrap settings.
 
-This file stays at the Postgres bootstrap config seam: env ingestion, caching,
-and direct URL validation.
+This file stays at the config seam: env ingestion, cache behavior, and URL
+validation. It does not exercise store reads, writes, or live connections.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ from session_alert_store_postgres_config import (
     get_postgres_alert_store_settings,
     validate_postgres_alert_store_settings,
 )
+
+POSTGRES_ALERT_DATABASE_URL = "postgresql://alerts:secret@db.example/esm"
+UPDATED_POSTGRES_ALERT_DATABASE_URL = "postgresql://new-user:new-secret@db.example/esm"
 
 
 @pytest.fixture(autouse=True)
@@ -44,17 +47,36 @@ def test_get_postgres_alert_store_settings_defaults_to_no_database_url(
 
 def test_get_postgres_alert_store_settings_reads_env_overrides(monkeypatch) -> None:
     """The settings loader should ingest the Postgres bootstrap env vars."""
-    monkeypatch.setenv(
-        POSTGRES_ALERT_DATABASE_URL_ENV,
-        "postgresql://alerts:secret@db.example/esm",
-    )
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, POSTGRES_ALERT_DATABASE_URL)
     monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "false")
 
     settings = get_postgres_alert_store_settings()
 
     assert settings == PostgresAlertStoreSettings(
-        database_url="postgresql://alerts:secret@db.example/esm",
+        database_url=POSTGRES_ALERT_DATABASE_URL,
         auto_create_tables=False,
+    )
+
+
+def test_get_postgres_alert_store_settings_keeps_cached_values_until_cleared(
+    monkeypatch,
+) -> None:
+    """The narrow bootstrap cache should stay stable until callers clear it explicitly."""
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, POSTGRES_ALERT_DATABASE_URL)
+    first = get_postgres_alert_store_settings()
+
+    monkeypatch.setenv(
+        POSTGRES_ALERT_DATABASE_URL_ENV,
+        UPDATED_POSTGRES_ALERT_DATABASE_URL,
+    )
+    cached = get_postgres_alert_store_settings()
+    clear_postgres_alert_store_settings_cache()
+    refreshed = get_postgres_alert_store_settings()
+
+    assert cached == first
+    assert refreshed == PostgresAlertStoreSettings(
+        database_url=UPDATED_POSTGRES_ALERT_DATABASE_URL,
+        auto_create_tables=True,
     )
 
 
@@ -89,6 +111,16 @@ def test_validate_postgres_alert_store_settings_rejects_non_postgres_scheme() ->
         )
 
 
+def test_validate_postgres_alert_store_settings_accepts_normalized_scheme_whitespace() -> None:
+    """Bootstrap validation should tolerate surrounding whitespace and mixed-case schemes."""
+    validate_postgres_alert_store_settings(
+        PostgresAlertStoreSettings(
+            database_url=f"  {POSTGRES_ALERT_DATABASE_URL.upper()}  ",
+            auto_create_tables=True,
+        )
+    )
+
+
 def test_get_postgres_alert_store_settings_normalizes_blank_database_url_to_none(
     monkeypatch,
 ) -> None:
@@ -104,7 +136,7 @@ def test_get_postgres_alert_store_settings_parses_mixed_case_boolean_override(
     monkeypatch,
 ) -> None:
     """Boolean bootstrap settings should tolerate mixed-case operator input."""
-    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, "postgresql://alerts:secret@db.example/esm")
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, POSTGRES_ALERT_DATABASE_URL)
     monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "FaLsE")
 
     settings = get_postgres_alert_store_settings()
@@ -116,7 +148,7 @@ def test_get_postgres_alert_store_settings_falls_back_on_invalid_boolean_overrid
     monkeypatch,
 ) -> None:
     """Invalid boolean env values should fall back to the default bootstrap mode."""
-    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, "postgresql://alerts:secret@db.example/esm")
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, POSTGRES_ALERT_DATABASE_URL)
     monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "not-a-bool")
 
     settings = get_postgres_alert_store_settings()

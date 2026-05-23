@@ -1,8 +1,8 @@
 """Store-level contract and bootstrap tests for the PostgreSQL alert store.
 
 This file owns the concrete Postgres backend below the service and boundary
-layers: schema/bootstrap behavior, SQL mapping, row normalization, preserved
-unknown-session parity, and the canonical opt-in live store smoke path.
+layers: schema/bootstrap behavior, SQL mapping, row normalization,
+unknown-session parity, and the opt-in live store smoke path.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from tests.session_alert_test_support import (
 
 
 class RecordingCursor:
-    """Tiny recording cursor for PostgreSQL alert-store tests."""
+    """Small cursor that records SQL and replays preloaded rows."""
 
     def __init__(
         self,
@@ -75,7 +75,7 @@ class RecordingCursor:
 
 
 class RecordingConnection:
-    """Tiny recording connection for PostgreSQL alert-store tests."""
+    """Small connection that records executed statements and commit state."""
 
     def __init__(self, *, rows: list[object] | None = None) -> None:
         self.executed_statements: list[tuple[str, object | None]] = []
@@ -95,7 +95,7 @@ class RecordingConnection:
 
 
 class FailingCursor:
-    """Small cursor that raises on execute to exercise failure-path propagation."""
+    """Cursor that raises on execute so failure paths stay easy to assert."""
 
     def __enter__(self) -> "FailingCursor":
         """Return the same failing cursor inside the context manager block."""
@@ -120,7 +120,7 @@ class FailingCursor:
 
 
 class FailingConnection:
-    """Small connection that always returns a failing cursor."""
+    """Connection that always returns the failing cursor."""
 
     def __init__(self) -> None:
         self.committed = False
@@ -160,7 +160,7 @@ class MissingSchemaCursor:
 
 
 class MissingSchemaConnection:
-    """Small connection used to prove disabled auto-create leaves schema errors visible."""
+    """Connection used to prove disabled auto-create leaves schema errors visible."""
 
     def cursor(self) -> MissingSchemaCursor:
         """Return the missing-schema cursor used by the bootstrap-path test."""
@@ -169,6 +169,77 @@ class MissingSchemaConnection:
     def commit(self) -> None:
         """Ignore commit calls because the missing-schema cursor always fails first."""
         return None
+
+
+class MidSchemaFailureCursor:
+    """Small cursor that fails partway through schema bootstrap."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __enter__(self) -> "MidSchemaFailureCursor":
+        """Return the same cursor inside the context manager block."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any,
+    ) -> None:
+        """Close the cursor context without extra cleanup work."""
+        return None
+
+    def execute(self, query: str, params: object | None = None) -> object:
+        """Succeed once, then fail before bootstrap can commit."""
+        self.calls += 1
+        if self.calls == 2:
+            raise RuntimeError("index creation failed")
+        return object()
+
+    def fetchall(self) -> list[object]:
+        """Return no rows because schema bootstrap never performs a read."""
+        return []
+
+
+class MidSchemaFailureConnection:
+    """Connection that exposes a mid-bootstrap failure before commit."""
+
+    def __init__(self) -> None:
+        self.committed = False
+        self.cursor_instance = MidSchemaFailureCursor()
+
+    def cursor(self) -> MidSchemaFailureCursor:
+        """Return the reusable cursor used by the mid-bootstrap failure test."""
+        return self.cursor_instance
+
+    def commit(self) -> None:
+        """Record an unexpected commit if bootstrap reaches the end."""
+        self.committed = True
+
+
+class FakePsycopgModule:
+    """Small fake psycopg module for connect-path tests."""
+
+    class Error(Exception):
+        """Small driver-shaped base error used by bootstrap tests."""
+
+    def __init__(
+        self,
+        *,
+        connection: RecordingConnection | None = None,
+        connect_error: BaseException | None = None,
+    ) -> None:
+        self.connection = connection or RecordingConnection()
+        self.connect_error = connect_error
+        self.connect_calls: list[str] = []
+
+    def connect(self, database_url: str) -> RecordingConnection:
+        """Record one connect call and optionally raise one fake driver error."""
+        self.connect_calls.append(database_url)
+        if self.connect_error is not None:
+            raise self.connect_error
+        return self.connection
 
 
 def _mark_known_sessions(
@@ -302,6 +373,17 @@ def test_initialize_postgres_alert_store_executes_schema_statements_in_order() -
     assert connection.committed is True
 
 
+def test_initialize_postgres_alert_store_does_not_commit_after_mid_schema_failure() -> None:
+    """Bootstrap should not commit partial schema work after a later statement fails."""
+    connection = MidSchemaFailureConnection()
+
+    with pytest.raises(RuntimeError, match="index creation failed"):
+        initialize_postgres_alert_store(connection)
+
+    assert connection.cursor_instance.calls == 2
+    assert connection.committed is False
+
+
 def test_bootstrap_postgres_alert_store_initializes_schema_when_enabled(
     monkeypatch,
 ) -> None:
@@ -410,6 +492,44 @@ def test_bootstrap_postgres_alert_store_uses_cached_settings_when_not_provided(
     assert seen == ["connect"]
 
 
+def test_bootstrap_postgres_alert_store_explicit_settings_override_stale_cached_env(
+    monkeypatch,
+) -> None:
+    """Explicit bootstrap settings should win over already-cached env-derived settings."""
+    stale_settings = PostgresAlertStoreSettings(
+        database_url="postgresql://stale:stale@localhost:5432/election_stream_monitor",
+        auto_create_tables=False,
+    )
+    explicit_settings = PostgresAlertStoreSettings(
+        database_url="postgresql://fresh:secret@db.example/esm",
+        auto_create_tables=False,
+    )
+    connection = RecordingConnection()
+    seen_settings: list[PostgresAlertStoreSettings] = []
+
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, stale_settings.database_url or "")
+    monkeypatch.setattr(
+        "session_alert_store_postgres.get_postgres_alert_store_settings",
+        lambda: stale_settings,
+    )
+
+    def fake_connect(
+        resolved_settings: PostgresAlertStoreSettings,
+    ) -> RecordingConnection:
+        seen_settings.append(resolved_settings)
+        return connection
+
+    monkeypatch.setattr(
+        "session_alert_store_postgres.connect_postgres_alert_store",
+        fake_connect,
+    )
+
+    result = bootstrap_postgres_alert_store(explicit_settings)
+
+    assert result is connection
+    assert seen_settings == [explicit_settings]
+
+
 def test_connect_postgres_alert_store_reports_missing_psycopg_dependency(
     monkeypatch,
 ) -> None:
@@ -429,6 +549,92 @@ def test_connect_postgres_alert_store_reports_missing_psycopg_dependency(
                 auto_create_tables=True,
             )
         )
+
+
+def test_connect_postgres_alert_store_uses_validated_database_url_with_driver_success(
+    monkeypatch,
+) -> None:
+    """Bootstrap should pass the validated URL through to psycopg.connect."""
+    fake_psycopg = FakePsycopgModule()
+    settings = PostgresAlertStoreSettings(
+        database_url="postgresql://alerts:secret@db.example/esm",
+        auto_create_tables=True,
+    )
+    monkeypatch.setattr(
+        "session_alert_store_postgres.importlib.import_module",
+        lambda name: fake_psycopg,
+    )
+
+    connection = connect_postgres_alert_store(settings)
+
+    assert connection is fake_psycopg.connection
+    assert fake_psycopg.connect_calls == [settings.database_url]
+
+
+def test_connect_postgres_alert_store_wraps_driver_connection_errors(
+    monkeypatch,
+) -> None:
+    """Driver connection failures should become one stable bootstrap error."""
+    fake_psycopg = FakePsycopgModule(
+        connect_error=FakePsycopgModule.Error("database unavailable")
+    )
+    monkeypatch.setattr(
+        "session_alert_store_postgres.importlib.import_module",
+        lambda name: fake_psycopg,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Could not connect to the PostgreSQL alert store",
+    ):
+        connect_postgres_alert_store(
+            PostgresAlertStoreSettings(
+                database_url="postgresql://alerts:secret@db.example/esm",
+                auto_create_tables=True,
+            )
+        )
+
+    assert fake_psycopg.connect_calls == [
+        "postgresql://alerts:secret@db.example/esm"
+    ]
+
+
+def test_bootstrap_postgres_alert_store_surfaces_schema_init_failures_after_connect(
+    monkeypatch,
+) -> None:
+    """Bootstrap should not hide schema-init failures after a successful connect."""
+    settings = PostgresAlertStoreSettings(
+        database_url="postgresql://alerts:secret@db.example/esm",
+        auto_create_tables=True,
+    )
+    connection = RecordingConnection()
+    seen: list[str] = []
+
+    def fake_connect(
+        resolved_settings: PostgresAlertStoreSettings,
+    ) -> RecordingConnection:
+        assert resolved_settings == settings
+        seen.append("connect")
+        return connection
+
+    def fake_initialize(resolved_connection: RecordingConnection) -> None:
+        assert resolved_connection is connection
+        seen.append("initialize")
+        raise RuntimeError("schema bootstrap failed")
+
+    monkeypatch.setattr(
+        "session_alert_store_postgres.connect_postgres_alert_store",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        "session_alert_store_postgres.initialize_postgres_alert_store",
+        fake_initialize,
+    )
+
+    with pytest.raises(RuntimeError, match="schema bootstrap failed"):
+        bootstrap_postgres_alert_store(settings)
+
+    assert seen == ["connect", "initialize"]
 
 
 def test_bootstrap_postgres_alert_store_leaves_missing_schema_failures_visible_when_auto_create_is_disabled(
@@ -583,6 +789,17 @@ def test_postgres_session_alert_store_propagates_append_failures_without_commit(
 
     with pytest.raises(RuntimeError, match="database failed"):
         store.append_alert(_sample_alert_event())
+
+
+def test_postgres_session_alert_store_rejects_invalid_timestamp_before_execute_or_commit() -> None:
+    """Malformed timestamps should fail before the store issues a write query."""
+    store, connection = _postgres_store()
+
+    with pytest.raises(ValueError):
+        store.append_alert(_sample_alert_event(timestamp_utc="bad-timestamp"))
+
+    assert connection.executed_statements == []
+    assert connection.committed is False
 
 
 def test_postgres_session_alert_store_propagates_read_failures(

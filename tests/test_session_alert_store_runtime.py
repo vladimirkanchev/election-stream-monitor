@@ -1,7 +1,7 @@
 """Focused tests for the runtime-selected default alert store.
 
-These tests keep the runtime story narrow: `file` stays the default, `postgres`
-is opt-in, and existing callers still go through the same default-store seam.
+These checks stay at the runtime seam: `file` remains the default, `postgres`
+is opt-in, and callers keep using the same default-store entry points.
 """
 
 from __future__ import annotations
@@ -25,14 +25,19 @@ from session_alert_store import (
 from session_alert_store_postgres import PostgresSessionAlertStore
 from session_alert_store_postgres_config import (
     POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV,
+    POSTGRES_ALERT_DATABASE_URL_ENV,
 )
 from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
 from session_alerts import read_session_alert_events
 from session_models import AlertEvent
 
+STALE_POSTGRES_ALERT_DATABASE_URL = (
+    "postgresql://stale:stale@localhost:5432/election_stream_monitor"
+)
+
 
 class RecordingRuntimeAlertStore:
-    """Small fake store used to prove runtime-selected backend routing."""
+    """Small fake store for tests that observe runtime-selected routing."""
 
     def __init__(self) -> None:
         self.read_session_ids: list[str] = []
@@ -46,6 +51,14 @@ class RecordingRuntimeAlertStore:
         """Record one read through the runtime-selected default store."""
         self.read_session_ids.append(session_id)
         return []
+
+
+def _install_unexpected_postgres_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail fast if file-mode resolution ever reaches the Postgres builder."""
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: (_ for _ in ()).throw(AssertionError("postgres builder should not run")),
+    )
 
 
 def _select_postgres_runtime_backend(
@@ -76,6 +89,32 @@ def test_get_default_session_alert_store_defaults_to_file_backend(
 ) -> None:
     """The default alert store should stay file-backed unless explicitly changed."""
     monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
+
+    store = get_default_session_alert_store()
+
+    assert isinstance(store, FileSessionAlertStore)
+
+
+def test_get_default_session_alert_store_ignores_stale_postgres_url_when_backend_is_unset(
+    monkeypatch,
+) -> None:
+    """A leftover Postgres URL alone should not switch the default backend."""
+    monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, STALE_POSTGRES_ALERT_DATABASE_URL)
+    _install_unexpected_postgres_builder(monkeypatch)
+
+    store = get_default_session_alert_store()
+
+    assert isinstance(store, FileSessionAlertStore)
+
+
+def test_get_default_session_alert_store_ignores_stale_postgres_url_when_file_backend_is_explicit(
+    monkeypatch,
+) -> None:
+    """Explicit file mode should ignore Postgres bootstrap settings completely."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "file")
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, STALE_POSTGRES_ALERT_DATABASE_URL)
+    _install_unexpected_postgres_builder(monkeypatch)
 
     store = get_default_session_alert_store()
 
@@ -146,6 +185,27 @@ def test_get_default_session_alert_store_raises_when_postgres_bootstrap_fails(
         get_default_session_alert_store()
 
 
+def test_get_default_session_alert_store_only_fails_for_missing_postgres_driver_when_postgres_is_selected(
+    monkeypatch,
+) -> None:
+    """Missing Postgres driver should matter only after explicit Postgres selection."""
+    monkeypatch.setenv(
+        POSTGRES_ALERT_DATABASE_URL_ENV,
+        STALE_POSTGRES_ALERT_DATABASE_URL,
+    )
+    monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
+    _install_unexpected_postgres_builder(monkeypatch)
+
+    default_store = get_default_session_alert_store()
+    assert isinstance(default_store, FileSessionAlertStore)
+
+    clear_default_session_alert_store_cache()
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+
+    with pytest.raises(AssertionError, match="postgres builder should not run"):
+        get_default_session_alert_store()
+
+
 def test_default_alert_service_entrypoint_uses_runtime_selected_backend(
     monkeypatch,
 ) -> None:
@@ -197,6 +257,53 @@ def test_default_alert_store_cache_requires_explicit_clear_before_backend_switch
 
     assert still_cached is first
     assert rebuilt is switched_store
+
+
+def test_default_alert_store_cache_recovers_cleanly_after_failed_postgres_bootstrap(
+    monkeypatch,
+) -> None:
+    """A failed Postgres bootstrap should not poison the cache for a later clean rebuild."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: (_ for _ in ()).throw(RuntimeError("postgres bootstrap failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="postgres bootstrap failed"):
+        get_default_session_alert_store()
+
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "file")
+    clear_default_session_alert_store_cache()
+
+    rebuilt = get_default_session_alert_store()
+
+    assert isinstance(rebuilt, FileSessionAlertStore)
+
+
+def test_default_alert_store_cache_supports_file_to_postgres_to_file_switch_with_explicit_clears(
+    monkeypatch,
+) -> None:
+    """One process should rebuild the default store cleanly across explicit backend switches."""
+    monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
+    file_store = get_default_session_alert_store()
+    assert isinstance(file_store, FileSessionAlertStore)
+
+    switched_store = RecordingRuntimeAlertStore()
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: switched_store,
+    )
+    clear_default_session_alert_store_cache()
+    postgres_store = get_default_session_alert_store()
+
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "file")
+    clear_default_session_alert_store_cache()
+    rebuilt_file_store = get_default_session_alert_store()
+
+    assert postgres_store is switched_store
+    assert isinstance(rebuilt_file_store, FileSessionAlertStore)
+    assert rebuilt_file_store is file_store
 
 
 @pytest.mark.skipif(

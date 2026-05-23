@@ -1,6 +1,7 @@
 """Focused tests for runtime alert-store backend selection.
 
-This file stays at the config seam and does not exercise backend bootstrap.
+This file stays at the runtime-config seam and does not exercise bootstrap or
+concrete store behavior.
 """
 
 from __future__ import annotations
@@ -47,6 +48,17 @@ def test_get_alert_store_runtime_settings_reads_supported_backend_override(
     settings = get_alert_store_runtime_settings()
 
     assert settings == AlertStoreRuntimeSettings(backend="postgres")
+
+
+def test_get_alert_store_runtime_settings_falls_back_to_file_on_invalid_env_value(
+    monkeypatch,
+) -> None:
+    """Invalid runtime backend env values should resolve to the safe file default."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "sqlite")
+
+    settings = get_alert_store_runtime_settings()
+
+    assert settings == AlertStoreRuntimeSettings(backend="file")
 
 
 def test_validate_alert_store_runtime_settings_rejects_unsupported_backend() -> None:

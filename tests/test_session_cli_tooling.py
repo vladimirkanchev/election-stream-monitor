@@ -26,8 +26,11 @@ from tests.session_alert_test_support import (
     build_normalized_alert,
     build_unique_session_id,
     close_store_if_possible,
+    configure_session_alert_test,
+    install_runtime_postgres_bootstrap_failure,
     install_runtime_postgres_session_alerts,
     select_runtime_postgres_store,
+    write_known_session,
 )
 
 # Electron runtime bridge behavior is covered separately in frontend/electron tests.
@@ -333,6 +336,21 @@ def test_read_session_propagates_runtime_postgres_alert_store_failures(
 
     _set_argv(monkeypatch, "read-session", "--session-id", session_id)
     with pytest.raises(RuntimeError, match="database read failed"):
+        session_cli.main()
+
+
+def test_read_session_surfaces_runtime_postgres_bootstrap_failures(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Read-session should fail loudly when explicit Postgres mode cannot bootstrap."""
+    session_id = "session-cli-runtime-postgres-bootstrap-failure"
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+    install_runtime_postgres_bootstrap_failure(monkeypatch)
+
+    _set_argv(monkeypatch, "read-session", "--session-id", session_id)
+    with pytest.raises(RuntimeError, match="postgres bootstrap failed"):
         session_cli.main()
 
 

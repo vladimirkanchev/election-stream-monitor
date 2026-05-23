@@ -1,7 +1,7 @@
-"""Shared helpers for alert-store seam, runtime-selection, and boundary tests.
+"""Shared helpers for alert-store, runtime-selection, and boundary tests.
 
-These helpers keep the Task-1, Task-2, and Task-3 alert-store tests explicit
-while removing repeated session setup and payload boilerplate.
+These helpers keep Postgres runtime-selection coverage explicit while avoiding
+repeated session bootstrap, payload literals, and bootstrap-failure setup.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED = (
 
 
 class StaticAlertStore(SessionAlertStore):
-    """Tiny read-only store used to prove the injected seam is honored."""
+    """Tiny read-only store for tests that inject one stable alert history."""
 
     def __init__(self, session_id: str, alerts: list[AlertEventPayload]) -> None:
         """Keep one fixed alert set available for one expected session."""
@@ -59,7 +59,7 @@ class StaticAlertStore(SessionAlertStore):
 
 
 class FailingReadAlertStore(SessionAlertStore):
-    """Small failing store used to prove runtime-selected read failures surface cleanly."""
+    """Small failing store for tests that need one deterministic read-path failure."""
 
     def __init__(self, session_id: str, message: str) -> None:
         """Keep one expected session id plus one stable read failure message."""
@@ -98,6 +98,20 @@ def select_runtime_postgres_store(
     clear_default_session_alert_store_cache()
 
 
+def install_runtime_postgres_bootstrap_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    message: str = "postgres bootstrap failed",
+) -> None:
+    """Force the runtime-selected Postgres bootstrap path to fail deterministically."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: (_ for _ in ()).throw(RuntimeError(message)),
+    )
+    clear_default_session_alert_store_cache()
+
+
 def install_runtime_postgres_session_alerts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -105,12 +119,7 @@ def install_runtime_postgres_session_alerts(
     session_id: str,
     alerts: list[AlertEventPayload],
 ) -> None:
-    """Route one known session through a runtime-selected Postgres alert store.
-
-    Task-3 runtime tests use this to keep session snapshots, CLI reads, and
-    FastAPI session routes aligned with the currently selected alert backend
-    without repeating the same session-root bootstrap code.
-    """
+    """Route one known session through a runtime-selected Postgres alert store."""
     session_root = configure_session_alert_test(monkeypatch, tmp_path)
     write_known_session(session_root, session_id)
     select_runtime_postgres_store(monkeypatch, StaticAlertStore(session_id, alerts))
