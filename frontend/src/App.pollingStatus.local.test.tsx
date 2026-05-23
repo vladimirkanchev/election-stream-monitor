@@ -61,8 +61,9 @@ describe("App polling and status integration (local)", () => {
     await waitForPollingTick();
 
     await waitForStatusLabel("Completed");
+    expect(screen.getByText("Current state")).toBeTruthy();
     expect(
-      screen.getByText("Monitoring finished successfully for the current source."),
+      screen.getByText("Monitoring is in progress."),
     ).toBeTruthy();
   });
 
