@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent } from "react";
 
 import { usePlaybackSource } from "../hooks/usePlaybackSource";
+import { parseSegmentStartMapFromManifest } from "../playbackSegments";
 import { buildVideoPanelDisplayModel } from "../presenters/videoPanel";
 import type { MonitorSource, PlaybackStatus } from "../types";
 import { getHlsPlaybackErrorMessage, getPlaybackErrorMessage } from "../uiErrors";
@@ -146,6 +147,7 @@ export function VideoPlayerPanel({
         console.info("[playback] using native HLS playback", mediaSource);
         videoElement.src = mediaSource;
         videoElement.load();
+        void loadNativeSegmentMap(mediaSource, emitPlaybackSegmentMapChange);
         void play(videoElement);
       } else {
         void attachHlsPlayback({
@@ -262,6 +264,28 @@ export function VideoPlayerPanel({
       ) : null}
     </section>
   );
+}
+
+async function loadNativeSegmentMap(
+  mediaSource: string,
+  onPlaybackSegmentMapChange?: (segmentStarts: Record<string, number>) => void,
+): Promise<void> {
+  if (!onPlaybackSegmentMapChange) {
+    return;
+  }
+
+  try {
+    const response = await fetch(mediaSource);
+    if (!response.ok) {
+      return;
+    }
+
+    const manifestText = await response.text();
+    onPlaybackSegmentMapChange(parseSegmentStartMapFromManifest(manifestText));
+  } catch {
+    // Native HLS playback remains usable even when the renderer cannot fetch
+    // the playlist text again for playback-aligned alert timing.
+  }
 }
 
 async function attachHlsPlayback(args: {
