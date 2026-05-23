@@ -54,6 +54,7 @@ type RenderPanelArgs = {
   playbackLive?: boolean;
   playbackTime?: number;
   playbackDuration?: number | null;
+  localPlaylistWarning?: string | null;
 };
 
 /**
@@ -74,6 +75,7 @@ function buildPanelProps(args: RenderPanelArgs = {}) {
     playbackLive: args.playbackLive ?? true,
     playbackStatus: args.playbackStatus ?? "playing",
     sessionError: args.sessionError ?? null,
+    localPlaylistWarning: args.localPlaylistWarning ?? null,
   } satisfies React.ComponentProps<typeof SessionStatusPanel>;
 }
 
@@ -221,6 +223,25 @@ describe("SessionStatusPanel monitoring UX", () => {
     expectTextHidden("Ended after going quiet");
   });
 
+  it("shows a short local playback warning when the playlist has gaps", () => {
+    renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "completed",
+      progress: buildProgress({
+        status: "completed",
+        processed_count: 9,
+        total_count: 9,
+        current_item: "segment_0009.ts",
+      }),
+      playbackLive: false,
+      playbackDuration: 10,
+      localPlaylistWarning: "Playlist has gaps. Playback may be incomplete.",
+    });
+
+    expectVisibleText("Playback warning");
+    expectVisibleText("Playlist has gaps. Playback may be incomplete.");
+  });
+
   it("renders a reconnecting cue separately from terminal diagnostics", () => {
     renderPanel({
       sessionError: RECONNECTING_MESSAGE,
@@ -310,6 +331,33 @@ describe("SessionStatusPanel monitoring UX", () => {
 
     expect(screen.getByText("Analysis")).toBeTruthy();
     expect(screen.getByText("6/10")).toBeTruthy();
+  });
+
+  it("warns when a local playlist completes with only partial segment analysis", () => {
+    const { container } = renderPanel({
+      source: VIDEO_SEGMENTS_SOURCE,
+      sessionStatus: "completed",
+      playbackLive: false,
+      playbackStatus: "stopped",
+      progress: buildProgress({
+        status: "completed",
+        processed_count: 9,
+        total_count: 10,
+        current_item: "segment_0009.ts",
+        status_reason: "completed",
+        status_detail: null,
+      }),
+    });
+
+    expectVisibleText("Completed with gaps");
+    expect(
+      screen.getByText(
+        "Monitoring finished, but one or more local playlist segments were missing or could not be analyzed.",
+      ),
+    ).toBeTruthy();
+    expectDiagnosticOrder(container, [
+      "Monitoring Only 9 of 10 local playlist segments were analyzed. One or more items were missing or unreadable.",
+    ]);
   });
 
   it("shows a waiting analysis label before the first live chunk is accepted", () => {

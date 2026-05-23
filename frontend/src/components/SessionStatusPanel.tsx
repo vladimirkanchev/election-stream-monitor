@@ -22,6 +22,7 @@ interface SessionStatusPanelProps {
   playbackLive: boolean;
   playbackStatus: PlaybackStatus;
   sessionError: string | null;
+  localPlaylistWarning?: string | null;
 }
 
 export function SessionStatusPanel({
@@ -35,6 +36,7 @@ export function SessionStatusPanel({
   playbackLive,
   playbackStatus,
   sessionError,
+  localPlaylistWarning = null,
 }: SessionStatusPanelProps) {
   const statusLabel = formatMonitoringStatus(sessionStatus);
   const statusTone = getStatusTone({
@@ -42,12 +44,14 @@ export function SessionStatusPanel({
     sessionStatus,
     progress,
     sessionError,
+    localPlaylistWarning,
   });
   const sessionCue = buildSessionCue({
     source,
     sessionStatus,
     progress,
     sessionError,
+    localPlaylistWarning,
   });
   const analysisLabel = formatAnalysisProgress(
     source,
@@ -63,6 +67,7 @@ export function SessionStatusPanel({
     progress,
     sessionError,
     playbackStatus,
+    localPlaylistWarning,
   });
 
   return (
@@ -286,8 +291,9 @@ function getStatusTone(args: {
   sessionStatus: MonitoringSessionState;
   progress: SessionProgress | null;
   sessionError: string | null;
+  localPlaylistWarning: string | null;
 }): "active" | "warning" | "terminal" | "idle" {
-  const { source, sessionStatus, progress, sessionError } = args;
+  const { source, sessionStatus, progress, sessionError, localPlaylistWarning } = args;
   if (source.kind === "api_stream" && sessionStatus === "running" && sessionError) {
     return "warning";
   }
@@ -296,6 +302,12 @@ function getStatusTone(args: {
     && sessionStatus === "completed"
     && progress?.status_reason === "idle_poll_budget_exhausted"
   ) {
+    return "warning";
+  }
+  if (isPartialLocalCompletion(source, sessionStatus, progress)) {
+    return "warning";
+  }
+  if (localPlaylistWarning) {
     return "warning";
   }
 
@@ -322,12 +334,13 @@ function buildSessionCue(args: {
   sessionStatus: MonitoringSessionState;
   progress: SessionProgress | null;
   sessionError: string | null;
+  localPlaylistWarning: string | null;
 }): {
   label: string;
   message: string;
   tone: "active" | "warning" | "terminal" | "idle";
 } | null {
-  const { source, sessionStatus, progress, sessionError } = args;
+  const { source, sessionStatus, progress, sessionError, localPlaylistWarning } = args;
 
   if (source.kind === "api_stream" && sessionStatus === "running" && sessionError) {
     return {
@@ -360,6 +373,22 @@ function buildSessionCue(args: {
     };
   }
 
+  if (isPartialLocalCompletion(source, sessionStatus, progress)) {
+    return {
+      label: "Completed with gaps",
+      message: buildPartialLocalCompletionMessage(source),
+      tone: "warning",
+    };
+  }
+
+  if (localPlaylistWarning) {
+    return {
+      label: "Playback warning",
+      message: localPlaylistWarning,
+      tone: "warning",
+    };
+  }
+
   if (sessionStatus === "cancelled") {
     return {
       label: "Stopped by user",
@@ -385,6 +414,7 @@ function buildDiagnostics(args: {
   progress: SessionProgress | null;
   sessionError: string | null;
   playbackStatus: PlaybackStatus;
+  localPlaylistWarning: string | null;
 }): Array<{
   kind: "warning" | "error";
   label: string;
@@ -395,7 +425,14 @@ function buildDiagnostics(args: {
     label: string;
     message: string;
   }> = [];
-  const { source, sessionStatus, progress, sessionError, playbackStatus } = args;
+  const {
+    source,
+    sessionStatus,
+    progress,
+    sessionError,
+    playbackStatus,
+    localPlaylistWarning,
+  } = args;
   const showMonitoringDiagnostic = sessionStatus !== "idle";
 
   if (sessionError && showMonitoringDiagnostic) {
@@ -419,6 +456,14 @@ function buildDiagnostics(args: {
     }
   }
 
+  if (isPartialLocalCompletion(source, sessionStatus, progress)) {
+    diagnostics.push({
+      kind: "warning",
+      label: "Monitoring",
+      message: buildPartialLocalCompletionDiagnostic(source, progress),
+    });
+  }
+
   if (playbackStatus === "error") {
     diagnostics.push({
       kind: sessionStatus === "running" ? "warning" : "error",
@@ -436,6 +481,41 @@ function buildDiagnostics(args: {
     return kindWeight(left.kind) - kindWeight(right.kind)
       || labelWeight(left.label) - labelWeight(right.label);
   });
+}
+
+function isPartialLocalCompletion(
+  source: MonitorSource,
+  sessionStatus: MonitoringSessionState,
+  progress: SessionProgress | null,
+): boolean {
+  if (source.kind !== "video_segments" && source.kind !== "video_files") {
+    return false;
+  }
+
+  if (sessionStatus !== "completed" || !progress) {
+    return false;
+  }
+
+  return progress.total_count > progress.processed_count;
+}
+
+function buildPartialLocalCompletionMessage(source: MonitorSource): string {
+  if (source.kind === "video_segments") {
+    return "Monitoring finished, but one or more local playlist segments were missing or could not be analyzed.";
+  }
+
+  return "Monitoring finished, but one or more local media files were missing or could not be analyzed.";
+}
+
+function buildPartialLocalCompletionDiagnostic(
+  source: MonitorSource,
+  progress: SessionProgress | null,
+): string {
+  const processedCount = progress?.processed_count ?? 0;
+  const totalCount = progress?.total_count ?? processedCount;
+  const sourceLabel = source.kind === "video_segments" ? "playlist segments" : "media files";
+
+  return `Only ${processedCount} of ${totalCount} local ${sourceLabel} were analyzed. One or more items were missing or unreadable.`;
 }
 
 function formatDebugProgress(source: MonitorSource, progress: SessionProgress): string {
