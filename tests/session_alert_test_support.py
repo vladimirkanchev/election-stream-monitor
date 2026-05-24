@@ -1,41 +1,163 @@
-"""Shared support helpers for session alert query tests.
+"""Shared helpers for alert-store, runtime-selection, and boundary tests.
 
-These helpers keep the alert-query tests focused on scenario intent:
-
-- isolate one temporary session-output root
-- create a minimal persisted session snapshot
-- write alert JSONL rows, including intentionally invalid lines
-- build alert payloads without repeating the contract shape inline
-
-The module stays small and procedural on purpose. It removes setup noise
-without hiding test meaning behind a framework, and it supports both the raw
-alert read model and the grouped incident read models that sit on top of it.
+This module owns the small reusable seams that keep alert-store tests explicit
+without repeating session bootstrap, runtime-selection setup, or normalized
+alert payload literals across suites.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
+import os
 from pathlib import Path
+from typing import cast
+from uuid import uuid4
 
 import config
 import pytest
+from session_alert_report import SessionAlertReport, build_session_alert_report
+from session_alert_incidents import AlertTimelineEntryPayload, IncidentSummaryPayload
+from session_alerts import AlertSummaryPayload
+from session_alert_store import (
+    AlertEventPayload,
+    SessionAlertStore,
+    clear_default_session_alert_store_cache,
+    get_default_session_alert_store,
+)
+from session_alert_store_postgres import PostgresSessionAlertStore
+from session_alert_store_postgres_config import (
+    POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV,
+    POSTGRES_ALERT_DATABASE_URL_ENV,
+)
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
+from session_models import AlertEvent, EventSeverity
 
 AlertPayload = dict[str, object]
 AlertLogRow = AlertPayload | str
+SessionRootBuilder = Callable[[pytest.MonkeyPatch, Path], Path]
+REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED = (
+    os.getenv("POSTGRES_ALERT_STORE_REAL_SMOKE") == "1"
+    and bool(os.getenv(POSTGRES_ALERT_DATABASE_URL_ENV))
+)
+
+
+def build_snapshot_alert_report(snapshot: dict[str, object]) -> SessionAlertReport:
+    """Return the shared compact report shape used by demo and assertion code."""
+    return build_session_alert_report(snapshot)
+
+
+class StaticAlertStore(SessionAlertStore):
+    """Read-only test store that serves one stable alert history."""
+
+    def __init__(self, session_id: str, alerts: list[AlertEventPayload]) -> None:
+        self._session_id = session_id
+        self._alerts = alerts
+
+    def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
+        raise AssertionError("append_alert should not be called in read-only seam tests")
+
+    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+        assert session_id == self._session_id
+        return self._alerts
+
+
+class FailingReadAlertStore(SessionAlertStore):
+    """Read-path failure seam for tests that need deterministic backend errors."""
+
+    def __init__(self, session_id: str, message: str) -> None:
+        self._session_id = session_id
+        self._message = message
+
+    def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
+        raise AssertionError("append_alert should not be called in this read-path test")
+
+    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+        assert session_id == self._session_id
+        raise RuntimeError(self._message)
 
 
 def configure_session_alert_test(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> Path:
-    """Redirect one alert-query test into isolated temporary session state.
-
-    Returning the configured root keeps the callers explicit about where
-    session directories are created instead of hiding filesystem ownership
-    inside a fixture with more implicit behavior.
-    """
+    """Point one test at an isolated temporary session-output root."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
     return tmp_path
+
+
+def select_runtime_postgres_store(
+    monkeypatch: pytest.MonkeyPatch,
+    store: SessionAlertStore,
+) -> None:
+    """Force the default alert-store seam through a Postgres-selected store."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: store,
+    )
+    clear_default_session_alert_store_cache()
+
+
+def install_runtime_postgres_bootstrap_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    message: str = "postgres bootstrap failed",
+) -> None:
+    """Force the runtime-selected Postgres bootstrap path to fail deterministically."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store._build_postgres_default_session_alert_store",
+        lambda: (_ for _ in ()).throw(RuntimeError(message)),
+    )
+    clear_default_session_alert_store_cache()
+
+
+def install_runtime_postgres_session_alerts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    session_id: str,
+    alerts: list[AlertEventPayload],
+) -> None:
+    """Seed one known session and route its alert reads through the Postgres seam."""
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+    select_runtime_postgres_store(monkeypatch, StaticAlertStore(session_id, alerts))
+
+
+def build_live_runtime_postgres_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    session_id: str,
+    session_root_builder: SessionRootBuilder | None = None,
+) -> PostgresSessionAlertStore:
+    """Build a live runtime-selected Postgres store over a known persisted session."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
+    build_session_root = session_root_builder or configure_session_alert_test
+    session_root = build_session_root(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+    clear_default_session_alert_store_cache()
+    return cast(PostgresSessionAlertStore, get_default_session_alert_store())
+
+
+def close_store_if_possible(store: object) -> None:
+    """Close an optional live Postgres store or connection without concrete typing."""
+    close = getattr(store, "close", None)
+    if callable(close):
+        close()
+        return
+    connection = getattr(store, "_connection", None)
+    close = getattr(connection, "close", None)
+    if callable(close):
+        close()
+
+
+def build_unique_session_id(prefix: str) -> str:
+    """Build a unique session id for live runtime or database smoke tests."""
+    return f"{prefix}-{uuid4().hex}"
 
 
 def build_persisted_alert(
@@ -50,11 +172,7 @@ def build_persisted_alert(
     window_index: int | None = None,
     window_start_sec: float | None = None,
 ) -> AlertPayload:
-    """Build one alert payload as it would be persisted to JSONL.
-
-    This shape intentionally omits normalized defaults so tests can distinguish
-    persisted rows from the read/query payload returned after parsing.
-    """
+    """Build one alert row in its persisted JSONL shape."""
     alert: AlertPayload = {
         "session_id": session_id,
         "timestamp_utc": timestamp_utc,
@@ -82,13 +200,8 @@ def build_normalized_alert(
     source_name: str,
     window_index: int | None = None,
     window_start_sec: float | None = None,
-) -> AlertPayload:
-    """Build one alert payload in the normalized read/query response shape.
-
-    The service layer normalizes optional window fields to explicit ``None``
-    values, so callers can compare full payloads without repeating that detail
-    in every assertion.
-    """
+) -> AlertEventPayload:
+    """Build one alert row in the normalized read/query shape."""
     alert = build_persisted_alert(
         session_id,
         timestamp_utc=timestamp_utc,
@@ -102,7 +215,33 @@ def build_normalized_alert(
     )
     alert.setdefault("window_index", None)
     alert.setdefault("window_start_sec", None)
-    return alert
+    return cast(AlertEventPayload, alert)
+
+
+def build_alert_event(
+    session_id: str,
+    *,
+    timestamp_utc: str,
+    detector_id: str,
+    title: str,
+    message: str,
+    severity: EventSeverity,
+    source_name: str,
+    window_index: int | None = None,
+    window_start_sec: float | None = None,
+) -> AlertEvent:
+    """Build one concrete alert event for store and service seam tests."""
+    return AlertEvent(
+        session_id=session_id,
+        timestamp_utc=timestamp_utc,
+        detector_id=detector_id,
+        title=title,
+        message=message,
+        severity=severity,
+        source_name=source_name,
+        window_index=window_index,
+        window_start_sec=window_start_sec,
+    )
 
 
 def build_timeline_entry(
@@ -110,18 +249,13 @@ def build_timeline_entry(
     start_time_utc: str,
     end_time_utc: str,
     detector_id: str,
-    severity: str,
+    severity: EventSeverity,
     title: str,
     alert_count: int,
     source_names: list[str],
     sample_message: str,
-) -> AlertPayload:
-    """Build one grouped timeline entry in the shared response shape.
-
-    Tests use this helper instead of spelling the same entry shape inline so
-    timeline assertions stay focused on grouping intent rather than payload
-    boilerplate.
-    """
+) -> AlertTimelineEntryPayload:
+    """Build one grouped timeline entry in the shared response shape."""
     return {
         "start_time_utc": start_time_utc,
         "end_time_utc": end_time_utc,
@@ -142,8 +276,8 @@ def build_alert_summary_payload(
     counts_by_severity: dict[str, int],
     first_alert_timestamp_utc: str | None,
     last_alert_timestamp_utc: str | None,
-) -> AlertPayload:
-    """Build the stable raw alert-summary payload used by service and adapters."""
+) -> AlertSummaryPayload:
+    """Build the stable raw alert-summary payload."""
     return {
         "session_id": session_id,
         "total_alerts": total_alerts,
@@ -164,14 +298,9 @@ def build_incident_summary_payload(
     top_incident_categories: dict[str, int],
     first_alert_timestamp_utc: str | None,
     last_alert_timestamp_utc: str | None,
-    narrative_summary: str | None,
-) -> AlertPayload:
-    """Build the grouped incident-summary payload shared by service and adapters.
-
-    The grouped summary extends the raw alert summary shape, so this helper
-    intentionally layers grouped-incident fields on top of
-    ``build_alert_summary_payload``.
-    """
+    narrative_summary: str,
+) -> IncidentSummaryPayload:
+    """Build the grouped incident-summary payload."""
     return {
         **build_alert_summary_payload(
             session_id,
@@ -188,7 +317,7 @@ def build_incident_summary_payload(
 
 
 def assert_narrative_contains(narrative: str | None, *parts: str) -> None:
-    """Assert that one summary sentence still carries the important facts."""
+    """Assert that a narrative summary still carries the important facts."""
     assert narrative is not None
     for part in parts:
         assert part in narrative
@@ -200,11 +329,7 @@ def write_known_session(
     *,
     alert_rows: list[AlertLogRow] | None = None,
 ) -> Path:
-    """Create one minimal known session with optional alert-log content.
-
-    This writes only the smallest stable session snapshot needed for the
-    current alert-query seam: ``session.json`` plus an optional ``alerts.jsonl``.
-    """
+    """Create the minimal known session used by the alert seam tests."""
     session_dir = session_root / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
     (session_dir / "session.json").write_text(
@@ -225,11 +350,7 @@ def write_known_session(
 
 
 def write_alert_log(session_dir: Path, rows: list[AlertLogRow]) -> None:
-    """Write one alert log file from payload rows or raw invalid-line strings.
-
-    Raw string rows let the service tests cover malformed-line tolerance
-    without needing a second helper dedicated only to broken input.
-    """
+    """Write one alert log from payload rows or intentionally invalid strings."""
     encoded_rows = [
         row if isinstance(row, str) else json.dumps(row)
         for row in rows

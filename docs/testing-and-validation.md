@@ -11,6 +11,20 @@ For a shorter CI ownership handoff, use
 
 ## Routine Validation
 
+Use two explicit backend modes when validating this branch:
+
+- everyday synthetic checks
+  - force `ESM_ALERT_STORE_BACKEND=file`
+  - leave `POSTGRES_ALERT_STORE_REAL_SMOKE` unset or `0`
+- live Postgres confidence
+  - set `ESM_ALERT_STORE_BACKEND=postgres`
+  - set `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
+  - provide `ESM_POSTGRES_ALERT_DATABASE_URL`
+
+The fast PR/branch CI workflow now pins the synthetic path to the file-backed
+alert backend. The weekly workflow owns the real Postgres confidence jobs and
+overrides that default in its dedicated live-DB lanes.
+
 ## CI Shape
 
 The current GitHub Actions workflow uses three practical layers:
@@ -21,6 +35,7 @@ The current GitHub Actions workflow uses three practical layers:
   - quick Electron/bridge/session-flow regression signal
 - `backend-tests`
   - packaging/import smoke check after editable install
+  - compile smoke check for the compact session-alert report module and CLI
   - backend tests
 - `backend-ruff`
   - primary Python lint check with Ruff
@@ -67,13 +82,10 @@ This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier.
 
 Feature branches now rely on CI feedback rather than required branch
-protection. The underlying fast jobs still run, and the `feature-gate` job
-provides one easy-to-scan summary context for pull requests.
-The protected CI workflow runs on pull requests, and feature-branch pushes now
-also trigger it so branch work gets feedback before a PR exists. `main` stays
-out of the push trigger, which avoids duplicate status contexts on the protected
-branch. Stale PR runs are also canceled automatically with GitHub Actions
-concurrency.
+protection. The protected workflow still runs on pull requests and now also
+runs on feature-branch pushes so branch work gets feedback before a PR exists.
+`main` stays out of the push trigger to avoid duplicate status contexts, and
+stale PR runs are canceled automatically with GitHub Actions concurrency.
 
 The workflow is now path-aware:
 
@@ -116,7 +128,7 @@ Filter intent:
 - narrower high-signal scopes: `contract`, `workflow`
 - docs-oriented policy scope: `docs`
 
-`backend` and `frontend` are intentionally coarse. `contract` is the curated
+`backend` and `frontend` stay intentionally coarse. `contract` is the curated
 cross-boundary signal and should be read more precisely.
 
 Current contract-filter refinement result:
@@ -196,8 +208,7 @@ Those checks are complementary:
 
 The chosen manifest format is JSON. That keeps the source of truth easy to read
 in Python tooling and straightforward to consume from workflow shell steps via
-`python3`, without coupling the repo to an extra YAML parser or to a Python-only
-module import seam.
+`python3`, without adding an extra YAML parser dependency.
 
 Stable target groups:
 
@@ -720,16 +731,143 @@ It currently covers:
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents
 
-Focused alert-query, incident, and MCP validation:
+Focused alert-query, seam, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_session_alert_store.py tests/test_session_alert_store_runtime.py tests/test_session_alert_store_runtime_config.py tests/test_session_alert_store_parity.py tests/test_session_alert_store_postgres.py tests/test_session_alert_store_postgres_config.py tests/test_session_io.py tests/test_session_runner_execution_local.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
 boundary, and the MCP adapter over the same service seam. If you change only
 one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
+
+The normal local pass stays synthetic by default. The live PostgreSQL alert
+smokes are opt-in and currently need:
+
+- `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
+- `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
+- usually `ESM_ALERT_STORE_BACKEND=postgres` when the test exercises the
+  runtime-selected backend path rather than the store in isolation
+
+Use the live smokes when you need confidence in the real database path:
+
+- connection/bootstrap behavior
+- real SQL insert/read behavior
+- snapshot/API/CLI behavior over the active Postgres backend
+
+For this branch, the smallest useful live checks are:
+
+- store-level smoke:
+  - `tests/test_session_alert_store_postgres.py::test_real_postgres_alert_store_smoke_round_trip`
+- representative public-surface smoke:
+  - `tests/test_api_session_alert_incidents.py::test_live_runtime_postgres_grouped_routes_follow_actual_startup_path`
+
+Use the synthetic suites for normal branch work. They are cheaper, faster, and
+already cover most seam, parity, and boundary behavior.
+
+For local live-Postgres validation, start PostgreSQL outside the Python
+scripts. The scripts assume the database is already running and reachable.
+
+Local options:
+
+- local PostgreSQL service
+  - start the service with your normal OS tooling
+  - make sure a test database such as `election_stream_monitor` exists
+- local Docker container
+  - start a disposable container and map `5432:5432`
+
+Example Docker startup:
+
+```bash
+docker run --name esm-postgres-test \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=election_stream_monitor \
+  -p 5432:5432 \
+  -d postgres:16
+```
+
+Example local env for the live checks:
+
+```bash
+export ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
+export ESM_ALERT_STORE_BACKEND=postgres
+export POSTGRES_ALERT_STORE_REAL_SMOKE=1
+```
+
+Quick connection sanity check before the longer bundles:
+
+```bash
+.venv/bin/python -c "import psycopg; psycopg.connect('postgresql://postgres:postgres@localhost:5432/election_stream_monitor').close(); print('ok')"
+```
+
+For weekly/manual rollout confidence, the live Postgres path is split into two
+focused bundles:
+
+- backend confidence
+  - store bootstrap and real append/read round-trips
+  - timestamp/order drift-sensitive checks
+  - raw/grouped FastAPI route checks
+  - grouped MCP agreement over the active backend
+- runtime/operator-flow confidence
+  - runner-written alerts through the live Postgres backend
+  - session snapshot reads over the active backend
+  - CLI `read-session` behavior over the active backend
+
+Use either bundle directly:
+
+```bash
+ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
+python3 scripts/postgres_alert_weekly_backend_confidence.py
+```
+
+```bash
+ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
+python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py
+```
+
+Or run both with the umbrella helper:
+
+```bash
+ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
+python3 scripts/postgres_alert_weekly_confidence.py
+```
+
+The umbrella helper runs both bundles in order.
+
+Use the backend bundle when:
+
+- you want stronger real-DB confidence in storage and grouped query behavior
+- you are comparing seeded alert behavior across the main public readers
+
+Use the runtime/operator-flow bundle when:
+
+- you want confidence in runner-written alerts under real Postgres mode
+- you want to sanity-check snapshot and CLI behavior before a rollout or demo
+
+For a quick human-readable view of one persisted session during a manual check,
+use:
+
+```bash
+python3 scripts/session_alert_demo_report.py --session-id <session-id>
+```
+
+Use `--format json` when you want the same compact alert report shape in a
+machine-friendly form.
+
+Use the umbrella helper when:
+
+- you want one repeatable weekly confidence pass
+- you are preparing a rollout or demo with `ESM_ALERT_STORE_BACKEND=postgres`
+- you want extra real-DB confidence before changing backend defaults later
+
+The scheduled `weekly-validation` workflow also runs the backend and
+runtime/operator bundles automatically with a disposable `postgres:16` service
+container. CI does not rely on a shared external database for those weekly
+checks.
+
+Do not treat it as a normal branch-push requirement. The synthetic seam,
+parity, and boundary suites remain the primary everyday validation path.
 
 The fast backend CI lane intentionally stays synthetic and contract-focused.
 The real-media `ffmpeg`/`ffprobe` fixture coverage lives in the slower weekly
@@ -766,13 +904,105 @@ The current functionality under that slice is:
 - grouped incident summaries
 - stdio MCP launch wiring over the same shared service seam
 
+Current alert persistence contract to preserve:
+
+- seam owner:
+  - `src/session_alert_store.py`
+    - defines the narrow storage contract for append/read raw alert rows only
+    - owns the runtime-selected default alert store and still defaults to the
+      file-backed alert backend in this branch phase
+    - filtering, summaries, and grouped incidents stay outside the store seam
+  - `src/session_alert_store_runtime_config.py`
+    - owns explicit `file` versus `postgres` backend selection for that default
+      store through `ESM_ALERT_STORE_BACKEND`
+  - `src/session_alert_store_postgres.py`
+    - owns the PostgreSQL alert table, preserved read order, the small
+      connection/bootstrap path, and the concrete second store implementation
+  - `src/session_alert_store_postgres_config.py`
+    - owns the narrow env/config parsing for the PostgreSQL bootstrap path
+  - `src/session_alerts.py` and `src/session_alert_incidents.py`
+    - public read-model entrypoints accept the store seam explicitly while still
+      defaulting to the runtime-selected store implementation
+- write entrypoint:
+  - `src/session_io.py`
+    - `append_alert(...)` remains the compatibility write entrypoint and now
+      delegates to the default alert store implementation
+    - session snapshots keep metadata, progress, and results file-backed, but
+      now read their `alerts` field through that same runtime-selected seam
+- read entrypoints:
+  - `src/session_alerts.py`
+    - raw persisted alert reads, filtering, and numeric summaries
+  - `src/session_alert_incidents.py`
+    - grouped timeline and incident-summary reads built on the raw alert layer
+  - `src/session_alert_adapter.py`
+    - shared FastAPI/MCP adapter seam for filter forwarding and domain-error mapping
+- preserved semantics:
+  - persisted alert row shape stays the validated `AlertEvent` payload written by
+    `append_alert(...)`
+  - missing `session.json` remains an unknown-session failure
+  - missing the file-backed `alerts.jsonl` log on a known session remains a
+    stable empty alert history
+  - malformed or unreadable alert-log rows remain ignorable without failing the whole read
+  - filter, raw-summary, grouped-timeline, and grouped-summary meanings stay unchanged
+- current tests that prove this contract:
+  - `tests/test_session_alert_store.py`
+  - `tests/test_session_alert_store_runtime.py`
+  - `tests/test_session_alert_store_runtime_config.py`
+  - `tests/test_session_alert_store_parity.py`
+  - `tests/test_session_alert_store_postgres.py`
+  - `tests/test_session_alert_store_postgres_config.py`
+  - `tests/test_session_io.py`
+  - `tests/test_alert_query_service_read.py`
+  - `tests/test_alert_query_service_filter.py`
+  - `tests/test_alert_query_service_summary.py`
+  - `tests/test_alert_timeline_service_grouping.py`
+  - `tests/test_alert_timeline_service_filters.py`
+  - `tests/test_alert_incident_summary_service_contracts.py`
+  - `tests/test_alert_incident_summary_service_filters.py`
+  - `tests/test_session_alert_adapter.py`
+  - `tests/test_api_session_alerts.py`
+  - `tests/test_api_session_alert_incidents.py`
+
 The current test split is:
 
 - `tests/session_alert_test_support.py`
-  - shared file-backed session/alert setup helpers for this slice
+  - shared session/alert setup helpers for this slice, including runtime
+    Postgres smoke helpers and the shared
+    `install_runtime_postgres_bootstrap_failure(...)` helper for deterministic
+    boundary-failure tests
+- `tests/test_session_alert_store.py`
+  - file-backed alert-store contract coverage for raw reads, malformed-row
+    tolerance, missing-session failures, repeated-read stability,
+    append-order behavior, append/read round-trips, and parity with the raw
+    and grouped alert read models
+- `tests/test_session_alert_store_runtime.py`
+  - runtime default-backend selection plus caller-stability coverage for the
+    raw alert reader and compatibility write seam
+  - also covers cache recovery after failed Postgres bootstrap plus explicit
+    backend switching with cache clears
+- `tests/test_session_alert_store_runtime_config.py`
+  - explicit runtime backend-mode config coverage for `file` versus `postgres`
+- `tests/test_session_alert_store_parity.py`
+  - shared file-store versus PostgreSQL-store parity for raw reads,
+    filtered raw reads, known-empty and unknown-session behavior, filtered
+    summaries, grouped timelines, grouped summaries, grouped filtered reads,
+    grouped time-bounded reads, and the file-only malformed-row subset path
+- `tests/test_session_alert_store_postgres.py`
+  - PostgreSQL alert-store contract coverage for schema/bootstrap plus the
+    concrete second backend's read/write drift-sensitive behavior
+- `tests/test_session_alert_store_postgres_config.py`
+  - narrow Postgres env/config loading, cache behavior, and URL validation
+    coverage
+- `tests/test_session_io.py`
+  - compatibility write-entry coverage showing `append_alert(...)` delegates to
+    the default alert-store seam without widening into broader session
+    persistence changes
+  - also covers write-to-read seam integration plus the hybrid snapshot path
+    where metadata/progress/results remain file-backed and alerts follow the
+    active backend
 - `tests/api_alert_test_support.py`
   - shared FastAPI alert-route payload builders plus boundary setup helpers for
-    auth, limiter, and simple successful route responses
+  auth, limiter, and simple successful route responses
 - `tests/mcp_alert_test_support.py`
   - shared in-memory MCP session helpers for the alert-tool tests
 - `tests/alert_query_service_test_support.py`
@@ -849,10 +1079,14 @@ The current test split is:
     failures, and unknown-filter empty grouped summaries
 - `tests/test_api_session_alerts.py`
   - FastAPI adapter behavior for raw alert list and summary routes
-  - includes stable empty-result envelopes and filter-forwarding coverage
+  - includes stable empty-result envelopes, filter-forwarding coverage, real
+    file-backed seam reads, raw FastAPI/MCP optional-window-field parity, and
+    shared runtime Postgres bootstrap-failure envelope coverage
 - `tests/test_api_session_alert_incidents.py`
   - FastAPI adapter behavior for timeline and grouped incident summary routes
-  - includes stable empty-result envelopes and grouped filter-forwarding coverage
+  - includes stable empty-result envelopes, grouped filter-forwarding
+    coverage, real file-backed seam reads, grouped malformed-row boundary
+    parity, and grouped runtime Postgres bootstrap-failure envelope coverage
 - `tests/test_mcp_server_contracts.py`
   - structural MCP registration and launch-wiring coverage, including stable
     tool names/count, read-only server instructions, schema basics, and stdio
@@ -861,7 +1095,9 @@ The current test split is:
   - tiny shared setup and result helpers for the split raw MCP behavior/error suites
   - intentionally limited to filesystem seams plus success/error assertion helpers
 - `tests/test_mcp_server_alerts_behavior.py`
-  - MCP raw alert-query and raw-summary behavior through the real in-memory MCP session
+  - MCP raw alert-query and raw-summary behavior through the real in-memory
+    MCP session
+  - includes real file-backed seam reads
   - includes known-session empty payloads, filtered raw MCP list/summary alignment,
     and raw unknown-filter empty payloads
   - keeps usable payload behavior separate from MCP-facing error translation
@@ -901,9 +1137,14 @@ The current test split is:
   - intentionally limited to grouped-session setup plus success/error assertion helpers
 - `tests/test_mcp_server_incidents_behavior.py`
   - MCP grouped timeline and incident-summary behavior
-  - includes known-session empty grouped payloads, filtered grouped MCP alignment,
-    and unknown-filter empty grouped payloads
+  - includes known-session empty grouped payloads, filtered grouped MCP
+    alignment, unknown-filter empty grouped payloads, and real file-backed
+    seam reads
   - keeps grouped payload behavior separate from grouped MCP error translation
+- `tests/test_session_runner_execution_local.py`
+  - finite-slice execution coverage for alert persistence through the shared
+    seam, including boundary visibility, append-order preservation, and
+    cancel-before-next-slice behavior
 - `tests/test_mcp_server_incidents_errors.py`
   - grouped MCP tool-level error mapping
   - includes missing-session failures plus grouped invalid time-range and
@@ -1030,7 +1271,7 @@ Dedicated backend typecheck:
 
 ```bash
 uv sync --extra typecheck
-MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
 Use `uv sync --extra typecheck` to make sure the local typecheck env has the
@@ -1043,18 +1284,18 @@ bridge, session lifecycle, or alert-rule boundary.
 Focused alert-query typecheck slice:
 
 ```bash
-.venv/bin/mypy src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
+.venv/bin/mypy src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
 ```
 
-Use this shorter command when you are only tightening the alert-query read
-models or adapter typing and want a faster local signal than the larger
-curated backend list.
+Use this shorter command when you are only tightening the alert persistence
+and alert-query slice or the shared adapter typing and want a faster local
+signal than the larger curated backend list.
 
 Primary backend lint check:
 
 ```bash
 python -m pip install -e .[lint]
-ruff check src tests
+ruff check src scripts tests
 ```
 
 Use this as the main Python lint gate now that Ruff is the standardized
@@ -1069,7 +1310,7 @@ Advisory backend pyright check:
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e .[typecheck]
-.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback
@@ -1078,12 +1319,12 @@ without making it the required branch gate yet.
 Focused alert-query pyright slice:
 
 ```bash
-.venv/bin/pyright --project pyrightconfig.json src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
+.venv/bin/pyright --project pyrightconfig.json src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_alerts.py src/session_alert_incidents.py src/session_alert_adapter.py
 ```
 
-Use this when the change stays inside the shared alert-query slice and you want
-the narrowest pyright signal that still matches the branch's current typing
-focus.
+Use this when the change stays inside the shared alert persistence and
+alert-query slice and you want the narrowest pyright signal that still matches
+the branch's current typing focus.
 
 ### Repo-Local Skill Tests
 
@@ -1149,6 +1390,8 @@ Backend/API contract checks:
   - playback-resolution behavior
 - `tests/test_api_boundary_sessions_read.py`
   - session read-route behavior
+  - runtime-selected alert-backend parity between the session snapshot route
+    and the dedicated alert routes
 - `tests/test_api_boundary_sessions_start.py`
   - session start-route behavior
 - `tests/test_api_boundary_sessions_cancel.py`
@@ -1161,6 +1404,7 @@ Backend/API contract checks:
   - shared read/cancel service behavior
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
+  - runtime-selected alert-backend behavior for `read-session`
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - populated session snapshot response shape

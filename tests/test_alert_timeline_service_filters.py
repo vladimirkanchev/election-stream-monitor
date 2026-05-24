@@ -1,13 +1,7 @@
-"""Focused grouped timeline tests for filter reuse, validation, and empty results.
+"""Focused grouped-timeline tests layered on top of the raw alert seam.
 
-This file owns the grouped timeline behavior that should stay aligned with the
-shared raw alert-query seam:
-
-- raw detector, severity, and time filters applied before grouping
-- invalid and inverted time-range validation
-- unknown-session and unknown-filter degradation behavior
-- inclusive and open-ended grouped time bounds
-- stable empty grouped timelines
+This file keeps grouped filter reuse, validation, and empty-result behavior
+separate from grouped summary aggregation.
 """
 
 from pathlib import Path
@@ -25,8 +19,10 @@ from tests.alert_incident_service_test_support import (
     write_single_grouped_alert_session,
 )
 from tests.session_alert_test_support import (
-    build_persisted_alert,
+    StaticAlertStore,
+    build_normalized_alert,
     build_timeline_entry,
+    build_persisted_alert,
     configure_session_alert_test,
     write_known_session,
 )
@@ -230,6 +226,49 @@ def test_build_session_timeline_applies_inclusive_time_bounds(
             sample_message="At start bound.",
         ),
     )
+
+
+def test_build_session_timeline_accepts_an_explicit_store_seam() -> None:
+    """Grouped timelines should also be able to reuse the injected raw alert store."""
+    store = StaticAlertStore(
+        "store-timeline",
+        [
+            build_normalized_alert(
+                "store-timeline",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First grouped alert.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_normalized_alert(
+                "store-timeline",
+                timestamp_utc="2026-05-06 10:00:20",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Second grouped alert.",
+                severity="warning",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+
+    assert build_session_timeline("store-timeline", store=store) == {
+        "session_id": "store-timeline",
+        "entries": [
+            build_timeline_entry(
+                start_time_utc="2026-05-06 10:00:00",
+                end_time_utc="2026-05-06 10:00:20",
+                detector_id="video_metrics",
+                severity="warning",
+                title="Black screen detected",
+                alert_count=2,
+                source_names=["segment_0001.ts", "segment_0002.ts"],
+                sample_message="First grouped alert.",
+            )
+        ],
+    }
 
 
 @pytest.mark.parametrize(

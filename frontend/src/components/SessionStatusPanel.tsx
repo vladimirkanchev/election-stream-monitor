@@ -22,6 +22,7 @@ interface SessionStatusPanelProps {
   playbackLive: boolean;
   playbackStatus: PlaybackStatus;
   sessionError: string | null;
+  localPlaylistWarning?: string | null;
 }
 
 export function SessionStatusPanel({
@@ -35,6 +36,7 @@ export function SessionStatusPanel({
   playbackLive,
   playbackStatus,
   sessionError,
+  localPlaylistWarning = null,
 }: SessionStatusPanelProps) {
   const statusLabel = formatMonitoringStatus(sessionStatus);
   const statusTone = getStatusTone({
@@ -42,12 +44,18 @@ export function SessionStatusPanel({
     sessionStatus,
     progress,
     sessionError,
+    localPlaylistWarning,
   });
   const sessionCue = buildSessionCue({
     source,
     sessionStatus,
     progress,
     sessionError,
+    localPlaylistWarning,
+    playbackTime,
+    playbackDuration,
+    playbackLive,
+    playbackStatus,
   });
   const analysisLabel = formatAnalysisProgress(
     source,
@@ -63,6 +71,7 @@ export function SessionStatusPanel({
     progress,
     sessionError,
     playbackStatus,
+    localPlaylistWarning,
   });
 
   return (
@@ -78,9 +87,19 @@ export function SessionStatusPanel({
           {sessionCue ? sessionCue.label : "Current state"}
         </p>
         <p className="management-copy session-overview__message">
-          {buildSessionMessage(source, sessionStatus, source.path, progress?.current_item)}
+          {buildSessionMessage({
+            source,
+            status: sessionStatus,
+            sourcePath: source.path,
+            progress,
+            localPlaylistWarning,
+            playbackTime,
+            playbackDuration,
+            playbackLive,
+            playbackStatus,
+          })}
         </p>
-        {sessionCue ? (
+        {sessionCue?.message ? (
           <p className={`session-overview__cue session-overview__cue--${sessionCue.tone}`}>
             {sessionCue.message}
           </p>
@@ -159,12 +178,28 @@ export function SessionStatusPanel({
   );
 }
 
-function buildSessionMessage(
-  source: MonitorSource,
-  status: MonitoringSessionState,
-  sourcePath: string,
-  currentItem: string | null | undefined,
-): string {
+function buildSessionMessage(args: {
+  source: MonitorSource;
+  status: MonitoringSessionState;
+  sourcePath: string;
+  progress: SessionProgress | null;
+  localPlaylistWarning: string | null;
+  playbackTime: number;
+  playbackDuration: number | null;
+  playbackLive: boolean;
+  playbackStatus: PlaybackStatus;
+}): string {
+  const {
+    source,
+    status,
+    sourcePath,
+    progress,
+    localPlaylistWarning,
+    playbackTime,
+    playbackDuration,
+    playbackLive,
+    playbackStatus,
+  } = args;
   const isApiStream = source.kind === "api_stream";
   if (!sourcePath) {
     return "Select a source path and the detectors you want to use before starting monitoring.";
@@ -175,33 +210,52 @@ function buildSessionMessage(
   }
 
   if (status === "starting" || status === "pending") {
-    if (isApiStream) {
-      return "Connecting to the selected live stream and preparing the first chunks for monitoring.";
+    if (!isApiStream) {
+      return "Monitoring is starting.";
     }
     return "The session is preparing the selected source for playback and detector processing.";
   }
 
   if (status === "running") {
     if (isApiStream) {
-      return currentItem
-        ? `Live monitoring is active and currently analyzing ${currentItem}.`
-        : "Live monitoring is active for the current stream.";
+      return "Live monitoring is active.";
     }
-    return "Playback and monitoring are running for the current source.";
+    return "Monitoring is in progress.";
   }
 
   if (status === "cancelling") {
     if (isApiStream) {
       return "A stop request is settling for the current live stream.";
     }
-    return "The current session is ending. Playback and monitoring are being stopped cleanly.";
+    return "Monitoring ended.";
   }
 
   if (status === "completed") {
     if (isApiStream) {
-      return "The bounded live monitoring run completed for the current stream.";
+      if (isCompletedApiStreamPlaybackStillActive(playbackStatus)) {
+        return "Monitoring is in progress.";
+      }
+      return "Monitoring ended.";
     }
-    return "Monitoring finished successfully for the current source.";
+    if (isPartialLocalCompletion(source, status, progress)) {
+      return "Monitoring finished with missing local items.";
+    }
+    if (localPlaylistWarning) {
+      return "Monitoring finished, but playback may be incomplete.";
+    }
+    if (
+      isLocalPlaybackStillCatchingUp(
+        source,
+        status,
+        playbackTime,
+        playbackDuration,
+        playbackLive,
+        playbackStatus,
+      )
+    ) {
+      return "Monitoring is in progress.";
+    }
+    return "Monitoring ended.";
   }
 
   if (status === "cancelled") {
@@ -286,8 +340,9 @@ function getStatusTone(args: {
   sessionStatus: MonitoringSessionState;
   progress: SessionProgress | null;
   sessionError: string | null;
+  localPlaylistWarning: string | null;
 }): "active" | "warning" | "terminal" | "idle" {
-  const { source, sessionStatus, progress, sessionError } = args;
+  const { source, sessionStatus, progress, sessionError, localPlaylistWarning } = args;
   if (source.kind === "api_stream" && sessionStatus === "running" && sessionError) {
     return "warning";
   }
@@ -296,6 +351,12 @@ function getStatusTone(args: {
     && sessionStatus === "completed"
     && progress?.status_reason === "idle_poll_budget_exhausted"
   ) {
+    return "warning";
+  }
+  if (isPartialLocalCompletion(source, sessionStatus, progress)) {
+    return "warning";
+  }
+  if (localPlaylistWarning) {
     return "warning";
   }
 
@@ -322,12 +383,27 @@ function buildSessionCue(args: {
   sessionStatus: MonitoringSessionState;
   progress: SessionProgress | null;
   sessionError: string | null;
+  localPlaylistWarning: string | null;
+  playbackTime: number;
+  playbackDuration: number | null;
+  playbackLive: boolean;
+  playbackStatus: PlaybackStatus;
 }): {
   label: string;
   message: string;
   tone: "active" | "warning" | "terminal" | "idle";
 } | null {
-  const { source, sessionStatus, progress, sessionError } = args;
+  const {
+    source,
+    sessionStatus,
+    progress,
+    sessionError,
+    localPlaylistWarning,
+    playbackTime,
+    playbackDuration,
+    playbackLive,
+    playbackStatus,
+  } = args;
 
   if (source.kind === "api_stream" && sessionStatus === "running" && sessionError) {
     return {
@@ -353,11 +429,36 @@ function buildSessionCue(args: {
         tone: "warning",
       };
     }
+    return null;
+  }
+
+  if (isPartialLocalCompletion(source, sessionStatus, progress)) {
     return {
-      label: "Finished cleanly",
-      message: "The live monitoring run reached a normal completion point.",
-      tone: "active",
+      label: "Completed with gaps",
+      message: buildPartialLocalCompletionMessage(source),
+      tone: "warning",
     };
+  }
+
+  if (localPlaylistWarning) {
+    return {
+      label: "Playback warning",
+      message: localPlaylistWarning,
+      tone: "warning",
+    };
+  }
+
+  if (
+    isLocalPlaybackStillCatchingUp(
+      source,
+      sessionStatus,
+      playbackTime,
+      playbackDuration,
+      playbackLive,
+      playbackStatus,
+    )
+  ) {
+    return null;
   }
 
   if (sessionStatus === "cancelled") {
@@ -385,6 +486,7 @@ function buildDiagnostics(args: {
   progress: SessionProgress | null;
   sessionError: string | null;
   playbackStatus: PlaybackStatus;
+  localPlaylistWarning: string | null;
 }): Array<{
   kind: "warning" | "error";
   label: string;
@@ -395,7 +497,13 @@ function buildDiagnostics(args: {
     label: string;
     message: string;
   }> = [];
-  const { source, sessionStatus, progress, sessionError, playbackStatus } = args;
+  const {
+    source,
+    sessionStatus,
+    progress,
+    sessionError,
+    playbackStatus,
+  } = args;
   const showMonitoringDiagnostic = sessionStatus !== "idle";
 
   if (sessionError && showMonitoringDiagnostic) {
@@ -419,6 +527,14 @@ function buildDiagnostics(args: {
     }
   }
 
+  if (isPartialLocalCompletion(source, sessionStatus, progress)) {
+    diagnostics.push({
+      kind: "warning",
+      label: "Monitoring",
+      message: buildPartialLocalCompletionDiagnostic(source, progress),
+    });
+  }
+
   if (playbackStatus === "error") {
     diagnostics.push({
       kind: sessionStatus === "running" ? "warning" : "error",
@@ -436,6 +552,70 @@ function buildDiagnostics(args: {
     return kindWeight(left.kind) - kindWeight(right.kind)
       || labelWeight(left.label) - labelWeight(right.label);
   });
+}
+
+function isPartialLocalCompletion(
+  source: MonitorSource,
+  sessionStatus: MonitoringSessionState,
+  progress: SessionProgress | null,
+): boolean {
+  if (source.kind !== "video_segments" && source.kind !== "video_files") {
+    return false;
+  }
+
+  if (sessionStatus !== "completed" || !progress) {
+    return false;
+  }
+
+  return progress.total_count > progress.processed_count;
+}
+
+function buildPartialLocalCompletionMessage(source: MonitorSource): string {
+  if (source.kind === "video_segments") {
+    return "Monitoring finished, but one or more local playlist segments were missing or could not be analyzed.";
+  }
+
+  return "Monitoring finished, but one or more local media files were missing or could not be analyzed.";
+}
+
+function buildPartialLocalCompletionDiagnostic(
+  source: MonitorSource,
+  progress: SessionProgress | null,
+): string {
+  const processedCount = progress?.processed_count ?? 0;
+  const totalCount = progress?.total_count ?? processedCount;
+  const sourceLabel = source.kind === "video_segments" ? "playlist segments" : "media files";
+
+  return `Only ${processedCount} of ${totalCount} local ${sourceLabel} were analyzed. One or more items were missing or unreadable.`;
+}
+
+function isLocalPlaybackStillCatchingUp(
+  source: MonitorSource,
+  sessionStatus: MonitoringSessionState,
+  playbackTime: number,
+  playbackDuration: number | null,
+  playbackLive: boolean,
+  playbackStatus: PlaybackStatus,
+): boolean {
+  if (source.kind !== "video_segments" && source.kind !== "video_files") {
+    return false;
+  }
+  if (sessionStatus !== "completed" || playbackLive) {
+    return false;
+  }
+  if (playbackStatus === "stopped" || playbackStatus === "error") {
+    return false;
+  }
+  if (!playbackDuration || !Number.isFinite(playbackDuration) || playbackDuration <= 0) {
+    return false;
+  }
+  return playbackTime < playbackDuration - 0.25;
+}
+
+function isCompletedApiStreamPlaybackStillActive(
+  playbackStatus: PlaybackStatus,
+): boolean {
+  return playbackStatus !== "stopped" && playbackStatus !== "error";
 }
 
 function formatDebugProgress(source: MonitorSource, progress: SessionProgress): string {

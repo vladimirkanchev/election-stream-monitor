@@ -12,7 +12,7 @@ easy to scan as service-boundary specs rather than as fixture-driven tests.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from tests.mcp_alert_test_support import tool_error_text
 from tests.session_alert_test_support import (
@@ -33,7 +33,7 @@ def write_incident_tool_session(
 def assert_mcp_tool_success(
     result: Any,
     *,
-    expected_payload: dict[str, object],
+    expected_payload: Mapping[str, object],
 ) -> None:
     """Assert one successful grouped MCP result against its structured payload."""
     assert result.isError is False

@@ -14,8 +14,11 @@ payload catalog; see [architecture.md](./architecture.md) and
 ## At a glance
 
 - sessions are the persisted contract between backend and frontend
-- persistence is file-backed today, but the session meaning should survive
-  later storage changes
+- session snapshots are still built from local session files
+- metadata, progress, and results stay file-backed today
+- alert storage stays file-backed by default for this branch phase and can now
+  switch to PostgreSQL
+- the snapshot `alerts` field now follows that same alert backend
 - monitoring session state and playback state are related but intentionally
   separate
 
@@ -97,9 +100,12 @@ not whole-file based.
 
 ### `alerts.jsonl`
 
-Append-only alert events for the session.
+Append-only alert events for the default file-backed alert backend.
 
-These are the alerts shown in the frontend.
+These rows are still the source format for the default mode, but the code no
+longer assumes that all alert reads come directly from this file. Alert reads
+and writes now go through one internal seam, so the same session can also use
+the PostgreSQL alert backend when explicitly selected.
 
 ### `results.jsonl`
 
@@ -167,6 +173,11 @@ Current write behavior is:
 - `results.jsonl`
   - append-only detector result event log
 
+Alert writes now go through the same narrow seam as alert reads:
+`src/session_io.py::append_alert(...)` remains the compatibility entrypoint,
+while `src/session_alert_store.py` owns the default file-backed append/read
+behavior for one session's raw alert rows.
+
 ### Meaning of the persisted data
 
 - `session.json`
@@ -180,6 +191,49 @@ Current write behavior is:
 - `api_stream_seen_chunks.jsonl`
   - persisted de-duplication keys so reconnects and reruns can skip replayed
     live chunks
+
+### Alert storage boundary
+
+Alert persistence now has one explicit internal boundary:
+
+- `src/session_alert_store.py`
+  - owns appending and reading validated raw alert rows for one session
+  - defaults to the file-backed alert backend in this branch phase
+- `src/session_io.py`
+  - keeps `append_alert(...)` as the compatibility write entrypoint
+  - keeps session snapshot assembly file-backed for metadata, progress, and results
+  - reads the snapshot `alerts` field through the active alert backend
+- `src/session_alerts.py`
+  - owns raw alert filtering, timestamp handling, and numeric summaries
+- `src/session_alert_incidents.py`
+  - owns grouped incident timelines and grouped incident summaries
+
+Practical effect:
+
+- writes and reads now go through the same alert seam
+- the dedicated alert routes/tools and the general session snapshot now agree
+  on the active alert backend
+- the default file-backed mode keeps the persisted `alerts.jsonl` contract
+  unchanged
+- the PostgreSQL alert store can be enabled without moving filtering or
+  grouping into the storage layer
+- the current rollout state is simple:
+  - file is still the default backend
+  - PostgreSQL is the supported opt-in backend
+
+The current PostgreSQL alert path keeps that contract narrow too:
+
+- the PostgreSQL alert table is `session_alert_events`
+- the runtime backend mode now switches explicitly between `file` and
+  `postgres` through `ESM_ALERT_STORE_BACKEND`
+- each current alert field maps to its own column rather than a JSON payload
+- `window_index` and `window_start_sec` remain nullable
+- read order should preserve append order through `ORDER BY id ASC`
+- `timestamp_utc` should be materialized back into the current
+  `%Y-%m-%d %H:%M:%S` string contract on reads
+- a concrete `PostgresSessionAlertStore` now exists behind the same seam, and
+  runtime selection can opt into it without changing the alert readers,
+  snapshot route, or CLI read path
 
 ### Important field semantics
 

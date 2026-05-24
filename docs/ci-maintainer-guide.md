@@ -23,6 +23,10 @@ For the full CI behavior and validation model, use
 - focused CI-helper regression coverage:
   `tests/test_ci_test_target_scripts.py`
 
+The weekly workflow now also owns the live PostgreSQL alert-confidence bundles
+through a disposable GitHub Actions `postgres:16` service container. It does
+not depend on a shared external database secret for the normal weekly path.
+
 ## Canonical CI Target Manifests
 
 The canonical CI target manifest lives in:

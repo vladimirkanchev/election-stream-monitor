@@ -13,11 +13,34 @@ output regressions and grouped error-translation regressions fail in distinct,
 easy-to-scan places.
 """
 
+from collections.abc import Iterator
+from pathlib import Path
+
 import esm_mcp.alert_tools as alert_tools
 import pytest
+from session_alert_store import clear_default_session_alert_store_cache
 from session_alerts import SessionAlertsNotFoundError
 from tests.mcp_alert_test_support import call_mcp_tool
-from tests.mcp_server_incidents_test_support import assert_mcp_tool_error
+from tests.mcp_server_incidents_test_support import (
+    assert_mcp_tool_error,
+    write_incident_tool_session,
+)
+from tests.session_alert_test_support import (
+    FailingReadAlertStore,
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    build_live_runtime_postgres_store,
+    build_unique_session_id,
+    close_store_if_possible,
+    select_runtime_postgres_store,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in grouped MCP error tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def _assert_grouped_tool_maps_service_error(
@@ -134,4 +157,82 @@ def test_grouped_mcp_tools_report_invalid_timestamp_format_as_tool_error(
         tool_arguments={"start_time_utc": "not-a-time"},
         service_error=ValueError(expected_message),
         expected_message=expected_message,
+    )
+
+
+def test_grouped_mcp_tools_report_runtime_postgres_read_failure_as_tool_error(
+    monkeypatch,
+) -> None:
+    """Grouped MCP tools should surface post-startup runtime Postgres failures clearly."""
+    select_runtime_postgres_store(
+        monkeypatch,
+        FailingReadAlertStore(
+            "session-runtime-postgres-mcp-grouped-error",
+            "database grouped read failed",
+        ),
+    )
+
+    timeline_result = call_mcp_tool(
+        "query_session_alert_timeline",
+        {"session_id": "session-runtime-postgres-mcp-grouped-error"},
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alert_incidents",
+        {"session_id": "session-runtime-postgres-mcp-grouped-error"},
+    )
+
+    assert_mcp_tool_error(timeline_result, expected_message="database grouped read failed")
+    assert_mcp_tool_error(summary_result, expected_message="database grouped read failed")
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL grouped MCP error smoke test is opt-in.",
+)
+def test_grouped_mcp_tools_report_live_runtime_postgres_read_failure_after_successful_startup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Grouped MCP tools should keep their error contract after live Postgres startup succeeds."""
+    session_id = build_unique_session_id(
+        "session-runtime-postgres-mcp-grouped-live-error"
+    )
+    store = build_live_runtime_postgres_store(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        session_root_builder=write_incident_tool_session,
+    )
+    try:
+        monkeypatch.setattr(
+            store,
+            "read_session_alert_events",
+            lambda current_session_id: (_ for _ in ()).throw(
+                RuntimeError("live database grouped read failed")
+            ),
+        )
+        monkeypatch.setattr(
+            "session_alert_store._build_postgres_default_session_alert_store",
+            lambda: store,
+        )
+        clear_default_session_alert_store_cache()
+
+        timeline_result = call_mcp_tool(
+            "query_session_alert_timeline",
+            {"session_id": session_id},
+        )
+        summary_result = call_mcp_tool(
+            "summarize_session_alert_incidents",
+            {"session_id": session_id},
+    )
+    finally:
+        close_store_if_possible(store)
+
+    assert_mcp_tool_error(
+        timeline_result,
+        expected_message="live database grouped read failed",
+    )
+    assert_mcp_tool_error(
+        summary_result,
+        expected_message="live database grouped read failed",
     )

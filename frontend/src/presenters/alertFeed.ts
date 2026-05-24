@@ -110,10 +110,6 @@ function filterSegmentAlerts(
   currentPlaybackItem: string | null,
   segmentStartTimes: SegmentStartTimes,
 ): AlertEvent[] {
-  if (!currentPlaybackItem) {
-    return [];
-  }
-
   return alerts.filter((alert) =>
     shouldRevealSegmentAlert({
       alert,

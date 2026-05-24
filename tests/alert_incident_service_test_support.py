@@ -17,21 +17,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from session_alert_incidents import build_session_incident_summary, build_session_timeline
-from session_alerts import AlertEventPayload
+from session_alert_incidents import (
+    AlertTimelineEntryPayload,
+    AlertTimelinePayload,
+    IncidentSummaryPayload,
+    build_session_incident_summary,
+    build_session_timeline,
+)
 from tests.session_alert_test_support import (
     build_incident_summary_payload,
     build_persisted_alert,
     write_known_session,
 )
 
-TimelinePayload = dict[str, object]
-IncidentSummaryPayload = dict[str, object]
+TimelinePayload = AlertTimelinePayload
 
 
-def timeline_entries(timeline: TimelinePayload) -> list[AlertEventPayload]:
+def timeline_entries(timeline: TimelinePayload) -> list[AlertTimelineEntryPayload]:
     """Return grouped timeline entries through one typed cast at the helper seam."""
-    return cast(list[AlertEventPayload], timeline["entries"])
+    return cast(list[AlertTimelineEntryPayload], timeline["entries"])
 
 
 def timeline_titles(timeline: TimelinePayload) -> list[object]:
@@ -56,7 +60,7 @@ def build_timeline_with_time_filters(
 def assert_single_timeline_entry(
     timeline: TimelinePayload,
     *,
-    expected_entry: AlertEventPayload,
+    expected_entry: AlertTimelineEntryPayload,
 ) -> None:
     """Assert the full one-entry grouped timeline contract in one readable check."""
     assert timeline == {

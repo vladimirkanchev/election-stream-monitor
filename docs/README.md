@@ -4,6 +4,9 @@ This folder is the internal reference set for contributors, reviewers, and
 people using AI-assisted tools for coding and development. Use it as the
 intent layer for the current repo state, not as end-user documentation.
 
+If you want the gentlest product-level overview first, start with the root
+[`README.md`](../README.md) and come back here for the maintainer view.
+
 ## Best First Reads
 
 If you are new to the repo, read these in order:
@@ -18,10 +21,18 @@ If you are new to the repo, read these in order:
 
 Use this shortcut map before editing code:
 
+For the current alert-storage rollout state, use:
+
+- [architecture.md](./architecture.md) for the storage split and rollout decision
+- [session-model.md](./session-model.md) for snapshot and persistence semantics
+- [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
+
 - changing session snapshot or polling behavior:
   - [session-model.md](./session-model.md)
   - [contracts.md](./contracts.md)
   - [architecture.md](./architecture.md)
+  - `src/session_io.py`
+  - `tests/test_session_io.py`
 - changing frontend bridge normalization or UI transport handling:
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
@@ -36,7 +47,7 @@ Use this shortcut map before editing code:
     - `tests/test_api_server_cli_runtime.py`
     - `tests/test_api_server_cli_output.py`
     - `tests/test_api_server_cli_routes.py`
-- changing MCP alert-query tools or local MCP launch wiring:
+- changing MCP alert-reading tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
   - [mcp-server.md](./mcp-server.md)
@@ -46,8 +57,12 @@ Use this shortcut map before editing code:
   - `src/api_rate_limit.py`
   - `src/api/alert_route_policy.py`
   - `src/esm_mcp/`
+  - `src/session_alert_store.py`
+  - `src/session_alert_store_postgres.py`
+  - `src/session_alert_store_postgres_config.py`
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
+  - `src/session_io.py`
 - adding a detector:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
 - adding an alert rule:
@@ -138,16 +153,66 @@ module families and the matching tests:
   - `src/api_auth.py`
   - `src/api_rate_limit.py`
   - `src/api/alert_route_policy.py`
+  - `src/session_alert_store.py`
   - `src/session_alerts.py`
   - `src/session_alert_incidents.py`
   - `src/session_alert_adapter.py`
+  - `src/session_alert_store_runtime_config.py`
+    - explicit runtime selection for the default alert store:
+      `ESM_ALERT_STORE_BACKEND=file|postgres`
+  - `src/session_alert_store_postgres.py`
+    - concrete PostgreSQL alert backend plus schema/bootstrap helpers
+  - `src/session_alert_store_postgres_config.py`
+    - narrow env/config parsing for the PostgreSQL alert-store bootstrap path
+  - `src/session_io.py`
   - `src/api/schemas.py`
   - `src/api/routers/alerts.py`
   - `src/esm_mcp/server.py`
   - `src/esm_mcp/alert_tools.py`
+  - `src/session_alert_report.py`
+    - compact session-alert report shaping and table formatting
+    - source owner for the demo-report CLI and normalized alert-report test helpers
   - `tests/session_alert_test_support.py`
+    - shared alert/session helpers for alert-store, boundary, and report assertions
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
+  - `tests/test_session_alert_store.py`
+    - file-backed contract for the current default alert store
+  - `tests/test_session_alert_store_runtime.py`
+    - runtime backend selection plus caller-stability coverage for the default
+      alert backend, including cache recovery after failed Postgres bootstrap
+  - `tests/test_session_alert_store_runtime_config.py`
+    - explicit `file` versus `postgres` backend-mode config coverage
+  - `tests/test_session_alert_store_parity.py`
+    - file-store versus PostgreSQL-store parity over the shared alert backend
+      and read-model layer, including filtered raw reads plus grouped filtered
+      and time-bounded parity
+  - `tests/test_session_alert_store_postgres.py`
+    - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
+      second backend's read/write drift-sensitive behavior
+  - `tests/test_session_alert_store_postgres_config.py`
+    - narrow env/config, cache-behavior, and URL-validation coverage for the
+      PostgreSQL alert-store bootstrap path
+  - `tests/test_session_io.py`
+    - compatibility write-entry and write-to-read coverage
+  - `tests/test_session_runner_execution_local.py`
+    - local execution-path coverage for runner-written alerts through the
+      shared alert backend plus the live weekly runtime/operator-flow runner
+      confidence anchor
+  - `scripts/postgres_alert_weekly_backend_confidence.py`
+    - opt-in weekly/manual live Postgres backend-confidence runner for store,
+      raw/grouped FastAPI, and grouped MCP checks
+  - `scripts/postgres_alert_weekly_runtime_operator_confidence.py`
+    - opt-in weekly/manual live Postgres runtime/operator-flow runner for
+      runner writes, snapshot reads, and CLI session reads
+  - `scripts/postgres_alert_weekly_confidence.py`
+    - umbrella runner that executes both weekly/manual live Postgres
+      confidence bundles in order
+  - `scripts/session_alert_demo_report.py`
+    - prints one compact session-alert report as a table or JSON for manual checks
+  - `.github/workflows/weekly-validation.yml`
+    - scheduled weekly automation runs both live Postgres confidence bundles
+      against a disposable GitHub Actions Postgres service container
   - `tests/test_api_auth.py`
   - `tests/test_api_rate_limit.py`
   - `tests/test_api_alert_route_auth_policy.py`
@@ -197,17 +262,21 @@ module families and the matching tests:
   - `tests/test_mcp_fastapi_parity_edges.py`
   - `tests/test_mcp_server_incidents_behavior.py`
   - `tests/test_mcp_server_incidents_errors.py`
-  - read them in that order if you want the cleanest path from shared raw alert
-    service and grouped incident service,
-    to HTTP adapter, to MCP adapter, to the split test ownership
+  - read them in that order if you want the cleanest path from the shared
+    alert store seam and raw/grouped services to HTTP and MCP adapters
   - `tests/test_mcp_server_alerts_behavior.py` owns raw MCP no-alert,
     filtered-data, and unknown-filter empty behavior, with payload-shaping
     expectations kept separate from MCP-facing error translation
+  - `tests/test_api_session_alert_incidents.py` owns grouped FastAPI route
+    behavior, grouped filter binding, runtime-selected Postgres wiring,
+    bootstrap-failure parity, and the small live grouped-route smokes
   - `tests/test_mcp_server_alerts_errors.py` owns raw MCP missing-session,
-    invalid-range, and invalid-timestamp error mapping
+    invalid-range, invalid-timestamp, and runtime Postgres bootstrap-failure
+    error mapping
   - `tests/test_mcp_server_incidents_behavior.py` owns grouped MCP no-alert,
-    filtered-data, and unknown-filter empty behavior, with grouped output
-    shaping kept separate from grouped MCP error translation
+    filtered-data, runtime-selected Postgres grouped reads, and small live
+    grouped-tool smokes, with grouped output shaping kept separate from
+    grouped MCP error translation
   - `tests/test_mcp_server_incidents_errors.py` owns grouped MCP missing-session,
     invalid-range, and invalid-timestamp error mapping
   - `tests/api_alert_test_support.py` owns the repeated FastAPI alerts-router

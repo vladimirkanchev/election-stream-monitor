@@ -1,37 +1,29 @@
-"""Focused service tests for raw alert summary behavior.
+"""Focused tests for raw alert summaries over the persistence seam.
 
-This suite owns the numeric summary contract shared by FastAPI and MCP:
-
-- deterministic counts by detector and severity
-- first/last timestamp bounds
-- safe degradation on bad persisted timestamps
-- empty-summary behavior for empty or unmatched sessions
-- summary-specific validation of filter input
-- keeping known-session semantics intact on the summary entrypoint
-
-Raw persisted reads and raw filtered-row behavior live in the sibling suites so
-summary regressions can be understood as aggregation failures, not mixed
-read/filter concerns.
+This suite keeps aggregation behavior separate from raw reads and filtered-row
+tests so summary regressions stay easy to localize.
 """
 
 from pathlib import Path
 
 import pytest
 
-from session_alerts import summarize_session_alert_events
+from session_alerts import AlertSummaryPayload, summarize_session_alert_events
 from tests.alert_query_service_test_support import (
     assert_query_requires_known_session,
     write_known_session_without_alerts,
 )
 from tests.session_alert_test_support import (
     build_alert_summary_payload,
+    build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
+    StaticAlertStore,
     write_known_session,
 )
 
 
-def _assert_empty_summary(summary: dict[str, object], session_id: str) -> None:
+def _assert_empty_summary(summary: AlertSummaryPayload, session_id: str) -> None:
     """Assert the stable zero-alert summary contract for one known session."""
     assert summary == build_alert_summary_payload(
         session_id,
@@ -239,6 +231,44 @@ def test_summarize_session_alert_events_counts_same_severity_without_extra_keys(
         counts_by_severity={"warning": 2},
         first_alert_timestamp_utc="2026-05-06 10:00:00",
         last_alert_timestamp_utc="2026-05-06 10:00:10",
+    )
+
+
+def test_summarize_session_alert_events_accepts_an_explicit_store_seam() -> None:
+    """Raw summaries should keep their numeric behavior on top of an injected store."""
+    store = StaticAlertStore(
+        "store-summary",
+        [
+            build_normalized_alert(
+                "store-summary",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="First warning.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_normalized_alert(
+                "store-summary",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_blur",
+                title="Blur increased",
+                message="Informational blur event.",
+                severity="info",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+
+    assert summarize_session_alert_events("store-summary", store=store) == (
+        build_alert_summary_payload(
+            "store-summary",
+            total_alerts=2,
+            counts_by_detector={"video_metrics": 1, "video_blur": 1},
+            counts_by_severity={"warning": 1, "info": 1},
+            first_alert_timestamp_utc="2026-05-06 10:00:00",
+            last_alert_timestamp_utc="2026-05-06 10:00:10",
+        )
     )
 
 

@@ -12,11 +12,23 @@ drift easier to spot: payload regressions fail in one place, error-translation
 regressions fail in another.
 """
 
+from collections.abc import Iterator
+
 import esm_mcp.alert_tools as alert_tools
 import pytest
+from session_alert_store import clear_default_session_alert_store_cache
 from session_alerts import SessionAlertsNotFoundError
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import assert_mcp_tool_error
+from tests.session_alert_test_support import install_runtime_postgres_bootstrap_failure
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in raw MCP error tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def _assert_raw_tool_maps_service_error(
@@ -46,6 +58,16 @@ def _assert_raw_tool_maps_service_error(
     )
 
     assert_mcp_tool_error(result, expected_message=expected_message)
+
+
+def _assert_raw_mcp_bootstrap_failure(tool_name: str) -> None:
+    """Assert the stable MCP tool error text for one runtime Postgres bootstrap failure."""
+    result = call_mcp_tool(
+        tool_name,
+        {"session_id": "session-runtime-postgres-mcp-error"},
+    )
+
+    assert_mcp_tool_error(result, expected_message="postgres bootstrap failed")
 
 
 def test_query_session_alerts_tool_reports_missing_session_as_tool_error(
@@ -116,3 +138,20 @@ def test_raw_mcp_alert_tools_report_invalid_timestamp_format_as_tool_error(
         service_error=ValueError(expected_message),
         expected_message=expected_message,
     )
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "query_session_alerts",
+        "summarize_session_alerts",
+    ],
+)
+def test_raw_mcp_alert_tools_report_runtime_postgres_bootstrap_failure(
+    monkeypatch,
+    tool_name: str,
+) -> None:
+    """Raw MCP alert tools should keep the same runtime Postgres bootstrap-failure contract."""
+    install_runtime_postgres_bootstrap_failure(monkeypatch)
+
+    _assert_raw_mcp_bootstrap_failure(tool_name)

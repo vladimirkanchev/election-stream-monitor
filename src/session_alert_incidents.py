@@ -1,4 +1,4 @@
-"""Grouped incident read models built on top of filtered persisted session alerts.
+"""Grouped incident read models built on top of filtered raw session alerts.
 
 This module intentionally owns only the incident-oriented layer:
 
@@ -7,9 +7,9 @@ This module intentionally owns only the incident-oriented layer:
 - one short narrative convenience field
 
 The raw alert read/filter/summary logic stays in `session_alerts.py` so the
-two read-model families remain easier to reason about independently. This
-module is the source of truth for the deterministic grouping rule used by both
-the FastAPI incident routes and the MCP incident tools.
+two read-model families remain easier to reason about independently. Public
+entrypoints in this module accept the same optional store seam as the raw
+alert services while keeping grouping logic transport-agnostic.
 """
 
 from __future__ import annotations
@@ -18,9 +18,13 @@ from collections import Counter
 from datetime import datetime
 from typing import TypedDict
 
+from session_alert_store import (
+    AlertEventPayload,
+    DEFAULT_SESSION_ALERT_STORE,
+    SessionAlertStore,
+)
 from session_alerts import (
     ALERT_TIMESTAMP_FORMAT,
-    AlertEventPayload,
     AlertSummaryPayload,
     build_alert_summary_payload,
     filter_session_alert_events,
@@ -32,7 +36,7 @@ TIMELINE_GROUP_GAP_SECONDS = 60
 
 
 class AlertTimelineEntryPayload(TypedDict):
-    """Stable grouped-incident entry returned by the timeline read model."""
+    """Stable grouped-incident entry returned by the timeline service."""
 
     start_time_utc: str
     end_time_utc: str
@@ -52,7 +56,7 @@ class AlertTimelinePayload(TypedDict):
 
 
 class IncidentSummaryPayload(AlertSummaryPayload):
-    """Grouped incident summary built on top of the raw alert summary base."""
+    """Grouped incident summary layered on top of the raw alert summary base."""
 
     total_incidents: int
     top_incident_categories: dict[str, int]
@@ -70,12 +74,14 @@ def build_session_timeline(
     severity: str | None = None,
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
+    store: SessionAlertStore = DEFAULT_SESSION_ALERT_STORE,
 ) -> AlertTimelinePayload:
     """Return grouped incident entries built from filtered session alerts.
 
     The timeline stays transport-agnostic and deterministic: it always starts
     from the shared raw alert filter path and then applies one stable grouping
-    rule over the resulting alert rows.
+    rule over the resulting alert rows. The optional store seam lets grouped
+    reads reuse the same raw alert store boundary without changing grouping.
     """
     alerts = _read_filtered_session_alerts(
         session_id,
@@ -83,6 +89,7 @@ def build_session_timeline(
         severity=severity,
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
+        store=store,
     )
     incidents = _group_alerts_into_incidents(alerts)
     return {
@@ -98,12 +105,14 @@ def build_session_incident_summary(
     severity: str | None = None,
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
+    store: SessionAlertStore = DEFAULT_SESSION_ALERT_STORE,
 ) -> IncidentSummaryPayload:
     """Return a grouped incident summary built from filtered session alerts.
 
     The grouped summary reuses the raw numeric summary as its base truth, then
     layers grouped-incident counts, top categories, and one short narrative
-    convenience field on top.
+    convenience field on top. Storage selection still happens below the raw
+    alert filter seam rather than inside grouped incident logic.
     """
     alerts = _read_filtered_session_alerts(
         session_id,
@@ -111,6 +120,7 @@ def build_session_incident_summary(
         severity=severity,
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
+        store=store,
     )
     incidents = _group_alerts_into_incidents(alerts)
     base_summary = build_alert_summary_payload(session_id, alerts)
@@ -137,6 +147,7 @@ def _read_filtered_session_alerts(
     severity: str | None,
     start_time_utc: str | None,
     end_time_utc: str | None,
+    store: SessionAlertStore,
 ) -> list[AlertEventPayload]:
     """Return the shared filtered alert set used by the incident read models.
 
@@ -150,6 +161,7 @@ def _read_filtered_session_alerts(
         severity=severity,
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
+        store=store,
     )
 
 
@@ -238,7 +250,7 @@ def _collect_unique_group_strings(
     *,
     field_name: str,
 ) -> list[str]:
-    """Return ordered unique string values from one incident group."""
+    """Return ordered unique string values from one grouped incident."""
     seen: set[str] = set()
     values: list[str] = []
     for _, alert in group:

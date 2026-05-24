@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { localBridge } from "./bridge";
 import { AlertFeed } from "./components/AlertFeed";
@@ -35,6 +35,7 @@ export default function App() {
   const [currentPlaybackItem, setCurrentPlaybackItem] = useState<string | null>(null);
   const [segmentStartTimes, setSegmentStartTimes] = useState<Record<string, number>>({});
   const [selectedAlert, setSelectedAlert] = useState<AlertEvent | null>(null);
+  const [revealedLocalAlertKeys, setRevealedLocalAlertKeys] = useState<string[]>([]);
   const setupFrozen = isSetupFrozen(playbackStatus);
 
   const {
@@ -74,7 +75,7 @@ export default function App() {
   });
   const showSetupFeedbackError = Boolean(sessionError) && !sessionSummary;
   const displaySource = getDisplaySource(sessionSummary, setupMonitorSource);
-  const visibleAlerts = filterAlertsForPlayback({
+  const playbackVisibleAlerts = filterAlertsForPlayback({
     alerts: sessionSnapshot.alerts,
     sourceKind: displaySource.kind,
     playbackTime,
@@ -84,12 +85,46 @@ export default function App() {
     currentPlaybackItem,
     segmentStartTimes,
   });
+  const displayedAlerts = useMemo(
+    () => mergeDisplayedAlerts({
+      allAlerts: sessionSnapshot.alerts,
+      playbackVisibleAlerts,
+      sourceKind: displaySource.kind,
+      revealedAlertKeys: revealedLocalAlertKeys,
+    }),
+    [displaySource.kind, playbackVisibleAlerts, revealedLocalAlertKeys, sessionSnapshot.alerts],
+  );
   const alertItems = buildAlertFeedItems(
-    visibleAlerts,
+    displayedAlerts,
     detectors,
     displaySource.kind,
     segmentStartTimes,
   );
+  const localPlaylistWarning = buildLocalPlaylistWarning({
+    source: displaySource,
+    progress: sessionSnapshot.progress,
+    segmentStartTimes,
+  });
+
+  useEffect(() => {
+    setRevealedLocalAlertKeys([]);
+  }, [sessionSnapshot.session?.session_id]);
+
+  useEffect(() => {
+    if (!usesStickyLocalAlertReveal(displaySource.kind) || playbackVisibleAlerts.length === 0) {
+      return;
+    }
+
+    setRevealedLocalAlertKeys((currentKeys) => {
+      const nextKeys = new Set(currentKeys);
+      for (const alert of playbackVisibleAlerts) {
+        nextKeys.add(buildAlertIdentity(alert));
+      }
+      return nextKeys.size === currentKeys.length
+        ? currentKeys
+        : Array.from(nextKeys);
+    });
+  }, [displaySource.kind, playbackVisibleAlerts]);
 
   useEffect(() => {
     if (!controlState.showPlayback && playbackStatus !== "idle") {
@@ -184,12 +219,13 @@ export default function App() {
             sessionStatus={monitoringSessionStatus}
             progress={sessionSnapshot.progress}
             selectedDetectorCount={setupSelectedDetectors.length}
-            visibleAlertCount={visibleAlerts.length}
+            visibleAlertCount={displayedAlerts.length}
             playbackTime={playbackTime}
             playbackDuration={playbackDuration}
             playbackLive={playbackLive}
             playbackStatus={playbackStatus}
             sessionError={sessionError}
+            localPlaylistWarning={localPlaylistWarning}
           />
         </section>
 
@@ -218,6 +254,7 @@ export default function App() {
             onSelect={setSelectedAlert}
             monitoringStarted={monitoringSessionStatus !== "idle"}
             totalRaisedCount={sessionSnapshot.alerts.length}
+            playbackFiltered={displayedAlerts.length !== sessionSnapshot.alerts.length}
           />
         </div>
       </main>
@@ -248,6 +285,65 @@ function getDisplaySource(
 
 function getControlState(args: Parameters<typeof getMonitoringControlState>[0]) {
   return getMonitoringControlState(args);
+}
+
+function mergeDisplayedAlerts(args: {
+  allAlerts: AlertEvent[];
+  playbackVisibleAlerts: AlertEvent[];
+  sourceKind: MonitorSource["kind"];
+  revealedAlertKeys: string[];
+}): AlertEvent[] {
+  const {
+    allAlerts,
+    playbackVisibleAlerts,
+    sourceKind,
+    revealedAlertKeys,
+  } = args;
+
+  if (!usesStickyLocalAlertReveal(sourceKind)) {
+    return playbackVisibleAlerts;
+  }
+
+  if (revealedAlertKeys.length === 0) {
+    return playbackVisibleAlerts;
+  }
+
+  const visibleKeys = new Set(revealedAlertKeys);
+  return allAlerts.filter((alert) => visibleKeys.has(buildAlertIdentity(alert)));
+}
+
+function usesStickyLocalAlertReveal(sourceKind: MonitorSource["kind"]): boolean {
+  return sourceKind === "video_segments" || sourceKind === "video_files";
+}
+
+function buildLocalPlaylistWarning(args: {
+  source: MonitorSource;
+  progress: ReturnType<typeof useMonitoringSession>["sessionSnapshot"]["progress"];
+  segmentStartTimes: Record<string, number>;
+}): string | null {
+  const { source, progress, segmentStartTimes } = args;
+  if (source.kind !== "video_segments" || !progress) {
+    return null;
+  }
+  if (progress.status !== "completed" || progress.total_count <= 0) {
+    return null;
+  }
+
+  const playlistSegmentCount = Object.keys(segmentStartTimes).length;
+  if (playlistSegmentCount <= progress.total_count) {
+    return null;
+  }
+
+  return "Playlist has gaps. Playback may be incomplete.";
+}
+
+function buildAlertIdentity(alert: AlertEvent): string {
+  return [
+    alert.timestamp_utc,
+    alert.detector_id,
+    alert.source_name,
+    alert.severity,
+  ].join("-");
 }
 
 function PlaybackPanelFallback() {

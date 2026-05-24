@@ -41,6 +41,7 @@ vi.mock("../components/VideoPlayerPanel", () => ({
     onPlaybackItemChange?: (item: string | null) => void;
     onPlaybackSegmentMapChange?: (segmentStarts: Record<string, number>) => void;
   }) => {
+    const segmentStartTimes = mockSegmentStartTimes;
     React.useEffect(() => {
       const isApiStream = source.kind === "api_stream";
       onPlaybackStatusChange?.("playing");
@@ -50,15 +51,17 @@ vi.mock("../components/VideoPlayerPanel", () => ({
         isLive: isApiStream,
       });
       onPlaybackItemChange?.(isApiStream ? "live-window-001" : "segment_0002.ts");
-      onPlaybackSegmentMapChange?.({
-        "segment_0001.ts": 1,
-        "segment_0002.ts": 2,
-      });
+      onPlaybackSegmentMapChange?.(segmentStartTimes);
     }, [source.kind]);
 
     return <div>Mock Player</div>;
   },
 }));
+
+let mockSegmentStartTimes: Record<string, number> = {
+  "segment_0001.ts": 1,
+  "segment_0002.ts": 2,
+};
 
 vi.mock("../components/AlertDetailsDrawer", () => ({
   AlertDetailsDrawer: () => null,
@@ -111,6 +114,10 @@ export function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionS
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockSegmentStartTimes = {
+    "segment_0001.ts": 1,
+    "segment_0002.ts": 2,
+  };
   (mockBridge.listDetectors as ReturnType<typeof vi.fn>).mockResolvedValue(DETECTORS);
   (mockBridge.resolvePlaybackSource as ReturnType<typeof vi.fn>).mockResolvedValue(
     "local-media://segments/index.m3u8",
@@ -147,6 +154,10 @@ export async function enterApiStreamSource(url: string) {
 
 export async function toggleFirstDetector() {
   fireEvent.click(await screen.findByRole("checkbox"));
+}
+
+export function setMockPlaybackSegmentStarts(segmentStarts: Record<string, number>) {
+  mockSegmentStartTimes = segmentStarts;
 }
 
 export function startMonitoring() {

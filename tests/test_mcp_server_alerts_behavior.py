@@ -16,9 +16,12 @@ parity coverage lives in ``test_mcp_fastapi_boundary_split.py``,
 ``test_mcp_fastapi_parity_edges.py``.
 """
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import esm_mcp.alert_tools as alert_tools
+import pytest
+from session_alert_store import clear_default_session_alert_store_cache
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import (
     assert_mcp_tool_success,
@@ -27,11 +30,26 @@ from tests.mcp_server_alerts_test_support import (
     write_raw_alert_tool_session,
 )
 from tests.session_alert_test_support import (
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    StaticAlertStore,
+    build_alert_event,
     build_alert_summary_payload,
+    build_live_runtime_postgres_store,
     build_normalized_alert,
+    build_unique_session_id,
     build_persisted_alert,
+    close_store_if_possible,
+    select_runtime_postgres_store,
     write_known_session,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_default_alert_store_cache() -> Iterator[None]:
+    """Keep runtime-selected default-store caching isolated in raw MCP tests."""
+    clear_default_session_alert_store_cache()
+    yield
+    clear_default_session_alert_store_cache()
 
 
 def test_query_session_alerts_tool_forwards_filters_and_preserves_payload(
@@ -201,6 +219,214 @@ def test_summarize_session_alerts_tool_returns_empty_summary_for_known_session_w
             counts_by_severity={},
             first_alert_timestamp_utc=None,
             last_alert_timestamp_utc=None,
+        ),
+    )
+
+
+def test_raw_mcp_alert_tools_read_the_real_file_backed_seam(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The raw MCP tools should work over real persisted alert files."""
+    session_root = write_raw_alert_tool_session(monkeypatch, tmp_path)
+    write_known_session(
+        session_root,
+        "session-mcp-real-alerts",
+        alert_rows=[
+            build_persisted_alert(
+                "session-mcp-real-alerts",
+                timestamp_utc="2026-05-06 10:00:00",
+                detector_id="video_metrics",
+                title="Black screen detected",
+                message="Real raw MCP alert row.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            ),
+            build_persisted_alert(
+                "session-mcp-real-alerts",
+                timestamp_utc="2026-05-06 10:00:10",
+                detector_id="video_blur",
+                title="Blur increased",
+                message="Real raw MCP summary row.",
+                severity="info",
+                source_name="segment_0002.ts",
+            ),
+        ],
+    )
+
+    query_result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": "session-mcp-real-alerts"},
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alerts",
+        {"session_id": "session-mcp-real-alerts"},
+    )
+
+    assert_mcp_tool_success(
+        query_result,
+        expected_payload={
+            "session_id": "session-mcp-real-alerts",
+            "alerts": [
+                build_normalized_alert(
+                    "session-mcp-real-alerts",
+                    timestamp_utc="2026-05-06 10:00:00",
+                    detector_id="video_metrics",
+                    title="Black screen detected",
+                    message="Real raw MCP alert row.",
+                    severity="warning",
+                    source_name="segment_0001.ts",
+                ),
+                build_normalized_alert(
+                    "session-mcp-real-alerts",
+                    timestamp_utc="2026-05-06 10:00:10",
+                    detector_id="video_blur",
+                    title="Blur increased",
+                    message="Real raw MCP summary row.",
+                    severity="info",
+                    source_name="segment_0002.ts",
+                ),
+            ],
+        },
+    )
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=build_alert_summary_payload(
+            "session-mcp-real-alerts",
+            total_alerts=2,
+            counts_by_detector={"video_metrics": 1, "video_blur": 1},
+            counts_by_severity={"warning": 1, "info": 1},
+            first_alert_timestamp_utc="2026-05-06 10:00:00",
+            last_alert_timestamp_utc="2026-05-06 10:00:10",
+        ),
+    )
+
+
+def test_raw_mcp_alert_tools_use_runtime_selected_postgres_backend(
+    monkeypatch,
+) -> None:
+    """The raw MCP tools should honor Postgres runtime selection without caller churn."""
+    store = StaticAlertStore(
+        "session-runtime-postgres-mcp-alerts",
+        [
+            build_normalized_alert(
+                "session-runtime-postgres-mcp-alerts",
+                timestamp_utc="2026-05-19 19:20:00",
+                detector_id="video_metrics",
+                title="Runtime MCP alert",
+                message="Read through the runtime-selected Postgres backend.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            )
+        ],
+    )
+    select_runtime_postgres_store(monkeypatch, store)
+
+    query_result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": "session-runtime-postgres-mcp-alerts"},
+    )
+    summary_result = call_mcp_tool(
+        "summarize_session_alerts",
+        {"session_id": "session-runtime-postgres-mcp-alerts"},
+    )
+
+    assert_mcp_tool_success(
+        query_result,
+        expected_payload={
+            "session_id": "session-runtime-postgres-mcp-alerts",
+            "alerts": [
+                build_normalized_alert(
+                    "session-runtime-postgres-mcp-alerts",
+                    timestamp_utc="2026-05-19 19:20:00",
+                    detector_id="video_metrics",
+                    title="Runtime MCP alert",
+                    message="Read through the runtime-selected Postgres backend.",
+                    severity="warning",
+                    source_name="segment_0001.ts",
+                )
+            ],
+        },
+    )
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=build_alert_summary_payload(
+            "session-runtime-postgres-mcp-alerts",
+            total_alerts=1,
+            counts_by_detector={"video_metrics": 1},
+            counts_by_severity={"warning": 1},
+            first_alert_timestamp_utc="2026-05-19 19:20:00",
+            last_alert_timestamp_utc="2026-05-19 19:20:00",
+        ),
+    )
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL raw MCP smoke test is opt-in.",
+)
+def test_live_runtime_postgres_raw_mcp_tools_follow_actual_startup_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The real runtime-selected Postgres backend should drive raw MCP query tools."""
+    session_id = build_unique_session_id("session-runtime-postgres-mcp-live")
+    store = build_live_runtime_postgres_store(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        session_root_builder=write_raw_alert_tool_session,
+    )
+    try:
+        store.append_alert(
+            build_alert_event(
+                session_id,
+                timestamp_utc="2026-05-19 21:20:00",
+                detector_id="video_metrics",
+                title="Live MCP alert",
+                message="Read through the real runtime-selected Postgres backend.",
+                severity="warning",
+                source_name="segment_0001.ts",
+            )
+        )
+
+        query_result = call_mcp_tool(
+            "query_session_alerts",
+            {"session_id": session_id},
+        )
+        summary_result = call_mcp_tool(
+            "summarize_session_alerts",
+            {"session_id": session_id},
+        )
+    finally:
+        close_store_if_possible(store)
+
+    assert_mcp_tool_success(
+        query_result,
+        expected_payload={
+            "session_id": session_id,
+            "alerts": [
+                build_normalized_alert(
+                    session_id,
+                    timestamp_utc="2026-05-19 21:20:00",
+                    detector_id="video_metrics",
+                    title="Live MCP alert",
+                    message="Read through the real runtime-selected Postgres backend.",
+                    severity="warning",
+                    source_name="segment_0001.ts",
+                )
+            ],
+        },
+    )
+    assert_mcp_tool_success(
+        summary_result,
+        expected_payload=build_alert_summary_payload(
+            session_id,
+            total_alerts=1,
+            counts_by_detector={"video_metrics": 1},
+            counts_by_severity={"warning": 1},
+            first_alert_timestamp_utc="2026-05-19 21:20:00",
+            last_alert_timestamp_utc="2026-05-19 21:20:00",
         ),
     )
 

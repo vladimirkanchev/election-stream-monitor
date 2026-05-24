@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "election-stream-monitor"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local-first AI video monitoring system for election-related media sources."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -82,6 +82,12 @@ py-modules = [
     "playlist_utils",
     "processor",
     "session_cli",
+    "session_alert_adapter",
+    "session_alert_incidents",
+    "session_alert_store",
+    "session_alert_store_runtime_config",
+    "session_alert_store_postgres",
+    "session_alert_store_postgres_config",
     "session_io",
     "session_alerts",
     "session_models",

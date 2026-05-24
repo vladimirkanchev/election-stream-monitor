@@ -19,15 +19,19 @@ import hashlib
 import logging
 
 import httpx
+import pytest
 
 from tests.api_alert_test_support import (
     build_api_key_headers,
+    build_internal_error_payload,
     build_rate_limit_exceeded_payload,
     build_session_not_found_payload,
     build_validation_error_payload,
     install_rate_limited_alert_routes,
 )
 from tests.api_boundary_test_support import request
+from session_alert_store import clear_default_session_alert_store_cache
+from tests.session_alert_test_support import install_runtime_postgres_bootstrap_failure
 
 
 # Principal-strategy and fixed-window behavior
@@ -45,6 +49,18 @@ def _assert_rate_limit_exceeded(
     )
     if retry_after is not None:
         assert response.headers["Retry-After"] == retry_after
+
+
+def _assert_protected_route_keeps_bootstrap_failure_envelope(route_path: str) -> None:
+    """Assert the stable protected-route 500 envelope for one bootstrap-failure request."""
+    response = request(
+        "GET",
+        route_path,
+        headers=build_api_key_headers(),
+    )
+
+    assert response.status_code == 500
+    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
 
 
 def _exhaust_alert_route_budget() -> tuple[httpx.Response, httpx.Response]:
@@ -88,6 +104,33 @@ def test_get_session_alerts_returns_429_after_exceeding_rate_limit(monkeypatch) 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     _assert_rate_limit_exceeded(third_response)
+
+
+@pytest.mark.parametrize(
+    "route_path",
+    [
+        "/sessions/session-share-postgres-bootstrap/alerts",
+        "/sessions/session-share-postgres-bootstrap/alerts/summary",
+        "/sessions/session-share-postgres-bootstrap/alerts/timeline",
+        "/sessions/session-share-postgres-bootstrap/alerts/incident-summary",
+    ],
+)
+def test_protected_alert_routes_keep_the_same_500_envelope_when_postgres_bootstrap_fails_under_share_style_preparation(
+    monkeypatch,
+    route_path: str,
+) -> None:
+    """Auth and rate limiting should not change the protected-route 500 envelope."""
+    install_rate_limited_alert_routes(
+        monkeypatch,
+        auth_enabled=True,
+        rate_limit_enabled=True,
+        install_services=False,
+    )
+    install_runtime_postgres_bootstrap_failure(monkeypatch)
+    try:
+        _assert_protected_route_keeps_bootstrap_failure_envelope(route_path)
+    finally:
+        clear_default_session_alert_store_cache()
 
 
 def test_health_route_remains_usable_after_alert_route_hits_rate_limit(monkeypatch) -> None:

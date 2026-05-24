@@ -264,3 +264,127 @@ jobs:
           python -m venv /tmp/esm-packaging-weekly
           /tmp/esm-packaging-weekly/bin/python -m pip install --upgrade pip setuptools wheel
           /tmp/esm-packaging-weekly/bin/python -m pip install --no-deps --no-build-isolation -e .
+
+  postgres-alert-backend-confidence:
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: election_stream_monitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d election_stream_monitor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+          pip install "psycopg[binary]"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres
+        run: |
+          until pg_isready -h localhost -p 5432 -U postgres -d election_stream_monitor; do sleep 1; done
+
+      - name: Run weekly live Postgres backend confidence bundle
+        env:
+          ESM_POSTGRES_ALERT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/election_stream_monitor
+          ESM_ALERT_STORE_BACKEND: postgres
+          POSTGRES_ALERT_STORE_REAL_SMOKE: "1"
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          python3 scripts/postgres_alert_weekly_backend_confidence.py 2>&1 | tee ci-artifacts/postgres-alert-backend-confidence.log
+
+      - name: Upload live Postgres backend confidence log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-alert-backend-confidence-${{ github.run_id }}
+          path: ci-artifacts/postgres-alert-backend-confidence.log
+          retention-days: 7
+
+  postgres-alert-runtime-operator-confidence:
+    runs-on: ubuntu-24.04
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: election_stream_monitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d election_stream_monitor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
+          pip install "psycopg[binary]"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for Postgres
+        run: |
+          until pg_isready -h localhost -p 5432 -U postgres -d election_stream_monitor; do sleep 1; done
+
+      - name: Run weekly live Postgres runtime/operator-flow bundle
+        env:
+          ESM_POSTGRES_ALERT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/election_stream_monitor
+          ESM_ALERT_STORE_BACKEND: postgres
+          POSTGRES_ALERT_STORE_REAL_SMOKE: "1"
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py 2>&1 | tee ci-artifacts/postgres-alert-runtime-operator-confidence.log
+
+      - name: Upload live Postgres runtime/operator confidence log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-alert-runtime-operator-confidence-${{ github.run_id }}
+          path: ci-artifacts/postgres-alert-runtime-operator-confidence.log
+          retention-days: 7

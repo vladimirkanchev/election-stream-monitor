@@ -15,16 +15,14 @@ import time
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC_ROOT = REPO_ROOT / "src"
-if str(SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(SRC_ROOT))
-
-import config
-from session_io import read_session_snapshot
-from stream_loader import build_api_stream_temp_session_dir
-
-
 EXPECTATIONS_PATH = REPO_ROOT / "tests" / "fixtures" / "media" / "api_stream_expectations.json"
+
+
+def ensure_src_on_path() -> None:
+    """Allow direct script execution without requiring an installed package."""
+    src_root = REPO_ROOT / "src"
+    if str(src_root) not in sys.path:
+        sys.path.insert(0, str(src_root))
 
 
 def load_expectations() -> dict[str, object]:
@@ -56,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    ensure_src_on_path()
     parser = build_parser()
     args = parser.parse_args()
 
@@ -82,6 +81,9 @@ def handle_list_fixtures() -> int:
 
 
 def handle_serve_fixture(fixture_id: str, *, host: str, port: int) -> int:
+    import config
+    from stream_loader import build_api_stream_temp_session_dir
+
     case = get_case(fixture_id)
     fixture_dir = REPO_ROOT / "tests" / "fixtures" / "media" / case["fixture_path"]
     playlist_path = fixture_dir / "index.m3u8"
@@ -116,7 +118,7 @@ def handle_serve_fixture(fixture_id: str, *, host: str, port: int) -> int:
         )
         print("3. Copy the returned `session_id` and watch chunk progression:")
         print("   python src/session_cli.py read-session --session-id <session_id>")
-        print(f"4. Expected status")
+        print("4. Expected status")
         print(f"   {trial['expected_status']}")
         print("5. Expected logs")
         for snippet in trial["expected_logs"]:
@@ -155,6 +157,8 @@ def handle_serve_fixture(fixture_id: str, *, host: str, port: int) -> int:
 
 
 def handle_check_session(fixture_id: str, session_id: str) -> int:
+    from session_io import read_session_snapshot
+
     case = get_case(fixture_id)
     snapshot = read_session_snapshot(session_id)
     actual_status = snapshot["session"]["status"]

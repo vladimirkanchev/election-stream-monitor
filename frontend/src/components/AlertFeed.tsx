@@ -6,6 +6,7 @@ interface AlertFeedProps {
   onSelect: (alert: AlertEvent) => void;
   monitoringStarted: boolean;
   totalRaisedCount?: number;
+  playbackFiltered?: boolean;
 }
 
 export function AlertFeed({
@@ -13,28 +14,37 @@ export function AlertFeed({
   onSelect,
   monitoringStarted,
   totalRaisedCount,
+  playbackFiltered = false,
 }: AlertFeedProps) {
+  const hiddenRaisedAlerts = typeof totalRaisedCount === "number"
+    ? Math.max(0, totalRaisedCount - items.length)
+    : 0;
+
   return (
     <section className="monitor-card">
       <div className="monitor-card__header">
         <h2>Alerts</h2>
         <span>
-          {items.length} shown
-          {typeof totalRaisedCount === "number" ? ` / ${totalRaisedCount} raised` : ""}
+          {formatAlertCountLabel({
+            visibleCount: items.length,
+            totalRaisedCount,
+            playbackFiltered,
+          })}
         </span>
       </div>
-      {typeof totalRaisedCount === "number" ? (
+      {typeof totalRaisedCount === "number" && playbackFiltered ? (
         <p className="alert-feed__summary">
-          Shown follows playback. Raised follows backend analysis.
+          Visible now follows playback. Raised follows backend analysis.
         </p>
       ) : null}
 
       <div className="alert-feed">
         {items.length === 0 ? (
           <p className="empty-state">
-            {monitoringStarted
-              ? "No alerts have been raised for this session yet."
-              : "Alerts will appear here after monitoring starts."}
+            {buildEmptyStateMessage({
+              monitoringStarted,
+              hiddenRaisedAlerts,
+            })}
           </p>
         ) : (
           items.map((item) => (
@@ -58,4 +68,39 @@ export function AlertFeed({
       </div>
     </section>
   );
+}
+
+function buildEmptyStateMessage(args: {
+  monitoringStarted: boolean;
+  hiddenRaisedAlerts: number;
+}): string {
+  const { monitoringStarted, hiddenRaisedAlerts } = args;
+
+  if (hiddenRaisedAlerts > 0) {
+    return "Alerts have already been raised and will appear here as playback reaches them.";
+  }
+
+  if (monitoringStarted) {
+    return "No alerts have been raised for this session yet.";
+  }
+
+  return "Alerts will appear here after monitoring starts.";
+}
+
+function formatAlertCountLabel(args: {
+  visibleCount: number;
+  totalRaisedCount?: number;
+  playbackFiltered: boolean;
+}): string {
+  const { visibleCount, totalRaisedCount, playbackFiltered } = args;
+
+  if (typeof totalRaisedCount !== "number") {
+    return `${visibleCount} visible`;
+  }
+
+  if (playbackFiltered) {
+    return `${visibleCount} visible now / ${totalRaisedCount} raised`;
+  }
+
+  return `${totalRaisedCount} raised`;
 }

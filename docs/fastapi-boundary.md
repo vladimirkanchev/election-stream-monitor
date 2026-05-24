@@ -34,18 +34,13 @@ These endpoints already use:
 - cleaned session snapshot semantics
 - router-scoped auth enforcement for the alerts surface
 
-The current alerts router is authenticated when FastAPI auth is enabled.
-The same router can also enforce principal-aware rate limiting when that
-setting is enabled. The current implementation uses one local in-memory
-fixed-window limiter, so the enforcement is per-process rather than
-distributed.
-The owning HTTP protection composition now lives in
-[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py), which
-keeps the alerts router declarations smaller and keeps auth/rate-limit mapping
-local to the boundary.
-The FastAPI app also validates the current auth and rate-limit settings during
-startup so invalid enabled boundary config fails before the first protected
-request.
+The current alerts router can apply API-key authentication and principal-aware
+rate limiting. The limiter is still one local in-memory fixed window, so the
+enforcement is per-process rather than distributed. The owning HTTP protection
+composition lives in
+[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py), and the
+app validates enabled auth/rate-limit settings during startup so invalid
+boundary config fails before the first protected request.
 
 Current FastAPI access-mode policy:
 
@@ -57,7 +52,7 @@ Current FastAPI access-mode policy:
 - when no manual share-mode API key is configured, the CLI can auto-generate
   one strong process-local key at startup
 - the lower-level auth and limiter settings still exist, but run mode is now
-  the main top-level UX seam for choosing the default FastAPI security posture
+  the main top-level way to choose the default FastAPI security posture
 
 Current alerts-router protection scope:
 
@@ -87,13 +82,12 @@ Current alerts-router rate-limit rule:
   - `status_detail = "Too many requests for the configured window."`
 - `429` responses also include `Retry-After` with a coarse whole-window number
   of seconds so clients can retry later without guessing the current budget
-- current boundary tests also lock down that public health/docs surfaces remain
-  usable after one protected alert route has exhausted its budget
-- current CLI route tests also lock down that `GET /detectors` and
-  `GET /openapi.json` remain public even when CLI-prepared `share` mode enables
-  alerts-router protection
-- current auth-policy tests also lock down that invalid and missing API-key
-  failures stay aligned across the protected alerts route family
+- tests also lock down that public health/docs surfaces remain usable after one
+  protected alert route has exhausted its budget
+- tests also lock down that `GET /detectors` and `GET /openapi.json` remain
+  public even when CLI-prepared `share` mode enables alerts-router protection
+- tests also lock down that invalid and missing API-key failures stay aligned
+  across the protected alerts route family
 
 Current limitation:
 
@@ -123,8 +117,8 @@ Current MCP boundary difference:
   automatically secure MCP
 - if MCP later becomes remote, reuse the principal identity model, the general
   structured error style, and possibly the limiter concepts, but add them at
-  the MCP transport boundary instead of coupling MCP to FastAPI-specific
-  request handling
+  the MCP transport boundary instead of coupling MCP to FastAPI request
+  handling
 
 What is still partial:
 

@@ -43,6 +43,16 @@ def build_validation_error_payload(detail: str) -> dict[str, str]:
     }
 
 
+def build_internal_error_payload(detail: str) -> dict[str, str]:
+    """Return the stable API payload for one alert-route internal backend failure."""
+    return {
+        "detail": "Unexpected backend error",
+        "error_code": "internal_error",
+        "status_reason": "internal_error",
+        "status_detail": detail,
+    }
+
+
 def build_authentication_failed_payload(detail: str) -> dict[str, str]:
     """Return the stable API payload for one alert-route auth failure."""
     return {
