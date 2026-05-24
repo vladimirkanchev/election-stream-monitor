@@ -225,7 +225,12 @@ jobs:
       - name: Run packaging smoke check
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
-          python -c "import api.app, api.routers.sessions, session_service, session_cli"
+          python -c "import api.app, api.routers.sessions, session_service, session_cli, session_alert_report"
+
+      - name: Run report tooling compile smoke check
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+        run: |
+          python -m py_compile src/session_alert_report.py scripts/session_alert_demo_report.py
 
       - name: Run fast_synthetic backend tests
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -275,7 +280,7 @@ jobs:
 
       - name: Run backend Ruff lint
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: ruff check src tests
+        run: ruff check src scripts tests
 
       - name: Skip backend Ruff lint
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -425,7 +430,7 @@ jobs:
 
       - name: Run backend typecheck
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+        run: MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alert_report.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 
       - name: Skip backend typecheck
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -458,7 +463,7 @@ jobs:
 
       - name: Run backend pyright
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
-        run: .venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+        run: .venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alert_report.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 
       - name: Skip backend pyright
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')

@@ -537,7 +537,7 @@ The most useful feedback right now is:
 
 The main CI workflow is path-aware and runs the fast checks the repo relies on:
 
-- backend tests and packaging smoke
+- backend tests, packaging smoke, and small backend tooling smoke checks
 - backend lint
 - frontend checks
 - API/data rules, docs, and CI drift checks

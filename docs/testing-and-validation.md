@@ -35,6 +35,7 @@ The current GitHub Actions workflow uses three practical layers:
   - quick Electron/bridge/session-flow regression signal
 - `backend-tests`
   - packaging/import smoke check after editable install
+  - compile smoke check for the compact session-alert report module and CLI
   - backend tests
 - `backend-ruff`
   - primary Python lint check with Ruff
@@ -1294,7 +1295,7 @@ Primary backend lint check:
 
 ```bash
 python -m pip install -e .[lint]
-ruff check src tests
+ruff check src scripts tests
 ```
 
 Use this as the main Python lint gate now that Ruff is the standardized
