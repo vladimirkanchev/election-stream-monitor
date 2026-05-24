@@ -19,12 +19,7 @@ export function StartupPreviewPanel({ source }: StartupPreviewPanelProps) {
         className="video-panel__surface video-panel__surface--preview"
       >
         <div className="video-panel__placeholder">
-          <strong>Waiting to start</strong>
-          <p>
-            {source.path
-              ? `The player is ready for ${formatSourceModeLabel(source.kind).toLowerCase()} from ${source.path}.`
-              : getEmptySourceMessage(source.kind)}
-          </p>
+          {!source.path ? <p>{getEmptySourceMessage(source.kind)}</p> : null}
         </div>
       </div>
     </section>
