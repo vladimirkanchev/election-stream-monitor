@@ -232,11 +232,7 @@ describe("App polling and status integration (api_stream)", () => {
       expect(screen.getByText("Live, 1 chunk analyzed")).toBeTruthy();
       expect(screen.getByText("1 chunk analyzed, 4 discovered")).toBeTruthy();
       expect(screen.getByText("00:02 live")).toBeTruthy();
-      expect(
-        screen.getByText(
-          "Live monitoring is active and currently analyzing live-window-001.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText("Live monitoring is active.")).toBeTruthy();
     });
   });
 
@@ -302,11 +298,7 @@ describe("App polling and status integration (api_stream)", () => {
     await waitFor(() => {
       expect(screen.getByText("Live, 6 chunks analyzed")).toBeTruthy();
       expect(screen.getByText("6 chunks analyzed, 9 discovered")).toBeTruthy();
-      expect(
-        screen.getByText(
-          "Live monitoring is active and currently analyzing live-window-006.",
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText("Live monitoring is active.")).toBeTruthy();
     });
   });
 });

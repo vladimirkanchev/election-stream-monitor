@@ -91,7 +91,6 @@ export function SessionStatusPanel({
             source,
             status: sessionStatus,
             sourcePath: source.path,
-            currentItem: progress?.current_item,
             progress,
             localPlaylistWarning,
             playbackTime,
@@ -183,7 +182,6 @@ function buildSessionMessage(args: {
   source: MonitorSource;
   status: MonitoringSessionState;
   sourcePath: string;
-  currentItem: string | null | undefined;
   progress: SessionProgress | null;
   localPlaylistWarning: string | null;
   playbackTime: number;
@@ -195,7 +193,6 @@ function buildSessionMessage(args: {
     source,
     status,
     sourcePath,
-    currentItem,
     progress,
     localPlaylistWarning,
     playbackTime,
@@ -506,7 +503,6 @@ function buildDiagnostics(args: {
     progress,
     sessionError,
     playbackStatus,
-    localPlaylistWarning,
   } = args;
   const showMonitoringDiagnostic = sessionStatus !== "idle";
 
