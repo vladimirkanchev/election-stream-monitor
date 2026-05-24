@@ -493,6 +493,9 @@ Notes:
 - `session` may be `null` before a session exists
 - `progress` may be `null` before initialization or after lookup failure
 - `alerts` and `results` are append-oriented event views
+- `alerts` represents the backend-raised alert history for the session
+- frontend playback-aware filtering is a presentation concern and must not
+  change the persisted snapshot alert list
 - playback state is not part of this contract
 - `api_stream` sessions use the same snapshot contract as local modes
 
@@ -1743,6 +1746,29 @@ Current query semantics:
 - missing `alerts.jsonl` for a known session means `[]`
 - malformed alert rows are ignored rather than failing the whole query
 - time filters use the existing persisted UTC timestamp format
+- `counts_by_detector` uses stable detector ids such as `video_blur` and
+  `video_metrics`, not human-facing alert titles
+- these raw and summary response shapes stay the same regardless of whether
+  the active alert backend is the default file store or the PostgreSQL store
+
+### Compact Session Alert Report v1
+
+The compact session alert report is a normalized read model for manual checks,
+CLI output, and test assertions. It is derived from one persisted session
+snapshot and keeps the snapshot as the source of truth.
+
+Current report semantics:
+
+- `session_id` and `input_path` come from the session snapshot metadata
+- each report entry represents one raised alert row from the snapshot `alerts`
+  list
+- `segment` mirrors the alert `source_name`
+- `detector_id`, `title`, `window_index`, `timestamp_utc`, and `message`
+  preserve the same meaning they have in the raw alert-query contract
+- the report may be rendered as JSON or as a small human-readable table, but
+  the normalized field meanings stay the same
+- the compact report is a local tooling/read-model helper; it does not define a
+  new FastAPI or MCP transport contract
 
 ### Session Alert Timeline and Incident Summary v1
 
