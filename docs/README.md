@@ -169,7 +169,11 @@ module families and the matching tests:
   - `src/api/routers/alerts.py`
   - `src/esm_mcp/server.py`
   - `src/esm_mcp/alert_tools.py`
+  - `src/session_alert_report.py`
+    - compact session-alert report shaping and table formatting
+    - source owner for the demo-report CLI and normalized alert-report test helpers
   - `tests/session_alert_test_support.py`
+    - shared alert/session helpers for alert-store, boundary, and report assertions
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
   - `tests/test_session_alert_store.py`
@@ -204,6 +208,8 @@ module families and the matching tests:
   - `scripts/postgres_alert_weekly_confidence.py`
     - umbrella runner that executes both weekly/manual live Postgres
       confidence bundles in order
+  - `scripts/session_alert_demo_report.py`
+    - prints one compact session-alert report as a table or JSON for manual checks
   - `.github/workflows/weekly-validation.yml`
     - scheduled weekly automation runs both live Postgres confidence bundles
       against a disposable GitHub Actions Postgres service container

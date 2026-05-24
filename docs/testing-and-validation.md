@@ -844,6 +844,16 @@ Use the runtime/operator-flow bundle when:
 - you want confidence in runner-written alerts under real Postgres mode
 - you want to sanity-check snapshot and CLI behavior before a rollout or demo
 
+For a quick human-readable view of one persisted session during a manual check,
+use:
+
+```bash
+python3 scripts/session_alert_demo_report.py --session-id <session-id>
+```
+
+Use `--format json` when you want the same compact alert report shape in a
+machine-friendly form.
+
 Use the umbrella helper when:
 
 - you want one repeatable weekly confidence pass
