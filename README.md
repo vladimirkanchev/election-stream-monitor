@@ -13,6 +13,7 @@ Today it is a desktop-first advanced prototype with:
 - a React/Electron app and local FastAPI backend
 - three input modes: local video files, local segmented/HLS-style folders, and direct remote `api_stream` inputs
 - two built-in detectors: `Black Screen` and `Blur Check`
+- two built-in production alert rules layered on top of those detectors
 - a small local MCP server with read-only alert-query tools
 - selectable alert backend: file by default, PostgreSQL opt-in
 
@@ -41,21 +42,20 @@ strong manual coding skills or deep video-processing knowledge.
 
 ## Where To Start
 
-A good place to start:
+If you are:
 
-- this README for the big picture
-- [Running The Project](./README.md#running-the-project) to try it locally
-- [Current Capabilities](./README.md#current-capabilities) for the current user-facing feature set
-- [docs/architecture.md](./docs/architecture.md) for the current system shape
-- [docs/frontend-architecture.md](./docs/frontend-architecture.md) for frontend and playback details
-- [docs/mcp-server.md](./docs/mcp-server.md) for the local MCP server and alert-reading tools
-- [docs/README.md](./docs/README.md) for the full docs map
-
-If you want to extend the project, see [docs/adding-an-analyzer.md](./docs/adding-an-analyzer.md),
-[docs/adding-an-alert-rule.md](./docs/adding-an-alert-rule.md), and the
-deeper internal docs for [API and data rules](./docs/contracts.md),
-[session state](./docs/session-model.md), [FastAPI access details](./docs/fastapi-boundary.md),
-and [testing and validation](./docs/testing-and-validation.md).
+- trying the project locally
+  - start with [Running The Project](./README.md#running-the-project)
+- learning the current product/runtime shape
+  - read [Current Capabilities](./README.md#current-capabilities)
+  - then [docs/architecture.md](./docs/architecture.md)
+- changing detectors or alert rules
+  - read [docs/adding-an-analyzer.md](./docs/adding-an-analyzer.md)
+  - read [docs/adding-an-alert-rule.md](./docs/adding-an-alert-rule.md)
+  - read [docs/testing-and-validation.md](./docs/testing-and-validation.md) for the focused detector/rule test lanes
+  - use [detector_lab/README.md](./detector_lab/README.md) if the idea is still experimental
+- navigating the whole maintainer docs set
+  - use [docs/README.md](./docs/README.md)
 
 ## Desktop Runtime Summary
 
@@ -143,9 +143,6 @@ python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 `share` mode is for temporary local/demo sharing, not production deployment.
 These examples keep the default file-backed alert backend.
 
-`share` mode is for temporary demo/shared access only. It protects the alerts
-HTTP routes. MCP remains a separate local `stdio` tool surface.
-
 ## Current Capabilities
 
 ### Backend
@@ -164,6 +161,29 @@ Current built-ins:
 - `Blur Check`
   - looks for frames that are too soft or out of focus
   - detail disappears and the image stops looking sharp
+
+Today the production detector and alert surface is intentionally small:
+
+- detector: `video_metrics`
+- detector: `video_blur`
+- alert rule: `video_metrics.default_rule`
+- alert rule: `video_blur.default_rule`
+
+Blur and motion-blur experiments beyond that live in
+[`detector_lab/`](./detector_lab/README.md) until they are promoted on purpose.
+
+The current detector/rule test split mirrors that boundary:
+
+- production detector contracts
+  - [`tests/test_detectors.py`](./tests/test_detectors.py)
+- production alert-rule metadata and shared failure handling
+  - [`tests/test_alert_rules.py`](./tests/test_alert_rules.py)
+- production black-screen rule behavior
+  - [`tests/test_alert_rules_black.py`](./tests/test_alert_rules_black.py)
+- production blur-rule behavior
+  - [`tests/test_alert_rules_blur.py`](./tests/test_alert_rules_blur.py)
+- detector-lab experiments and practical alert policies
+  - [`tests/test_detector_lab.py`](./tests/test_detector_lab.py)
 
 ### Frontend
 

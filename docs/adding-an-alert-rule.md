@@ -30,9 +30,21 @@ This is where alert logic should live.
 It already contains:
 
 - built-in rule metadata with stable ids
-- detector-to-rule mapping
+- detector-specific evaluator registration on each built-in rule
 - small session-local rolling state
+- a typed runtime row boundary for rule evaluation
 - logging and failure context around rule evaluation
+
+Important boundary:
+
+- [`src/alert_rules.py`](../src/alert_rules.py) is the production runtime
+  alert-rule catalog
+- [`detector_lab/practical_alerts.py`](../detector_lab/practical_alerts.py)
+  contains detector-lab evaluation policies
+
+Those practical detector-lab alerts are useful for experimentation and
+comparison, but they are not part of the supported runtime alert catalog
+unless they are promoted intentionally.
 
 ## Two kinds of rules
 
@@ -61,6 +73,9 @@ Current example:
 - video black-screen rule
   - immediate condition: long continuous black interval
   - rolling condition: recent black ratio over a short window
+- blur rule
+  - requires enough total samples before first entry
+  - uses detector-side motion summaries to suppress camera-motion softness
 
 Good for:
 
@@ -73,9 +88,10 @@ Good for:
 Current rule style is:
 
 - one small `AlertRule`
-- one readable predicate
+- one readable rule entry point
 - one readable message builder
-- optional helper functions for rolling state
+- typed facts when detector payloads need interpretation
+- small helpers for rolling state and row annotation
 - explicit rule id metadata when the rule is part of the built-in catalog
 
 Try to keep rules:
@@ -84,6 +100,7 @@ Try to keep rules:
 - readable
 - easy to tune
 - easy to test
+- focused on policy, not on detector-side signal extraction
 
 ## How to add one
 
@@ -111,9 +128,26 @@ Use rolling state only when the alert really depends on recent history and not j
 
 In [`src/alert_rules.py`](../src/alert_rules.py):
 
-- create the rule
-- add it to the detector-to-rule mapping
+- create one `AlertRule`
+- attach the detector-specific evaluator callable to that rule
+- add the rule to the built-in registration tuple
 - keep the message clear for the frontend user
+
+The current runtime shape is:
+
+1. detector output is normalized into `RuntimeResultRow`
+2. the rule derives typed facts if needed
+3. the rule returns a decision and row-facing annotation
+4. alert events are built only on fresh entry
+
+Do not treat a practical detector-lab alert as a runtime rule just because the
+policy shape looks similar. Promotion into the runtime should be explicit and
+should update:
+
+- [`src/alert_rules.py`](../src/alert_rules.py)
+- [`src/analyzer_registry.py`](../src/analyzer_registry.py) if detector
+  metadata or rule linkage changes
+- runtime docs such as [architecture.md](./architecture.md)
 
 ### Step 4: if it uses rolling state, keep that state local
 
@@ -157,6 +191,8 @@ Good because it uses:
 - rolling windows
 - readable threshold
 - explicit recovery and re-alert behavior
+- detector-side motion summaries only as policy inputs, not as replacements for
+  the persisted blur score
 
 ## Things to avoid
 

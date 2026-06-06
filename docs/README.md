@@ -17,6 +17,34 @@ If you are new to the repo, read these in order:
 4. [session-model.md](./session-model.md)
 5. then the task-specific doc for the subsystem you want to change
 
+## Quick Role Map
+
+Use these first depending on what you are doing:
+
+- understanding the current runtime
+  - [architecture.md](./architecture.md)
+  - [contracts.md](./contracts.md)
+  - [session-model.md](./session-model.md)
+- changing detectors or alert rules
+  - [adding-an-analyzer.md](./adding-an-analyzer.md)
+  - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+  - [`../detector_lab/README.md`](../detector_lab/README.md) for experimental work
+  - [detector-lab-analysis.md](./detector-lab-analysis.md) for the current detector-lab structure and evaluation intent
+  - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
+  - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
+  - high-signal test files:
+    - `tests/test_detectors.py`
+    - `tests/test_alert_rules.py`
+    - `tests/test_alert_rules_black.py`
+    - `tests/test_alert_rules_blur.py`
+    - `tests/test_detector_lab.py`
+- checking validation and CI expectations
+  - [testing-and-validation.md](./testing-and-validation.md)
+  - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+- changing frontend or Electron bridge behavior
+  - [frontend-architecture.md](./frontend-architecture.md)
+  - [contracts.md](./contracts.md)
+
 ## Best Entry Points For Coding Agents
 
 Use this shortcut map before editing code:
@@ -65,8 +93,19 @@ For the current alert-storage rollout state, use:
   - `src/session_io.py`
 - adding a detector:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
+  - [architecture.md](./architecture.md)
+- experimenting with detector metrics before production integration:
+  - [`../detector_lab/README.md`](../detector_lab/README.md)
+  - [detector-lab-analysis.md](./detector-lab-analysis.md)
+  - [motion-coherence.md](./motion-coherence.md) when the change touches motion-backed blur experiments
+  - [testing-and-validation.md](./testing-and-validation.md)
+  - use `detector_lab` when the detector idea is still exploratory and you
+    want to compare metric variants against the checked-in MP4 fixture sets
 - adding an alert rule:
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+  - [testing-and-validation.md](./testing-and-validation.md)
+  - [architecture.md](./architecture.md)
 - working on repo-local Codex skills or their tests:
   - [testing-and-validation.md](./testing-and-validation.md)
   - `./.agents/skills/`

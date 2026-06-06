@@ -6,10 +6,53 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+Keep two confidence lanes separate when reading this document:
+
+- production runtime confidence
+  - supported backend/frontend behavior
+  - built-in detectors, built-in alert rules, session/runtime flows
+- detector-lab experiment confidence
+  - detector comparison work
+  - practical lab-only alert policies
+  - motion-blur exploration and scoring experiments
+
+Passing detector-lab validation improves confidence in experiment work, but it
+does not by itself promote that logic into the supported production runtime.
+
+For detector and alert work specifically, keep this mental split:
+
+- production confidence asks:
+  - do built-in detectors still emit the right facts?
+  - do production rules still enter, suppress, recover, and emit correctly?
+- detector-lab confidence asks:
+  - do experiment metrics and practical policies still behave as expected on
+    the checked-in fixture slices?
+
 For a shorter CI ownership handoff, use
 [ci-maintainer-guide.md](./ci-maintainer-guide.md).
 
 ## Routine Validation
+
+For everyday detector/rule work, the most useful focused checks are usually:
+
+- production detector and rule slices
+- detector-lab practical/experiment slices when the change is experimental
+
+Current focused ownership map:
+
+- `tests/test_detectors.py`
+  - production detector rows, media-tool fallback behavior, and metric contracts
+- `tests/test_alert_rules.py`
+  - shared rule metadata, failure wrapping, and row annotation behavior
+- `tests/test_alert_rules_black.py`
+  - `video_metrics` black-screen entry, recovery, and source/session isolation
+- `tests/test_alert_rules_blur.py`
+  - `video_blur` warm-up, motion guards, recovery, and source/session isolation
+- `tests/test_detector_lab.py`
+  - detector-lab runner wiring, experiment families, practical alert policies,
+    and export shaping
+- `tests/test_detector_lab_real_media.py`
+  - slower real-media confidence lane for detector-lab motion/flow behavior
 
 Use two explicit backend modes when validating this branch:
 
@@ -24,6 +67,34 @@ Use two explicit backend modes when validating this branch:
 The fast PR/branch CI workflow now pins the synthetic path to the file-backed
 alert backend. The weekly workflow owns the real Postgres confidence jobs and
 overrides that default in its dedicated live-DB lanes.
+
+For detector-lab specifically:
+
+- focused detector-lab tests and fixture runs validate experimental comparison
+  logic
+- they are valuable for promotion candidates
+- they should not be read on their own as proof that an experimental detector
+  or alert lane is runtime-ready
+
+Useful focused examples:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_detectors.py \
+tests/test_processor.py \
+tests/test_alert_rules.py \
+tests/test_alert_rules_black.py \
+tests/test_alert_rules_blur.py -q
+```
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_detector_lab.py -q -k 'practical or build_experiment_window_facts or prefers_motion_blur_classification or blend or optical_flow or motion_coherent_variant or compression_robust or structure_relief'
+```
 
 ## CI Shape
 
@@ -64,6 +135,7 @@ The current GitHub Actions workflow uses three practical layers:
   - path-aware docs and workflow consistency checks for non-`main` pull requests
 - `weekly-validation`
   - scheduled slow e2e media tests
+  - detector-lab real-media confidence checks
   - lifecycle-focused backend test coverage
   - deeper `api_stream` validation
   - Bandit security audit
@@ -694,14 +766,40 @@ The Python suite covers:
 - loader contract helpers and deterministic seam behavior
 - HLS/provider edge cases and soak-oriented scenarios
 
-Alert-rule coverage is now split so the ownership is easier to scan:
+Detector and alert coverage is now split so the ownership is easier to scan:
 
+- `tests/test_detectors.py`
+  - typed detector rows, media-tool degradation, and blur/black metric contracts
 - `tests/test_alert_rules.py`
   - metadata, failure wrapping, malformed payload tolerance, and detector isolation
 - `tests/test_alert_rules_black.py`
   - `video_metrics` black-screen rule state transitions
 - `tests/test_alert_rules_blur.py`
   - `video_blur` rolling/recovery rule state transitions
+- `tests/test_detector_lab.py`
+  - detector-lab runner, export shaping, experiment families, practical alert
+    policies, and optical-flow / motion-coherence seams
+
+Current blur-validation expectation:
+
+- calibrate `video_blur` first against clean baseline clips from the media
+  family you actually care about
+- use the checked-in blur fixtures to prove positive detection
+- use real-source clean baseline clips to prove the detector does not over-alert
+  on naturally soft but acceptable broadcast footage
+- include startup-heavy clips when validating blur behavior, because first-frame
+  false positives are now handled in the blur rule through a minimum-sample
+  warm-up gate
+- include motion-heavy clean clips as a separate blur baseline, because the
+  blur rule now uses detector-side motion summaries to suppress moving-camera
+  softness before it becomes an alert
+- keep black-screen fixtures in the validation set, because the blur detector
+  now explicitly drops effectively black frames and that separation should stay
+  intact
+- keep malformed media in a separate resilience lane; the default
+  `detector_lab --fixture-set test_video_files` batch intentionally stays on
+  valid detector-quality MP4 fixtures so blur and black-score calibration
+  output remains easy to read
 
 Common local command:
 
@@ -714,6 +812,20 @@ pytest -q -m "not e2e and not slow"
 This default backend command keeps the normal local fast lane focused on unit,
 service, and boundary coverage. Use the dedicated e2e commands below when you
 want the snapshot-contract smoke check or the slower real-media matrix.
+
+Focused detector-lab validation:
+
+```bash
+PYTHONPATH=src:. python3 -m detector_lab.cli \
+  --fixture-set test_video_files \
+  --output detector_lab/output/test_video_files_eval.csv
+```
+
+This writes the compact production-fixture detector export:
+
+- one merged row per analyzed second/window
+- one `row_index` column for quick scanning
+- one combined view of the current `video_blur` and `video_metrics` outputs
 
 Focused repo-local skill validation:
 

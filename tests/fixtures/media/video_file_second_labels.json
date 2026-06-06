@@ -1,0 +1,67 @@
+{
+  "schema_version": "video_file_second_labels_v1",
+  "label_scheme": {
+    "0": "normal",
+    "1": "black",
+    "2": "blur",
+    "3": "motion_blur",
+    "9": "unknown"
+  },
+  "video_files": [
+    {
+      "path": "election_clips/normal_baseline/010300111_20260419_202346_0000-0030.mp4",
+      "labels_by_second": [3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "notes": "Baseline election clip with elevated startup motion in the first five seconds; treated as motion-blur ground truth."
+    },
+    {
+      "path": "election_clips/normal_baseline/010300111_20260419_202346_024430-024500.mp4",
+      "labels_by_second": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "notes": "Baseline election clip with no confirmed motion-blur interval in the current labels."
+    },
+    {
+      "path": "video_files/black_recovery_realert_long.mp4",
+      "labels_by_second": [0, 0, 1, 1, 0, 0, 1, 1, 0, 0],
+      "notes": "Two separated black episodes with recovery between them."
+    },
+    {
+      "path": "video_files/black_tail_long.mp4",
+      "labels_by_second": [0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+      "notes": "Clean lead-in followed by a black tail."
+    },
+    {
+      "path": "video_files/black_trigger.mp4",
+      "labels_by_second": [3, 3, 3, 3, 1, 1],
+      "notes": "Short trigger clip with a motion-blurred lead-in followed by a black ending."
+    },
+    {
+      "path": "video_files/blur_middle_long.mp4",
+      "labels_by_second": [0, 0, 0, 2, 2, 2, 0, 0, 0, 0],
+      "notes": "Single blur episode in the middle of the clip."
+    },
+    {
+      "path": "video_files/blur_recovery_realert_long.mp4",
+      "labels_by_second": [0, 0, 2, 2, 0, 0, 2, 2, 0, 0],
+      "notes": "Two separated blur episodes with recovery between them."
+    },
+    {
+      "path": "video_files/blur_trigger.mp4",
+      "labels_by_second": [0, 2, 3, 3, 2],
+      "notes": "Short trigger clip with a stronger motion-blur core in the middle before settling into generic blur."
+    },
+    {
+      "path": "video_files/clean_baseline_long.mp4",
+      "labels_by_second": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "notes": "Baseline clip with no intentional black or blur interval."
+    },
+    {
+      "path": "video_files/mixed_black_blur_long.mp4",
+      "labels_by_second": [0, 0, 0, 2, 2, 2, 1, 1, 1, 1],
+      "notes": "Blur episode followed by a black tail."
+    },
+    {
+      "path": "video_files/truncated_long.mp4",
+      "labels_by_second": [9],
+      "notes": "Malformed clip. Detector-lab should treat second-level truth as unknown."
+    }
+  ]
+}
