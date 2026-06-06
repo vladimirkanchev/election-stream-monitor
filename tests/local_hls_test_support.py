@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from typing import Mapping
 
+import pytest
+
 
 @contextmanager
 def _serve_local_hls(routes: Mapping[str, object]):
@@ -29,7 +31,10 @@ def _serve_local_hls(routes: Mapping[str, object]):
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             return None
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    except PermissionError:
+        pytest.skip("Local TCP sockets are not available in this test environment")
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
