@@ -356,7 +356,8 @@
       "tests/test_e2e_local_session_real_media.py",
       "tests/test_e2e_session_ground_truth_api_stream.py",
       "tests/test_e2e_session_ground_truth_local.py",
-      "tests/test_detectors_integration.py"
+      "tests/test_detectors_integration.py",
+      "tests/test_detector_lab_real_media.py"
     ],
     "weekly_api_stream_deep": [
       "tests/test_stream_loader_http_hls_core_playlist.py",
@@ -373,6 +374,7 @@
       "tests/test_stream_loader_http_hls_reconnect_state.py",
       "tests/test_session_runner_api_stream_cancellation.py",
       "tests/test_session_runner_api_stream_completion.py",
+      "tests/test_session_runner_api_stream_http_hls.py",
       "tests/test_session_runner_api_stream_http_hls_lifecycle.py",
       "tests/test_session_runner_api_stream_http_hls_failures.py",
       "tests/test_api_stream_local_validation.py"

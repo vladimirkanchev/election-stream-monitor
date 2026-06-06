@@ -51,6 +51,8 @@ Current focused ownership map:
 - `tests/test_detector_lab.py`
   - detector-lab runner wiring, experiment families, practical alert policies,
     and export shaping
+- `tests/test_detector_lab_real_media.py`
+  - slower real-media confidence lane for detector-lab motion/flow behavior
 
 Use two explicit backend modes when validating this branch:
 
@@ -133,6 +135,7 @@ The current GitHub Actions workflow uses three practical layers:
   - path-aware docs and workflow consistency checks for non-`main` pull requests
 - `weekly-validation`
   - scheduled slow e2e media tests
+  - detector-lab real-media confidence checks
   - lifecycle-focused backend test coverage
   - deeper `api_stream` validation
   - Bandit security audit

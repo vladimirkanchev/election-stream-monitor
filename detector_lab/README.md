@@ -53,6 +53,13 @@ Use these boundaries when navigating the code:
 - `algorithms.py`
   - explicit algorithm catalog and maturity labeling
 
+Useful companion docs in [`docs/`](../docs/README.md):
+
+- [`docs/detector-lab-analysis.md`](../docs/detector-lab-analysis.md)
+  - maintainer guide for detector-lab structure and evaluation intent
+- [`docs/motion-coherence.md`](../docs/motion-coherence.md)
+  - focused note on the motion-coherent blur experiment and its exported fields
+
 The practical-alert path now follows a consistent shape:
 
 1. build `ExperimentWindowFacts`

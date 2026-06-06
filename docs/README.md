@@ -29,6 +29,8 @@ Use these first depending on what you are doing:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
   - [`../detector_lab/README.md`](../detector_lab/README.md) for experimental work
+  - [detector-lab-analysis.md](./detector-lab-analysis.md) for the current detector-lab structure and evaluation intent
+  - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
   - high-signal test files:
     - `tests/test_detectors.py`
@@ -95,6 +97,8 @@ For the current alert-storage rollout state, use:
   - [architecture.md](./architecture.md)
 - experimenting with detector metrics before production integration:
   - [`../detector_lab/README.md`](../detector_lab/README.md)
+  - [detector-lab-analysis.md](./detector-lab-analysis.md)
+  - [motion-coherence.md](./motion-coherence.md) when the change touches motion-backed blur experiments
   - [testing-and-validation.md](./testing-and-validation.md)
   - use `detector_lab` when the detector idea is still exploratory and you
     want to compare metric variants against the checked-in MP4 fixture sets
