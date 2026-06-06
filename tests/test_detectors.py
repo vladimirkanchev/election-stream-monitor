@@ -103,7 +103,6 @@ def test_analyze_video_blur_returns_expected_schema(
 
     width = 4
     height = 4
-    frame_size = width * height
     sharp_frame = bytes(
         [
             0, 255, 0, 255,
@@ -242,7 +241,6 @@ def test_analyze_video_blur_filters_frames_at_exact_black_ratio_boundary(
 
     width = 10
     height = 10
-    frame_size = width * height
     black_boundary_frame = bytes([0] * 98 + [255, 255])
     sharp_frame = bytes(
         [

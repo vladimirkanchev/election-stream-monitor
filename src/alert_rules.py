@@ -295,7 +295,7 @@ def reset_session_rule_state(session_id: str) -> None:
     _clear_blur_rule_state(session_id)
 
 
-def should_alert_video_black(session_id: str, row: dict[str, object]) -> bool:
+def should_alert_video_black(session_id: str, row: RuleRowLike) -> bool:
     """Return whether the black-screen rule should emit an alert for this row.
 
     Entry is driven either by a long continuous black interval or by a rolling
@@ -332,7 +332,7 @@ def build_video_black_message(row: RuntimeResultRow) -> str:
     )
 
 
-def should_alert_video_blur(session_id: str, row: dict[str, object]) -> bool:
+def should_alert_video_blur(session_id: str, row: RuleRowLike) -> bool:
     """Return whether the blur rule should emit an alert for this row.
 
     Entry requires enough history, enough above-threshold blur evidence in the

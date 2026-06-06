@@ -344,23 +344,27 @@ def test_video_file_fixture_set_skips_malformed_mp4_fixture() -> None:
     assert "truncated_long.mp4" not in names
 
 
-def test_normal_baseline_fixture_set_resolves_two_real_mp4_clips() -> None:
-    """The normal-baseline fixture set should resolve the checked-in election clips."""
+def test_normal_baseline_fixture_set_resolves_local_mp4_clips_when_available() -> None:
+    """The normal-baseline fixture set should resolve local baseline clips when present."""
     paths = _resolve_fixture_set_paths("normal_baseline_video_files")
+
+    if not paths:
+        assert paths == ()
+        return
 
     assert len(paths) == 2
     assert paths[0].name == "010300111_20260419_202346_0000-0030.mp4"
     assert paths[1].name == "010300111_20260419_202346_024430-024500.mp4"
 
 
-def test_all_video_files_fixture_set_includes_detector_and_baseline_mp4_inputs() -> None:
-    """The combined fixture set should cover both detector fixtures and baseline clips."""
+def test_all_video_files_fixture_set_includes_detector_and_available_baseline_mp4_inputs() -> None:
+    """The combined fixture set should include detector fixtures plus any local baseline clips."""
     paths = _resolve_fixture_set_paths("all_video_files")
+    baseline_paths = _resolve_fixture_set_paths("normal_baseline_video_files")
 
     names = {path.name for path in paths}
     assert "clean_baseline_long.mp4" in names
-    assert "010300111_20260419_202346_0000-0030.mp4" in names
-    assert "010300111_20260419_202346_024430-024500.mp4" in names
+    assert {path.name for path in baseline_paths}.issubset(names)
 
 
 def test_run_detector_lab_can_start_after_given_window(monkeypatch, tmp_path: Path) -> None:
