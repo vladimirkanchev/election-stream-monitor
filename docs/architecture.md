@@ -11,6 +11,11 @@ Do not use it as the source of truth for field-level payloads or exact
 persisted-session semantics; see [contracts.md](./contracts.md) and
 [session-model.md](./session-model.md) for those.
 
+This is a production-runtime document.
+It intentionally does not describe detector-lab experimental algorithms as if
+they were part of the supported runtime detector or alert surface. For that
+workbench, use [detector_lab/README.md](../detector_lab/README.md).
+
 ## At a glance
 
 - project stage: advanced prototype / pre-pilot
@@ -69,11 +74,12 @@ It is now:
 4. [`src/api/routers/sessions.py`](../src/api/routers/sessions.py) adapts HTTP session requests into the shared application service in [`src/session_service.py`](../src/session_service.py).
 5. [`src/session_runner.py`](../src/session_runner.py) coordinates the actual monitoring run and delegates local discovery/progress shaping to its focused helper modules.
 6. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which detectors are enabled for that mode.
-7. [`src/detectors.py`](../src/detectors.py) produces flat result rows.
-8. [`src/alert_rules.py`](../src/alert_rules.py) decides whether those result rows should create alerts.
-9. Session files are written under `data/sessions/`, including backend-owned
+7. [`src/detectors.py`](../src/detectors.py) extracts detector facts and returns typed detector rows.
+8. [`src/processor.py`](../src/processor.py) normalizes detector output into the runtime row contract.
+9. [`src/alert_rules.py`](../src/alert_rules.py) evaluates production alert policy on those runtime rows.
+10. Session files are written under `data/sessions/`, including backend-owned
    diagnostic artifacts such as `worker.log`.
-10. The frontend polls the session snapshot and updates playback and alerts.
+11. The frontend polls the session snapshot and updates playback and alerts.
 
 The new MCP surface follows the same adapter pattern:
 
@@ -218,7 +224,41 @@ Defines:
 - analyzer callable contract
 - registration metadata
 - analysis slice metadata
-- future plugin manifest validation contract
+
+Current detector design notes:
+
+- detectors return backend-owned measurement rows, not frontend wording or
+  final alert decisions
+- production detectors now return typed in-memory rows from
+  [`src/analyzer_contract.py`](../src/analyzer_contract.py), while the
+  processor keeps flat dicts only at the persistence and event boundary
+- `video_blur` samples bounded, aspect-preserving grayscale frames instead of
+  forcing every source into one fixed tiny size
+- short local `video_files` windows are sampled more densely than the baseline
+  detector fps so motion-aware blur guards still have enough adjacent frames to
+  work with on one-second slices; the current target is a 5-frame short-window
+  motion trace when the source duration allows it
+- `video_blur` also persists clip-level motion summaries (`motion_mean`,
+  `motion_p90`) so the blur rule can distinguish moving-camera softness from
+  stable blur without mutating the detector-owned blur score
+- effectively black sampled frames are excluded from blur scoring so black
+  failures stay owned by the black-screen detector instead of leaking into blur
+  alerts
+- the blur rule now also requires a short startup warm-up before first entry so
+  early stream frames do not alert before the source has stabilized
+- the blur rule treats moderate motion as an ambiguity zone and high motion as
+  a suppression signal before it emits a blur alert
+
+Current supported runtime quality surface:
+
+- production detector: `video_metrics`
+- production detector: `video_blur`
+- production alert rule: `video_metrics.default_rule`
+- production alert rule: `video_blur.default_rule`
+
+Experimental practical blur or motion-blur policies in `detector_lab/` are not
+part of this supported runtime contract unless they are promoted explicitly
+into `src/analyzer_registry.py` and `src/alert_rules.py`.
 
 This is the stable contract other layers rely on.
 
@@ -246,30 +286,36 @@ This is the main extension point for new detectors.
 Detectors are expected to:
 
 - process one file or one time slice
-- return a flat result dict
+- return typed detector rows with stable serialization
 - avoid direct persistence
 - avoid frontend concerns
 
 Current examples:
 
 - video black-screen metrics
-- image black-screen metrics
-- normalized rolling blur metrics
+- rolling blur metrics with detector-side motion summaries
 
 ### Alert rules
 
 [`src/alert_rules.py`](../src/alert_rules.py)
 
-This layer converts detector output into alert events.
+This layer converts detector output into alert events and owns the small
+rolling state needed for the current black-screen and blur policies.
 
 That separation is intentional:
 
 - detectors compute facts
 - rules decide whether those facts matter enough to alert
 
-Some rules are stateless.
-Some rules keep small session-local rolling state, like the current black and
-blur rules. That state is reset at session boundaries by the runner.
+Current rule shape:
+
+- rule metadata stays explicit through `AlertRule`
+- rule inputs are normalized into `RuntimeResultRow`
+- detector-specific evaluators stay narrow and fact-oriented
+- rolling state is keyed by session id, detector id, and source group through
+  a small `RuleStateStore`
+- rule decision output is kept separate from row-facing annotation metadata
+- rolling state is reset at session boundaries by the runner
 
 ### Processor
 
@@ -316,6 +362,18 @@ Responsibilities:
 - route `api_stream` through the dedicated loader seam instead of treating it
   like local file discovery
 
+Reading order for this module family:
+
+1. `src/session_runner.py`
+2. `src/session_runner_lifecycle.py`
+3. `src/session_runner_execution.py`
+4. `src/session_runner_terminal.py`
+5. `src/session_runner_discovery.py`
+6. `src/session_runner_progress.py`
+
+That order mirrors the current ownership split and is the shortest path for a
+mid-to-senior contributor who wants to follow one session from start to finish.
+
 ### Session service
 
 [`src/session_service.py`](../src/session_service.py),
@@ -340,18 +398,6 @@ Reading order for this module family:
 
 That order is the shortest path for understanding where session lifecycle
 request ownership ends and actual session execution begins.
-
-Reading order for this module family:
-
-1. `src/session_runner.py`
-2. `src/session_runner_lifecycle.py`
-3. `src/session_runner_execution.py`
-4. `src/session_runner_terminal.py`
-5. `src/session_runner_discovery.py`
-6. `src/session_runner_progress.py`
-
-That order mirrors the current ownership split and is the shortest path for a
-mid-to-senior contributor who wants to follow one session from start to finish.
 
 ### API stream loader
 

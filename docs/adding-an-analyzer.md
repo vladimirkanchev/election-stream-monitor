@@ -16,8 +16,9 @@ The main idea is:
 
 1. detector computes facts
 2. registry exposes detector
-3. rule layer decides whether to alert
-4. frontend sees detector metadata through the existing bridge
+3. processor normalizes detector output for the runtime
+4. rule layer decides whether to alert
+5. frontend sees detector metadata through the existing bridge
 
 ## Before you start
 
@@ -40,7 +41,7 @@ A detector should:
 
 - accept one input file
 - optionally accept light context like `prefix`
-- return one flat result dict
+- return a stable typed row or analyzer-shaped mapping
 - include shared metadata fields
 - not write to stores directly
 - not generate alerts directly
@@ -55,6 +56,11 @@ Prefer result rows that are:
 - easy to serialize
 - easy to test
 - easy to reuse in alert rules
+
+In the current runtime, the preferred direction is:
+
+- typed detector rows in memory
+- flat dictionaries only at the processor/storage/event boundary
 
 If the detector can use an existing schema family, reuse it.
 
@@ -101,6 +107,39 @@ Good current examples:
   - one rolling-window condition
 - blur rule
   - normalized blur score with rolling windows
+  - motion-aware entry suppression kept in the rule layer
+
+## Optional step: try it in detector_lab first
+
+If the detector idea is still exploratory, prefer proving it in
+[`../detector_lab/README.md`](../detector_lab/README.md) before hardening it in
+the production runtime.
+
+That is especially useful when you are:
+
+- tuning blur scoring
+- comparing alternative metric blends
+- checking behavior against the checked-in MP4 fixture sets
+- validating whether detector changes actually improve alert output
+
+Keep the maturity split explicit:
+
+- `detector_lab/`
+  - experiment workspace
+  - acceptable place for competing algorithms, practical lab-only alerts, and
+    motion-blur prototypes
+- production runtime
+  - only detectors registered in [`src/analyzer_registry.py`](../src/analyzer_registry.py)
+  - only runtime alert policy registered in [`src/alert_rules.py`](../src/alert_rules.py)
+
+Promotion from detector-lab into the runtime should be intentional, not
+implicit.
+
+The promotion target today is not just “a detector function exists.” It means:
+
+- detector wiring belongs in [`src/analyzer_registry.py`](../src/analyzer_registry.py)
+- runtime row semantics fit the processor and alert-rule boundary
+- runtime docs describe it as supported behavior
 
 ## Step 5: think about supported modes honestly
 
@@ -132,6 +171,18 @@ At minimum, add:
 - one alert rule test if alerts were added
 - one registry or processor test if routing changed
 - one session test if the detector affects rolling state or session behavior
+
+## Promotion checklist
+
+Before treating a detector-lab idea as production runtime behavior, verify:
+
+- detector row shape is stable and well named
+- runtime ownership is clear in [`src/analyzer_registry.py`](../src/analyzer_registry.py)
+- runtime alert policy, if needed, is defined in [`src/alert_rules.py`](../src/alert_rules.py)
+- session, processor, and persistence impact are understood
+- runtime docs are updated alongside detector-lab docs
+
+Do not rely on detector-lab documentation alone to imply runtime support.
 
 ## Best order for agents and contributors
 
