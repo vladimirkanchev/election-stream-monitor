@@ -133,6 +133,11 @@
       "frontend_contract"
     ],
     "policy_only_test_paths": [
+      "tests/test_detectors.py",
+      "tests/test_processor.py",
+      "tests/test_alert_rules.py",
+      "tests/test_alert_rules_black.py",
+      "tests/test_alert_rules_blur.py",
       "tests/test_api_boundary_validation.py",
       "tests/test_mcp_server_alerts_behavior.py",
       "tests/test_mcp_server_alerts_errors.py",
