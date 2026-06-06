@@ -13,8 +13,9 @@ boundary:
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import config
 import processor
-from analyzer_contract import AnalysisSlice, AnalyzerRegistration
+from analyzer_contract import AnalysisSlice, AnalyzerRegistration, VideoMetricsRow
 from session_models import AlertEvent
 
 
@@ -85,7 +86,7 @@ def _video_blur_row(
     processing_sec: float = 0.02,
     blur_detected: bool = False,
     blur_score: float = 0.15,
-    threshold_used: float = 0.72,
+    threshold_used: float = config.VIDEO_BLUR_ALERT_THRESHOLD,
     **extra: object,
 ) -> dict[str, object]:
     return {
@@ -198,6 +199,59 @@ def test_run_enabled_analyzers_routes_result_to_matching_store(
 
     assert len(results) == 1
     assert dummy_store.rows == results
+
+
+def test_run_enabled_analyzers_serializes_typed_detector_rows_at_boundary(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Processor should serialize typed detector rows before store writes and event payloads."""
+    file_path = _write_video_file(tmp_path)
+
+    def fake_analyzer(file_path: Path, prefix: str | None = None) -> VideoMetricsRow:
+        _ = prefix
+        return VideoMetricsRow(
+            analyzer="video_metrics",
+            source_type="video",
+            source_group=file_path.parent.name,
+            source_name=file_path.name,
+            window_index=None,
+            window_start_sec=None,
+            window_duration_sec=None,
+            timestamp_utc="2026-06-05 12:00:00",
+            processing_sec=0.01,
+            duration_sec=2.0,
+            black_detected=False,
+            black_segment_count=0,
+            total_black_sec=0.0,
+            longest_black_sec=0.0,
+            black_ratio=0.0,
+            picture_threshold_used=0.98,
+            pixel_threshold_used=0.10,
+            min_duration_sec=0.5,
+        )
+
+    _patch_registrations(
+        monkeypatch,
+        _registration(
+            name="video_metrics",
+            analyzer=fake_analyzer,
+            store_name="video_metrics",
+        ),
+    )
+    dummy_store = DummyStore()
+    _patch_store_registry(monkeypatch, video_metrics=dummy_store)
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-typed",
+    )
+
+    assert dummy_store.rows[0]["source_name"] == file_path.name
+    assert isinstance(dummy_store.rows[0], dict)
+    assert bundle["results"][0]["payload"]["analyzer"] == "video_metrics"
+    assert isinstance(bundle["results"][0]["payload"], dict)
 
 
 def test_run_enabled_analyzers_skips_unmatched_suffix(monkeypatch, tmp_path: Path) -> None:

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, cast
 
+import config
 import processor
 from analyzer_contract import AnalysisSlice, AnalyzerRegistration, InputMode, StoreName
 
@@ -81,7 +82,7 @@ def video_blur_row(
     processing_sec: float = 0.02,
     blur_detected: bool = False,
     blur_score: float = 0.15,
-    threshold_used: float = 0.72,
+    threshold_used: float = config.VIDEO_BLUR_ALERT_THRESHOLD,
     **extra: object,
 ) -> dict[str, object]:
     """Build a representative `video_blur` detector payload for tests."""

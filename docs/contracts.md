@@ -641,6 +641,29 @@ Notes:
 - `source_name` is the detector-side item identity
 - `window_index` and `window_start_sec` are optional but important for temporal
   playback alignment
+- `counts_by_detector` and alert rows keep stable detector ids such as
+  `video_blur`; user-facing relabeling belongs in presentation layers, not in
+  the API contract
+
+Current `video_blur` detector-output semantics:
+
+- persisted blur rows may include `sample_count`, `sharpness_p10`,
+  `sharpness_p90`, `motion_mean`, `motion_p90`, `blur_score`,
+  `blur_detected`, and `threshold_used`
+- `sample_count` may be `0` when extraction fails cleanly or when all sampled
+  frames are excluded as effectively black
+- `threshold_used` is the configured detector threshold captured at analysis
+  time so later readers do not need to guess which calibration produced the row
+- `motion_mean` and `motion_p90` are detector-side motion summaries for the
+  analyzed clip; they exist so the default blur rule can suppress
+  moving-camera softness without rewriting the persisted blur score
+- short local one-second windows may be sampled above the baseline blur fps so
+  these motion summaries still carry useful information in `video_files` mode
+- black or near-black sampled frames are excluded from blur scoring so
+  black-screen failures do not inflate blur metrics for the wrong reason
+- bounded aspect-preserving sampling is an implementation detail, but the
+  resulting payload shape stays stable across local files and segment-style
+  analysis
 
 ### Current built-in rule metadata preparation
 
@@ -661,6 +684,19 @@ Current rule metadata includes:
 
 This is preparation for future user-extensible rule registration. It is not yet
 a full rule-plugin loading system.
+
+Current built-in rule behavior notes:
+
+- `video_metrics.default_rule`
+  - enters on either long continuous black intervals or a full rolling window
+    with a high weighted black ratio
+  - suppresses duplicate alerts until rolling recovery is observed
+- `video_blur.default_rule`
+  - requires a full rolling window plus a minimum total sample warm-up
+  - uses detector-side motion summaries to treat moderate motion as ambiguous
+    and high motion as suppressive
+  - keeps recovery and re-entry policy in the rule layer rather than mutating
+    detector output
 
 ## Plugin Security Rules v1
 

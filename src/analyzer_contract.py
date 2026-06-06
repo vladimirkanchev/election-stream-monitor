@@ -1,17 +1,18 @@
-"""Shared detector, slice, and plugin metadata contracts.
+"""Shared detector, slice, and runtime-boundary contracts.
 
-The goal of this module is stability. Frontend code, local bridge helpers, and
-future backend/service layers should be able to rely on these types even as new
-analyzers are added.
+The goal of this module is stability. Production detectors, alert rules, local
+runner code, and detector-lab experiments all meet here at a few explicit
+types. The project does not need a large modeling layer yet, but it does need a
+clear in-memory boundary between:
 
-Even though the project does not support dynamic plugin loading yet, this
-module already defines the metadata contracts that built-in detectors, future
-user extensions, and transport layers should agree on.
+- typed detector results
+- mutable runtime rule rows
+- flat transport or persistence payloads
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Literal, NotRequired, Protocol, TypedDict
+from typing import Iterator, Literal, Mapping, NotRequired, Protocol, TypedDict
 
 
 class AnalyzerResult(TypedDict):
@@ -34,6 +35,8 @@ class AnalyzerResult(TypedDict):
     sample_count: NotRequired[int]
     sharpness_p10: NotRequired[float]
     sharpness_p90: NotRequired[float]
+    motion_mean: NotRequired[float]
+    motion_p90: NotRequired[float]
     blur_score: NotRequired[float]
     blur_detected: NotRequired[bool]
     threshold_used: NotRequired[float]
@@ -47,6 +50,249 @@ class AnalyzerResult(TypedDict):
     picture_threshold_used: NotRequired[float]
     pixel_threshold_used: NotRequired[float]
     min_duration_sec: NotRequired[float]
+
+
+@dataclass(frozen=True)
+class AnalyzerRow:
+    """Typed in-memory detector row with flat-dict serialization support.
+
+    Runtime code can use explicit row objects while stores, alerts, and JSONL
+    persistence still receive plain dictionaries at the boundary.
+    """
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a flat dictionary representation suitable for persistence."""
+        return asdict(self)
+
+    def __getitem__(self, key: str) -> object:
+        """Provide light mapping-style access for existing detector callers."""
+        return self.to_dict()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        """Iterate over field names so row objects behave like mappings."""
+        return iter(self.to_dict())
+
+    def __len__(self) -> int:
+        """Return the number of serialized row fields."""
+        return len(self.to_dict())
+
+    def get(self, key: str, default: object = None) -> object:
+        """Return one field value using dict-style fallback semantics."""
+        return self.to_dict().get(key, default)
+
+    def keys(self):
+        """Return serialized row keys for compatibility with dict-based code."""
+        return self.to_dict().keys()
+
+
+@dataclass(frozen=True)
+class DetectorRowBase(AnalyzerRow):
+    """Shared metadata carried by every production detector row."""
+
+    analyzer: str
+    source_type: str
+    source_group: str
+    source_name: str
+    window_index: int | None
+    window_start_sec: float | None
+    window_duration_sec: float | None
+    timestamp_utc: str
+    processing_sec: float
+
+    def shared_fields(self) -> dict[str, object]:
+        """Return constructor-ready metadata for typed detector result rows."""
+        return {
+            "analyzer": self.analyzer,
+            "source_type": self.source_type,
+            "source_group": self.source_group,
+            "source_name": self.source_name,
+            "window_index": self.window_index,
+            "window_start_sec": self.window_start_sec,
+            "window_duration_sec": self.window_duration_sec,
+            "timestamp_utc": self.timestamp_utc,
+            "processing_sec": self.processing_sec,
+        }
+
+
+@dataclass(frozen=True)
+class VideoMetricsRow(DetectorRowBase):
+    """Typed production black-screen detector result row."""
+
+    duration_sec: float
+    black_detected: bool
+    black_segment_count: int
+    total_black_sec: float
+    longest_black_sec: float
+    black_ratio: float
+    picture_threshold_used: float
+    pixel_threshold_used: float
+    min_duration_sec: float
+
+
+@dataclass(frozen=True)
+class VideoBlurRow(DetectorRowBase):
+    """Typed production blur detector result row."""
+
+    sample_count: int
+    sharpness_p10: float
+    sharpness_p90: float
+    motion_mean: float
+    motion_p90: float
+    blur_score: float
+    blur_detected: bool
+    threshold_used: float
+    window_size: int
+    consecutive_blurry_windows: int
+
+
+@dataclass
+class RuntimeResultRow:
+    """Mutable runtime row used between processor, rules, and event shaping.
+
+    This is the current production seam for alert evaluation. Detectors can
+    return typed rows, the processor normalizes them here, rules annotate this
+    object in memory, and only the outer persistence/event boundary drops back
+    to flat dictionaries.
+    """
+
+    analyzer: str
+    source_type: str
+    source_name: str
+    timestamp_utc: str
+    processing_sec: float
+    source_group: str | None = None
+    window_index: int | None = None
+    window_start_sec: float | None = None
+    window_duration_sec: float | None = None
+    extra_fields: dict[str, object] = field(default_factory=dict)
+
+    _SHARED_FIELDS = (
+        "analyzer",
+        "source_type",
+        "source_group",
+        "source_name",
+        "window_index",
+        "window_start_sec",
+        "window_duration_sec",
+        "timestamp_utc",
+        "processing_sec",
+    )
+
+    @classmethod
+    def from_mapping(cls, row: Mapping[str, object]) -> "RuntimeResultRow | None":
+        """Build one runtime row from any dict-like detector result."""
+        required_fields = {
+            "analyzer",
+            "source_type",
+            "source_name",
+            "timestamp_utc",
+            "processing_sec",
+        }
+        if not required_fields.issubset(row.keys()):
+            return None
+
+        shared_values = {field_name: row.get(field_name) for field_name in cls._SHARED_FIELDS}
+        extra_fields = {
+            key: value
+            for key, value in row.items()
+            if key not in cls._SHARED_FIELDS
+        }
+        return cls(
+            analyzer=str(shared_values["analyzer"]),
+            source_type=str(shared_values["source_type"]),
+            source_group=(
+                str(shared_values["source_group"])
+                if shared_values["source_group"] not in (None, "")
+                else None
+            ),
+            source_name=str(shared_values["source_name"]),
+            window_index=shared_values["window_index"],
+            window_start_sec=shared_values["window_start_sec"],
+            window_duration_sec=shared_values["window_duration_sec"],
+            timestamp_utc=str(shared_values["timestamp_utc"]),
+            processing_sec=float(shared_values["processing_sec"]),
+            extra_fields=extra_fields,
+        )
+
+    def clone(self) -> "RuntimeResultRow":
+        """Return a detached copy for stateful rule evaluation."""
+        return RuntimeResultRow.from_mapping(self.to_dict()) or RuntimeResultRow(
+            analyzer=self.analyzer,
+            source_type=self.source_type,
+            source_group=self.source_group,
+            source_name=self.source_name,
+            window_index=self.window_index,
+            window_start_sec=self.window_start_sec,
+            window_duration_sec=self.window_duration_sec,
+            timestamp_utc=self.timestamp_utc,
+            processing_sec=self.processing_sec,
+            extra_fields=dict(self.extra_fields),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        """Return one flat dictionary for persistence and event payloads."""
+        row = {
+            "analyzer": self.analyzer,
+            "source_type": self.source_type,
+            "source_name": self.source_name,
+            "timestamp_utc": self.timestamp_utc,
+            "processing_sec": self.processing_sec,
+        }
+        if self.source_group is not None:
+            row["source_group"] = self.source_group
+        if self.window_index is not None:
+            row["window_index"] = self.window_index
+        if self.window_start_sec is not None:
+            row["window_start_sec"] = self.window_start_sec
+        if self.window_duration_sec is not None:
+            row["window_duration_sec"] = self.window_duration_sec
+        row.update(self.extra_fields)
+        return row
+
+    def __getitem__(self, key: str) -> object:
+        """Provide mapping-style access across shared and extra fields."""
+        if key in self._SHARED_FIELDS:
+            return getattr(self, key)
+        return self.extra_fields[key]
+
+    def __setitem__(self, key: str, value: object) -> None:
+        """Store mutable rule/export annotations on the runtime row."""
+        if key in self._SHARED_FIELDS:
+            setattr(self, key, value)
+            return
+        self.extra_fields[key] = value
+
+    def __iter__(self) -> Iterator[str]:
+        """Iterate over flat row keys."""
+        return iter(self.to_dict())
+
+    def __len__(self) -> int:
+        """Return the number of flat row fields."""
+        return len(self.to_dict())
+
+    def get(self, key: str, default: object = None) -> object:
+        """Return one field value with dict-style default semantics."""
+        if key in self._SHARED_FIELDS:
+            value = getattr(self, key)
+            return default if value is None else value
+        return self.extra_fields.get(key, default)
+
+    def keys(self):
+        """Return flat row keys for compatibility with dict-based callers."""
+        return self.to_dict().keys()
+
+    def items(self):
+        """Return flat row items for compatibility with mapping-style callers."""
+        return self.to_dict().items()
+
+    def copy(self) -> dict[str, object]:
+        """Return a flat dict copy for compatibility with dict-based callers."""
+        return self.to_dict()
+
+    def update(self, values: Mapping[str, object]) -> None:
+        """Apply a mapping of row annotations onto the runtime row."""
+        for key, value in values.items():
+            self[key] = value
 
 
 class DetectorCatalogEntry(TypedDict):
@@ -92,8 +338,8 @@ class Analyzer(Protocol):
         window_index: int | None = None,
         window_start_sec: float | None = None,
         window_duration_sec: float | None = None,
-    ) -> AnalyzerResult:
-        """Analyze one file and return a standardized result dictionary."""
+    ) -> AnalyzerResult | AnalyzerRow:
+        """Analyze one file and return a standardized typed row or dict."""
 
 
 StoreName = Literal["video_metrics", "blur_metrics"]
