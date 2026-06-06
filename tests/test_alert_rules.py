@@ -1,9 +1,7 @@
-"""Contract-level tests for alert-rule registration and cross-rule behavior.
+"""Production alert-rule tests that are shared across black and blur detectors.
 
-The rule-family state-machine coverage lives in the sibling black and blur
-files. This module keeps the smaller seams that should stay detector-agnostic:
-metadata, failure wrapping, malformed payload tolerance, and cross-detector
-isolation.
+This file covers rule discovery, failure wrapping, and row-annotation behavior
+that should stay stable regardless of the detector-specific policy details.
 """
 
 import pytest
@@ -25,11 +23,11 @@ def test_list_available_alert_rules_returns_builtin_rule_metadata() -> None:
 
 
 def test_evaluate_alerts_wraps_rule_failures_with_rule_identity(monkeypatch) -> None:
-    """Rule failures should be logged and surfaced as rule-aware ValueErrors."""
+    """Rule failures should be logged and surfaced as rule-aware ``ValueError`` values."""
     logged: list[tuple[str, tuple[object, ...]]] = []
 
     def broken_should_alert(row: dict[str, object]) -> bool:
-        """Simulate a rule implementation that fails inside `should_alert`."""
+        """Simulate a rule implementation that fails inside ``should_alert``."""
         _ = row
         raise RuntimeError("broken rule")
 
@@ -121,3 +119,46 @@ def test_evaluate_alerts_keeps_detector_rules_isolated() -> None:
 
     assert black_only == []
     assert blur_only == []
+
+
+def test_video_black_rule_records_state_metadata_on_alerting_rows() -> None:
+    """Black rule evaluation should annotate the row with state and rolling metadata."""
+    reset_session_rule_state("session-black-metadata")
+    row = black_row(
+        black_ratio=0.95,
+        longest_black_sec=1.2,
+    )
+
+    should_alert = alert_rules.should_alert_video_black(
+        "session-black-metadata",
+        row,
+    )
+
+    assert should_alert is True
+    assert row["black_rule_reason"] == "continuous_black"
+    assert row["black_rule_state"] == "entered_black"
+    assert row["black_recovery_ratio_threshold"] == alert_rules.config.VIDEO_BLACK_RECOVERY_RATIO_THRESHOLD
+    assert row["rolling_black_ratio"] == 0.95
+    assert row["rolling_window_sec"] == 1.0
+
+
+def test_video_blur_rule_records_state_metadata_on_non_ready_rows() -> None:
+    """Blur rule evaluation should annotate row state even before the window is ready."""
+    reset_session_rule_state("session-blur-metadata")
+    row = blur_row(
+        blur_score=0.91,
+        motion_mean=0.0,
+        motion_p90=0.0,
+    )
+
+    should_alert = alert_rules.should_alert_video_blur(
+        "session-blur-metadata",
+        row,
+    )
+
+    assert should_alert is False
+    assert row["blur_rule_state"] == "not_ready"
+    assert row["blur_recovery_threshold"] == alert_rules.config.VIDEO_BLUR_RECOVERY_THRESHOLD
+    assert row["rolling_blur_scores"] == [0.91]
+    assert row["rolling_blur_high_count"] == 1
+    assert row["rolling_motion_means"] == [0.0]

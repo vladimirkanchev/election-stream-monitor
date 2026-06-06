@@ -78,16 +78,22 @@ def test_run_local_session_live_like_blur_progression_tracks_alert_reentry(
         "live-window-006.ts",
         "live-window-007.ts",
         "live-window-008.ts",
+        "live-window-009.ts",
+        "live-window-010.ts",
+        "live-window-011.ts",
     ]
     scores = {
-        "live-window-001.ts": 0.82,
-        "live-window-002.ts": 0.79,
-        "live-window-003.ts": 0.60,
-        "live-window-004.ts": 0.40,
-        "live-window-005.ts": 0.42,
+        "live-window-001.ts": 0.40,
+        "live-window-002.ts": 0.42,
+        "live-window-003.ts": 0.95,
+        "live-window-004.ts": 0.96,
+        "live-window-005.ts": 0.94,
         "live-window-006.ts": 0.45,
-        "live-window-007.ts": 0.81,
-        "live-window-008.ts": 0.77,
+        "live-window-007.ts": 0.44,
+        "live-window-008.ts": 0.43,
+        "live-window-009.ts": 0.95,
+        "live-window-010.ts": 0.96,
+        "live-window-011.ts": 0.94,
     }
     _install_static_api_stream_loader(
         monkeypatch,
@@ -114,12 +120,12 @@ def test_run_local_session_live_like_blur_progression_tracks_alert_reentry(
     snapshot = read_session_snapshot(metadata.session_id)
 
     assert metadata.status == "completed"
-    assert snapshot["progress"]["processed_count"] == 8
+    assert snapshot["progress"]["processed_count"] == 11
     assert snapshot["progress"]["alert_count"] == 2
-    assert [alert["window_index"] for alert in snapshot["alerts"]] == [2, 7]
+    assert [alert["window_index"] for alert in snapshot["alerts"]] == [4, 9]
     assert [alert["source_name"] for alert in snapshot["alerts"]] == [
-        "live-window-003.ts",
-        "live-window-008.ts",
+        "live-window-005.ts",
+        "live-window-010.ts",
     ]
 
 

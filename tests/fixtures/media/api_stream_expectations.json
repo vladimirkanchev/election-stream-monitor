@@ -61,7 +61,7 @@
       "fixture_path": "video_segments/black_trigger_3_alerts",
       "selected_detectors": ["video_metrics", "video_blur"],
       "expected_chunk_count": 6,
-      "expected_alert_count": 2,
+      "expected_alert_count": 1,
       "expected_final_status": "completed",
       "source": "ground_truth",
       "expected_log_snippets": [

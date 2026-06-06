@@ -159,7 +159,10 @@ def serve_dynamic_local_hls(build_routes: DynamicRouteBuilder) -> Iterator[str]:
         def log_message(self, format: str, *args) -> None:  # noqa: A003
             return None
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    except PermissionError:
+        pytest.skip("Local TCP sockets are not available in this test environment")
     base_url = f"http://127.0.0.1:{server.server_port}"
     built_routes = build_routes(base_url)
     routes.update(

@@ -55,14 +55,17 @@ def test_run_local_session_http_hls_api_stream_completes_end_to_end(
     )
 
     scores = {
-        "segment_000.ts": 0.82,
-        "segment_001.ts": 0.79,
-        "segment_002.ts": 0.60,
-        "segment_003.ts": 0.40,
-        "segment_004.ts": 0.42,
+        "segment_000.ts": 0.40,
+        "segment_001.ts": 0.42,
+        "segment_002.ts": 0.95,
+        "segment_003.ts": 0.95,
+        "segment_004.ts": 0.94,
         "segment_005.ts": 0.45,
-        "segment_006.ts": 0.81,
-        "segment_007.ts": 0.77,
+        "segment_006.ts": 0.44,
+        "segment_007.ts": 0.43,
+        "segment_008.ts": 0.95,
+        "segment_009.ts": 0.96,
+        "segment_010.ts": 0.94,
     }
     _patch_processor_with_analyzer(
         monkeypatch,
@@ -91,13 +94,23 @@ def test_run_local_session_http_hls_api_stream_completes_end_to_end(
             ),
             (
                 200,
-                _media_playlist(6, "segment_006.ts", "segment_007.ts"),
+                _media_playlist(6, "segment_006.ts", "segment_007.ts", endlist=False),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                _media_playlist(8, "segment_008.ts", "segment_009.ts", endlist=False),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                _media_playlist(10, "segment_010.ts"),
                 "application/vnd.apple.mpegurl",
             ),
         ],
     }
     routes.update(
-        _segment_routes(*(f"segment_{index:03d}.ts" for index in range(8)))
+        _segment_routes(*(f"segment_{index:03d}.ts" for index in range(11)))
     )
 
     with _serve_local_hls(routes) as base_url:
@@ -117,11 +130,16 @@ def test_run_local_session_http_hls_api_stream_completes_end_to_end(
     assert metadata.status == "completed"
     assert session_data["status"] == "completed"
     assert progress_data["status"] == "completed"
-    assert progress_data["processed_count"] == 8
-    assert progress_data["current_item"] == "segment_007.ts"
-    assert len(results) == 8
+    assert progress_data["processed_count"] == 11
+    assert progress_data["current_item"] == "segment_010.ts"
+    assert len(results) == 11
     assert progress_data["alert_count"] == 2
     assert len(alerts) == 2
+    assert [alert["window_index"] for alert in alerts] == [4, 9]
+    assert [alert["source_name"] for alert in alerts] == [
+        "segment_004.ts",
+        "segment_009.ts",
+    ]
 
 
 def test_run_local_session_http_hls_api_stream_persists_two_detector_progress(

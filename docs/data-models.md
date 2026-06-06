@@ -44,9 +44,29 @@ Examples:
   - `black_ratio`
 - blur result
   - `sample_count`
+  - `sharpness_p10`
+  - `sharpness_p90`
+  - `motion_mean`
+  - `motion_p90`
   - `blur_score`
   - `blur_detected`
   - `threshold_used`
+
+Current `video_blur` notes:
+
+- the detector samples bounded aspect-preserving grayscale frames rather than
+  forcing every source into one tiny fixed size
+- `motion_mean` and `motion_p90` describe detector-side frame-to-frame motion
+  inside the analyzed clip so the rule layer can suppress moving-camera blur
+  incidents without guessing from alert history alone
+- black or near-black sampled frames are excluded from blur scoring so black
+  failures stay represented by `video_metrics`, not by inflated blur values
+- `threshold_used` is detector-side calibration and should be treated as part
+  of the persisted detector output, not recomputed in the frontend
+- `sample_count` may be `0` when no usable blur-analysis frames remain after
+  extraction and black-frame filtering
+- `blur_score` is detector truth; alert entry/recovery still belongs to the
+  rule layer
 
 ## Detector catalog entry
 

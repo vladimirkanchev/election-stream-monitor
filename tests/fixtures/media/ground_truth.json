@@ -8,7 +8,10 @@
         "kind": "checked_in",
         "path": "video_files/black_recovery_realert_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in mp4 with separated black intervals. Current mixed-detector truth is one black alert and one blur alert from the same early recovery boundary.",
       "ground_truth": {
         "session_status": "completed",
@@ -17,10 +20,13 @@
         "result_count": 20,
         "alert_count": 2,
         "current_item": "black_recovery_realert_long.mp4 @ 00:09",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 4,
-          "video_blur": 10
+          "video_blur": 9
         },
         "alerts": [
           {
@@ -31,9 +37,9 @@
           },
           {
             "detector_id": "video_blur",
-            "source_name": "black_recovery_realert_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "black_recovery_realert_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           }
         ]
       }
@@ -45,7 +51,10 @@
         "kind": "checked_in",
         "path": "video_files/black_tail_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in mp4 with a late black tail. Current truth still includes an early blur alert on the clean lead-in.",
       "ground_truth": {
         "session_status": "completed",
@@ -54,17 +63,20 @@
         "result_count": 20,
         "alert_count": 2,
         "current_item": "black_tail_long.mp4 @ 00:09",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 4,
-          "video_blur": 10
+          "video_blur": 7
         },
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "black_tail_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "black_tail_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           },
           {
             "detector_id": "video_metrics",
@@ -82,27 +94,27 @@
         "kind": "checked_in",
         "path": "video_files/black_trigger.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Real checked-in mp4. Current blur detector also fires on this mostly black content, which is important baseline truth for future algorithm changes.",
       "ground_truth": {
         "session_status": "completed",
         "progress_status": "completed",
         "processed_count": 6,
         "result_count": 12,
-        "alert_count": 2,
+        "alert_count": 1,
         "current_item": "black_trigger.mp4 @ 00:05",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 2,
-          "video_blur": 5
+          "video_blur": 4
         },
         "alerts": [
-          {
-            "detector_id": "video_blur",
-            "source_name": "black_trigger.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
-          },
           {
             "detector_id": "video_metrics",
             "source_name": "black_trigger.mp4 @ 00:04",
@@ -119,7 +131,10 @@
         "kind": "checked_in",
         "path": "video_files/blur_middle_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in mp4 with blur-positive middle content and no black detections under the current detector.",
       "ground_truth": {
         "session_status": "completed",
@@ -128,7 +143,10 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "blur_middle_long.mp4 @ 00:09",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 10
@@ -136,9 +154,9 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "blur_middle_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "blur_middle_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           }
         ]
       }
@@ -150,7 +168,10 @@
         "kind": "checked_in",
         "path": "video_files/blur_recovery_realert_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in mp4 with repeated blur-positive phases. The current rule still yields a single blur alert for the whole run.",
       "ground_truth": {
         "session_status": "completed",
@@ -159,7 +180,10 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "blur_recovery_realert_long.mp4 @ 00:09",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 10
@@ -167,9 +191,9 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "blur_recovery_realert_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "blur_recovery_realert_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           }
         ]
       }
@@ -181,7 +205,10 @@
         "kind": "checked_in",
         "path": "video_files/blur_trigger.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Real checked-in mp4 with blur-positive and black-negative behavior.",
       "ground_truth": {
         "session_status": "completed",
@@ -190,7 +217,10 @@
         "result_count": 10,
         "alert_count": 1,
         "current_item": "blur_trigger.mp4 @ 00:04",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 4
@@ -198,9 +228,9 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "blur_trigger.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "blur_trigger.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           }
         ]
       }
@@ -212,7 +242,10 @@
         "kind": "checked_in",
         "path": "video_files/clean_baseline_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in baseline mp4. The current blur detector remains positive enough to alert even on this visually clean baseline.",
       "ground_truth": {
         "session_status": "completed",
@@ -221,7 +254,10 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "clean_baseline_long.mp4 @ 00:09",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 10
@@ -229,9 +265,9 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "clean_baseline_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "clean_baseline_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           }
         ]
       }
@@ -243,7 +279,10 @@
         "kind": "checked_in",
         "path": "video_files/mixed_black_blur_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in mp4 that mixes blur-positive content and a sustained black episode later in the run.",
       "ground_truth": {
         "session_status": "completed",
@@ -252,17 +291,20 @@
         "result_count": 20,
         "alert_count": 2,
         "current_item": "mixed_black_blur_long.mp4 @ 00:09",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 5,
-          "video_blur": 10
+          "video_blur": 7
         },
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "mixed_black_blur_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "mixed_black_blur_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           },
           {
             "detector_id": "video_metrics",
@@ -280,7 +322,10 @@
         "kind": "checked_in",
         "path": "video_files/truncated_long.mp4"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Intentionally malformed checked-in mp4. Current runtime behavior is partial single-window processing followed by a completed session, so the ground truth protects that failure-path contract.",
       "ground_truth": {
         "session_status": "completed",
@@ -289,7 +334,10 @@
         "result_count": 2,
         "alert_count": 0,
         "current_item": "truncated_long.mp4 @ 00:00",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 0
@@ -304,7 +352,10 @@
         "kind": "checked_in",
         "path": "video_segments/black_recovery_realert_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in HLS fixture with two separated black segments. In the current segment-mode path that still yields only the blur alert, which is exactly the edge-case behavior worth locking in.",
       "ground_truth": {
         "session_status": "completed",
@@ -313,16 +364,19 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 2,
-          "video_blur": 10
+          "video_blur": 8
         },
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -335,7 +389,10 @@
         "kind": "checked_in",
         "path": "video_segments/black_tail_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in HLS fixture with a late black tail. Current segment-mode truth is one early blur alert plus one final black alert on the last segment.",
       "ground_truth": {
         "session_status": "completed",
@@ -344,16 +401,19 @@
         "result_count": 20,
         "alert_count": 2,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 3,
-          "video_blur": 10
+          "video_blur": 7
         },
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           },
           {
@@ -372,7 +432,10 @@
         "kind": "checked_in",
         "path": "video_segments/black_trigger"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Real checked-in HLS folder. Current rebuilt truth includes both per-source-window alerts and per-segment blur truth.",
       "ground_truth": {
         "session_status": "completed",
@@ -381,16 +444,19 @@
         "result_count": 16,
         "alert_count": 1,
         "current_item": "segment_0007.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 1,
-          "video_blur": 7
+          "video_blur": 6
         },
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -403,29 +469,29 @@
         "kind": "checked_in",
         "path": "video_segments/black_trigger_3_alerts"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Real checked-in HLS folder with sustained black content. At the current stage the mixed two-detector session produces one black alert and one blur alert.",
       "ground_truth": {
         "session_status": "completed",
         "progress_status": "completed",
         "processed_count": 6,
         "result_count": 12,
-        "alert_count": 2,
+        "alert_count": 1,
         "current_item": "segment_0005.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 3,
-          "video_blur": 5
+          "video_blur": 2
         },
         "alerts": [
           {
             "detector_id": "video_metrics",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
-            "window_start_sec": null
-          },
-          {
-            "detector_id": "video_blur",
             "source_name": "segment_0002.ts",
             "window_index": 2,
             "window_start_sec": null
@@ -440,7 +506,10 @@
         "kind": "checked_in",
         "path": "video_segments/blur_middle_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in HLS blur fixture with no black detections. Segment-mode truth is a single blur alert at the expected early threshold crossing.",
       "ground_truth": {
         "session_status": "completed",
@@ -449,7 +518,10 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 10
@@ -457,8 +529,8 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -471,7 +543,10 @@
         "kind": "checked_in",
         "path": "video_segments/blur_recovery_realert_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in HLS blur-recovery fixture. In segment mode the current rule still emits a single blur alert for the whole run.",
       "ground_truth": {
         "session_status": "completed",
@@ -480,7 +555,10 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 10
@@ -488,8 +566,8 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -502,7 +580,10 @@
         "kind": "checked_in",
         "path": "video_segments/blur_trigger"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Real checked-in HLS folder with black-negative and blur-positive segment behavior.",
       "ground_truth": {
         "session_status": "completed",
@@ -511,7 +592,10 @@
         "result_count": 12,
         "alert_count": 1,
         "current_item": "segment_0005.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 6
@@ -519,8 +603,8 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -533,7 +617,10 @@
         "kind": "checked_in",
         "path": "video_segments/clean_baseline_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in HLS baseline. Segment-mode truth remains blur-positive and black-negative under the current blur detector.",
       "ground_truth": {
         "session_status": "completed",
@@ -542,7 +629,10 @@
         "result_count": 20,
         "alert_count": 1,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 10
@@ -550,8 +640,8 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -564,7 +654,10 @@
         "kind": "checked_in",
         "path": "video_segments/missing_segment_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Intentionally malformed checked-in HLS folder with a missing transport segment. Current runtime behavior is partial processing of the visible segments and a completed session.",
       "ground_truth": {
         "session_status": "completed",
@@ -573,7 +666,10 @@
         "result_count": 18,
         "alert_count": 1,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 9
@@ -581,8 +677,8 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0005.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -595,7 +691,10 @@
         "kind": "checked_in",
         "path": "video_segments/mixed_black_blur_long"
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Long checked-in HLS fixture with both blur-positive behavior and a sustained late black episode in segment mode.",
       "ground_truth": {
         "session_status": "completed",
@@ -604,16 +703,19 @@
         "result_count": 20,
         "alert_count": 2,
         "current_item": "segment_0009.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 4,
-          "video_blur": 10
+          "video_blur": 6
         },
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           },
           {
@@ -637,7 +739,10 @@
           "blurry": false
         }
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Generated 6-second baseline clip. This is black-negative and, with the current blur algorithm, still blur-positive. It is useful as a longer future comparison fixture.",
       "ground_truth": {
         "session_status": "completed",
@@ -646,7 +751,10 @@
         "result_count": 12,
         "alert_count": 1,
         "current_item": "pattern_long.mp4 @ 00:05",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 6
@@ -654,9 +762,9 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "pattern_long.mp4 @ 00:02",
-            "window_index": 2,
-            "window_start_sec": 2.0
+            "source_name": "pattern_long.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
           }
         ]
       }
@@ -672,7 +780,10 @@
           "duration_sec": 6.0
         }
       },
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "notes": "Generated 6-second HLS baseline. This mirrors the longer mp4 baseline but exercises playlist-ordered segment processing.",
       "ground_truth": {
         "session_status": "completed",
@@ -681,7 +792,10 @@
         "result_count": 12,
         "alert_count": 1,
         "current_item": "segment_0005.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 6
@@ -689,8 +803,8 @@
         "alerts": [
           {
             "detector_id": "video_blur",
-            "source_name": "segment_0002.ts",
-            "window_index": 2,
+            "source_name": "segment_0004.ts",
+            "window_index": 4,
             "window_start_sec": null
           }
         ]
@@ -701,7 +815,10 @@
     {
       "id": "api_stream_dual_detector_ground_truth",
       "input_path": "https://example.com/live/playlist.m3u8",
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "slice_names": [
         "live-window-001.ts",
         "live-window-002.ts",
@@ -736,12 +853,12 @@
             },
             "live-window-005.ts": {
               "black_detected": false,
-              "black_ratio": 0.10,
+              "black_ratio": 0.1,
               "longest_black_sec": 0.0
             },
             "live-window-006.ts": {
               "black_detected": false,
-              "black_ratio": 0.10,
+              "black_ratio": 0.1,
               "longest_black_sec": 0.0
             }
           }
@@ -763,7 +880,7 @@
             },
             "live-window-004.ts": {
               "blur_detected": false,
-              "blur_score": 0.40
+              "blur_score": 0.4
             },
             "live-window-005.ts": {
               "blur_detected": false,
@@ -781,20 +898,17 @@
         "progress_status": "completed",
         "processed_count": 6,
         "result_count": 12,
-        "alert_count": 2,
+        "alert_count": 1,
         "current_item": "live-window-006.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 1,
           "video_blur": 2
         },
         "alerts": [
-          {
-            "detector_id": "video_blur",
-            "source_name": "live-window-003.ts",
-            "window_index": 2,
-            "window_start_sec": 2.0
-          },
           {
             "detector_id": "video_metrics",
             "source_name": "live-window-004.ts",
@@ -807,7 +921,10 @@
     {
       "id": "api_stream_malformed_blur_row_skipped",
       "input_path": "https://example.com/live/playlist.m3u8",
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "slice_names": [
         "live-window-001.ts",
         "live-window-002.ts",
@@ -858,17 +975,24 @@
         "result_count": 5,
         "alert_count": 0,
         "current_item": "live-window-003.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 0
-        }
+        },
+        "alerts": []
       }
     },
     {
       "id": "api_stream_temporary_blur_failure_isolated",
       "input_path": "https://example.com/live/playlist.m3u8",
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "slice_names": [
         "live-window-001.ts",
         "live-window-002.ts",
@@ -920,17 +1044,24 @@
         "result_count": 5,
         "alert_count": 0,
         "current_item": "live-window-003.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 0
-        }
+        },
+        "alerts": []
       }
     },
     {
       "id": "api_stream_terminal_bundle_failure",
       "input_path": "https://example.com/live/playlist.m3u8",
-      "selected_detectors": ["video_metrics", "video_blur"],
+      "selected_detectors": [
+        "video_metrics",
+        "video_blur"
+      ],
       "slice_names": [
         "live-window-001.ts",
         "live-window-002.ts",
@@ -987,11 +1118,15 @@
         "result_count": 2,
         "alert_count": 0,
         "current_item": "live-window-001.ts",
-        "latest_result_detectors": ["video_metrics", "video_blur"],
+        "latest_result_detectors": [
+          "video_metrics",
+          "video_blur"
+        ],
         "detector_true_counts": {
           "video_metrics": 0,
           "video_blur": 0
-        }
+        },
+        "alerts": []
       }
     }
   ]

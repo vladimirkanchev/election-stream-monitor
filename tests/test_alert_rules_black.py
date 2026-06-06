@@ -1,10 +1,14 @@
-"""Black-screen rule scenarios for `video_metrics` alert evaluation.
+"""Stateful black-screen rule scenarios for the production ``video_metrics`` path."""
 
-This file owns the black-rule state machine: threshold entry, rolling-window
-behavior, recovery, and per-session/per-source-group isolation.
-"""
+import pytest
 
-from alert_rules import evaluate_alerts, reset_session_rule_state
+from alert_rules import (
+    BlackWindowSummary,
+    _has_black_rule_recovered,
+    evaluate_alerts,
+    reset_session_rule_state,
+    should_alert_video_black,
+)
 
 from tests.alert_rules_test_support import assert_no_alerts, black_row, evaluate_detector_rows
 
@@ -65,6 +69,52 @@ def test_video_black_rule_raises_alert_for_rolling_black_ratio() -> None:
     assert len(third) == 1
     assert "entered a black-screen state" in third[0].message
     assert "Rolling black ratio across the last 3 sec was 0.9" in third[0].message
+
+
+def test_video_black_rule_tolerates_malformed_rows_before_valid_rolling_entry() -> None:
+    """Malformed early rows should fail closed without blocking a later valid rolling-ratio alert."""
+    reset_session_rule_state("session-rolling-malformed")
+
+    first, second, third, fourth = evaluate_detector_rows(
+        session_id="session-rolling-malformed",
+        detector_id="video_metrics",
+        rows=[
+            black_row(
+                timestamp_utc="2026-03-31 10:00:00",
+                source_group="playlist-malformed",
+                source_name="segment_000.ts",
+                duration_sec=0.1,
+                black_ratio="not-a-number",
+                longest_black_sec="bad",
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:01",
+                source_group="playlist-malformed",
+                source_name="segment_001.ts",
+                black_ratio=1.0,
+                longest_black_sec=0.4,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:02",
+                source_group="playlist-malformed",
+                source_name="segment_002.ts",
+                black_ratio=1.0,
+                longest_black_sec=0.4,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:03",
+                source_group="playlist-malformed",
+                source_name="segment_003.ts",
+                black_ratio=1.0,
+                longest_black_sec=0.4,
+            ),
+        ],
+    )
+
+    assert_no_alerts(first, second, third)
+    assert len(fourth) == 1
+    assert "entered a black-screen state" in fourth[0].message
+    assert "Rolling black ratio across the last 3 sec was 1.0" in fourth[0].message
 
 
 def test_video_black_rule_does_not_alert_before_rolling_window_is_full() -> None:
@@ -241,31 +291,41 @@ def test_video_black_rule_emits_separate_alerts_before_and_after_recovery() -> N
     assert_no_alerts(second_episode[1])
 
 
-def test_video_black_rule_respects_continuous_duration_boundary() -> None:
-    """Continuous-black entry should be inclusive at the configured duration boundary."""
-    reset_session_rule_state("session-black-boundary")
+@pytest.mark.parametrize(
+    ("session_id", "longest_black_sec", "expected_count", "expected_message_part"),
+    [
+        (
+            "session-black-boundary",
+            1.0,
+            1,
+            "Longest black interval 1.0 sec",
+        ),
+        (
+            "session-black-below-boundary",
+            0.99,
+            0,
+            "",
+        ),
+    ],
+)
+def test_video_black_rule_continuous_duration_boundary_behavior(
+    session_id: str,
+    longest_black_sec: float,
+    expected_count: int,
+    expected_message_part: str,
+) -> None:
+    """Continuous-black entry should stay inclusive at the boundary and fail closed below it."""
+    reset_session_rule_state(session_id)
 
     alerts = evaluate_alerts(
-        session_id="session-black-boundary",
+        session_id=session_id,
         detector_id="video_metrics",
-        row=black_row(longest_black_sec=1.0, black_ratio=0.25),
+        row=black_row(longest_black_sec=longest_black_sec, black_ratio=0.25),
     )
 
-    assert len(alerts) == 1
-    assert "Longest black interval 1.0 sec" in alerts[0].message
-
-
-def test_video_black_rule_does_not_alert_just_below_continuous_duration_boundary() -> None:
-    """Continuous-black entry should fail closed just below the duration threshold."""
-    reset_session_rule_state("session-black-below-boundary")
-
-    alerts = evaluate_alerts(
-        session_id="session-black-below-boundary",
-        detector_id="video_metrics",
-        row=black_row(longest_black_sec=0.99, black_ratio=0.25),
-    )
-
-    assert alerts == []
+    assert len(alerts) == expected_count
+    if expected_count:
+        assert expected_message_part in alerts[0].message
 
 
 def test_video_black_rule_does_not_alert_when_rolling_ratio_is_just_below_threshold() -> None:
@@ -301,6 +361,78 @@ def test_video_black_rule_does_not_alert_when_rolling_ratio_is_just_below_thresh
     )
 
     assert_no_alerts(first, second, third)
+
+
+def test_video_black_rule_records_full_window_metrics_just_below_rolling_threshold() -> None:
+    """A full just-below rolling black window should stay normal and record the expected metrics."""
+    reset_session_rule_state("session-black-rolling-below-metrics")
+
+    first_row = black_row(
+        timestamp_utc="2026-03-31 10:00:00",
+        source_group="playlist-threshold-metrics",
+        source_name="segment_001.ts",
+        longest_black_sec=0.4,
+        black_ratio=0.799,
+    )
+    second_row = black_row(
+        timestamp_utc="2026-03-31 10:00:01",
+        source_group="playlist-threshold-metrics",
+        source_name="segment_002.ts",
+        longest_black_sec=0.4,
+        black_ratio=0.799,
+    )
+    third_row = black_row(
+        timestamp_utc="2026-03-31 10:00:02",
+        source_group="playlist-threshold-metrics",
+        source_name="segment_003.ts",
+        longest_black_sec=0.4,
+        black_ratio=0.799,
+    )
+
+    assert should_alert_video_black("session-black-rolling-below-metrics", first_row) is False
+    assert should_alert_video_black("session-black-rolling-below-metrics", second_row) is False
+    assert should_alert_video_black("session-black-rolling-below-metrics", third_row) is False
+
+    assert third_row["rolling_black_ratio"] == 0.799
+    assert third_row["rolling_window_sec"] == 3.0
+    assert third_row["black_rule_state"] == "normal"
+    assert third_row["black_rule_reason"] == "none"
+
+
+def test_video_black_rule_alerts_at_exact_rolling_ratio_threshold() -> None:
+    """Rolling-ratio entry should be inclusive at the configured threshold."""
+    reset_session_rule_state("session-black-rolling-boundary")
+
+    first, second, third = evaluate_detector_rows(
+        session_id="session-black-rolling-boundary",
+        detector_id="video_metrics",
+        rows=[
+            black_row(
+                timestamp_utc="2026-03-31 10:00:00",
+                source_group="playlist-threshold",
+                source_name="segment_001.ts",
+                longest_black_sec=0.4,
+                black_ratio=0.8,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:01",
+                source_group="playlist-threshold",
+                source_name="segment_002.ts",
+                longest_black_sec=0.4,
+                black_ratio=0.8,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:02",
+                source_group="playlist-threshold",
+                source_name="segment_003.ts",
+                longest_black_sec=0.4,
+                black_ratio=0.8,
+            ),
+        ],
+    )
+
+    assert_no_alerts(first, second)
+    assert len(third) == 1
 
 
 def test_video_black_rule_resets_between_sessions() -> None:
@@ -424,3 +556,78 @@ def test_video_black_rule_does_not_recover_from_other_source_groups() -> None:
     )
 
     assert_no_alerts(still_active_on_a)
+
+
+def test_video_black_rule_recovers_at_exact_recovery_ratio_threshold() -> None:
+    """Black recovery should be inclusive at the exact configured ratio boundary."""
+    assert _has_black_rule_recovered(
+        summary=BlackWindowSummary(
+            rolling_ratio=0.2,
+            observed_window_sec=3.0,
+        ),
+        longest_black_sec=0.0,
+    ) is True
+
+
+def test_video_black_rule_does_not_recover_when_longest_black_stays_at_duration_boundary() -> None:
+    """A black episode should stay active when the longest black interval remains at the alert boundary."""
+    reset_session_rule_state("session-black-recovery-duration-boundary")
+
+    entered = evaluate_alerts(
+        session_id="session-black-recovery-duration-boundary",
+        detector_id="video_metrics",
+        row=black_row(
+            timestamp_utc="2026-03-31 10:00:00",
+            source_group="playlist-recovery-duration-boundary",
+            source_name="segment_001.ts",
+            black_ratio=0.95,
+            longest_black_sec=1.2,
+        ),
+    )
+    assert len(entered) == 1
+
+    almost_recovered_batches = evaluate_detector_rows(
+        session_id="session-black-recovery-duration-boundary",
+        detector_id="video_metrics",
+        rows=[
+            black_row(
+                timestamp_utc="2026-03-31 10:00:01",
+                source_group="playlist-recovery-duration-boundary",
+                source_name="segment_002.ts",
+                black_detected=False,
+                black_ratio=0.2,
+                longest_black_sec=1.0,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:02",
+                source_group="playlist-recovery-duration-boundary",
+                source_name="segment_003.ts",
+                black_detected=False,
+                black_ratio=0.2,
+                longest_black_sec=1.0,
+            ),
+            black_row(
+                timestamp_utc="2026-03-31 10:00:03",
+                source_group="playlist-recovery-duration-boundary",
+                source_name="segment_004.ts",
+                black_detected=False,
+                black_ratio=0.2,
+                longest_black_sec=1.0,
+            ),
+        ],
+    )
+    assert_no_alerts(*almost_recovered_batches)
+
+    still_active = evaluate_alerts(
+        session_id="session-black-recovery-duration-boundary",
+        detector_id="video_metrics",
+        row=black_row(
+            timestamp_utc="2026-03-31 10:00:04",
+            source_group="playlist-recovery-duration-boundary",
+            source_name="segment_005.ts",
+            black_ratio=0.95,
+            longest_black_sec=1.2,
+        ),
+    )
+
+    assert_no_alerts(still_active)

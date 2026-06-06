@@ -5,6 +5,8 @@ row-shaping and repeated one-session evaluation loops without hiding the actual
 alert-rule timelines that the black and blur suites are protecting.
 """
 
+import config
+
 from alert_rules import evaluate_alerts
 
 
@@ -42,7 +44,9 @@ def blur_row(
     source_name: str = "segment_001.ts",
     blur_detected: bool = True,
     blur_score: object = 0.80,
-    threshold_used: object = 0.72,
+    motion_mean: object = 0.0,
+    motion_p90: object = 0.0,
+    threshold_used: object = config.VIDEO_BLUR_ALERT_THRESHOLD,
 ) -> dict[str, object]:
     """Build a representative `video_blur` row for blur-rule scenarios.
 
@@ -55,6 +59,8 @@ def blur_row(
         "source_name": source_name,
         "blur_detected": blur_detected,
         "blur_score": blur_score,
+        "motion_mean": motion_mean,
+        "motion_p90": motion_p90,
         "threshold_used": threshold_used,
     }
 

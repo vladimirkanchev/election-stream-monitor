@@ -30,6 +30,7 @@ data/metrics/
 data/sessions/
 data/streams/
 data/video_files/
+tests/fixtures/media/election_clips/normal_baseline/
 !data/README.md
 
 # Logs

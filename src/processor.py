@@ -12,9 +12,9 @@ runner. It is intentionally responsible for only a few things:
 
 import inspect
 from pathlib import Path
-from typing import cast
+from typing import Mapping, cast
 
-from analyzer_contract import AnalysisSlice, InputMode
+from analyzer_contract import AnalysisSlice, AnalyzerRow, InputMode, RuntimeResultRow
 from alert_rules import evaluate_alerts
 from analyzer_registry import get_enabled_analyzers
 from logger import format_log_context, get_logger
@@ -78,7 +78,7 @@ def run_enabled_analyzers_bundle(
     ):
 
         try:
-            row = _run_analyzer(
+            raw_row = _run_analyzer(
                 registration.analyzer,
                 file_path=file_path,
                 prefix=prefix,
@@ -98,12 +98,14 @@ def run_enabled_analyzers_bundle(
             )
             continue
 
-        if not _is_valid_result_row(row):
+        runtime_row = _build_runtime_result_row(raw_row)
+
+        if runtime_row is None:
             logger.warning(
                 "Analyzer %s returned a malformed row for %s: %r [%s]",
                 registration.name,
                 file_path,
-                row,
+                raw_row,
                 _build_execution_log_context(
                     session_id=session_id,
                     source_kind=mode,
@@ -113,7 +115,7 @@ def run_enabled_analyzers_bundle(
             )
             continue
 
-        logger.info("%s analysis result: %s", registration.name, row)
+        logger.info("%s analysis result: %s", registration.name, runtime_row.to_dict())
 
         if persist_to_store:
             _persist_result_row(
@@ -122,23 +124,24 @@ def run_enabled_analyzers_bundle(
                 current_item=current_item,
                 detector_id=registration.name,
                 store_name=registration.store_name,
-                row=row,
+                row=runtime_row,
                 file_path=file_path,
             )
 
+        result_payload = runtime_row.to_dict()
         results.append(
             cast(
                 dict[str, object],
                 ResultEvent(
                     session_id=session_id,
                     detector_id=registration.name,
-                    payload=row,
+                    payload=result_payload,
                 ).to_dict(),
             )
         )
         alerts.extend(
             cast(dict[str, object], alert.to_dict())
-            for alert in evaluate_alerts(session_id, registration.name, row)
+            for alert in evaluate_alerts(session_id, registration.name, runtime_row)
         )
 
     return {"results": results, "alerts": alerts}
@@ -165,7 +168,7 @@ def _run_analyzer(
     file_path: Path,
     prefix: str,
     analysis_slice: AnalysisSlice | None,
-) -> dict[str, object]:
+) -> dict[str, object] | AnalyzerRow:
     """Call one analyzer while only passing supported keyword arguments."""
     kwargs: dict[str, object] = {
         "file_path": file_path,
@@ -191,13 +194,23 @@ def _run_analyzer(
     return analyzer(**filtered_kwargs)
 
 
-def _is_valid_result_row(row: object) -> bool:
-    """Return True when an analyzer row includes the base shared fields."""
-    return (
-        isinstance(row, dict)
-        and bool(row)
-        and REQUIRED_RESULT_FIELDS.issubset(row.keys())
-    )
+def _serialize_result_row(row: object) -> dict[str, object]:
+    """Return one detector result as a flat dictionary."""
+    if isinstance(row, AnalyzerRow):
+        return row.to_dict()
+    if isinstance(row, dict):
+        return dict(row)
+    if isinstance(row, Mapping):
+        return dict(row)
+    return {}
+
+
+def _build_runtime_result_row(row: object) -> RuntimeResultRow | None:
+    """Normalize one analyzer result into the typed runtime row contract."""
+    serialized_row = _serialize_result_row(row)
+    if not serialized_row or not REQUIRED_RESULT_FIELDS.issubset(serialized_row.keys()):
+        return None
+    return RuntimeResultRow.from_mapping(serialized_row)
 
 
 def _persist_result_row(
@@ -207,13 +220,13 @@ def _persist_result_row(
     current_item: str,
     detector_id: str,
     store_name: str,
-    row: dict[str, object],
+    row: RuntimeResultRow,
     file_path: Path,
 ) -> None:
     """Persist one validated row or raise a session-fatal persistence error."""
     try:
         store = STORE_REGISTRY[store_name]
-        store.add_row(row)
+        store.add_row(row.to_dict())
     except Exception as error:
         logger.exception(
             "Store write failed for analyzer %s (%s) while processing %s [%s]",
