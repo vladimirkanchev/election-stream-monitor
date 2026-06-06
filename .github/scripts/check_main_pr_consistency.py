@@ -47,6 +47,10 @@ CONTRACT_PATHS = (
     "src/session_io.py",
     "src/session_models.py",
     "src/alert_rules.py",
+    "src/analyzer_contract.py",
+    "src/detectors.py",
+    "src/processor.py",
+    "src/config.py",
     "src/stream_loader_contracts.py",
     "src/api/routers/sessions.py",
     "src/api/schemas.py",
@@ -68,6 +72,11 @@ FRONTEND_BRIDGE_POLICY_GROUPS = ("frontend_contract",)
 # because they are special-case expectations that are narrower than the shared
 # CI ownership groups.
 BACKEND_POLICY_ONLY_TESTS = (
+    "tests/test_detectors.py",
+    "tests/test_processor.py",
+    "tests/test_alert_rules.py",
+    "tests/test_alert_rules_black.py",
+    "tests/test_alert_rules_blur.py",
     "tests/test_api_boundary_validation.py",
     "tests/test_mcp_server_alerts_behavior.py",
     "tests/test_mcp_server_alerts_errors.py",
@@ -206,6 +215,10 @@ CONTRACT_GATES = (
             "src/stream_loader.py",
             "src/stream_loader_contracts.py",
             "src/stream_loader_http_hls.py",
+            "src/analyzer_contract.py",
+            "src/detectors.py",
+            "src/processor.py",
+            "src/config.py",
             "src/session_io.py",
             "src/session_models.py",
             "src/session_runner.py",
@@ -221,7 +234,11 @@ CONTRACT_GATES = (
         # These remain policy-only because the gate expects narrower coverage
         # than the broader manifest-backed CI lane.
         policy_only_tests=BACKEND_POLICY_ONLY_TESTS,
-        docs_expectations=("docs/contracts.md", "docs/session-model.md"),
+        docs_expectations=(
+            "docs/contracts.md",
+            "docs/data-models.md",
+            "docs/session-model.md",
+        ),
     ),
     ContractGate(
         label="frontend bridge contract",
