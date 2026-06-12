@@ -314,6 +314,56 @@ node -v
 ffmpeg -version | head -n 1
 ```
 
+## Developer Harness
+
+The repo now includes a small local command harness in
+[`justfile`](./justfile). Use it as the default entrypoint for the most common
+developer validation loops.
+
+Design intent:
+
+- focused lanes own one seam each
+- broader lanes such as `just test-fast` and `just ci-local` compose those
+  focused lanes instead of redefining them
+- the harness stays readable and stable by mirroring the current project
+  structure rather than hiding it
+
+Current high-value commands:
+
+- `just env-check`
+  - lightweight local tool and version sanity check
+- `just test-detectors`
+  - focused production detector contract and metric lane
+- `just test-processor`
+  - focused production processor and orchestration lane
+- `just test-alert-rules`
+  - focused production alert-rule policy lane
+- `just test-hls`
+  - focused HLS / `api_stream` loader and reconnect-policy lane
+- `just test-frontend`
+  - focused frontend runtime and bridge checkpoint lane
+- `just docs-check`
+  - docs/workflow consistency and CI-ownership alignment lane
+- `just branch-cleanup`
+  - non-destructive branch hygiene and push/review readiness check
+- `just test-fast`
+  - composed fast production runtime lane
+- `just test-detector-lab`
+  - fast synthetic detector-lab lane for experiment and runner confidence
+- `just test-real-media`
+  - slower checked-in fixture lane for detector-lab real-media confidence
+- `just lint`
+  - backend Ruff plus frontend ESLint
+- `just typecheck`
+  - backend mypy, backend pyright, and frontend TypeScript typecheck
+- `just ci-local`
+  - best local “ready to push?” lane for fast branch feedback
+  - closer to the current CI feature-gate shape than `just test-fast`
+
+Use the `justfile` to keep local validation readable and repeatable. Use
+[docs/testing-and-validation.md](./docs/testing-and-validation.md) when you
+need the fuller CI, weekly, or slow-lane picture.
+
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under

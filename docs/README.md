@@ -41,6 +41,12 @@ Use these first depending on what you are doing:
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+- using the local developer workflow harness
+  - [`../justfile`](../justfile)
+  - treat the `justfile` as the canonical local command entrypoint when adding
+    new validation or developer-productivity lanes
+  - use `just ci-local` as the main local push-readiness check for the fast
+    branch-feedback lane
 - changing frontend or Electron bridge behavior
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)

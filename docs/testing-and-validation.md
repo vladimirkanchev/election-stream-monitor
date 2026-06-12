@@ -96,6 +96,56 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 tests/test_detector_lab.py -q -k 'practical or build_experiment_window_facts or prefers_motion_blur_classification or blend or optical_flow or motion_coherent_variant or compression_robust or structure_relief'
 ```
 
+If you want the standardized local harness entrypoint instead of copying the
+commands directly, use the matching `justfile` recipes:
+
+- harness design note:
+  - focused lanes are the source of truth
+  - broader lanes such as `just test-fast` and `just ci-local` compose them
+    so local validation stays aligned with the project seams
+- `just env-check`
+  - lightweight local tool and version sanity check
+  - confirms `python3`, `node`, `ffmpeg`, and `just`
+- `just test-detectors`
+  - focused production detector contract and metric lane
+- `just test-processor`
+  - focused production processor and orchestration lane
+- `just test-alert-rules`
+  - focused production alert-rule policy lane
+- `just test-hls`
+  - focused HLS / `api_stream` loader, reconnect, and limits lane
+  - narrower than the broader weekly `api_stream` deep-validation suites
+- `just test-frontend`
+  - focused frontend runtime and bridge checkpoint lane
+  - useful for renderer, bridge, and Electron-facing UI changes
+- `just docs-check`
+  - docs/workflow consistency and CI-target ownership lane
+  - validates the current manifest-backed CI and maintainer-doc alignment
+- `just branch-cleanup`
+  - non-destructive branch hygiene lane
+  - shows branch name, status, upstream divergence, and changed-file summaries
+- `just test-fast`
+  - composed fast production runtime lane:
+    `test-detectors`, `test-processor`, `test-alert-rules`, and
+    `test-frontend`
+  - intentionally smaller than the full fast synthetic backend CI lane
+- `just test-detector-lab`
+  - fast detector-lab synthetic and runner/export confidence lane
+- `just test-real-media`
+  - slower detector-lab real-media confidence lane backed by checked-in
+    fixtures
+- `just lint`
+  - backend Ruff plus frontend ESLint
+- `just typecheck`
+  - backend mypy, backend pyright, and frontend TypeScript typecheck
+- `just ci-local`
+  - best local "ready to push?" lane
+  - mirrors the current fast branch-feedback CI shape more closely:
+    `backend-tests` fast synthetic lane, `frontend-checkpoint`, backend Ruff,
+    backend mypy, backend pyright, frontend ESLint, and frontend typecheck
+  - intentionally does not replace weekly slow lanes or PR-only consistency
+    guards
+
 ## CI Shape
 
 The current GitHub Actions workflow uses three practical layers:
