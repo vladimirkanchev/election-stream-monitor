@@ -47,6 +47,12 @@ Use these first depending on what you are doing:
     new validation or developer-productivity lanes
   - use `just ci-local` as the main local push-readiness check for the fast
     branch-feedback lane
+  - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+    when shaping scope, validation notes, fixture impact, and docs impact for review
+  - use [branch-purpose-template.md](./branch-purpose-template.md) to define a
+    branch purpose sentence, scope, and split trigger before the work spreads
+  - use [merge-readiness-checklist.md](./merge-readiness-checklist.md) near the
+    end of a branch or PR to connect validation, docs, fixture checks, cleanup, and merge safety
 - changing frontend or Electron bridge behavior
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
@@ -404,6 +410,10 @@ Current ownership highlights:
   - includes behavior-impact framing for PR notes and commit explanations
 - `branch-pr-readiness`
   - branch drift, commit shape, PR shape, merge readiness, and safe cleanup
+- workflow templates
+  - branch start: [branch-purpose-template.md](./branch-purpose-template.md)
+  - PR shaping: [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+  - final review: [merge-readiness-checklist.md](./merge-readiness-checklist.md)
 - `test-strategy-review`
   - missing coverage, low-value test cleanup, and smallest honest local validation lanes
 - `docs-alignment`

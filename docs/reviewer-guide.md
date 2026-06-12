@@ -6,6 +6,12 @@ reading every file first.
 If you only care about one subsystem, skip straight to that section instead of
 reading the whole repo front to back.
 
+For branch or PR shape, use
+[`../.github/pull_request_template.md`](../.github/pull_request_template.md),
+[branch-purpose-template.md](./branch-purpose-template.md), and
+[merge-readiness-checklist.md](./merge-readiness-checklist.md) alongside this
+guide.
+
 ## Best Review Order
 
 1. Read [architecture.md](./architecture.md)

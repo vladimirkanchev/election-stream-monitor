@@ -364,6 +364,15 @@ Use the `justfile` to keep local validation readable and repeatable. Use
 [docs/testing-and-validation.md](./docs/testing-and-validation.md) when you
 need the fuller CI, weekly, or slow-lane picture.
 
+Current lightweight workflow templates:
+
+- [`.github/pull_request_template.md`](./.github/pull_request_template.md)
+  - for PR purpose, scope, validation, fixture impact, and docs impact
+- [branch-purpose-template.md](./docs/branch-purpose-template.md)
+  - for branch purpose, scope, and split trigger
+- [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
+  - for final validation, cleanup, and merge safety
+
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under

@@ -913,6 +913,15 @@ It currently covers:
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents
 
+The lightweight workflow templates that pair with this skill slice are:
+
+- [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+  - keeps PR purpose, scope, validation, fixture impact, and docs impact explicit
+- [branch-purpose-template.md](./branch-purpose-template.md)
+  - keeps branch purpose, scope, and split trigger explicit before work spreads
+- [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+  - keeps final validation, docs, fixture checks, cleanup, and merge safety in one pass
+
 Focused alert-query, seam, incident, and MCP validation:
 
 ```bash
