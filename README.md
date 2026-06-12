@@ -26,6 +26,16 @@ monitoring runs.
 The project is intentionally small. I want it to stay readable, useful, and
 easy to extend without turning into a much heavier platform too early.
 
+For maintainer workflow support, the repo also includes a small set of
+workflow templates:
+
+- branch start:
+  [`docs/branch-purpose-template.md`](./docs/branch-purpose-template.md)
+- PR shaping:
+  [`.github/pull_request_template.md`](./.github/pull_request_template.md)
+- merge/readiness pass:
+  [`docs/merge-readiness-checklist.md`](./docs/merge-readiness-checklist.md)
+
 ## Why this project exists
 
 This project exists to support more transparent election observation in
@@ -344,6 +354,8 @@ Current high-value commands:
   - focused frontend runtime and bridge checkpoint lane
 - `just docs-check`
   - docs/workflow consistency and CI-ownership alignment lane
+- `just fixture-check`
+  - fixture ownership and environment-assumption policy lane
 - `just branch-cleanup`
   - non-destructive branch hygiene and push/review readiness check
 - `just test-fast`

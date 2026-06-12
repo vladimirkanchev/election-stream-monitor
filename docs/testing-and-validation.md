@@ -6,6 +6,13 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+For branch scope, PR shaping, and merge-readiness notes around those checks,
+use:
+
+- [branch-purpose-template.md](./branch-purpose-template.md)
+- [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+- [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+
 Keep two confidence lanes separate when reading this document:
 
 - production runtime confidence
@@ -68,6 +75,20 @@ The fast PR/branch CI workflow now pins the synthetic path to the file-backed
 alert backend. The weekly workflow owns the real Postgres confidence jobs and
 overrides that default in its dedicated live-DB lanes.
 
+For the short fixture and environment ownership rules behind those lanes, use
+[fixture-environment-policy.md](./fixture-environment-policy.md).
+
+That policy keeps the fast shared lanes honest. In practice, the repo should reject:
+
+- local-only media or research assets leaking into shared tests or docs
+- default test lanes that quietly require optional tools, sockets, or host-specific behavior
+- Python tests that hardcode the developer repo root instead of resolving paths dynamically
+- shared fixture metadata that quietly points back at local-only assets without an explicit exception
+
+Use `just fixture-check` when you want the lightweight guard directly. Treat
+failures there as ownership or portability issues first, not as product
+regressions.
+
 For detector-lab specifically:
 
 - focused detector-lab tests and fixture runs validate experimental comparison
@@ -121,6 +142,12 @@ commands directly, use the matching `justfile` recipes:
 - `just docs-check`
   - docs/workflow consistency and CI-target ownership lane
   - validates the current manifest-backed CI and maintainer-doc alignment
+- `just fixture-check`
+  - lightweight fixture/environment policy lane
+  - catches local-only fixture leakage and obvious repo-root test assumptions
+  - use it when a test or doc starts mentioning ignored fixture paths,
+    optional-tool assumptions, or machine-specific paths
+  - also runs in the non-`main` PR docs/workflow consistency lane
 - `just branch-cleanup`
   - non-destructive branch hygiene lane
   - shows branch name, status, upstream divergence, and changed-file summaries
@@ -921,6 +948,10 @@ The lightweight workflow templates that pair with this skill slice are:
   - keeps branch purpose, scope, and split trigger explicit before work spreads
 - [merge-readiness-checklist.md](./merge-readiness-checklist.md)
   - keeps final validation, docs, fixture checks, cleanup, and merge safety in one pass
+
+The fixture/environment policy guard also runs in the non-`main`
+`docs-consistency` CI lane. That keeps ignored fixture paths and obvious
+machine-specific test assumptions from drifting into shared review branches.
 
 Focused alert-query, seam, incident, and MCP validation:
 

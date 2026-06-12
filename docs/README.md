@@ -41,18 +41,22 @@ Use these first depending on what you are doing:
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+  - [fixture-environment-policy.md](./fixture-environment-policy.md)
+  - use the fixture/environment policy when deciding whether a path belongs in
+    shared tests, local-only notes, or a slower explicit lane
 - using the local developer workflow harness
   - [`../justfile`](../justfile)
   - treat the `justfile` as the canonical local command entrypoint when adding
     new validation or developer-productivity lanes
   - use `just ci-local` as the main local push-readiness check for the fast
     branch-feedback lane
-  - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
-    when shaping scope, validation notes, fixture impact, and docs impact for review
-  - use [branch-purpose-template.md](./branch-purpose-template.md) to define a
-    branch purpose sentence, scope, and split trigger before the work spreads
-  - use [merge-readiness-checklist.md](./merge-readiness-checklist.md) near the
-    end of a branch or PR to connect validation, docs, fixture checks, cleanup, and merge safety
+  - use `just fixture-check` for the lightweight fixture and environment policy guard
+    when a test or doc may be assuming ignored media, optional tools, or a
+    machine-specific path
+  - use the workflow template trio:
+    - [branch-purpose-template.md](./branch-purpose-template.md) for branch start and scope control
+    - [`.github/pull_request_template.md`](../.github/pull_request_template.md) for PR shaping and validation notes
+    - [merge-readiness-checklist.md](./merge-readiness-checklist.md) for the final merge/readiness pass
 - changing frontend or Electron bridge behavior
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
