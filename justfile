@@ -81,6 +81,10 @@ docs-check:
     python3 .github/scripts/check_ci_test_paths_exist.py
     python3 .github/scripts/check_ci_target_drift.py
 
+# Fixture/environment policy lane for local maintainer checks.
+fixture-check:
+    python3 .github/scripts/check_fixture_environment_policy.py
+
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:
     echo "== branch =="

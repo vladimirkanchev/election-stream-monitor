@@ -73,6 +73,8 @@ from detector_lab.runner import (
 )
 from session_models import AlertEvent
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 def _fake_slice(tmp_path: Path) -> AnalysisSlice:
     """Build one minimal slice that behaves like a 1-second detector-lab window."""
@@ -915,10 +917,7 @@ def test_build_eval_row_includes_ground_truth_summary(tmp_path: Path) -> None:
         description="Example.",
         runner=lambda slice_: {},  # pragma: no cover - not used
     )
-    fixture_path = (
-        Path("/home/vlad/Projects/election-stream-monitor")
-        / "tests/fixtures/media/video_files/blur_middle_long.mp4"
-    )
+    fixture_path = REPO_ROOT / "tests/fixtures/media/video_files/blur_middle_long.mp4"
     row = build_eval_row(
         spec=spec,
         input_path=fixture_path,
@@ -946,10 +945,7 @@ def test_build_eval_row_includes_ground_truth_summary(tmp_path: Path) -> None:
 
 def test_build_ground_truth_lookup_persists_stream_summary(tmp_path: Path) -> None:
     """Ground-truth summaries should be cached once per input path and reloaded later."""
-    fixture_path = (
-        Path("/home/vlad/Projects/election-stream-monitor")
-        / "tests/fixtures/media/video_files/blur_middle_long.mp4"
-    )
+    fixture_path = REPO_ROOT / "tests/fixtures/media/video_files/blur_middle_long.mp4"
     cache_path = tmp_path / "ground_truth_stream_cache.json"
 
     first_lookup = build_ground_truth_lookup((fixture_path,), cache_path=cache_path)
@@ -964,7 +960,7 @@ def test_build_ground_truth_lookup_persists_stream_summary(tmp_path: Path) -> No
 def test_build_ground_truth_lookup_supports_label_only_baseline_clips(tmp_path: Path) -> None:
     """Baseline clips with only per-second labels should still export ground truth."""
     fixture_path = (
-        Path("/home/vlad/Projects/election-stream-monitor")
+        REPO_ROOT
         / "tests/fixtures/media/election_clips/normal_baseline/010300111_20260419_202346_0000-0030.mp4"
     )
     cache_path = tmp_path / "ground_truth_stream_cache.json"

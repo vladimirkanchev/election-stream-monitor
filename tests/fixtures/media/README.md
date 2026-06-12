@@ -3,6 +3,10 @@
 These files are permanent media fixtures for detector checks, end-to-end session tests,
 and manual debugging.
 
+For the short shared policy on committed fixtures, local-only assets, and
+environment-coupled tests, use
+[`docs/fixture-environment-policy.md`](../../../docs/fixture-environment-policy.md).
+
 Sources used:
 - `data/streams/local/polling_station_233900044.mp4`
 - `data/streams/segments/index.m3u8`
