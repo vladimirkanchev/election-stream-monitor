@@ -1,7 +1,6 @@
 # Merge / Readiness Checklist
 
 Use this near the end of a branch or PR, after the main implementation is done.
-
 Keep it practical. This is a final guard, not a second planning document.
 
 ## Checklist
@@ -27,6 +26,7 @@ Keep it practical. This is a final guard, not a second planning document.
   - `just test-detector-lab`
   - `just test-real-media`
   - `just docs-check`
+  - `just fixture-check`
 - Use `just ci-local` as the main local push-readiness lane, not the first answer.
 
 ### Docs aligned if needed
@@ -53,7 +53,7 @@ Ask:
 
 - does this branch still tell one clear story?
 - should any unrelated follow-up move to another branch?
-- are stacked-branch or merged-vs-main states still understood?
+- is the stacked-branch or merged-vs-main state still understood?
 
 ### Unrelated files excluded
 

@@ -5,9 +5,7 @@ Describe the main purpose of this PR in 1-3 sentences.
 ## Scope
 
 - In scope:
-- 
 - Out of scope:
-- 
 
 ## Non-goals
 
@@ -35,7 +33,6 @@ Commands run:
 - [ ] changes socket / runtime / share-mode assumptions
 
 Notes:
-
 - 
 
 ## Docs Impact
@@ -48,7 +45,6 @@ Notes:
 - [ ] other maintainer docs
 
 Notes:
-
 - 
 
 ## Reviewer Notes
