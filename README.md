@@ -36,6 +36,12 @@ workflow templates:
 - merge/readiness pass:
   [`docs/merge-readiness-checklist.md`](./docs/merge-readiness-checklist.md)
 
+Use them in that order:
+
+1. define branch purpose and scope before the work spreads
+2. capture scope, validation, fixture impact, and docs impact in the PR
+3. do the final readiness pass before merge, retarget, or cleanup
+
 ## Why this project exists
 
 This project exists to support more transparent election observation in
@@ -342,6 +348,17 @@ Current high-value commands:
 
 - `just env-check`
   - lightweight local tool and version sanity check
+- focused lanes first:
+  - use `just test-detectors`, `just test-processor`, `just test-alert-rules`,
+    `just test-hls`, or `just test-frontend` when the changed seam is already clear
+- `just test-fast`
+  - best default fast production-runtime validation lane for everyday backend/frontend work
+  - use it when you want one honest fast runtime pass without selecting a narrower lane
+- `just ci-local`
+  - best local “ready to push?” lane for fast branch feedback
+  - use it after focused lanes or `test-fast`, not as the first answer for every change
+- `just fixture-check`
+  - fixture ownership and environment-assumption policy lane
 - `just test-detectors`
   - focused production detector contract and metric lane
 - `just test-processor`
@@ -354,12 +371,8 @@ Current high-value commands:
   - focused frontend runtime and bridge checkpoint lane
 - `just docs-check`
   - docs/workflow consistency and CI-ownership alignment lane
-- `just fixture-check`
-  - fixture ownership and environment-assumption policy lane
 - `just branch-cleanup`
   - non-destructive branch hygiene and push/review readiness check
-- `just test-fast`
-  - composed fast production runtime lane
 - `just test-detector-lab`
   - fast synthetic detector-lab lane for experiment and runner confidence
 - `just test-real-media`
@@ -368,9 +381,6 @@ Current high-value commands:
   - backend Ruff plus frontend ESLint
 - `just typecheck`
   - backend mypy, backend pyright, and frontend TypeScript typecheck
-- `just ci-local`
-  - best local “ready to push?” lane for fast branch feedback
-  - closer to the current CI feature-gate shape than `just test-fast`
 
 Use the `justfile` to keep local validation readable and repeatable. Use
 [docs/testing-and-validation.md](./docs/testing-and-validation.md) when you
@@ -412,14 +422,25 @@ The repo includes a small set of repo-local Codex skills under
 
 Use these skills when you want quick repo-aware help with:
 
-- summaries, incident timelines, and likely root causes
-- branch drift, commit or PR shape, merge readiness, and CI triage
-- dependency-file drift and task planning
-- test coverage gaps, low-value test cleanup, and smallest honest validation lanes
-- manual smoke plans before merge
-- fixture and environment safety
-- detector/rule review, frontend or bridge review, and alert-backend parity
-- project-doc and code-doc alignment
+- understanding or explaining what happened:
+  - `summarization`
+  - `incident-timeline`
+  - `root-cause-suggestion`
+- shaping branch, PR, and merge workflow:
+  - `branch-pr-readiness`
+  - `ci-failure-triage`
+  - `dependency-change-review`
+  - `task-planning-evaluation`
+- choosing what to test or run next:
+  - `test-strategy-review`
+  - `manual-validation-planner`
+  - `fixture-environment-safety`
+- reviewing core code or boundaries:
+  - `detector-rule-review`
+  - `frontend-bridge-review`
+  - `alert-backend-parity-review`
+  - `security-surface-review`
+  - `docs-alignment`
 
 These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are

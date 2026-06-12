@@ -48,15 +48,27 @@ Use these first depending on what you are doing:
   - [`../justfile`](../justfile)
   - treat the `justfile` as the canonical local command entrypoint when adding
     new validation or developer-productivity lanes
+  - recommended everyday local flow:
+    - `just env-check` once per environment or toolchain change
+    - use focused lanes such as `just test-detectors`, `just test-alert-rules`, and `just test-hls`
+      first when the changed seam is already clear
+    - `just test-fast` for the default fast production-runtime check when you
+      want one honest fast runtime pass without selecting a narrower lane
+    - `just fixture-check` when a change touches fixtures, docs, paths, or environment assumptions
+    - `just ci-local` before push or PR when you want the closest fast local
+      CI proxy, not as the first answer for every change
   - use `just ci-local` as the main local push-readiness check for the fast
     branch-feedback lane
   - use `just fixture-check` for the lightweight fixture and environment policy guard
     when a test or doc may be assuming ignored media, optional tools, or a
     machine-specific path
-  - use the workflow template trio:
-    - [branch-purpose-template.md](./branch-purpose-template.md) for branch start and scope control
-    - [`.github/pull_request_template.md`](../.github/pull_request_template.md) for PR shaping and validation notes
-    - [merge-readiness-checklist.md](./merge-readiness-checklist.md) for the final merge/readiness pass
+  - use the workflow template trio as one branch flow:
+    - start with [branch-purpose-template.md](./branch-purpose-template.md)
+      to define one branch purpose sentence, scope, and split trigger
+    - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+      while opening or updating the PR so validation, fixture impact, and docs impact stay explicit
+    - finish with [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+      before merge, retarget, or branch cleanup
 - changing frontend or Electron bridge behavior
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
@@ -428,6 +440,28 @@ Current ownership highlights:
   - renderer, preload, Electron bridge, polling, playback, and UI-runtime boundary review
 - `alert-backend-parity-review`
   - file-versus-Postgres alert-store parity, shared alert-read behavior, and adapter consistency
+
+When to use each skill family:
+
+- understand or explain a current issue
+  - `summarization`
+  - `incident-timeline`
+  - `root-cause-suggestion`
+- decide how to shape or clean up a branch
+  - `branch-pr-readiness`
+  - `dependency-change-review`
+  - `task-planning-evaluation`
+- choose what to run or what tests to improve
+  - `ci-failure-triage`
+  - `test-strategy-review`
+  - `manual-validation-planner`
+  - `fixture-environment-safety`
+- review code at the main repo seams
+  - `detector-rule-review`
+  - `frontend-bridge-review`
+  - `alert-backend-parity-review`
+  - `security-surface-review`
+  - `docs-alignment`
 
 The deterministic tests for them live in:
 

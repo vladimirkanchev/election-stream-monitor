@@ -6,12 +6,17 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
-For branch scope, PR shaping, and merge-readiness notes around those checks,
-use:
+For branch workflow around those checks, use:
 
 - [branch-purpose-template.md](./branch-purpose-template.md)
 - [`.github/pull_request_template.md`](../.github/pull_request_template.md)
 - [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+
+Treat them as one flow:
+
+1. define branch purpose first
+2. keep PR scope and validation notes explicit while the branch is active
+3. use the readiness checklist at the end instead of turning it into a second planning doc
 
 Keep two confidence lanes separate when reading this document:
 
@@ -44,6 +49,27 @@ For everyday detector/rule work, the most useful focused checks are usually:
 
 - production detector and rule slices
 - detector-lab practical/experiment slices when the change is experimental
+
+Recommended local command order for most day-to-day work:
+
+- `just env-check`
+  - use once after environment setup or toolchain changes
+- focused lanes such as `just test-detectors`, `just test-alert-rules`, or
+  `just test-hls`
+  - use when the changed seam is already clear and you want the smallest honest lane
+- `just test-fast`
+  - best default fast production-runtime lane when you want one honest fast runtime pass
+- `just fixture-check`
+  - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
+- `just ci-local`
+  - use before push or PR when you want the closest fast local CI proxy
+
+Use this lane-selection rule:
+
+- start with the smallest honest focused lane
+- use `just test-fast` when the change spans several production-runtime seams
+- use `just ci-local` for fast push-readiness, not weekly or deeper confidence
+- use weekly and slower confidence lanes only when the change really reaches that depth
 
 Current focused ownership map:
 
@@ -939,6 +965,28 @@ It currently covers:
 - golden scenario coverage for current repo use cases
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents
+
+Use the current skill set by question type:
+
+- "What changed, what happened, or what is the likely root cause?"
+  - `summarization`
+  - `incident-timeline`
+  - `root-cause-suggestion`
+- "Is this branch shaped well, and is it ready to merge?"
+  - `branch-pr-readiness`
+  - `dependency-change-review`
+  - `task-planning-evaluation`
+- "What is the smallest honest validation lane or the next test improvement?"
+  - `ci-failure-triage`
+  - `test-strategy-review`
+  - `manual-validation-planner`
+  - `fixture-environment-safety`
+- "Can you review this change at the runtime, UI, alert-backend, security, or docs seam?"
+  - `detector-rule-review`
+  - `frontend-bridge-review`
+  - `alert-backend-parity-review`
+  - `security-surface-review`
+  - `docs-alignment`
 
 The lightweight workflow templates that pair with this skill slice are:
 
