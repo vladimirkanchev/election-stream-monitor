@@ -373,20 +373,61 @@ coordinated contract change:
 
 The repo also carries a small local skill set for AI-assisted diagnostic work:
 
-- `./.agents/skills/summarization/`
-- `./.agents/skills/incident-timeline/`
-- `./.agents/skills/test-coverage-gaps/`
-- `./.agents/skills/root-cause-suggestion/`
+- summaries and incident understanding:
+  - `./.agents/skills/summarization/`
+  - `./.agents/skills/incident-timeline/`
+  - `./.agents/skills/root-cause-suggestion/`
+- workflow and branch shaping:
+  - `./.agents/skills/branch-pr-readiness/`
+  - `./.agents/skills/ci-failure-triage/`
+  - `./.agents/skills/dependency-change-review/`
+  - `./.agents/skills/task-planning-evaluation/`
+- validation and test strategy:
+  - `./.agents/skills/test-strategy-review/`
+  - `./.agents/skills/manual-validation-planner/`
+  - `./.agents/skills/fixture-environment-safety/`
+- code and boundary review:
+  - `./.agents/skills/detector-rule-review/`
+  - `./.agents/skills/frontend-bridge-review/`
+  - `./.agents/skills/alert-backend-parity-review/`
+  - `./.agents/skills/security-surface-review/`
+  - `./.agents/skills/docs-alignment/`
 
 Treat these as lightweight workflow helpers for the current project stage.
 They are intentionally small, text-first, and easy to extend without adding a
 separate automation framework.
+
+Current ownership highlights:
+
+- `summarization`
+  - concise subsystem, change, or incident summaries
+  - includes behavior-impact framing for PR notes and commit explanations
+- `branch-pr-readiness`
+  - branch drift, commit shape, PR shape, merge readiness, and safe cleanup
+- `test-strategy-review`
+  - missing coverage, low-value test cleanup, and smallest honest local validation lanes
+- `docs-alignment`
+  - both project-doc drift and code-doc/docstring drift
+- `manual-validation-planner`
+  - short local smoke paths for Electron, FastAPI, playback, alerts, and other operator-visible seams
+- `frontend-bridge-review`
+  - renderer, preload, Electron bridge, polling, playback, and UI-runtime boundary review
+- `alert-backend-parity-review`
+  - file-versus-Postgres alert-store parity, shared alert-read behavior, and adapter consistency
 
 The deterministic tests for them live in:
 
 - `tests/test_repo_skills.py`
 - `tests/skill_test_support.py`
 - `tests/fixtures/skill_output_snapshots/`
+
+That test slice now checks:
+
+- skill inventory and section structure
+- explicit boundary and handoff wording
+- representative repo scenarios
+- fixed output-shape snapshots
+- merged-skill regression markers where one skill now owns several modes
 
 ## Document Ownership
 

@@ -886,9 +886,29 @@ Focused repo-local skill validation:
 This skill-focused test slice is intentionally no-key and deterministic.
 It currently covers:
 
-- skill frontmatter and required section structure
+- the current repo-local skill inventory, frontmatter, and section structure
 - readable section ordering
 - explicit hand-off boundaries between the skills
+- ambiguous-prompt coverage for nearby skills that could overlap
+- explicit handoff checks where one skill should defer to another
+- merged-skill regression markers for the newer multi-mode skills
+- branch/PR/readiness guidance around drift, commit shape, cleanup safety, and merge readiness
+- alert-backend parity guidance around file-backed versus PostgreSQL-backed store behavior and shared alert-read consistency
+- CI failure classification and smallest-lane reproduction coverage
+- detector/rule review guidance around runtime coupling, boundary drift, and missing focused tests
+- concise summary guidance for PR notes, behavior-impact framing, and next-action clarity
+- dependency-change review guidance for `pyproject.toml` and `uv.lock` drift decisions
+- docs drift guidance that points back to the owning README or maintainer doc,
+  and also covers module/class/function docstring drift explicitly
+- fixture and environment safety guidance around local-only assets, sockets, and tool assumptions
+- frontend/bridge review guidance around renderer ownership, preload normalization, polling, playback, and UI-runtime seams
+- manual smoke-plan guidance for Electron, FastAPI, playback, alerts, and other operator-visible checks before merge
+- security-surface review guidance around FastAPI, MCP, local sharing, and trust-boundary clarity
+- task-planning guidance around repo-stage-aware ratings and phased next steps
+- test-strategy guidance that now covers all three current modes:
+  - missing coverage and lane placement
+  - redundancy and environment-coupled confidence
+  - smallest honest local validation lane selection
 - golden scenario coverage for current repo use cases
 - snapshot-style expected outputs for selected fixed prompts
 - lightweight regression coverage for real repo incidents

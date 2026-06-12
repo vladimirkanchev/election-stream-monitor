@@ -369,17 +369,46 @@ need the fuller CI, weekly, or slow-lane picture.
 The repo includes a small set of repo-local Codex skills under
 [`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review:
 
-- `summarization`
-- `incident-timeline`
-- `test-coverage-gaps`
-- `root-cause-suggestion`
+- summaries and incident understanding:
+  - `summarization`
+  - `incident-timeline`
+  - `root-cause-suggestion`
+- workflow and branch shaping:
+  - `branch-pr-readiness`
+  - `ci-failure-triage`
+  - `dependency-change-review`
+  - `task-planning-evaluation`
+- validation and test strategy:
+  - `test-strategy-review`
+  - `manual-validation-planner`
+  - `fixture-environment-safety`
+- code and boundary review:
+  - `detector-rule-review`
+  - `frontend-bridge-review`
+  - `alert-backend-parity-review`
+  - `security-surface-review`
+  - `docs-alignment`
 
-Use these skills when you want quick repo-aware help with summaries, incident
-timelines, root-cause suggestions, or test-coverage gaps.
+Use these skills when you want quick repo-aware help with:
+
+- summaries, incident timelines, and likely root causes
+- branch drift, commit or PR shape, merge readiness, and CI triage
+- dependency-file drift and task planning
+- test coverage gaps, low-value test cleanup, and smallest honest validation lanes
+- manual smoke plans before merge
+- fixture and environment safety
+- detector/rule review, frontend or bridge review, and alert-backend parity
+- project-doc and code-doc alignment
 
 These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are
 not required to run the project.
+
+The deterministic tests for these skills live in:
+
+- [test_repo_skills.py](/home/vlad/Projects/election-stream-monitor/tests/test_repo_skills.py)
+- [skill_test_support.py](/home/vlad/Projects/election-stream-monitor/tests/skill_test_support.py)
+- [skill_output_snapshots](/home/vlad/Projects/election-stream-monitor/tests/fixtures/skill_output_snapshots)
 
 ## Running The Project
 
