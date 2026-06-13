@@ -70,12 +70,26 @@ collect_changed_files() {
   done | sort -u
 }
 
-if ! command -v just >/dev/null 2>&1; then
-  echo "pre-push: 'just' is not installed; skipping local push guard"
-  exit 0
-fi
+run_guard() {
+  local recipe="$1"
+  if [[ "${PRE_PUSH_CAPTURE_ONLY:-0}" == "1" ]]; then
+    echo "pre-push: would run just ${recipe}"
+    exit 0
+  fi
 
-changed_files="$(collect_changed_files)"
+  if ! command -v just >/dev/null 2>&1; then
+    echo "pre-push: 'just' is not installed; skipping local push guard"
+    exit 0
+  fi
+
+  echo "pre-push: running just ${recipe}"
+  exec just "${recipe}"
+}
+
+changed_files="${PRE_PUSH_TEST_CHANGED_FILES:-}"
+if [[ -z "${changed_files}" ]]; then
+  changed_files="$(collect_changed_files)"
+fi
 
 if [[ -z "${changed_files}" ]]; then
   echo "pre-push: no matching pushed file changes detected; skipping local push guard"
@@ -97,13 +111,11 @@ while IFS= read -r path; do
 done <<< "${changed_files}"
 
 if [[ "${run_test_fast}" -eq 1 ]]; then
-  echo "pre-push: running just test-fast"
-  exec just test-fast
+  run_guard "test-fast"
 fi
 
 if [[ "${run_docs_check}" -eq 1 ]]; then
-  echo "pre-push: running just docs-check"
-  exec just docs-check
+  run_guard "docs-check"
 fi
 
 echo "pre-push: no matching guarded paths; skipping local push guard"

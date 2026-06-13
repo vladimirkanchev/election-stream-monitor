@@ -24,3 +24,6 @@ chmod +x .git/hooks/pre-push
 
 Keep this hook lightweight. If a branch needs deeper confidence, run
 `just ci-local` or the slower focused lanes explicitly.
+
+Focused routing coverage lives in
+[`tests/test_pre_push_hook.py`](../tests/test_pre_push_hook.py).

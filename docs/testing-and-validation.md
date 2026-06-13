@@ -108,6 +108,9 @@ versioned hook in [git-hooks.md](./git-hooks.md). Keep it narrow on purpose:
 - `just docs-check` for docs/workflow-only changes
 - do not turn it into a push-time `ci-local` or full-suite gate
 
+That hook is intentionally covered by one small routing test slice instead of
+full end-to-end push automation.
+
 Current focused ownership map:
 
 - `tests/test_detectors.py`
