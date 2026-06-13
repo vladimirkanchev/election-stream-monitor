@@ -36,11 +36,14 @@ workflow templates:
 - merge/readiness pass:
   [`docs/merge-readiness-checklist.md`](./docs/merge-readiness-checklist.md)
 
-Use them in that order:
+For doc ownership and where each maintainer-facing note belongs, use
+[docs/README.md](./docs/README.md).
 
-1. define branch purpose and scope before the work spreads
-2. capture scope, validation, fixture impact, and docs impact in the PR
-3. do the final readiness pass before merge, retarget, or cleanup
+For a short contributor and maintainer entrypoint, use
+[CONTRIBUTING.md](./CONTRIBUTING.md).
+
+For optional local Git hooks that reinforce the same harness rules, use
+[docs/git-hooks.md](./docs/git-hooks.md).
 
 ## Why this project exists
 
@@ -62,6 +65,8 @@ If you are:
 
 - trying the project locally
   - start with [Running The Project](./README.md#running-the-project)
+- contributing or shaping a maintainer branch
+  - start with [CONTRIBUTING.md](./CONTRIBUTING.md)
 - learning the current product/runtime shape
   - read [Current Capabilities](./README.md#current-capabilities)
   - then [docs/architecture.md](./docs/architecture.md)
@@ -346,6 +351,11 @@ Design intent:
 
 Current high-value commands:
 
+- lane policy:
+  - smallest honest lane first
+  - `just test-fast` for multi-seam fast runtime checks
+  - `just ci-local` for push-readiness
+  - weekly/slower lanes only when the change really needs that depth
 - `just env-check`
   - lightweight local tool and version sanity check
 - focused lanes first:
@@ -382,43 +392,38 @@ Current high-value commands:
 - `just typecheck`
   - backend mypy, backend pyright, and frontend TypeScript typecheck
 
-Use the `justfile` to keep local validation readable and repeatable. Use
-[docs/testing-and-validation.md](./docs/testing-and-validation.md) when you
-need the fuller CI, weekly, or slow-lane picture.
+Use the `justfile` for the daily loop. Use
+[docs/testing-and-validation.md](./docs/testing-and-validation.md) for the
+full CI and slow-lane picture.
 
-Current lightweight workflow templates:
+Harness layers:
 
-- [`.github/pull_request_template.md`](./.github/pull_request_template.md)
-  - for PR purpose, scope, validation, fixture impact, and docs impact
+- [`justfile`](./justfile)
+  - daily local commands
+  - focused lanes first, broader lanes later
+- [`pre-commit`](./.pre-commit-config.yaml)
+  - cheap commit-time hygiene only
+  - do not treat it as a replacement for `just test-fast` or `just ci-local`
+- [`.editorconfig`](./.editorconfig)
+  - shared whitespace and indentation defaults across Python, frontend files,
+    and docs
+
+Cheap local guardrails in [`pre-commit`](./.pre-commit-config.yaml):
+
+- Ruff
+- trailing whitespace / EOF fixes
+- YAML / JSON / TOML validation
+- the fixture/environment policy guard
+
+Branch workflow templates:
 - [branch-purpose-template.md](./docs/branch-purpose-template.md)
-  - for branch purpose, scope, and split trigger
+- [`.github/pull_request_template.md`](./.github/pull_request_template.md)
 - [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
-  - for final validation, cleanup, and merge safety
 
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under
-[`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review:
-
-- summaries and incident understanding:
-  - `summarization`
-  - `incident-timeline`
-  - `root-cause-suggestion`
-- workflow and branch shaping:
-  - `branch-pr-readiness`
-  - `ci-failure-triage`
-  - `dependency-change-review`
-  - `task-planning-evaluation`
-- validation and test strategy:
-  - `test-strategy-review`
-  - `manual-validation-planner`
-  - `fixture-environment-safety`
-- code and boundary review:
-  - `detector-rule-review`
-  - `frontend-bridge-review`
-  - `alert-backend-parity-review`
-  - `security-surface-review`
-  - `docs-alignment`
+[`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review.
 
 Use these skills when you want quick repo-aware help with:
 
@@ -445,6 +450,9 @@ Use these skills when you want quick repo-aware help with:
 These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are
 not required to run the project.
+
+For the fuller skill map and maintainer-oriented ownership notes, use
+[docs/README.md](./docs/README.md).
 
 The deterministic tests for these skills live in:
 

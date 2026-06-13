@@ -13,11 +13,7 @@ Call out intentional things this PR does not try to solve.
 
 ## Validation Run
 
-- [ ] `just ci-local`
-- [ ] focused backend lane(s), if relevant
-- [ ] focused frontend lane(s), if relevant
-- [ ] `just docs-check`, if relevant
-- [ ] manual smoke check, if relevant
+List the commands you actually ran. Keep this concrete.
 
 Commands run:
 
@@ -25,7 +21,13 @@ Commands run:
 # paste the commands you actually ran
 ```
 
+Why these lanes were enough:
+
+- 
+
 ## Fixture / Environment Impact
+
+Choose the closest option. Add notes only when the answer is not obvious.
 
 - [ ] no special fixture or environment impact
 - [ ] uses checked-in fixtures only
@@ -37,12 +39,25 @@ Notes:
 
 ## Docs Impact
 
+Choose the closest option so the docs decision stays explicit.
+
 - [ ] no docs change needed
 - [ ] root `README.md`
 - [ ] `docs/README.md`
 - [ ] `docs/testing-and-validation.md`
 - [ ] code docs / docstrings
 - [ ] other maintainer docs
+
+Notes:
+- 
+
+## Dependency Drift
+
+If `pyproject.toml`, `uv.lock`, or similar dependency metadata changed, explain
+why it belongs in this PR or commit.
+
+- [ ] no dependency metadata changed
+- [ ] dependency metadata changed and the reason is explained below
 
 Notes:
 - 

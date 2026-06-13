@@ -6,11 +6,13 @@ Keep it practical. This is a final guard, not a second planning document.
 ## Checklist
 
 - [ ] focused validation is done for the changed seam
-- [ ] broader validation is run only if the change really needs it
-- [ ] docs are aligned if the change moved workflow, behavior, contracts, or ownership
-- [ ] fixture and environment assumptions are checked
+- [ ] the PR notes list the actual commands that were run
+- [ ] broader validation was added only when the change needed it
+- [ ] docs impact and fixture/environment impact are both stated explicitly
+- [ ] docs are aligned if workflow, behavior, contracts, or ownership moved
+- [ ] any `pyproject.toml` or `uv.lock` change is intentional and explained
 - [ ] branch purpose still matches the actual content
-- [ ] unrelated files, local notes, or dependency drift are excluded
+- [ ] unrelated files, local notes, generated noise, and stray dependency drift are excluded
 - [ ] merge, retarget, or delete actions are safe for the current branch state
 
 ## Decision Points
@@ -28,6 +30,8 @@ Keep it practical. This is a final guard, not a second planning document.
   - `just docs-check`
   - `just fixture-check`
 - Use `just ci-local` as the main local push-readiness lane, not the first answer.
+- Treat `pre-commit` as cheap hygiene, not as proof that the branch is ready.
+- Make sure the PR notes list the exact commands that were run, not only the lane category.
 
 ### Docs aligned if needed
 
@@ -41,11 +45,9 @@ Check whether the change should update:
 
 ### Fixture / environment assumptions checked
 
-Confirm:
-
-- tests do not rely on local-only research assets unless explicitly intended
-- socket, tool, or runtime assumptions are still honest
-- any manual-only confidence step is stated plainly
+Confirm tests do not quietly rely on local-only research assets, optional
+tools, sockets, or machine-specific runtime assumptions. State any manual-only
+confidence step plainly.
 
 ### Branch shape still coherent
 
@@ -60,6 +62,8 @@ Ask:
 Check for:
 
 - stray dependency metadata changes
+- `pyproject.toml` or `uv.lock` changes that are present but not explained
+- commit messages that no longer match the actual change grouped in the commit
 - local notes
 - generated noise
 - fixture data that is not meant to be committed

@@ -6,6 +6,8 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+For broader doc ownership rules, use [docs/README.md](./README.md#document-ownership).
+
 For branch workflow around those checks, use:
 
 - [branch-purpose-template.md](./branch-purpose-template.md)
@@ -45,10 +47,23 @@ For a shorter CI ownership handoff, use
 
 ## Routine Validation
 
-For everyday detector/rule work, the most useful focused checks are usually:
+Validation-lane policy:
 
-- production detector and rule slices
-- detector-lab practical/experiment slices when the change is experimental
+- smallest honest lane first
+- use `just test-fast` for multi-seam fast production-runtime checks
+- use `just ci-local` for fast push-readiness
+- use weekly and slower confidence lanes only when the change really reaches that depth
+
+Harness ownership for this workflow:
+
+- `justfile`
+  - daily local validation entrypoints
+- `pre-commit`
+  - cheap commit-time hygiene only
+- optional `pre-push`
+  - last cheap local push guard for `just test-fast` or `just docs-check`
+- CI
+  - broader branch-feedback lanes and weekly confidence
 
 Recommended local command order for most day-to-day work:
 
@@ -61,15 +76,37 @@ Recommended local command order for most day-to-day work:
   - best default fast production-runtime lane when you want one honest fast runtime pass
 - `just fixture-check`
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
+- `just dependency-check`
+  - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
 - `just ci-local`
   - use before push or PR when you want the closest fast local CI proxy
 
-Use this lane-selection rule:
+For the shortest contributor-facing command summary, use
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This document keeps the fuller lane
+ownership and CI context.
 
-- start with the smallest honest focused lane
-- use `just test-fast` when the change spans several production-runtime seams
-- use `just ci-local` for fast push-readiness, not weekly or deeper confidence
-- use weekly and slower confidence lanes only when the change really reaches that depth
+For cheap local guardrails before those lanes, install and run the repo's
+[`pre-commit`](../.pre-commit-config.yaml) hooks. They intentionally stay
+small:
+
+- Ruff
+- trailing whitespace / EOF fixes
+- YAML / JSON / TOML validation
+- fixture/environment policy guard
+
+For dependency metadata specifically, use `just dependency-check` when
+`pyproject.toml` or `uv.lock` moved. Keep the result simple:
+
+- `uv.lock` moving by itself is treated as suspicious local drift
+- paired dependency metadata changes pass, but still need an explanation in PR
+  notes or commit text
+
+If you want one last cheap local check before `git push`, install the optional
+versioned hook in [git-hooks.md](./git-hooks.md). Keep it narrow on purpose:
+
+- `just test-fast` for runtime/frontend/test/harness changes
+- `just docs-check` for docs/workflow-only changes
+- do not turn it into a push-time `ci-local` or full-suite gate
 
 Current focused ownership map:
 
@@ -115,6 +152,9 @@ Use `just fixture-check` when you want the lightweight guard directly. Treat
 failures there as ownership or portability issues first, not as product
 regressions.
 
+Use [docs/merge-readiness-checklist.md](./merge-readiness-checklist.md) when
+you want to turn those lane choices into a final branch-ready pass.
+
 For detector-lab specifically:
 
 - focused detector-lab tests and fixture runs validate experimental comparison
@@ -146,10 +186,6 @@ tests/test_detector_lab.py -q -k 'practical or build_experiment_window_facts or 
 If you want the standardized local harness entrypoint instead of copying the
 commands directly, use the matching `justfile` recipes:
 
-- harness design note:
-  - focused lanes are the source of truth
-  - broader lanes such as `just test-fast` and `just ci-local` compose them
-    so local validation stays aligned with the project seams
 - `just env-check`
   - lightweight local tool and version sanity check
   - confirms `python3`, `node`, `ffmpeg`, and `just`
@@ -174,6 +210,12 @@ commands directly, use the matching `justfile` recipes:
   - use it when a test or doc starts mentioning ignored fixture paths,
     optional-tool assumptions, or machine-specific paths
   - also runs in the non-`main` PR docs/workflow consistency lane
+- `just dependency-check`
+  - lightweight dependency metadata drift lane
+  - flags the highest-suspicion case: `uv.lock` changing without
+    `pyproject.toml`
+  - keeps broader intent and explanation rules with the PR template and
+    merge/readiness checklist
 - `just branch-cleanup`
   - non-destructive branch hygiene lane
   - shows branch name, status, upstream divergence, and changed-file summaries
@@ -205,6 +247,9 @@ The current GitHub Actions workflow uses three practical layers:
 
 - `changes`
   - path filter job that classifies backend, frontend, docs, workflow, and contract-sensitive edits
+- `pr-template-completeness`
+  - lightweight PR-body guard for validation commands plus docs and
+    fixture/environment choices
 - `frontend-checkpoint`
   - quick Electron/bridge/session-flow regression signal
 - `backend-tests`
@@ -939,61 +984,36 @@ Focused repo-local skill validation:
 This skill-focused test slice is intentionally no-key and deterministic.
 It currently covers:
 
-- the current repo-local skill inventory, frontmatter, and section structure
-- readable section ordering
-- explicit hand-off boundaries between the skills
-- ambiguous-prompt coverage for nearby skills that could overlap
-- explicit handoff checks where one skill should defer to another
+- skill inventory, frontmatter, and section structure
+- readable ordering plus explicit hand-off boundaries
+- nearby-skill overlap and explicit deferral coverage
 - merged-skill regression markers for the newer multi-mode skills
-- branch/PR/readiness guidance around drift, commit shape, cleanup safety, and merge readiness
-- alert-backend parity guidance around file-backed versus PostgreSQL-backed store behavior and shared alert-read consistency
-- CI failure classification and smallest-lane reproduction coverage
-- detector/rule review guidance around runtime coupling, boundary drift, and missing focused tests
-- concise summary guidance for PR notes, behavior-impact framing, and next-action clarity
-- dependency-change review guidance for `pyproject.toml` and `uv.lock` drift decisions
-- docs drift guidance that points back to the owning README or maintainer doc,
-  and also covers module/class/function docstring drift explicitly
-- fixture and environment safety guidance around local-only assets, sockets, and tool assumptions
-- frontend/bridge review guidance around renderer ownership, preload normalization, polling, playback, and UI-runtime seams
-- manual smoke-plan guidance for Electron, FastAPI, playback, alerts, and other operator-visible checks before merge
-- security-surface review guidance around FastAPI, MCP, local sharing, and trust-boundary clarity
-- task-planning guidance around repo-stage-aware ratings and phased next steps
-- test-strategy guidance that now covers all three current modes:
-  - missing coverage and lane placement
-  - redundancy and environment-coupled confidence
-  - smallest honest local validation lane selection
-- golden scenario coverage for current repo use cases
-- snapshot-style expected outputs for selected fixed prompts
-- lightweight regression coverage for real repo incidents
+- representative repo scenarios plus fixed output-shape snapshots
+- lightweight regressions for real repo incidents
+- current workflow seams:
+  - branch/PR/readiness and dependency drift
+  - CI failure triage and smallest-lane reproduction
+  - test strategy, fixture/environment safety, and manual validation
+  - detector/rule, frontend/bridge, alert-backend, security, and docs review
 
-Use the current skill set by question type:
+For the full skill routing map, use [docs/README.md](./README.md#repo-local-codex-skills).
+In this validation doc, the most relevant skill questions are:
 
-- "What changed, what happened, or what is the likely root cause?"
-  - `summarization`
-  - `incident-timeline`
-  - `root-cause-suggestion`
-- "Is this branch shaped well, and is it ready to merge?"
-  - `branch-pr-readiness`
-  - `dependency-change-review`
-  - `task-planning-evaluation`
 - "What is the smallest honest validation lane or the next test improvement?"
   - `ci-failure-triage`
   - `test-strategy-review`
   - `manual-validation-planner`
   - `fixture-environment-safety`
-- "Can you review this change at the runtime, UI, alert-backend, security, or docs seam?"
-  - `detector-rule-review`
-  - `frontend-bridge-review`
-  - `alert-backend-parity-review`
-  - `security-surface-review`
+- "Did the docs, fixtures, or validation ownership drift?"
   - `docs-alignment`
+  - `fixture-environment-safety`
 
 The lightweight workflow templates that pair with this skill slice are:
 
 - [`.github/pull_request_template.md`](../.github/pull_request_template.md)
-  - keeps PR purpose, scope, validation, fixture impact, and docs impact explicit
+  - keeps purpose, scope, validation, fixture impact, and docs impact explicit
 - [branch-purpose-template.md](./branch-purpose-template.md)
-  - keeps branch purpose, scope, and split trigger explicit before work spreads
+  - keeps branch purpose, scope, and split trigger explicit
 - [merge-readiness-checklist.md](./merge-readiness-checklist.md)
   - keeps final validation, docs, fixture checks, cleanup, and merge safety in one pass
 
