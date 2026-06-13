@@ -10,6 +10,10 @@
 # - Add parameters only for cases we expect to reuse, not preemptively.
 # - Keep focused lanes as the source of truth; broader lanes should compose
 #   them instead of restating long command lists.
+# - Choose the smallest honest lane first; reserve `test-fast` for multi-seam
+#   runtime checks and `ci-local` for push-readiness.
+# - Cheap local hygiene belongs in `pre-commit`; broader verification belongs
+#   here or in CI.
 
 set shell := ["bash", "-cu"]
 
@@ -84,6 +88,10 @@ docs-check:
 # Fixture/environment policy lane for local maintainer checks.
 fixture-check:
     python3 .github/scripts/check_fixture_environment_policy.py
+
+# Lightweight dependency metadata drift lane for local maintainer checks.
+dependency-check:
+    python3 .github/scripts/check_dependency_drift.py
 
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:

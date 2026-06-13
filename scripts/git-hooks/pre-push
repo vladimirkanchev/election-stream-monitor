@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Cheap optional push-time guard.
+#
+# Use `just test-fast` when pushed commits reach the fast runtime seams.
+# Use `just docs-check` when the push is docs/workflow-only.
+# Skip broader lanes here on purpose; `ci-local` and slower confidence stay
+# explicit developer choices, not automatic push gates.
+
+is_runtime_or_harness_path() {
+  case "$1" in
+    src/*|scripts/*|tests/*|frontend/*|detector_lab/*|justfile|pyproject.toml)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_docs_or_workflow_path() {
+  case "$1" in
+    docs/*|README.md|CONTRIBUTING.md|.github/*|.pre-commit-config.yaml|.editorconfig)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+collect_changed_files() {
+  local local_ref local_sha remote_ref remote_sha
+  local range
+  local -a ranges=()
+
+  while read -r local_ref local_sha remote_ref remote_sha; do
+    [[ -z "${local_sha}" ]] && continue
+
+    if [[ "${remote_sha}" =~ ^0+$ ]]; then
+      if git rev-parse --verify "${local_sha}^" >/dev/null 2>&1; then
+        ranges+=("${local_sha}^..${local_sha}")
+      else
+        ranges+=("${local_sha}")
+      fi
+      continue
+    fi
+
+    ranges+=("${remote_sha}..${local_sha}")
+  done
+
+  if [[ "${#ranges[@]}" -eq 0 ]]; then
+    if git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' >/dev/null 2>&1; then
+      git diff --name-only --diff-filter=ACMR '@{upstream}'...HEAD
+      return
+    fi
+
+    if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+      git diff --name-only --diff-filter=ACMR HEAD^..HEAD
+      return
+    fi
+
+    git show --pretty='' --name-only --diff-filter=ACMR HEAD
+    return
+  fi
+
+  for range in "${ranges[@]}"; do
+    git diff --name-only --diff-filter=ACMR "${range}"
+  done | sort -u
+}
+
+if ! command -v just >/dev/null 2>&1; then
+  echo "pre-push: 'just' is not installed; skipping local push guard"
+  exit 0
+fi
+
+changed_files="$(collect_changed_files)"
+
+if [[ -z "${changed_files}" ]]; then
+  echo "pre-push: no matching pushed file changes detected; skipping local push guard"
+  exit 0
+fi
+
+run_test_fast=0
+run_docs_check=0
+
+while IFS= read -r path; do
+  if is_runtime_or_harness_path "${path}"; then
+    run_test_fast=1
+    continue
+  fi
+
+  if is_docs_or_workflow_path "${path}" && [[ "${run_test_fast}" -eq 0 ]]; then
+    run_docs_check=1
+  fi
+done <<< "${changed_files}"
+
+if [[ "${run_test_fast}" -eq 1 ]]; then
+  echo "pre-push: running just test-fast"
+  exec just test-fast
+fi
+
+if [[ "${run_docs_check}" -eq 1 ]]; then
+  echo "pre-push: running just docs-check"
+  exec just docs-check
+fi
+
+echo "pre-push: no matching guarded paths; skipping local push guard"
