@@ -1,22 +1,30 @@
-"""Orchestration helpers that connect detectors, stores, and alert rules.
+"""Run registered detectors and bridge their output into runtime events.
 
-This module is the execution boundary between the registry and the session
-runner. It is intentionally responsible for only a few things:
+This module owns the narrow execution seam between detector registration and
+session processing:
 
-- select the detectors that apply to the current mode and suffix
-- call them with the right slice context
-- persist valid result rows
+- choose the matching detectors for the current input
+- call them with slice context
+- normalize and persist valid rows
 - evaluate alert rules from those rows
-- isolate detector failures while surfacing persistence failures
 """
 
 import inspect
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Mapping, cast
 
-from analyzer_contract import AnalysisSlice, AnalyzerRow, InputMode, RuntimeResultRow
+from analyzer_contract import (
+    AnalysisSlice,
+    AnalyzerRegistration,
+    AnalyzerRow,
+    Detector,
+    DetectorResult,
+    InputMode,
+    RuntimeResultRow,
+)
 from alert_rules import evaluate_alerts
-from analyzer_registry import get_enabled_analyzers
+from detectors.registry import get_enabled_analyzers
 from logger import format_log_context, get_logger
 from session_models import ResultEvent
 from stores import black_frame_store, blur_metrics_store
@@ -66,7 +74,7 @@ def run_enabled_analyzers_bundle(
     persist_to_store: bool = True,
     analysis_slice: AnalysisSlice | None = None,
 ) -> dict[str, list[dict[str, object]]]:
-    """Run analyzers and return a session-friendly results/alerts bundle."""
+    """Run matching detectors and return session-friendly result and alert events."""
     results: list[dict[str, object]] = []
     alerts: list[dict[str, object]] = []
     current_item = _resolve_current_item_name(analysis_slice, file_path)
@@ -79,14 +87,14 @@ def run_enabled_analyzers_bundle(
 
         try:
             raw_row = _run_analyzer(
-                registration.analyzer,
+                registration.detector,
                 file_path=file_path,
                 prefix=prefix,
                 analysis_slice=analysis_slice,
             )
         except Exception:  # pragma: no cover - asserted via tests
             logger.exception(
-                "Analyzer %s failed for %s [%s]",
+                "Detector %s failed for %s [%s]",
                 registration.name,
                 file_path,
                 _build_execution_log_context(
@@ -102,7 +110,7 @@ def run_enabled_analyzers_bundle(
 
         if runtime_row is None:
             logger.warning(
-                "Analyzer %s returned a malformed row for %s: %r [%s]",
+                "Detector %s returned a malformed row for %s: %r [%s]",
                 registration.name,
                 file_path,
                 raw_row,
@@ -115,7 +123,7 @@ def run_enabled_analyzers_bundle(
             )
             continue
 
-        logger.info("%s analysis result: %s", registration.name, runtime_row.to_dict())
+        logger.info("%s detector result: %s", registration.name, runtime_row.to_dict())
 
         if persist_to_store:
             _persist_result_row(
@@ -152,7 +160,7 @@ def _iter_matching_registrations(
     mode: InputMode,
     file_path: Path,
     selected_analyzers: set[str] | None,
-):
+) -> Iterator[AnalyzerRegistration]:
     """Yield only the registrations that match the current run configuration."""
     suffix = file_path.suffix.lower()
     for registration in get_enabled_analyzers(mode):
@@ -164,12 +172,12 @@ def _iter_matching_registrations(
 
 
 def _run_analyzer(
-    analyzer,
+    detector: Detector,
     file_path: Path,
     prefix: str,
     analysis_slice: AnalysisSlice | None,
-) -> dict[str, object] | AnalyzerRow:
-    """Call one analyzer while only passing supported keyword arguments."""
+) -> DetectorResult:
+    """Call one detector while only passing supported keyword arguments."""
     kwargs: dict[str, object] = {
         "file_path": file_path,
         "prefix": prefix,
@@ -185,28 +193,26 @@ def _run_analyzer(
             }
         )
 
-    accepted = inspect.signature(analyzer).parameters
+    accepted = inspect.signature(detector).parameters
     filtered_kwargs = {
         key: value
         for key, value in kwargs.items()
         if key in accepted
     }
-    return analyzer(**filtered_kwargs)
+    return detector(**filtered_kwargs)
 
 
 def _serialize_result_row(row: object) -> dict[str, object]:
     """Return one detector result as a flat dictionary."""
     if isinstance(row, AnalyzerRow):
         return row.to_dict()
-    if isinstance(row, dict):
-        return dict(row)
     if isinstance(row, Mapping):
         return dict(row)
     return {}
 
 
 def _build_runtime_result_row(row: object) -> RuntimeResultRow | None:
-    """Normalize one analyzer result into the typed runtime row contract."""
+    """Normalize one detector result into the typed runtime row contract."""
     serialized_row = _serialize_result_row(row)
     if not serialized_row or not REQUIRED_RESULT_FIELDS.issubset(serialized_row.keys()):
         return None

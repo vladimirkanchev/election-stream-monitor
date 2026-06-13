@@ -1,4 +1,4 @@
-"""Generate a frontend-readable detector manifest from the analyzer registry."""
+"""Generate a frontend-readable detector manifest from the detector registry."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from analyzer_registry import list_available_detectors
+from detectors.registry import list_available_detectors
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Write the current analyzer registry metadata to disk."""
+    """Write the current detector registry metadata to disk."""
     args = build_parser().parse_args()
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

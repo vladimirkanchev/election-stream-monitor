@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Query
 
 from analyzer_contract import DetectorCatalogEntry
-from analyzer_registry import list_available_detectors
 from api.schemas import ApiInputMode, DetectorOptionResponse
+from detectors.registry import list_available_detectors
 
 router = APIRouter(tags=["detectors"])
 

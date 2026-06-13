@@ -1,15 +1,8 @@
-"""Production alert policy for detector result rows.
-
-The current runtime keeps alerting intentionally small and explicit:
-
-- black-screen policy on top of ``video_metrics``
-- blur policy on top of ``video_blur``
+"""Production alert policy for normalized detector rows.
 
 Detectors own signal extraction. This module owns rule decisions, rolling
-state, recovery hysteresis, and operator-facing message text. The processor
-normalizes detector output into ``RuntimeResultRow`` objects before it reaches
-this file, so rule code can stay focused on policy rather than raw payload
-plumbing.
+state, recovery behavior, and operator-facing message text for the built-in
+black-screen and blur policies.
 """
 
 from collections import defaultdict, deque
@@ -17,7 +10,13 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Callable
 
-from analyzer_contract import AlertRuleCatalogEntry, DetectorOrigin, DetectorStatus, RuntimeResultRow
+from analyzer_contract import (
+    AlertRuleCatalogEntry,
+    DetectorOrigin,
+    DetectorStatus,
+    RuleEvaluationContext,
+    RuntimeResultRow,
+)
 import config
 from logger import format_log_context, get_logger
 from session_models import AlertEvent, EventSeverity
@@ -26,6 +25,7 @@ from session_models import AlertEvent, EventSeverity
 RuleRowLike = RuntimeResultRow | dict[str, object]
 Predicate = Callable[[RuntimeResultRow], bool]
 MessageBuilder = Callable[[RuntimeResultRow], str]
+RuleEvaluator = Callable[[RuleEvaluationContext], bool]
 RuleStateKey = tuple[str, str, str]
 logger = get_logger(__name__)
 
@@ -152,11 +152,7 @@ class RuleStateStore:
 
 @dataclass(frozen=True)
 class AlertRule:
-    """Rule metadata plus the callables used to evaluate and format alerts.
-
-    The catalog is intentionally lightweight: each entry ties a detector id to
-    one production policy, one message builder, and one event severity.
-    """
+    """Lightweight rule registration for one detector-facing alert policy."""
 
     id: str
     detector_id: str
@@ -168,7 +164,7 @@ class AlertRule:
     origin: DetectorOrigin = "built_in"
     status: DetectorStatus = "core"
     severity: EventSeverity = "warning"
-    evaluator: Callable[[str, RuntimeResultRow], bool] | None = None
+    evaluator: RuleEvaluator | None = None
 
 
 _RULE_STATE = RuleStateStore()
@@ -184,14 +180,14 @@ def _video_blur_should_alert(row: RuntimeResultRow) -> bool:
     return bool(row.get("blur_detected"))
 
 
-def _video_black_evaluator(session_id: str, row: RuntimeResultRow) -> bool:
+def _video_black_evaluator(context: RuleEvaluationContext) -> bool:
     """Evaluate the default production black-screen rule for one row."""
-    return should_alert_video_black(session_id, row)
+    return should_alert_video_black(context.session_id, context.row)
 
 
-def _video_blur_evaluator(session_id: str, row: RuntimeResultRow) -> bool:
+def _video_blur_evaluator(context: RuleEvaluationContext) -> bool:
     """Evaluate the default production blur rule for one row."""
-    return should_alert_video_blur(session_id, row)
+    return should_alert_video_blur(context.session_id, context.row)
 
 
 def _video_black_message(row: RuntimeResultRow) -> str:
@@ -255,15 +251,7 @@ def evaluate_alerts(
     detector_id: str,
     row: RuleRowLike,
 ) -> list[AlertEvent]:
-    """Evaluate the configured production rule for one detector result row.
-
-    The flow is intentionally straightforward:
-
-    1. resolve the rule for the detector id
-    2. normalize the row into the runtime rule contract
-    3. evaluate the stateful policy
-    4. build an alert event only on fresh entry
-    """
+    """Evaluate the configured production rule for one detector result row."""
     rule = _resolve_alert_rule(detector_id)
     if rule is None:
         return []
@@ -396,12 +384,7 @@ def _coerce_runtime_rule_row(
     *,
     detector_id: str,
 ) -> RuntimeResultRow:
-    """Normalize one rule input row into the typed runtime row contract.
-
-    Production callers increasingly pass ``RuntimeResultRow`` directly, but the
-    public helpers still accept dict-like rows so tests and compatibility call
-    sites stay simple.
-    """
+    """Normalize one rule input into the typed runtime row contract."""
     if isinstance(row, RuntimeResultRow):
         return row
     runtime_row = RuntimeResultRow.from_mapping(row)
@@ -447,8 +430,13 @@ def _evaluate_rule(
     row: RuntimeResultRow,
 ) -> bool:
     """Evaluate one resolved rule against one detector row."""
+    context = RuleEvaluationContext(
+        session_id=session_id,
+        detector_id=rule.detector_id,
+        row=row,
+    )
     if rule.evaluator is not None:
-        return rule.evaluator(session_id, row)
+        return rule.evaluator(context)
     return rule.should_alert(row)
 
 
