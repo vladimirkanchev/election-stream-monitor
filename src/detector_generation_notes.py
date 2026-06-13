@@ -5,8 +5,8 @@ contributors one place to check what must change when a new detector is added.
 """
 
 REQUIRED_UPDATE_AREAS = (
-    "Analyzer code in src/detectors.py or a dedicated analyzer module.",
-    "Analyzer registration in src/analyzer_registry.py.",
+    "Detector code in src/detectors/ with one focused module per production detector.",
+    "Detector registration in src/detectors/registry.py.",
     "Output schema and file path in src/config.py when a new result type is needed.",
     "Store wiring in src/stores.py when a new CSV output target is introduced.",
     "Processor alert logic in src/processor.py if the detector should raise alerts.",

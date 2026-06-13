@@ -31,6 +31,8 @@ Use these first depending on what you are doing:
 - changing detectors or alert rules
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+  - treat `src/detectors/` as the canonical production detector package and
+    `src/detectors/registry.py` as the canonical runtime registration owner
   - [`../detector_lab/README.md`](../detector_lab/README.md) for experimental work
   - [detector-lab-analysis.md](./detector-lab-analysis.md) for the current detector-lab structure and evaluation intent
   - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
@@ -143,6 +145,8 @@ For the current alert-storage rollout state, use:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
   - [testing-and-validation.md](./testing-and-validation.md)
   - [architecture.md](./architecture.md)
+  - `src/detectors/`
+  - `src/detectors/registry.py`
 - experimenting with detector metrics before production integration:
   - [`../detector_lab/README.md`](../detector_lab/README.md)
   - [detector-lab-analysis.md](./detector-lab-analysis.md)

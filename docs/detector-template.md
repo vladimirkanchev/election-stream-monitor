@@ -47,7 +47,7 @@ def analyze_example_detector(
 
 ## 2. Registry entry
 
-Add it in [`src/analyzer_registry.py`](../src/analyzer_registry.py):
+Add it in [`src/detectors/registry.py`](../src/detectors/registry.py):
 
 ```python
 AnalyzerRegistration(

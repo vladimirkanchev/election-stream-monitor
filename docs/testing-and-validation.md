@@ -117,6 +117,10 @@ full end-to-end push automation.
 
 Current focused ownership map:
 
+- `src/detectors/`
+  - canonical production detector package
+- `src/detectors/registry.py`
+  - explicit runtime detector registration and catalog metadata
 - `tests/test_detectors.py`
   - production detector rows, media-tool fallback behavior, and metric contracts
 - `tests/test_alert_rules.py`
@@ -2019,11 +2023,11 @@ Current lifecycle coverage is already spread across the main layers:
     - smallest helper-level seam for session setup and status transitions
   - `tests/test_session_runner_execution_local.py`
     - extracted local execution-loop helper behavior
-    - analyzer-bundle invocation and local event-persistence seams
+    - detector-bundle invocation and local event-persistence seams
   - `tests/test_session_runner_execution_api_stream.py`
     - extracted live `api_stream` execution-loop helper behavior
     - api-stream cleanup accounting and live helper wiring seams
-    - analyzer-bundle invocation and event-persistence seams
+    - detector-bundle invocation and event-persistence seams
     - first stop when a refactor changes slice-processing flow
   - `tests/test_session_runner_terminal.py`
     - terminal outcome persistence

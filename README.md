@@ -73,6 +73,7 @@ If you are:
 - changing detectors or alert rules
   - read [docs/adding-an-analyzer.md](./docs/adding-an-analyzer.md)
   - read [docs/adding-an-alert-rule.md](./docs/adding-an-alert-rule.md)
+  - treat `src/detectors/` and `src/detectors/registry.py` as the canonical production detector owners
   - read [docs/testing-and-validation.md](./docs/testing-and-validation.md) for the focused detector/rule test lanes
   - use [detector_lab/README.md](./detector_lab/README.md) if the idea is still experimental
 - navigating the whole maintainer docs set
@@ -189,6 +190,12 @@ Today the production detector and alert surface is intentionally small:
 - detector: `video_blur`
 - alert rule: `video_metrics.default_rule`
 - alert rule: `video_blur.default_rule`
+
+Production detector code now lives in [`src/detectors/`](./src/detectors),
+with explicit runtime registration in
+[`src/detectors/registry.py`](./src/detectors/registry.py). The older
+[`src/analyzer_registry.py`](./src/analyzer_registry.py) file remains only as a
+small compatibility wrapper.
 
 Blur and motion-blur experiments beyond that live in
 [`detector_lab/`](./detector_lab/README.md) until they are promoted on purpose.
