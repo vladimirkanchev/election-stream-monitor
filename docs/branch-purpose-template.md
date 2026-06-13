@@ -9,6 +9,9 @@ Keep it short. One clear sentence is better than a broad mini-spec.
 Branch purpose:
 Improve __________________ without changing __________________.
 
+Execution pattern:
+Protect behavior first, change one boundary at a time, update tests with the change, run the smallest honest validation lane, align docs and harness only if ownership changed.
+
 In scope:
 - 
 - 
@@ -21,11 +24,27 @@ Split trigger:
 If this changes product/runtime behavior outside the stated scope, use another branch.
 ```
 
+## Short Checklist
+
+Use this when the task is moderate but does not need a full plan.
+
+```text
+1. What boundary changes?
+2. What behavior must stay the same?
+3. What test needs update or addition?
+4. What smallest validation command should run?
+5. Any docs or harness update needed?
+6. Still inside branch scope?
+```
+
 ## Example
 
 ```text
 Branch purpose:
 Improve repeatable engineering workflow for this repo without changing core product behavior.
+
+Execution pattern:
+Protect behavior first, change one boundary at a time, update tests with the change, run the smallest honest validation lane, align docs and harness only if ownership changed.
 
 In scope:
 - local validation harness commands
@@ -51,6 +70,7 @@ If this changes product/runtime behavior outside the stated scope, use another b
 ## Notes
 
 - Prefer one branch purpose sentence, not a list of half-purposes.
+- Keep the execution pattern lightweight. It is a working rhythm, not a second plan.
 - If the sentence needs multiple `and` clauses, the branch is probably too broad.
 - If a change only supports the stated goal, it likely belongs here.
 - If it introduces unrelated product behavior, move it out.

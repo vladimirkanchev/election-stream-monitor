@@ -83,7 +83,8 @@ Use these first depending on what you are doing:
     details and CI ownership
   - use the workflow template trio as one branch flow:
     - start with [branch-purpose-template.md](./branch-purpose-template.md)
-      to define one branch purpose sentence, scope, and split trigger
+      for branch purpose, scope, split trigger, and the lightweight
+      execution checklist
     - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
       while opening or updating the PR so validation, fixture impact, and docs impact stay explicit
     - finish with [merge-readiness-checklist.md](./merge-readiness-checklist.md)
@@ -155,6 +156,8 @@ For the current alert-storage rollout state, use:
   - [architecture.md](./architecture.md)
 - working on repo-local Codex skills or their tests:
   - [testing-and-validation.md](./testing-and-validation.md)
+  - [branch-purpose-template.md](./branch-purpose-template.md) for the
+    lightweight execution pattern reused by planning-oriented skills
   - `./.agents/skills/`
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:

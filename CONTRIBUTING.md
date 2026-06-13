@@ -17,6 +17,10 @@ Use the workflow templates as one small branch flow:
 If a change starts affecting product or runtime behavior outside the branch
 purpose, move that work to another branch.
 
+Keep the branch execution pattern light and reuse the short checklist in
+[docs/branch-purpose-template.md](./docs/branch-purpose-template.md) instead of
+copying it into each task or PR note.
+
 ## Local Commands
 
 Use the smallest honest lane first:

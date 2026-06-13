@@ -27,6 +27,15 @@ Work from:
 4. impact on runtime, workflow, or maintainability
 5. best next phase or sequence
 
+Scale the planning depth to the task:
+
+- simple, obvious, low-risk tasks
+  - do the work directly
+- medium tasks
+  - use the short checklist
+- broad or shared-boundary tasks
+  - give the fuller staged plan
+
 Use these rating categories:
 
 - `importance`
@@ -37,6 +46,20 @@ Use these rating categories:
   - how broad the likely change surface is
 - `complexity`
   - how hard the task is to implement or validate well
+
+## Short checklist
+
+Use this for medium tasks when a full plan would be more structure than value:
+
+1. What boundary changes?
+2. What behavior must stay the same?
+3. What test needs update or addition?
+4. What smallest validation command should run?
+5. Any docs or harness update needed?
+6. Still inside branch scope?
+
+For the human-readable owner of this checklist and the matching branch
+execution pattern, use [docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md).
 
 ## Output shape
 
@@ -56,6 +79,7 @@ Use this order:
 - Rate tasks against the current local-first advanced-prototype stage, not an imagined later platform.
 - Distinguish core runtime/product work from workflow, harness, CI, docs, and detector-lab support work.
 - Prefer phased plans that keep branch scope readable and validation practical.
+- Do not over-structure simple tasks. If the change is small and obvious, say so.
 - If a task is valuable but not urgent, say so instead of inflating it.
 - When relevant, call out whether the task is especially good for interview storytelling, operator value, or maintainability.
 - Favor concrete next steps over abstract roadmap language.

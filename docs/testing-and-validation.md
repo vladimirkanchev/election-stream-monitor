@@ -20,6 +20,10 @@ Treat them as one flow:
 2. keep PR scope and validation notes explicit while the branch is active
 3. use the readiness checklist at the end instead of turning it into a second planning doc
 
+The branch template owns the lightweight execution pattern and the medium-task
+checklist. Reuse that pattern in planning and review notes instead of copying
+it into multiple workflow docs.
+
 Keep two confidence lanes separate when reading this document:
 
 - production runtime confidence
