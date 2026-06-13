@@ -7,6 +7,7 @@ that should stay stable regardless of the detector-specific policy details.
 import pytest
 
 import alert_rules
+from analyzer_contract import RuleEvaluationContext
 from alert_rules import evaluate_alerts, list_available_alert_rules, reset_session_rule_state
 from tests.alert_rules_test_support import black_row, blur_row
 
@@ -162,3 +163,32 @@ def test_video_blur_rule_records_state_metadata_on_non_ready_rows() -> None:
     assert row["rolling_blur_scores"] == [0.91]
     assert row["rolling_blur_high_count"] == 1
     assert row["rolling_motion_means"] == [0.0]
+
+
+def test_rule_evaluator_receives_small_typed_context() -> None:
+    """Custom evaluators should receive one small typed rule-evaluation context."""
+    observed: list[RuleEvaluationContext] = []
+
+    rule = alert_rules.AlertRule(
+        id="video_metrics.default_rule",
+        detector_id="video_metrics",
+        display_name="Context Rule",
+        description="Captures evaluator context",
+        title="Context",
+        should_alert=lambda _row: False,
+        message_builder=lambda row: str(row),
+        evaluator=lambda context: observed.append(context) or False,
+    )
+
+    result = alert_rules._evaluate_rule(
+        "session-context",
+        rule,
+        alert_rules._coerce_runtime_rule_row(black_row(), detector_id="video_metrics"),
+    )
+
+    assert result is False
+    assert len(observed) == 1
+    context = observed[0]
+    assert context.session_id == "session-context"
+    assert context.detector_id == "video_metrics"
+    assert context.row.analyzer == "video_metrics"

@@ -6,13 +6,17 @@ This suite serves two purposes:
 - lock in the metadata and security rules that future plugin loading must obey
 """
 
-import analyzer_registry
 from analyzer_contract import (
     PluginManifestValidationError,
     validate_plugin_manifest,
 )
-from analyzer_registry import get_enabled_analyzers, list_available_detectors
 from alert_rules import list_available_alert_rules
+from analyzer_registry import (
+    get_enabled_analyzers as get_enabled_analyzers_compat,
+    list_available_detectors as list_available_detectors_compat,
+)
+from detectors import registry as detector_registry
+from detectors.registry import get_enabled_analyzers, list_available_detectors
 
 
 def test_video_segment_mode_enables_video_analyzers() -> None:
@@ -25,6 +29,7 @@ def test_video_segment_mode_enables_video_analyzers() -> None:
     ]
     assert registrations[0].store_name == "video_metrics"
 
+
 def test_api_stream_mode_reuses_video_metrics_registration() -> None:
     """Future API stream mode should already map to video analyzers."""
     registrations = get_enabled_analyzers("api_stream")
@@ -33,6 +38,19 @@ def test_api_stream_mode_reuses_video_metrics_registration() -> None:
         "video_metrics",
         "video_blur",
     ]
+
+
+def test_registration_exposes_detector_alias_for_future_extension_contracts() -> None:
+    """Registrations should expose the detector callable through the new alias too."""
+    registration = get_enabled_analyzers("video_segments")[0]
+
+    assert registration.detector is registration.analyzer
+
+
+def test_compatibility_wrapper_reexports_canonical_registry_helpers() -> None:
+    """Older imports should stay aligned with the canonical detector registry."""
+    assert get_enabled_analyzers_compat is detector_registry.get_enabled_analyzers
+    assert list_available_detectors_compat is detector_registry.list_available_detectors
 
 
 def test_list_available_detectors_returns_frontend_metadata() -> None:
@@ -65,9 +83,9 @@ def test_detector_default_rules_point_to_existing_matching_rule_metadata() -> No
 
 def test_list_available_detectors_preserves_null_default_rule_ids() -> None:
     """Detectors without a bundled default rule should expose a null linkage safely."""
-    original_registrations = analyzer_registry.ENABLED_ANALYZERS
+    original_registrations = detector_registry.ENABLED_ANALYZERS
     registration = original_registrations[0]
-    analyzer_registry.ENABLED_ANALYZERS = (
+    detector_registry.ENABLED_ANALYZERS = (
         registration.__class__(
             name="custom_detector",
             analyzer=registration.analyzer,
@@ -87,7 +105,7 @@ def test_list_available_detectors_preserves_null_default_rule_ids() -> None:
     try:
         detectors = list_available_detectors()
     finally:
-        analyzer_registry.ENABLED_ANALYZERS = original_registrations
+        detector_registry.ENABLED_ANALYZERS = original_registrations
 
     assert detectors == [
         {
