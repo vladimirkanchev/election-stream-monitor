@@ -1,0 +1,26 @@
+# Cheap local guardrails only.
+# Keep this fast enough for everyday commits; broader validation stays in `just`
+# and CI.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: fixture-environment-policy
+        name: fixture/environment policy guard
+        entry: python3 .github/scripts/check_fixture_environment_policy.py
+        language: system
+        pass_filenames: false

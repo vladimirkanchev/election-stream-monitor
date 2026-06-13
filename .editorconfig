@@ -1,0 +1,17 @@
+# Shared whitespace and indentation defaults.
+# Keep this minimal and let language-specific tooling own deeper formatting.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{yml,yaml,json,mjs,js,ts,tsx}]
+indent_size = 2
