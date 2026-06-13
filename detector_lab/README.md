@@ -83,6 +83,13 @@ organized around the current detector-lab responsibilities:
 - optical-flow and motion-coherence helpers
 - practical lab-only alert policies
 
+The local developer harness keeps the detector-lab confidence lanes separate:
+
+- `just test-detector-lab`
+  - fast synthetic detector-lab coverage
+- `just test-real-media`
+  - slower checked-in fixture confidence lane
+
 ## Package Map
 
 - `cli.py`

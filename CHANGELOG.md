@@ -14,6 +14,20 @@ stage.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-13
+
+Developer workflow and maintainer-harness follow-up release.
+
+Highlights:
+
+- local `just` harness for focused validation, push-readiness, and lightweight
+  branch checks
+- workflow templates, contributor guidance, and docs ownership cleanup for
+  branch flow and maintainer routing
+- lightweight guardrails for fixture/environment policy, dependency drift, and
+  PR-template completeness
+- expanded focused tests for repo-local skills and optional local hook routing
+
 ## [0.3.1] - 2026-05-18
 
 CI/CD hardening and test-coverage follow-up release.

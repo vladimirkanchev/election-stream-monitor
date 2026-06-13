@@ -1,8 +1,12 @@
 """Deterministic tests for repo-local Codex skills.
 
-These tests intentionally avoid API keys or live model calls. They check that
-the current skills stay structurally valid, scenario-aware, and clearly
-separated in purpose.
+These tests avoid API keys and live model calls. They protect the repo-local
+skill layer by checking:
+
+- inventory and structure
+- ownership boundaries and explicit handoffs
+- representative scenarios and fixed output snapshots
+- recently merged skill shapes that should stay distinct
 """
 
 from __future__ import annotations
@@ -26,10 +30,21 @@ from tests.skill_test_support import (
 
 
 EXPECTED_SKILLS = {
+    "alert-backend-parity-review",
+    "branch-pr-readiness",
+    "ci-failure-triage",
+    "dependency-change-review",
+    "detector-rule-review",
+    "docs-alignment",
+    "fixture-environment-safety",
+    "frontend-bridge-review",
     "incident-timeline",
+    "manual-validation-planner",
     "root-cause-suggestion",
+    "security-surface-review",
     "summarization",
-    "test-coverage-gaps",
+    "task-planning-evaluation",
+    "test-strategy-review",
 }
 
 COMMON_SECTIONS = [
@@ -39,6 +54,126 @@ COMMON_SECTIONS = [
 ]
 
 SCENARIO_EXPECTATIONS = [
+    ScenarioExpectation(
+        skill_name="alert-backend-parity-review",
+        required_snippets=(
+            "Parity surface",
+            "file-backed versus PostgreSQL-backed",
+            "Main parity risk",
+            "security-surface-review",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="security-surface-review",
+        required_snippets=(
+            "Security surface",
+            "local-first advanced-prototype stage",
+            "MCP `stdio` local tooling",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="branch-pr-readiness",
+        required_snippets=(
+            "Recommended commit shape",
+            "Recommended PR shape",
+            "Readiness summary",
+            "one coherent PR",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="test-strategy-review",
+        required_snippets=(
+            "Strong tests",
+            "Weak or low-value tests",
+            "environment-coupled tests",
+            "Recommended lane",
+            "Best first command",
+            "focused harness lanes",
+            "contract gap",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="dependency-change-review",
+        required_snippets=(
+            "Most likely classification",
+            "intentional, incidental, or branch drift",
+            "`pyproject.toml`",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="summarization",
+        required_snippets=(
+            "What changed",
+            "Behavior impact",
+            "behavior-preserving",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="fixture-environment-safety",
+        required_snippets=(
+            "CI safety assessment",
+            "local-only research assets",
+            "missing `.venv`",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="manual-validation-planner",
+        required_snippets=(
+            "Validation target",
+            "Electron",
+            "playback",
+            "Best follow-up automation",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="frontend-bridge-review",
+        required_snippets=(
+            "Ownership assessment",
+            "renderer, preload, Electron main, or backend",
+            "UI/runtime impact",
+            "manual-validation-planner",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="detector-rule-review",
+        required_snippets=(
+            "Findings",
+            "Boundary assessment",
+            "runtime versus `detector_lab` boundary",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="task-planning-evaluation",
+        required_snippets=(
+            "Importance",
+            "Recommended phase",
+            "current local-first advanced-prototype stage",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="docs-alignment",
+        required_snippets=(
+            "Drift summary",
+            "Recommended updates",
+            "low-value repetition",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="branch-pr-readiness",
+        required_snippets=(
+            "Drift assessment",
+            "Recommended PR shape",
+            "Merged-vs-main state",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="ci-failure-triage",
+        required_snippets=(
+            "Most likely failure class",
+            "Smallest local reproduction",
+            "CI or policy drift",
+        ),
+    ),
     ScenarioExpectation(
         skill_name="summarization",
         required_snippets=(
@@ -60,14 +195,6 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="test-coverage-gaps",
-        required_snippets=(
-            "contract gap",
-            "Cheapest useful test",
-            "existing nearby test files",
-        ),
-    ),
-    ScenarioExpectation(
         skill_name="root-cause-suggestion",
         required_snippets=(
             "Most likely root cause",
@@ -78,13 +205,352 @@ SCENARIO_EXPECTATIONS = [
 ]
 
 REAL_INCIDENT_REGRESSIONS = [
+    ("alert-backend-parity-review", "a session-alert store refactor may have changed file versus PostgreSQL grouped-incident behavior"),
+    ("alert-backend-parity-review", "an alerts-router auth change needs review for whether it touched store parity or only access policy"),
+    ("security-surface-review", "a FastAPI route change may have drifted outside the intended auth or rate-limit boundary"),
+    ("security-surface-review", "an `api_stream` trust policy change needs review for boundary clarity rather than full platform redesign"),
+    ("branch-pr-readiness", "a harness branch needs to know whether 2 or 3 commits is the cleanest shape"),
+    ("branch-pr-readiness", "a mixed worktree needs to be split into one runtime PR and one detector-lab PR"),
+    ("test-strategy-review", "detector-lab tests feel over-specific and need a trim pass"),
+    ("test-strategy-review", "a test file has many small threshold cases that may be better merged into parameterized coverage"),
+    ("dependency-change-review", "`pyproject.toml` and `uv.lock` changed during harness work and it is unclear whether they belong"),
+    ("dependency-change-review", "a code-only branch picked up dependency-file noise after local installs"),
+    ("summarization", "a detector-lab refactor needs a short explanation of the new family split and whether behavior changed"),
+    ("summarization", "a harness branch needs a PR-ready summary that includes docs and tests but avoids a file-by-file dump"),
+    ("branch-pr-readiness", "a workflow branch has passing focused tests but unclear commit, docs, or cleanup readiness"),
+    ("branch-pr-readiness", "a stacked PR sequence merged remotely and the final branch needs a clear merge-readiness summary"),
+    ("docs-alignment", "`practical_alerts.py` docstrings no longer match the newer evaluation-context shape"),
+    ("docs-alignment", "a production runtime module docstring still sounds dict-shaped after typed-row refactors"),
+    ("fixture-environment-safety", "a detector-lab test unexpectedly depends on local baseline clips that are not committed"),
+    ("fixture-environment-safety", "an HTTP/HLS test fails only because local sockets are unavailable in the environment"),
+    ("frontend-bridge-review", "a session-polling hook change may have blurred renderer versus bridge responsibilities"),
+    ("frontend-bridge-review", "a preload contract change needs review for normalization drift and test gaps"),
+    ("manual-validation-planner", "before merge, what should I click locally after touching playback status and alert rendering?"),
+    ("manual-validation-planner", "a FastAPI share-mode change needs a small manual smoke plan rather than a full release checklist"),
+    ("detector-rule-review", "a blur-rule refactor needs review for behavior risk and test gaps"),
+    ("detector-rule-review", "`detector_lab` motion-blur work may be drifting toward production responsibilities"),
+    ("test-strategy-review", "a blur-rule tweak needs `test-alert-rules` rather than the whole suite"),
+    ("test-strategy-review", "an HLS loader change should use `test-hls` before `ci-local`"),
+    ("task-planning-evaluation", "deciding whether to work on detectors, CI, harness, or docs next"),
+    ("task-planning-evaluation", "building a 2-week versus 2-month project roadmap"),
+    ("docs-alignment", "the harness commands changed and the README plus testing guide no longer match"),
+    ("docs-alignment", "CI lane ownership changed and the maintainer docs still describe the old shape"),
+    ("branch-pr-readiness", "a branch started as real-media hardening but now also carries detector-lab and CI work"),
+    ("branch-pr-readiness", "two stacked PRs were merged remotely and it is unclear what can now be deleted"),
+    ("ci-failure-triage", "`backend-tests` fails after detector or alert-rule changes"),
+    ("ci-failure-triage", "`feature-gate` is red even though only one leaf check actually matters"),
     ("incident-timeline", "session starts but UI falls back to idle"),
     ("incident-timeline", "branch protection / CI merge incidents"),
     ("root-cause-suggestion", "session start succeeded but first read 404s"),
     ("root-cause-suggestion", "PR is green but merge remains blocked"),
 ]
 
+# Prompts that could plausibly fit two nearby skills, but should still resolve
+# to one clear owner.
+AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
+    (
+        "summarization",
+        "branch summary versus branch readiness",
+        (
+            "What changed",
+            "Behavior impact",
+        ),
+        (
+            "Recommended PR shape",
+            "Readiness summary",
+        ),
+    ),
+    (
+        "branch-pr-readiness",
+        "branch shaping versus change summary",
+        (
+            "Recommended PR shape",
+            "Drift assessment",
+        ),
+        (
+            "Behavior impact",
+            "Best concise framing",
+        ),
+    ),
+    (
+        "test-strategy-review",
+        "automated validation versus manual smoke path",
+        (
+            "Best first command",
+            "Why this lane fits",
+        ),
+        (
+            "What to click/run",
+            "Best local flow",
+        ),
+    ),
+    (
+        "manual-validation-planner",
+        "manual smoke path versus automated validation",
+        (
+            "What to click/run",
+            "Best local flow",
+        ),
+        (
+            "Best first command",
+            "Why this lane fits",
+        ),
+    ),
+]
+
+# High-value handoffs that should stay explicit instead of being implied.
+EXPLICIT_HANDOFF_EXPECTATIONS = [
+    (
+        "frontend-bridge-review",
+        "use `manual-validation-planner` next",
+    ),
+    (
+        "alert-backend-parity-review",
+        "use `security-surface-review` first",
+    ),
+    (
+        "ci-failure-triage",
+        "use `test-strategy-review` next",
+    ),
+]
+
+# Markers that protect recently merged skill families from collapsing back into
+# one ambiguous mode.
+MERGED_SKILL_MODE_MARKERS = [
+    (
+        "summarization",
+        (
+            "What it is",
+            "Behavior impact",
+            "Best concise framing",
+        ),
+    ),
+    (
+        "branch-pr-readiness",
+        (
+            "Drift assessment",
+            "Recommended commit shape",
+            "Readiness summary",
+        ),
+    ),
+    (
+        "test-strategy-review",
+        (
+            "Gap",
+            "Strong tests",
+            "Best first command",
+        ),
+    ),
+]
+
+
+def assert_all_snippets_present(text: str, snippets: tuple[str, ...]) -> None:
+    """Keep repeated positive snippet checks easy to read."""
+    for snippet in snippets:
+        assert snippet in text
+
+
+def assert_all_snippets_absent(text: str, snippets: tuple[str, ...]) -> None:
+    """Keep repeated negative snippet checks easy to read."""
+    for snippet in snippets:
+        assert snippet not in text
+
 SNAPSHOT_EXPECTATIONS = [
+    SnapshotExpectation(
+        skill_name="alert-backend-parity-review",
+        snapshot_name="alert_backend_parity_review_store.md",
+        required_order=(
+            "Parity surface:",
+            "What should stay the same:",
+            "Main parity risk:",
+            "Current confidence:",
+            "Best next check:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="security-surface-review",
+        snapshot_name="security_surface_review_share_mode.md",
+        required_order=(
+            "Security surface:",
+            "Current protection:",
+            "Main risk:",
+            "Best next hardening step:",
+            "What is intentionally out of scope:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="branch-pr-readiness",
+        snapshot_name="commit_pr_shaping_harness.md",
+        required_order=(
+            "Branch story:",
+            "Recommended commit shape:",
+            "Recommended PR shape:",
+            "What should stay out:",
+            "Best next step:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="test-strategy-review",
+        snapshot_name="test_quality_review_detector_lab.md",
+        required_order=(
+            "Strong tests:",
+            "Weak or low-value tests:",
+            "Main risk:",
+            "Best cleanup:",
+            "What not to cut:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="dependency-change-review",
+        snapshot_name="dependency_change_review_harness.md",
+        required_order=(
+            "Changed dependency files:",
+            "Most likely classification:",
+            "Why it belongs or does not belong:",
+            "Best next action:",
+            "Validation or follow-up:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="summarization",
+        snapshot_name="change_summary_harness.md",
+        required_order=(
+            "What changed:",
+            "Why it matters:",
+            "Behavior impact:",
+            "Validation:",
+            "Best concise framing:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="branch-pr-readiness",
+        snapshot_name="release_merge_readiness_harness.md",
+        required_order=(
+            "Readiness summary:",
+            "What looks solid:",
+            "Open risks:",
+            "Missing checks:",
+            "Cleanup before merge:",
+            "Recommended next step:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="fixture-environment-safety",
+        snapshot_name="fixture_environment_safety_local_media.md",
+        required_order=(
+            "Risk summary:",
+            "Environment dependency:",
+            "CI safety assessment:",
+            "Best fix shape:",
+            "Cheapest validation:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="manual-validation-planner",
+        snapshot_name="manual_validation_planner_playback_alerts.md",
+        required_order=(
+            "Validation target:",
+            "Best local flow:",
+            "What to click/run:",
+            "What to watch for:",
+            "Failure signal:",
+            "Best follow-up automation:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="frontend-bridge-review",
+        snapshot_name="frontend_bridge_review_polling.md",
+        required_order=(
+            "Findings:",
+            "Ownership assessment:",
+            "UI/runtime impact:",
+            "Missing confidence:",
+            "Suggested follow-up:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="detector-rule-review",
+        snapshot_name="detector_rule_review_blur.md",
+        required_order=(
+            "Findings:",
+            "Boundary assessment:",
+            "Missing confidence:",
+            "Suggested follow-up:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="test-strategy-review",
+        snapshot_name="local_validation_selector_hls.md",
+        required_order=(
+            "Change area:",
+            "Best first command:",
+            "Why this lane fits:",
+            "When to run something broader:",
+            "Next broader option:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="task-planning-evaluation",
+        snapshot_name="task_planning_harness.md",
+        required_order=(
+            "Task:",
+            "Importance:",
+            "Urgency:",
+            "Scope:",
+            "Complexity:",
+            "Why it matters now:",
+            "Recommended phase:",
+            "Best next step:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="docs-alignment",
+        snapshot_name="docs_alignment_harness.md",
+        required_order=(
+            "Drift summary:",
+            "Owning docs:",
+            "Recommended updates:",
+            "Repetition to remove:",
+            "Best next doc pass:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="docs-alignment",
+        snapshot_name="code_docs_alignment_runtime_row.md",
+        required_order=(
+            "Docstring drift:",
+            "Owning code surface:",
+            "Recommended updates:",
+            "Low-value wording to remove:",
+            "Best next code-doc pass:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="branch-pr-readiness",
+        snapshot_name="branch_hygiene_stacked_pr.md",
+        required_order=(
+            "Branch purpose:",
+            "Drift assessment:",
+            "Most likely branch shape:",
+            "Recommended PR shape:",
+            "Merged-vs-main state:",
+            "Safe cleanup actions:",
+            "Best next step:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="ci-failure-triage",
+        snapshot_name="ci_failure_triage_backend_tests.md",
+        required_order=(
+            "Failing checks:",
+            "Most likely failure class:",
+            "Owning boundary:",
+            "Evidence for it:",
+            "Evidence against it:",
+            "Smallest local reproduction:",
+            "Best next fix:",
+        ),
+    ),
     SnapshotExpectation(
         skill_name="summarization",
         snapshot_name="summarization_mcp_direction.md",
@@ -112,12 +578,13 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="test-coverage-gaps",
+        skill_name="test-strategy-review",
         snapshot_name="test_coverage_gaps_bridge_contract.md",
         required_order=(
             "Gap:",
             "Why it matters:",
             "Best test layer:",
+            "Recommended lane:",
             "Cheapest useful test:",
         ),
     ),
@@ -165,11 +632,122 @@ def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
     ("skill_name", "boundary_snippets"),
     [
         (
+            "alert-backend-parity-review",
+            [
+                "use `ci-failure-triage` first",
+                "use `security-surface-review` first",
+                "use `test-strategy-review` first",
+                "use `branch-pr-readiness` first",
+            ],
+        ),
+        (
+            "security-surface-review",
+            [
+                "use `ci-failure-triage` first",
+                "use `task-planning-evaluation` first",
+                "use `docs-alignment` first",
+            ],
+        ),
+        (
+            "branch-pr-readiness",
+            [
+                "use `incident-timeline` first",
+                "use `ci-failure-triage` first",
+                "use `test-strategy-review` first",
+                "use `test-strategy-review` next",
+                "use `dependency-change-review` first",
+            ],
+        ),
+        (
+            "test-strategy-review",
+            [
+                "use `summarization` or `incident-timeline` first",
+                "use `ci-failure-triage` first",
+                "use `branch-pr-readiness` first",
+            ],
+        ),
+        (
+            "dependency-change-review",
+            [
+                "use `branch-pr-readiness` first",
+                "use `ci-failure-triage` first",
+            ],
+        ),
+        (
+            "fixture-environment-safety",
+            [
+                "use `test-strategy-review`",
+                "use `ci-failure-triage` first",
+                "use `test-strategy-review` next",
+            ],
+        ),
+        (
+            "detector-rule-review",
+            [
+                "use `test-strategy-review`",
+                "use `test-strategy-review` first",
+                "use `task-planning-evaluation`",
+            ],
+        ),
+        (
+            "test-strategy-review",
+            [
+                "use `summarization` or `incident-timeline` first",
+                "use `ci-failure-triage` first",
+                "use `branch-pr-readiness` first",
+            ],
+        ),
+        (
+            "task-planning-evaluation",
+            [
+                "use `branch-pr-readiness` first",
+                "use `test-strategy-review` first",
+                "use `docs-alignment` first",
+            ],
+        ),
+        (
+            "docs-alignment",
+            [
+                "use `ci-failure-triage` first",
+                "use `summarization` or `incident-timeline` first",
+                "use `test-strategy-review` next",
+            ],
+        ),
+        (
+            "manual-validation-planner",
+            [
+                "use `test-strategy-review` first",
+                "use `branch-pr-readiness` first",
+                "use `incident-timeline` first",
+                "use `ci-failure-triage` first",
+            ],
+        ),
+        (
+            "frontend-bridge-review",
+            [
+                "use `test-strategy-review` first",
+                "use `incident-timeline` first",
+                "use `manual-validation-planner` next",
+                "use `ci-failure-triage` first",
+                "use `detector-rule-review` first",
+            ],
+        ),
+        (
+            "ci-failure-triage",
+            [
+                "use `incident-timeline` first",
+                "hand off to `root-cause-suggestion`",
+                "use `test-strategy-review` next",
+            ],
+        ),
+        (
             "summarization",
             [
+                "Use `branch-pr-readiness` first",
+                "Use `docs-alignment` first",
                 "Use `incident-timeline`",
                 "Use `root-cause-suggestion`",
-                "Use `test-coverage-gaps`",
+                "Use `test-strategy-review`",
             ],
         ),
         (
@@ -180,10 +758,11 @@ def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
             ],
         ),
         (
-            "test-coverage-gaps",
+            "test-strategy-review",
             [
-                "Use this after the behavior or incident is already understood",
                 "use `summarization` or `incident-timeline` first",
+                "use `ci-failure-triage` first",
+                "use `branch-pr-readiness` first",
             ],
         ),
         (
@@ -222,6 +801,45 @@ def test_real_repo_incident_examples_remain_covered(
     assert incident_text in skill.text
 
 
+@pytest.mark.parametrize(
+    ("skill_name", "_overlap_case", "required_snippets", "excluded_snippets"),
+    AMBIGUOUS_BOUNDARY_EXPECTATIONS,
+)
+def test_ambiguous_prompts_still_point_to_the_intended_skill_boundary(
+    skill_name: str,
+    _overlap_case: str,
+    required_snippets: tuple[str, ...],
+    excluded_snippets: tuple[str, ...],
+) -> None:
+    skill = load_skill(skill_name)
+    assert_all_snippets_present(skill.text, required_snippets)
+    assert_all_snippets_absent(skill.text, excluded_snippets)
+
+
+@pytest.mark.parametrize(
+    ("skill_name", "handoff_snippet"),
+    EXPLICIT_HANDOFF_EXPECTATIONS,
+)
+def test_explicit_skill_handoffs_remain_intentional(
+    skill_name: str,
+    handoff_snippet: str,
+) -> None:
+    skill = load_skill(skill_name)
+    assert handoff_snippet in skill.body
+
+
+@pytest.mark.parametrize(
+    ("skill_name", "required_mode_markers"),
+    MERGED_SKILL_MODE_MARKERS,
+)
+def test_merged_skill_families_keep_their_distinct_modes(
+    skill_name: str,
+    required_mode_markers: tuple[str, ...],
+) -> None:
+    skill = load_skill(skill_name)
+    assert_all_snippets_present(skill.text, required_mode_markers)
+
+
 @pytest.mark.parametrize("expectation", SNAPSHOT_EXPECTATIONS)
 def test_snapshot_expected_outputs_stay_stable(
     expectation: SnapshotExpectation,
@@ -245,8 +863,19 @@ def test_snapshot_outputs_match_skill_intent(
 
 def test_skill_root_stays_small_and_repo_local() -> None:
     assert list_skill_files() == [
+        SKILLS_ROOT.joinpath("alert-backend-parity-review", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("branch-pr-readiness", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("ci-failure-triage", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("dependency-change-review", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("detector-rule-review", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("docs-alignment", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("fixture-environment-safety", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("frontend-bridge-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("incident-timeline", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("manual-validation-planner", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("root-cause-suggestion", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("security-surface-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("summarization", "SKILL.md").relative_to(SKILLS_ROOT),
-        SKILLS_ROOT.joinpath("test-coverage-gaps", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("task-planning-evaluation", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("test-strategy-review", "SKILL.md").relative_to(SKILLS_ROOT),
     ]

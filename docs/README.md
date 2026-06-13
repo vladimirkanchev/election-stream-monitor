@@ -7,6 +7,9 @@ intent layer for the current repo state, not as end-user documentation.
 If you want the gentlest product-level overview first, start with the root
 [`README.md`](../README.md) and come back here for the maintainer view.
 
+If you want the shortest contributor entrypoint for branch flow, local
+commands, and docs ownership, start with [../CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Best First Reads
 
 If you are new to the repo, read these in order:
@@ -41,6 +44,50 @@ Use these first depending on what you are doing:
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+  - [fixture-environment-policy.md](./fixture-environment-policy.md)
+  - use the fixture/environment policy when deciding whether a path belongs in
+    shared tests, local-only notes, or a slower explicit lane
+- using the local developer workflow harness
+  - use [../CONTRIBUTING.md](../CONTRIBUTING.md) first if you want the short
+    version of branch flow, local commands, and docs ownership
+  - [`../justfile`](../justfile)
+  - treat the `justfile` as the canonical local command entrypoint for daily
+    validation and developer-productivity lanes
+  - harness shape:
+    - `justfile` owns daily command entrypoints
+    - `pre-commit` owns cheap commit-time hygiene only
+    - `scripts/git-hooks/pre-push` is the optional last cheap local push guard
+    - CI owns broader branch and weekly confidence
+  - dependency metadata rule:
+    - if `pyproject.toml` or `uv.lock` changes, explain why in the PR or commit
+  - commit-message rule:
+    - describe the actual change, not the branch purpose
+    - keep one clear theme per commit when practical
+    - prefer a short prefix such as `feat:`, `fix:`, `docs:`, `test:`, or `chore:`
+  - [`../.pre-commit-config.yaml`](../.pre-commit-config.yaml) is the cheap
+    local guardrail layer:
+    - Ruff
+    - trailing whitespace / EOF fixes
+    - YAML / JSON / TOML validation
+    - fixture/environment policy guard
+  - [`../.editorconfig`](../.editorconfig) keeps whitespace, final newlines,
+    and basic indentation consistent across Python, frontend files, and docs
+  - [git-hooks.md](./git-hooks.md) explains the optional versioned `pre-push`
+    hook and when to keep it narrow
+  - Markdown policy:
+    - keep it light
+    - prefer clear headings, short lists, and one owner per topic
+    - use existing `pre-commit` and `.editorconfig` guardrails instead of adding heavy Markdown enforcement
+  - use [../CONTRIBUTING.md](../CONTRIBUTING.md) for the short everyday local
+    flow and [testing-and-validation.md](./testing-and-validation.md) for lane
+    details and CI ownership
+  - use the workflow template trio as one branch flow:
+    - start with [branch-purpose-template.md](./branch-purpose-template.md)
+      to define one branch purpose sentence, scope, and split trigger
+    - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+      while opening or updating the PR so validation, fixture impact, and docs impact stay explicit
+    - finish with [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+      before merge, retarget, or branch cleanup
 - changing frontend or Electron bridge behavior
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
@@ -367,14 +414,45 @@ coordinated contract change:
 
 The repo also carries a small local skill set for AI-assisted diagnostic work:
 
-- `./.agents/skills/summarization/`
-- `./.agents/skills/incident-timeline/`
-- `./.agents/skills/test-coverage-gaps/`
-- `./.agents/skills/root-cause-suggestion/`
-
 Treat these as lightweight workflow helpers for the current project stage.
 They are intentionally small, text-first, and easy to extend without adding a
 separate automation framework.
+
+Use the skill set by question type:
+
+- explain what happened
+  - `./.agents/skills/summarization/`
+  - `./.agents/skills/incident-timeline/`
+  - `./.agents/skills/root-cause-suggestion/`
+- shape a branch or next step
+  - `./.agents/skills/branch-pr-readiness/`
+  - `./.agents/skills/dependency-change-review/`
+  - `./.agents/skills/task-planning-evaluation/`
+- choose validation or test work
+  - `./.agents/skills/ci-failure-triage/`
+  - `./.agents/skills/test-strategy-review/`
+  - `./.agents/skills/manual-validation-planner/`
+  - `./.agents/skills/fixture-environment-safety/`
+- review a main repo seam
+  - `./.agents/skills/detector-rule-review/`
+  - `./.agents/skills/frontend-bridge-review/`
+  - `./.agents/skills/alert-backend-parity-review/`
+  - `./.agents/skills/security-surface-review/`
+  - `./.agents/skills/docs-alignment/`
+
+Most common starting points:
+
+- branch drift, commit shape, or merge readiness
+  - `./.agents/skills/branch-pr-readiness/`
+- CI failure and smallest honest next lane
+  - `./.agents/skills/ci-failure-triage/`
+  - `./.agents/skills/test-strategy-review/`
+- detector/rule changes
+  - `./.agents/skills/detector-rule-review/`
+- frontend or bridge changes
+  - `./.agents/skills/frontend-bridge-review/`
+- docs or docstring drift
+  - `./.agents/skills/docs-alignment/`
 
 The deterministic tests for them live in:
 
@@ -382,10 +460,33 @@ The deterministic tests for them live in:
 - `tests/skill_test_support.py`
 - `tests/fixtures/skill_output_snapshots/`
 
+That test slice now checks:
+
+- skill inventory and section structure
+- explicit boundary and handoff wording
+- representative repo scenarios
+- fixed output-shape snapshots
+- merged-skill regression markers where one skill now owns several modes
+
 ## Document Ownership
 
 Use each doc for one main question:
 
+- root [`README.md`](../README.md)
+  - project/runtime overview
+  - first stop for trying the repo or understanding the current product shape
+- [`docs/README.md`](./README.md)
+  - maintainer routing
+  - where to start for contributor, reviewer, and AI-agent workflows
+- [`testing-and-validation.md`](./testing-and-validation.md)
+  - validation lanes
+  - routine commands, CI scope, and deeper confidence paths
+  - lane policy, fixture-check usage, and cheap local guardrails
+- repo-local skill files under `./.agents/skills/`
+  - skill behavior only
+  - keep repo routing and broader workflow guidance in the maintainer docs, not inside each skill
+- when a note starts duplicating one of the sources above, shorten it and point back to the owner
+- for Markdown-heavy docs, prefer small edits that keep one owner per topic instead of copying the same guidance into several files
 - [architecture.md](./architecture.md)
   - system responsibilities
   - runtime boundaries
@@ -409,10 +510,6 @@ Use each doc for one main question:
 - [mcp-server.md](./mcp-server.md)
   - local MCP startup and connection details
   - current read-only/query-only MCP scope
-- [testing-and-validation.md](./testing-and-validation.md)
-  - routine verification commands
-  - CI scope
-  - manual vs automated validation
 - [api-stream-local-validation.md](./api-stream-local-validation.md)
   - repeatable local `api_stream` trial workflow
   - expected status, logs, and cleanup
@@ -421,8 +518,6 @@ Use each doc for one main question:
   - best feedback targets for the current project stage
 - [release-versioning.md](./release-versioning.md)
   - `0.x` release expectations
-- repo-local skill files under `./.agents/skills/`
-  - concise AI workflow helpers for summarization, incident review, test-gap analysis, and root-cause narrowing
 
 ## Extension Guides
 

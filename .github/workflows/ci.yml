@@ -141,6 +141,24 @@ jobs:
       - name: Run manifest-backed main PR gate policy
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
+  pr-template-completeness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check PR template completeness
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python .github/scripts/check_pr_template_completeness.py
+
   frontend-checkpoint:
     runs-on: ubuntu-24.04
     needs:
@@ -673,14 +691,18 @@ jobs:
       # drift. Order stays:
       # 1. manifest structure/scope
       # 2. CI-owned test-path existence
-      # 3. workflow/policy drift
-      # 4. split-suite registration for newly added guarded files
-      # 5. narrower docs/workflow gate policy
+      # 3. fixture/environment policy drift
+      # 4. workflow/policy drift
+      # 5. split-suite registration for newly added guarded files
+      # 6. narrower docs/workflow gate policy
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
 
       - name: Check CI-owned test path existence
         run: python .github/scripts/check_ci_test_paths_exist.py
+
+      - name: Check fixture and environment policy assumptions
+        run: python .github/scripts/check_fixture_environment_policy.py
 
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py

@@ -26,6 +26,25 @@ monitoring runs.
 The project is intentionally small. I want it to stay readable, useful, and
 easy to extend without turning into a much heavier platform too early.
 
+For maintainer workflow support, the repo also includes a small set of
+workflow templates:
+
+- branch start:
+  [`docs/branch-purpose-template.md`](./docs/branch-purpose-template.md)
+- PR shaping:
+  [`.github/pull_request_template.md`](./.github/pull_request_template.md)
+- merge/readiness pass:
+  [`docs/merge-readiness-checklist.md`](./docs/merge-readiness-checklist.md)
+
+For doc ownership and where each maintainer-facing note belongs, use
+[docs/README.md](./docs/README.md).
+
+For a short contributor and maintainer entrypoint, use
+[CONTRIBUTING.md](./CONTRIBUTING.md).
+
+For optional local Git hooks that reinforce the same harness rules, use
+[docs/git-hooks.md](./docs/git-hooks.md).
+
 ## Why this project exists
 
 This project exists to support more transparent election observation in
@@ -46,6 +65,8 @@ If you are:
 
 - trying the project locally
   - start with [Running The Project](./README.md#running-the-project)
+- contributing or shaping a maintainer branch
+  - start with [CONTRIBUTING.md](./CONTRIBUTING.md)
 - learning the current product/runtime shape
   - read [Current Capabilities](./README.md#current-capabilities)
   - then [docs/architecture.md](./docs/architecture.md)
@@ -233,10 +254,12 @@ In practice, the flow looks like this:
 2. The frontend and Electron handle the visible workflow: setup, playback,
    status, alerts, and desktop-only jobs like local media serving and the HLS
    proxy path.
-3. FastAPI starts and manages sessions, checks sources, resolves playback
-   inputs, and hands the monitoring work to the backend services and worker
-   process.
-4. Detectors and alert rules process the media, while local session state and
+3. Electron starts and talks to the local FastAPI runtime. FastAPI exposes the
+   desktop-backed HTTP boundary for session control, source checks, playback
+   resolution, and alert/session reads.
+4. FastAPI routes session operations into the shared backend services, which
+   spawn and track the detached session worker that runs the monitoring flow.
+5. Detectors and alert rules process the media, while local session state and
    the shared alert backend keep progress, results, and alerts. File-backed
    alerts stay the default, with PostgreSQL available as an opt-in backend.
 
@@ -251,9 +274,10 @@ The diagram below shows the same flow in one picture.
 ### Who Owns What
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
-- **FastAPI** owns the monitoring backend: session control, source validation, stream resolution, detector/rule execution, and session-state updates. In `share` mode, it also applies API-key auth and rate limiting to the alerts routes.
+- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, alert/session reads, and the protected alerts routes in `share` mode.
+- **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
-- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime.
+- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session files stay file-backed even when alerts use the opt-in PostgreSQL backend.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation
@@ -314,22 +338,130 @@ node -v
 ffmpeg -version | head -n 1
 ```
 
+## Developer Harness
+
+The repo now includes a small local command harness in
+[`justfile`](./justfile). Use it as the default entrypoint for the most common
+developer validation loops.
+
+Design intent:
+
+- focused lanes own one seam each
+- broader lanes such as `just test-fast` and `just ci-local` compose those
+  focused lanes instead of redefining them
+- the harness stays readable and stable by mirroring the current project
+  structure rather than hiding it
+
+Current high-value commands:
+
+- lane policy:
+  - smallest honest lane first
+  - `just test-fast` for multi-seam fast runtime checks
+  - `just ci-local` for push-readiness
+  - weekly/slower lanes only when the change really needs that depth
+- `just env-check`
+  - lightweight local tool and version sanity check
+- focused lanes first:
+  - use `just test-detectors`, `just test-processor`, `just test-alert-rules`,
+    `just test-hls`, or `just test-frontend` when the changed seam is already clear
+- `just test-fast`
+  - best default fast production-runtime validation lane for everyday backend/frontend work
+  - use it when you want one honest fast runtime pass without selecting a narrower lane
+- `just ci-local`
+  - best local “ready to push?” lane for fast branch feedback
+  - use it after focused lanes or `test-fast`, not as the first answer for every change
+- `just fixture-check`
+  - fixture ownership and environment-assumption policy lane
+- `just test-detectors`
+  - focused production detector contract and metric lane
+- `just test-processor`
+  - focused production processor and orchestration lane
+- `just test-alert-rules`
+  - focused production alert-rule policy lane
+- `just test-hls`
+  - focused HLS / `api_stream` loader and reconnect-policy lane
+- `just test-frontend`
+  - focused frontend runtime and bridge checkpoint lane
+- `just docs-check`
+  - docs/workflow consistency and CI-ownership alignment lane
+- `just branch-cleanup`
+  - non-destructive branch hygiene and push/review readiness check
+- `just test-detector-lab`
+  - fast synthetic detector-lab lane for experiment and runner confidence
+- `just test-real-media`
+  - slower checked-in fixture lane for detector-lab real-media confidence
+- `just lint`
+  - backend Ruff plus frontend ESLint
+- `just typecheck`
+  - backend mypy, backend pyright, and frontend TypeScript typecheck
+
+Use the `justfile` for the daily loop. Use
+[docs/testing-and-validation.md](./docs/testing-and-validation.md) for the
+full CI and slow-lane picture.
+
+Harness layers:
+
+- [`justfile`](./justfile)
+  - daily local commands
+  - focused lanes first, broader lanes later
+- [`pre-commit`](./.pre-commit-config.yaml)
+  - cheap commit-time hygiene only
+  - do not treat it as a replacement for `just test-fast` or `just ci-local`
+- [`.editorconfig`](./.editorconfig)
+  - shared whitespace and indentation defaults across Python, frontend files,
+    and docs
+
+Cheap local guardrails in [`pre-commit`](./.pre-commit-config.yaml):
+
+- Ruff
+- trailing whitespace / EOF fixes
+- YAML / JSON / TOML validation
+- the fixture/environment policy guard
+
+Branch workflow templates:
+- [branch-purpose-template.md](./docs/branch-purpose-template.md)
+- [`.github/pull_request_template.md`](./.github/pull_request_template.md)
+- [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
+
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under
-[`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review:
+[`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review.
 
-- `summarization`
-- `incident-timeline`
-- `test-coverage-gaps`
-- `root-cause-suggestion`
+Use these skills when you want quick repo-aware help with:
 
-Use these skills when you want quick repo-aware help with summaries, incident
-timelines, root-cause suggestions, or test-coverage gaps.
+- understanding or explaining what happened:
+  - `summarization`
+  - `incident-timeline`
+  - `root-cause-suggestion`
+- shaping branch, PR, and merge workflow:
+  - `branch-pr-readiness`
+  - `ci-failure-triage`
+  - `dependency-change-review`
+  - `task-planning-evaluation`
+- choosing what to test or run next:
+  - `test-strategy-review`
+  - `manual-validation-planner`
+  - `fixture-environment-safety`
+- reviewing core code or boundaries:
+  - `detector-rule-review`
+  - `frontend-bridge-review`
+  - `alert-backend-parity-review`
+  - `security-surface-review`
+  - `docs-alignment`
 
 These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are
 not required to run the project.
+
+For the fuller skill map and maintainer-oriented ownership notes, use
+[docs/README.md](./docs/README.md).
+
+The deterministic tests for these skills live in:
+
+- [test_repo_skills.py](/home/vlad/Projects/election-stream-monitor/tests/test_repo_skills.py)
+- [skill_test_support.py](/home/vlad/Projects/election-stream-monitor/tests/skill_test_support.py)
+- [skill_output_snapshots](/home/vlad/Projects/election-stream-monitor/tests/fixtures/skill_output_snapshots)
 
 ## Running The Project
 
@@ -499,7 +631,7 @@ For the authoritative owner docs, start with
 
 ## Versioning And Releases
 
-- the project is now in an early `0.4.0` stage
+- the project is now in an early `0.4.1` stage
 - expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)

@@ -3,8 +3,27 @@
 This document is for engineers who want to review the repo efficiently without
 reading every file first.
 
-If you only care about one subsystem, skip straight to that section instead of
-reading the whole repo front to back.
+If you only care about one subsystem, skip straight to that section.
+
+For branch workflow and PR shape, use this sequence alongside the review:
+
+1. [branch-purpose-template.md](./branch-purpose-template.md)
+2. [`../.github/pull_request_template.md`](../.github/pull_request_template.md)
+3. [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+
+Before going deep on code, make sure the PR notes state:
+
+- the validation commands that were run
+- fixture/environment impact
+- docs impact
+- why dependency metadata changes belong, if `pyproject.toml` or `uv.lock` changed
+- whether the branch used focused lanes, `test-fast`, or `ci-local` for the right reason
+
+The pull-request CI also fails early if those validation, fixture/environment,
+or docs sections are left effectively blank.
+
+For commit history, prefer readable messages that describe the actual change
+and keep one clear theme per commit when practical.
 
 ## Best Review Order
 

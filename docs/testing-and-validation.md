@@ -6,6 +6,20 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+For broader doc ownership rules, use [docs/README.md](./README.md#document-ownership).
+
+For branch workflow around those checks, use:
+
+- [branch-purpose-template.md](./branch-purpose-template.md)
+- [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+- [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+
+Treat them as one flow:
+
+1. define branch purpose first
+2. keep PR scope and validation notes explicit while the branch is active
+3. use the readiness checklist at the end instead of turning it into a second planning doc
+
 Keep two confidence lanes separate when reading this document:
 
 - production runtime confidence
@@ -33,10 +47,69 @@ For a shorter CI ownership handoff, use
 
 ## Routine Validation
 
-For everyday detector/rule work, the most useful focused checks are usually:
+Validation-lane policy:
 
-- production detector and rule slices
-- detector-lab practical/experiment slices when the change is experimental
+- smallest honest lane first
+- use `just test-fast` for multi-seam fast production-runtime checks
+- use `just ci-local` for fast push-readiness
+- use weekly and slower confidence lanes only when the change really reaches that depth
+
+Harness ownership for this workflow:
+
+- `justfile`
+  - daily local validation entrypoints
+- `pre-commit`
+  - cheap commit-time hygiene only
+- optional `pre-push`
+  - last cheap local push guard for `just test-fast` or `just docs-check`
+- CI
+  - broader branch-feedback lanes and weekly confidence
+
+Recommended local command order for most day-to-day work:
+
+- `just env-check`
+  - use once after environment setup or toolchain changes
+- focused lanes such as `just test-detectors`, `just test-alert-rules`, or
+  `just test-hls`
+  - use when the changed seam is already clear and you want the smallest honest lane
+- `just test-fast`
+  - best default fast production-runtime lane when you want one honest fast runtime pass
+- `just fixture-check`
+  - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
+- `just dependency-check`
+  - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
+- `just ci-local`
+  - use before push or PR when you want the closest fast local CI proxy
+
+For the shortest contributor-facing command summary, use
+[../CONTRIBUTING.md](../CONTRIBUTING.md). This document keeps the fuller lane
+ownership and CI context.
+
+For cheap local guardrails before those lanes, install and run the repo's
+[`pre-commit`](../.pre-commit-config.yaml) hooks. They intentionally stay
+small:
+
+- Ruff
+- trailing whitespace / EOF fixes
+- YAML / JSON / TOML validation
+- fixture/environment policy guard
+
+For dependency metadata specifically, use `just dependency-check` when
+`pyproject.toml` or `uv.lock` moved. Keep the result simple:
+
+- `uv.lock` moving by itself is treated as suspicious local drift
+- paired dependency metadata changes pass, but still need an explanation in PR
+  notes or commit text
+
+If you want one last cheap local check before `git push`, install the optional
+versioned hook in [git-hooks.md](./git-hooks.md). Keep it narrow on purpose:
+
+- `just test-fast` for runtime/frontend/test/harness changes
+- `just docs-check` for docs/workflow-only changes
+- do not turn it into a push-time `ci-local` or full-suite gate
+
+That hook is intentionally covered by one small routing test slice instead of
+full end-to-end push automation.
 
 Current focused ownership map:
 
@@ -68,6 +141,23 @@ The fast PR/branch CI workflow now pins the synthetic path to the file-backed
 alert backend. The weekly workflow owns the real Postgres confidence jobs and
 overrides that default in its dedicated live-DB lanes.
 
+For the short fixture and environment ownership rules behind those lanes, use
+[fixture-environment-policy.md](./fixture-environment-policy.md).
+
+That policy keeps the fast shared lanes honest. In practice, the repo should reject:
+
+- local-only media or research assets leaking into shared tests or docs
+- default test lanes that quietly require optional tools, sockets, or host-specific behavior
+- Python tests that hardcode the developer repo root instead of resolving paths dynamically
+- shared fixture metadata that quietly points back at local-only assets without an explicit exception
+
+Use `just fixture-check` when you want the lightweight guard directly. Treat
+failures there as ownership or portability issues first, not as product
+regressions.
+
+Use [docs/merge-readiness-checklist.md](./merge-readiness-checklist.md) when
+you want to turn those lane choices into a final branch-ready pass.
+
 For detector-lab specifically:
 
 - focused detector-lab tests and fixture runs validate experimental comparison
@@ -96,12 +186,73 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 tests/test_detector_lab.py -q -k 'practical or build_experiment_window_facts or prefers_motion_blur_classification or blend or optical_flow or motion_coherent_variant or compression_robust or structure_relief'
 ```
 
+If you want the standardized local harness entrypoint instead of copying the
+commands directly, use the matching `justfile` recipes:
+
+- `just env-check`
+  - lightweight local tool and version sanity check
+  - confirms `python3`, `node`, `ffmpeg`, and `just`
+- `just test-detectors`
+  - focused production detector contract and metric lane
+- `just test-processor`
+  - focused production processor and orchestration lane
+- `just test-alert-rules`
+  - focused production alert-rule policy lane
+- `just test-hls`
+  - focused HLS / `api_stream` loader, reconnect, and limits lane
+  - narrower than the broader weekly `api_stream` deep-validation suites
+- `just test-frontend`
+  - focused frontend runtime and bridge checkpoint lane
+  - useful for renderer, bridge, and Electron-facing UI changes
+- `just docs-check`
+  - docs/workflow consistency and CI-target ownership lane
+  - validates the current manifest-backed CI and maintainer-doc alignment
+- `just fixture-check`
+  - lightweight fixture/environment policy lane
+  - catches local-only fixture leakage and obvious repo-root test assumptions
+  - use it when a test or doc starts mentioning ignored fixture paths,
+    optional-tool assumptions, or machine-specific paths
+  - also runs in the non-`main` PR docs/workflow consistency lane
+- `just dependency-check`
+  - lightweight dependency metadata drift lane
+  - flags the highest-suspicion case: `uv.lock` changing without
+    `pyproject.toml`
+  - keeps broader intent and explanation rules with the PR template and
+    merge/readiness checklist
+- `just branch-cleanup`
+  - non-destructive branch hygiene lane
+  - shows branch name, status, upstream divergence, and changed-file summaries
+- `just test-fast`
+  - composed fast production runtime lane:
+    `test-detectors`, `test-processor`, `test-alert-rules`, and
+    `test-frontend`
+  - intentionally smaller than the full fast synthetic backend CI lane
+- `just test-detector-lab`
+  - fast detector-lab synthetic and runner/export confidence lane
+- `just test-real-media`
+  - slower detector-lab real-media confidence lane backed by checked-in
+    fixtures
+- `just lint`
+  - backend Ruff plus frontend ESLint
+- `just typecheck`
+  - backend mypy, backend pyright, and frontend TypeScript typecheck
+- `just ci-local`
+  - best local "ready to push?" lane
+  - mirrors the current fast branch-feedback CI shape more closely:
+    `backend-tests` fast synthetic lane, `frontend-checkpoint`, backend Ruff,
+    backend mypy, backend pyright, frontend ESLint, and frontend typecheck
+  - intentionally does not replace weekly slow lanes or PR-only consistency
+    guards
+
 ## CI Shape
 
 The current GitHub Actions workflow uses three practical layers:
 
 - `changes`
   - path filter job that classifies backend, frontend, docs, workflow, and contract-sensitive edits
+- `pr-template-completeness`
+  - lightweight PR-body guard for validation commands plus docs and
+    fixture/environment choices
 - `frontend-checkpoint`
   - quick Electron/bridge/session-flow regression signal
 - `backend-tests`
@@ -836,12 +987,42 @@ Focused repo-local skill validation:
 This skill-focused test slice is intentionally no-key and deterministic.
 It currently covers:
 
-- skill frontmatter and required section structure
-- readable section ordering
-- explicit hand-off boundaries between the skills
-- golden scenario coverage for current repo use cases
-- snapshot-style expected outputs for selected fixed prompts
-- lightweight regression coverage for real repo incidents
+- skill inventory, frontmatter, and section structure
+- readable ordering plus explicit hand-off boundaries
+- nearby-skill overlap and explicit deferral coverage
+- merged-skill regression markers for the newer multi-mode skills
+- representative repo scenarios plus fixed output-shape snapshots
+- lightweight regressions for real repo incidents
+- current workflow seams:
+  - branch/PR/readiness and dependency drift
+  - CI failure triage and smallest-lane reproduction
+  - test strategy, fixture/environment safety, and manual validation
+  - detector/rule, frontend/bridge, alert-backend, security, and docs review
+
+For the full skill routing map, use [docs/README.md](./README.md#repo-local-codex-skills).
+In this validation doc, the most relevant skill questions are:
+
+- "What is the smallest honest validation lane or the next test improvement?"
+  - `ci-failure-triage`
+  - `test-strategy-review`
+  - `manual-validation-planner`
+  - `fixture-environment-safety`
+- "Did the docs, fixtures, or validation ownership drift?"
+  - `docs-alignment`
+  - `fixture-environment-safety`
+
+The lightweight workflow templates that pair with this skill slice are:
+
+- [`.github/pull_request_template.md`](../.github/pull_request_template.md)
+  - keeps purpose, scope, validation, fixture impact, and docs impact explicit
+- [branch-purpose-template.md](./branch-purpose-template.md)
+  - keeps branch purpose, scope, and split trigger explicit
+- [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+  - keeps final validation, docs, fixture checks, cleanup, and merge safety in one pass
+
+The fixture/environment policy guard also runs in the non-`main`
+`docs-consistency` CI lane. That keeps ignored fixture paths and obvious
+machine-specific test assumptions from drifting into shared review branches.
 
 Focused alert-query, seam, incident, and MCP validation:
 
