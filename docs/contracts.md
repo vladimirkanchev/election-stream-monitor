@@ -1093,7 +1093,8 @@ What is intentionally not introduced yet:
 - no plugin-specific retry policies
 
 This contract is intentionally lightweight for the current stage, but it gives
-`api_stream` a clear failure model before the implementation work begins.
+the current `api_stream` runtime a clear failure model without expanding the
+transport surface too early.
 
 ## API Stream Reconnect De-Dup Policy v1
 
@@ -1261,10 +1262,10 @@ Why this matters:
 
 Purpose:
 
-- define acceptable remote-source shapes before `api_stream` is implemented
+- define acceptable remote-source shapes for the current `api_stream` runtime
 - prevent local-first development from expanding into arbitrary remote or
   internal-network probing
-- name the reconnect and fetch safety limits before transport code exists
+- keep reconnect and fetch safety limits explicit at the transport boundary
 
 Current allowlist rules:
 
@@ -2027,7 +2028,7 @@ Most likely next steps:
 
 - add explicit `api_stream` contract cases
 - document reconnect and failure-state semantics
-- keep these same contracts when introducing a future HTTP/FastAPI layer
+- keep these same contracts stable across future transport changes
 
 That way the transport can change later without redefining the meaning of the
 data.

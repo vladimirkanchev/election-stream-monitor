@@ -6,7 +6,6 @@ comparison into a concrete decision list for future policy work.
 Related notes:
 
 - [api-stream-operational-inventory.md](./api-stream-operational-inventory.md)
-- [api-stream-election-profile-comparison.md](./api-stream-election-profile-comparison.md)
 
 This is an internal planning note for maintainers and coding agents.
 

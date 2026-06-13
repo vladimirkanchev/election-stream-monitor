@@ -254,10 +254,12 @@ In practice, the flow looks like this:
 2. The frontend and Electron handle the visible workflow: setup, playback,
    status, alerts, and desktop-only jobs like local media serving and the HLS
    proxy path.
-3. FastAPI starts and manages sessions, checks sources, resolves playback
-   inputs, and hands the monitoring work to the backend services and worker
-   process.
-4. Detectors and alert rules process the media, while local session state and
+3. Electron starts and talks to the local FastAPI runtime. FastAPI exposes the
+   desktop-backed HTTP boundary for session control, source checks, playback
+   resolution, and alert/session reads.
+4. FastAPI routes session operations into the shared backend services, which
+   spawn and track the detached session worker that runs the monitoring flow.
+5. Detectors and alert rules process the media, while local session state and
    the shared alert backend keep progress, results, and alerts. File-backed
    alerts stay the default, with PostgreSQL available as an opt-in backend.
 
@@ -272,9 +274,10 @@ The diagram below shows the same flow in one picture.
 ### Who Owns What
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
-- **FastAPI** owns the monitoring backend: session control, source validation, stream resolution, detector/rule execution, and session-state updates. In `share` mode, it also applies API-key auth and rate limiting to the alerts routes.
+- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, alert/session reads, and the protected alerts routes in `share` mode.
+- **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
-- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime.
+- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session files stay file-backed even when alerts use the opt-in PostgreSQL backend.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation

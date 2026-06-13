@@ -20,7 +20,8 @@ workbench, use [detector_lab/README.md](../detector_lab/README.md).
 
 - project stage: advanced prototype / pre-pilot
 - architecture shape: local-first modular monolith
-- backend: Python session runner, detectors, alert rules, persistence
+- backend: local FastAPI boundary plus shared Python session services and a
+  detached session worker
 - frontend: React/Electron setup, playback, alert inspection
 - live support: direct `.m3u8` / `.mp4` `api_stream` inputs with backend
   loading and Electron-side HLS playback proxying
@@ -46,7 +47,10 @@ for alerts.
 
 In practice that means:
 
-- one Python backend
+- one Python backend split into:
+  - a local FastAPI boundary
+  - shared session services
+  - a detached session worker for monitoring runs
 - one React/Electron frontend
 - explicit detector registration
 - explicit alert rules
@@ -69,17 +73,28 @@ It is now:
 2. The React app calls the normalized bridge surface exposed through
    `window.electionBridge`.
 3. Electron owns local runtime startup/readiness, talks to the local FastAPI
-   backend for normal operation, and returns explicit success/error envelopes
+   boundary for normal operation, and returns explicit success/error envelopes
    to the frontend transport layer.
-4. [`src/api/routers/sessions.py`](../src/api/routers/sessions.py) adapts HTTP session requests into the shared application service in [`src/session_service.py`](../src/session_service.py).
-5. [`src/session_runner.py`](../src/session_runner.py) coordinates the actual monitoring run and delegates local discovery/progress shaping to its focused helper modules.
-6. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which detectors are enabled for that mode.
-7. [`src/detectors.py`](../src/detectors.py) extracts detector facts and returns typed detector rows.
-8. [`src/processor.py`](../src/processor.py) normalizes detector output into the runtime row contract.
-9. [`src/alert_rules.py`](../src/alert_rules.py) evaluates production alert policy on those runtime rows.
-10. Session files are written under `data/sessions/`, including backend-owned
+4. [`src/api/routers/sessions.py`](../src/api/routers/sessions.py) adapts HTTP
+   session requests into the shared application service in
+   [`src/session_service.py`](../src/session_service.py).
+5. [`src/session_service.py`](../src/session_service.py) validates start
+   requests, spawns the detached worker process, and keeps start/read/cancel
+   logic transport-agnostic.
+6. [`src/session_runner.py`](../src/session_runner.py) coordinates the actual
+   monitoring run inside that worker and delegates local discovery/progress
+   shaping to its focused helper modules.
+7. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which
+   detectors are enabled for that mode.
+8. [`src/detectors.py`](../src/detectors.py) extracts detector facts and
+   returns typed detector rows.
+9. [`src/processor.py`](../src/processor.py) normalizes detector output into
+   the runtime row contract.
+10. [`src/alert_rules.py`](../src/alert_rules.py) evaluates production alert
+    policy on those runtime rows.
+11. Session files are written under `data/sessions/`, including backend-owned
    diagnostic artifacts such as `worker.log`.
-11. The frontend polls the session snapshot and updates playback and alerts.
+12. The frontend polls the session snapshot and updates playback and alerts.
 
 The new MCP surface follows the same adapter pattern:
 
