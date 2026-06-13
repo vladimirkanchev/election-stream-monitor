@@ -141,6 +141,24 @@ jobs:
       - name: Run manifest-backed main PR gate policy
         run: python .github/scripts/check_main_pr_consistency.py origin/${{ github.base_ref }}...HEAD
 
+  pr-template-completeness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Check PR template completeness
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python .github/scripts/check_pr_template_completeness.py
+
   frontend-checkpoint:
     runs-on: ubuntu-24.04
     needs:
