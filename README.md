@@ -628,7 +628,7 @@ For the authoritative owner docs, start with
 
 ## Versioning And Releases
 
-- the project is now in an early `0.4.0` stage
+- the project is now in an early `0.4.1` stage
 - expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)
