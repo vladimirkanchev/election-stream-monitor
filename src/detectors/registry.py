@@ -1,17 +1,44 @@
-"""Canonical registry of enabled production detectors."""
+"""Canonical registry of enabled production detectors.
+
+This module keeps runtime detector ownership explicit. It owns:
+
+- detector identifiers
+- detector callable wiring
+- supported input modes and file suffixes
+- result store targets
+- frontend-facing detector catalog metadata
+- default alert-rule linkage
+
+It does not implement detector logic or dynamic plugin discovery.
+"""
 
 from analyzer_contract import AnalyzerRegistration, DetectorCatalogEntry, InputMode
 
 from .black_screen import analyze_video_metrics
 from .blur import analyze_video_blur
+from .catalog import build_detector_catalog
 
+__all__ = (
+    "ENABLED_ANALYZERS",
+    "get_enabled_analyzers",
+    "list_available_detectors",
+)
+
+_VIDEO_MODES: tuple[InputMode, ...] = (
+    "video_segments",
+    "video_files",
+    "api_stream",
+)
+_VIDEO_SUFFIXES = (".ts", ".mp4")
+
+# Keep registrations declarative so the runtime surface stays easy to scan.
 ENABLED_ANALYZERS: tuple[AnalyzerRegistration, ...] = (
     AnalyzerRegistration(
         name="video_metrics",
         analyzer=analyze_video_metrics,
         store_name="video_metrics",
-        supported_modes=("video_segments", "video_files", "api_stream"),
-        supported_suffixes=(".ts", ".mp4"),
+        supported_modes=_VIDEO_MODES,
+        supported_suffixes=_VIDEO_SUFFIXES,
         display_name="Black Screen",
         description="Warns when a video chunk or file stays nearly black for too long.",
         category="quality",
@@ -24,8 +51,8 @@ ENABLED_ANALYZERS: tuple[AnalyzerRegistration, ...] = (
         name="video_blur",
         analyzer=analyze_video_blur,
         store_name="blur_metrics",
-        supported_modes=("video_segments", "video_files", "api_stream"),
-        supported_suffixes=(".ts", ".mp4"),
+        supported_modes=_VIDEO_MODES,
+        supported_suffixes=_VIDEO_SUFFIXES,
         display_name="Blur Check",
         description="Flags blurry video using rolling frame samples and normalized blur scoring.",
         category="quality",
@@ -53,19 +80,4 @@ def list_available_detectors(
     registrations = (
         get_enabled_analyzers(mode) if mode is not None else list(ENABLED_ANALYZERS)
     )
-    return [
-        {
-            "id": registration.name,
-            "display_name": registration.display_name,
-            "description": registration.description,
-            "category": registration.category,
-            "origin": registration.origin,
-            "status": registration.status,
-            "default_rule_id": registration.default_rule_id,
-            "default_selected": registration.default_selected,
-            "produces_alerts": registration.produces_alerts,
-            "supported_modes": list(registration.supported_modes),
-            "supported_suffixes": list(registration.supported_suffixes),
-        }
-        for registration in registrations
-    ]
+    return build_detector_catalog(registrations)
