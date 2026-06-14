@@ -56,6 +56,26 @@ Notes:
     assert check_pr_template_completeness.validation_failures(body) == ()
 
 
+def test_complete_pr_body_with_crlf_line_endings_passes() -> None:
+    body = (
+        "## Validation Run\r\n\r\n"
+        "Commands run:\r\n\r\n"
+        "```bash\r\n"
+        "just test-fast\r\n"
+        "```\r\n\r\n"
+        "Why these lanes were enough:\r\n\r\n"
+        "- changed seams were detector rules and shared fixture docs only\r\n\r\n"
+        "## Fixture / Environment Impact\r\n\r\n"
+        "- [x] uses checked-in fixtures only\r\n"
+        "- [ ] no special fixture or environment impact\r\n\r\n"
+        "## Docs Impact\r\n\r\n"
+        "- [x] docs/testing-and-validation.md\r\n"
+        "- [ ] no docs change needed\r\n"
+    )
+
+    assert check_pr_template_completeness.validation_failures(body) == ()
+
+
 def test_empty_pr_body_fails() -> None:
     failures = check_pr_template_completeness.validation_failures("")
 

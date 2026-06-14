@@ -22,11 +22,16 @@ WHY_MARKER = "Why these lanes were enough:"
 PLACEHOLDER_MARKER = "# paste the commands you actually ran"
 
 
+def _normalize_body(body: str) -> str:
+    """Return one PR body with predictable line endings for heading parsing."""
+    return body.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _section_body(body: str, heading: str) -> str | None:
     """Return the body text for one level-two heading."""
     matches = list(HEADING_PATTERN.finditer(body))
     for index, match in enumerate(matches):
-        if match.group("title") != heading:
+        if match.group("title").strip() != heading:
             continue
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
@@ -69,6 +74,7 @@ def validation_failures(body: str) -> tuple[str, ...]:
     choices, without trying to score the whole PR.
     """
     failures: list[str] = []
+    body = _normalize_body(body)
 
     if not body.strip():
         return ("PR body is empty; fill out the required PR template sections.",)
