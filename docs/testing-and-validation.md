@@ -123,8 +123,13 @@ Current focused ownership map:
   - explicit runtime detector registration and catalog metadata
 - `tests/test_analyzer_registry.py`
   - explicit registry ownership, mode exposure, detector catalog metadata, and shim behavior
+- `tests/test_api_boundary_contracts.py`
+  - detector-catalog API contract and structured FastAPI failure envelopes
 - `tests/test_detectors.py`
-  - production detector rows, media-tool fallback behavior, and metric contracts
+  - production detector rows, media-tool fallback behavior, metric contracts,
+    and runtime-row compatibility
+- `tests/test_processor.py`
+  - production processor routing, detector orchestration, and persistence behavior
 - `tests/test_alert_rules.py`
   - shared rule metadata, failure wrapping, and row annotation behavior
 - `tests/test_alert_rules_black.py`
@@ -133,6 +138,10 @@ Current focused ownership map:
   - `video_blur` warm-up, motion guards, recovery, and source/session isolation
 - `tests/test_plugin_manifest_validation.py`
   - future-facing plugin manifest ownership and id-boundary rules
+- `tests/test_session_cli_tooling.py`
+  - session CLI adapter behavior, detector catalog CLI output, and read-session snapshot wiring
+- `tests/test_export_detector_catalog.py`
+  - exported detector-catalog JSON contract for frontend-facing tooling
 - `tests/test_detector_lab.py`
   - detector-lab runner wiring, experiment families, practical alert policies,
     and export shaping
@@ -1723,9 +1732,11 @@ Backend/API contract checks:
   - shared read/cancel service behavior
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
+  - detector-catalog CLI output parity with the canonical registry
   - runtime-selected alert-backend behavior for `read-session`
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
+  - detector-catalog route parity with the canonical registry
   - populated session snapshot response shape
 - `tests/test_stream_loader_contracts.py`
   - `api_stream` contract-builder consistency

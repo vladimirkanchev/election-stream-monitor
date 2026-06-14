@@ -41,7 +41,11 @@ Use these first depending on what you are doing:
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
   - high-signal test files:
     - `tests/test_analyzer_registry.py`
+    - `tests/test_api_boundary_contracts.py`
+    - `tests/test_session_cli_tooling.py`
+    - `tests/test_export_detector_catalog.py`
     - `tests/test_detectors.py`
+    - `tests/test_processor.py`
     - `tests/test_alert_rules.py`
     - `tests/test_alert_rules_black.py`
     - `tests/test_alert_rules_blur.py`

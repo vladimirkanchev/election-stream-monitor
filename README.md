@@ -206,8 +206,16 @@ The current detector/rule test split mirrors that boundary:
 
 - registry and detector-catalog contracts
   - [`tests/test_analyzer_registry.py`](./tests/test_analyzer_registry.py)
+- API detector-catalog contract
+  - [`tests/test_api_boundary_contracts.py`](./tests/test_api_boundary_contracts.py)
+- CLI detector-catalog contract
+  - [`tests/test_session_cli_tooling.py`](./tests/test_session_cli_tooling.py)
+- exported detector-catalog JSON contract
+  - [`tests/test_export_detector_catalog.py`](./tests/test_export_detector_catalog.py)
 - production detector contracts
   - [`tests/test_detectors.py`](./tests/test_detectors.py)
+- production processor compatibility and detector routing
+  - [`tests/test_processor.py`](./tests/test_processor.py)
 - production alert-rule metadata and shared failure handling
   - [`tests/test_alert_rules.py`](./tests/test_alert_rules.py)
 - production black-screen rule behavior
