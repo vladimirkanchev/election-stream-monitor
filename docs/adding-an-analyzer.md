@@ -142,10 +142,8 @@ Keep the maturity split explicit:
 Promotion from detector-lab into the runtime should be intentional, not
 implicit.
 
-Treat `detector_lab` as proof-of-comparison space, not as proof of production
-support.
-
-The promotion target today is not just “a detector function exists.” It means:
+Treat `detector_lab` as proof-of-comparison space, not proof of production
+support. Promotion means more than “a detector function exists”:
 
 - detector wiring belongs in [`src/detectors/registry.py`](../src/detectors/registry.py)
 - runtime row semantics fit the processor boundary
@@ -181,7 +179,8 @@ At minimum, add:
 
 - one detector unit test
 - one alert rule test if alerts were added
-- one registry or processor test if routing changed
+- one registry test if detector metadata changed
+- one processor test if runtime routing changed
 - one session test if the detector affects rolling state or session behavior
 
 ## Promotion checklist
@@ -195,8 +194,6 @@ Before treating a detector-lab idea as production runtime behavior, verify:
 - production-facing tests cover the detector and any runtime alert behavior
 - session, processor, and persistence impact are understood
 - runtime docs are updated alongside detector-lab docs
-
-Do not rely on detector-lab documentation alone to imply runtime support.
 
 ## Best order for agents and contributors
 
