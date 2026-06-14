@@ -14,6 +14,13 @@ Current public stage: `0.5.1`
 - compatibility matters, but strong long-term API stability is not yet the main
   goal
 
+In practice for the current stage:
+
+- use a minor release when the project moves to a new architecture or product
+  stage
+- use a patch release when the main change is workflow, validation, docs,
+  harnessing, or another follow-up that does not widen the product surface
+
 ## What To Version Carefully
 
 Even in an early stage, these areas should change deliberately:

@@ -70,6 +70,8 @@ Use these first depending on what you are doing:
     - CI owns broader branch and weekly confidence
   - dependency metadata rule:
     - if `pyproject.toml` or `uv.lock` changes, explain why in the PR or commit
+    - if it is unclear whether they belong, use
+      `./.agents/skills/dependency-change-review/`
   - commit-message rule:
     - describe the actual change, not the branch purpose
     - keep one clear theme per commit when practical
@@ -94,7 +96,7 @@ Use these first depending on what you are doing:
   - use the workflow template trio as one branch flow:
     - start with [branch-purpose-template.md](./branch-purpose-template.md)
       for branch purpose, scope, split trigger, and the lightweight
-      execution checklist
+      execution checklist, including early test/contract/dependency prompts
     - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
       while opening or updating the PR so validation, fixture impact, and docs impact stay explicit
     - finish with [merge-readiness-checklist.md](./merge-readiness-checklist.md)
@@ -475,6 +477,8 @@ Most common starting points:
 - CI failure and smallest honest next lane
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
+  - if no honest automated lane fits yet, say `manual confidence only for now`
+    and name the manual step plainly
 - dependency metadata drift
   - `./.agents/skills/dependency-change-review/`
 - detector/rule changes

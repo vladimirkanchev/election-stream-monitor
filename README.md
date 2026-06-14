@@ -453,6 +453,13 @@ Branch workflow templates:
 - [`.github/pull_request_template.md`](./.github/pull_request_template.md)
 - [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
 
+That branch flow now keeps a few questions explicit on purpose:
+
+- what existing test or `docs-check` already proves the change?
+- if the change touches API, CLI, persisted data, or bridge shape, should
+  [docs/contracts.md](./docs/contracts.md) and nearby tests move too?
+- if `pyproject.toml` or `uv.lock` changed, does that belong to the branch story?
+
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under
@@ -491,10 +498,11 @@ The most common workflow helpers are:
     execution pattern
 - `test-strategy-review`
   - chooses the smallest honest validation lane before broader checks
+  - says `manual confidence only for now` when no honest automated lane fits yet
 - `docs-alignment`
   - routes doc updates to the owning file and flags contract-sensitive changes
 - `branch-pr-readiness`
-  - checks branch drift, commit grouping, and merge readiness
+  - checks branch drift, commit grouping, merge readiness, and dependency-file fit
 
 For the fuller skill map and maintainer-oriented ownership notes, use
 [docs/README.md](./docs/README.md).
