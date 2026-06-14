@@ -97,6 +97,48 @@ def test_list_available_detectors_returns_frontend_metadata() -> None:
     assert detectors[1]["id"] == "video_blur"
 
 
+def test_registry_preserves_expected_detector_contracts() -> None:
+    """The explicit registry should keep the shipped detector contract stable."""
+    expected_by_id = {
+        "video_metrics": {
+            "supported_modes": ["video_segments", "video_files", "api_stream"],
+            "supported_suffixes": [".ts", ".mp4"],
+            "default_rule_id": "video_metrics.default_rule",
+            "display_name": "Black Screen",
+            "status": "core",
+            "produces_alerts": True,
+        },
+        "video_blur": {
+            "supported_modes": ["video_segments", "video_files", "api_stream"],
+            "supported_suffixes": [".ts", ".mp4"],
+            "default_rule_id": "video_blur.default_rule",
+            "display_name": "Blur Check",
+            "status": "optional",
+            "produces_alerts": True,
+        },
+    }
+
+    registrations = list(detector_registry.ENABLED_ANALYZERS)
+    detectors = list_available_detectors()
+
+    assert [registration.name for registration in registrations] == list(expected_by_id)
+    assert [detector["id"] for detector in detectors] == list(expected_by_id)
+
+    for registration, detector in zip(registrations, detectors, strict=True):
+        expected = expected_by_id[registration.name]
+
+        assert registration.name == detector["id"]
+        assert detector["display_name"] == expected["display_name"]
+        assert detector["status"] == expected["status"]
+        assert detector["default_rule_id"] == expected["default_rule_id"]
+        assert detector["produces_alerts"] is expected["produces_alerts"]
+        assert detector["supported_modes"] == expected["supported_modes"]
+        assert detector["supported_suffixes"] == expected["supported_suffixes"]
+        assert registration.supported_modes == tuple(expected["supported_modes"])
+        assert registration.supported_suffixes == tuple(expected["supported_suffixes"])
+        assert registration.default_rule_id == expected["default_rule_id"]
+
+
 def test_explicit_registry_owns_runtime_detector_metadata() -> None:
     """The explicit registry should keep detector ownership visible in one place."""
     registrations = get_enabled_analyzers("video_segments")
