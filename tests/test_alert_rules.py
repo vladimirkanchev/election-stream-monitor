@@ -1,4 +1,4 @@
-"""Production alert-rule tests that are shared across black and blur detectors.
+"""Production alert-rule tests for shared rule metadata and normalized row handling.
 
 This file covers rule discovery, failure wrapping, and row-annotation behavior
 that should stay stable regardless of the detector-specific policy details.
@@ -8,26 +8,17 @@ import pytest
 
 import alert_rules
 from analyzer_contract import RuleEvaluationContext, RuntimeResultRow
-from alert_rules import evaluate_alerts, list_available_alert_rules, reset_session_rule_state
+from alert_rules import (
+    evaluate_alerts,
+    list_available_alert_rules,
+    reset_session_rule_state,
+)
 from tests.alert_rules_test_support import black_row, blur_row
 
 
-def test_list_available_alert_rules_returns_builtin_rule_metadata() -> None:
-    """Built-in alert rules should expose lightweight metadata with stable ids."""
-    rules = list_available_alert_rules()
-
-    assert rules[0]["id"] == "video_metrics.default_rule"
-    assert rules[0]["detector_id"] == "video_metrics"
-    assert rules[0]["origin"] == "built_in"
-    assert rules[1]["id"] == "video_blur.default_rule"
-    assert rules[1]["status"] == "optional"
-
-
-def test_list_available_alert_rules_keeps_stable_catalog_shape() -> None:
-    """Rule discovery should keep the frontend-facing metadata contract stable."""
-    rules = list_available_alert_rules()
-
-    assert rules == [
+def _expected_rule_catalog() -> list[dict[str, object]]:
+    """Return the shipped alert-rule metadata contract."""
+    return [
         {
             "id": "video_metrics.default_rule",
             "detector_id": "video_metrics",
@@ -45,6 +36,45 @@ def test_list_available_alert_rules_keeps_stable_catalog_shape() -> None:
             "status": "optional",
         },
     ]
+
+
+def _runtime_black_row(**extra_fields: object) -> RuntimeResultRow:
+    """Build a normalized runtime row for black-rule contract tests."""
+    base_extra_fields = {
+        "black_detected": True,
+        "duration_sec": 1.0,
+        "black_ratio": 0.25,
+        "longest_black_sec": 1.2,
+    }
+    base_extra_fields.update(extra_fields)
+    return RuntimeResultRow(
+        analyzer="video_metrics",
+        source_type="video",
+        source_group="playlist-runtime-row",
+        source_name="segment_001.ts",
+        window_index=None,
+        window_start_sec=None,
+        window_duration_sec=None,
+        timestamp_utc="2026-03-31 10:00:00",
+        processing_sec=0.01,
+        extra_fields=base_extra_fields,
+    )
+
+
+def test_list_available_alert_rules_returns_builtin_rule_metadata() -> None:
+    """Built-in alert rules should expose lightweight metadata with stable ids."""
+    rules = list_available_alert_rules()
+
+    assert rules[0]["id"] == "video_metrics.default_rule"
+    assert rules[0]["detector_id"] == "video_metrics"
+    assert rules[0]["origin"] == "built_in"
+    assert rules[1]["id"] == "video_blur.default_rule"
+    assert rules[1]["status"] == "optional"
+
+
+def test_list_available_alert_rules_keeps_stable_catalog_shape() -> None:
+    """Rule discovery should keep the frontend-facing metadata contract stable."""
+    assert list_available_alert_rules() == _expected_rule_catalog()
 
 
 def test_evaluate_alerts_wraps_rule_failures_with_rule_identity(monkeypatch) -> None:
@@ -66,7 +96,11 @@ def test_evaluate_alerts_wraps_rule_failures_with_rule_identity(monkeypatch) -> 
         message_builder=lambda row: str(row),
     )
     monkeypatch.setitem(alert_rules.RULES_BY_DETECTOR, "video_blur", broken_rule)
-    monkeypatch.setattr(alert_rules, "should_alert_video_blur", lambda *_args, **_kwargs: broken_should_alert({}))
+    monkeypatch.setattr(
+        alert_rules,
+        "should_alert_video_blur",
+        lambda *_args, **_kwargs: broken_should_alert({}),
+    )
     monkeypatch.setattr(
         alert_rules.logger,
         "exception",
@@ -149,23 +183,7 @@ def test_evaluate_alerts_keeps_detector_rules_isolated() -> None:
 def test_evaluate_alerts_accepts_runtime_rows_without_mutating_caller() -> None:
     """Rule evaluation should consume normalized runtime rows without mutating the caller object."""
     reset_session_rule_state("session-runtime-row")
-    row = RuntimeResultRow(
-        analyzer="video_metrics",
-        source_type="video",
-        source_group="playlist-runtime-row",
-        source_name="segment_001.ts",
-        window_index=None,
-        window_start_sec=None,
-        window_duration_sec=None,
-        timestamp_utc="2026-03-31 10:00:00",
-        processing_sec=0.01,
-        extra_fields={
-            "black_detected": True,
-            "duration_sec": 1.0,
-            "black_ratio": 0.25,
-            "longest_black_sec": 1.2,
-        },
-    )
+    row = _runtime_black_row()
     original = row.to_dict()
 
     alerts = evaluate_alerts(

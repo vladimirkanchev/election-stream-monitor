@@ -1,10 +1,12 @@
-"""Tests for explicit detector registry behavior and compatibility seams.
+"""Tests for explicit detector registry ownership, catalog metadata, and shim behavior.
 
 This suite serves two purposes:
 
 - document which detectors are currently enabled for each input mode
 - keep the explicit registry decision visible for future refactors
 """
+
+from dataclasses import replace
 
 import analyzer_registry
 from alert_rules import list_available_alert_rules
@@ -14,6 +16,32 @@ from analyzer_registry import (
 )
 from detectors import registry as detector_registry
 from detectors.registry import get_enabled_analyzers, list_available_detectors
+
+
+EXPLICIT_PUBLIC_SURFACE = (
+    "ENABLED_ANALYZERS",
+    "get_enabled_analyzers",
+    "list_available_detectors",
+)
+
+EXPECTED_REGISTRY_CONTRACT = {
+    "video_metrics": {
+        "supported_modes": ["video_segments", "video_files", "api_stream"],
+        "supported_suffixes": [".ts", ".mp4"],
+        "default_rule_id": "video_metrics.default_rule",
+        "display_name": "Black Screen",
+        "status": "core",
+        "produces_alerts": True,
+    },
+    "video_blur": {
+        "supported_modes": ["video_segments", "video_files", "api_stream"],
+        "supported_suffixes": [".ts", ".mp4"],
+        "default_rule_id": "video_blur.default_rule",
+        "display_name": "Blur Check",
+        "status": "optional",
+        "produces_alerts": True,
+    },
+}
 
 
 def test_video_segment_mode_enables_video_analyzers() -> None:
@@ -67,21 +95,13 @@ def test_compatibility_wrapper_reexports_canonical_registry_helpers() -> None:
 
 def test_compatibility_wrapper_exposes_only_the_registry_edge() -> None:
     """The shim should stay a narrow compatibility edge, not a second registry owner."""
-    assert analyzer_registry.__all__ == (
-        "ENABLED_ANALYZERS",
-        "get_enabled_analyzers",
-        "list_available_detectors",
-    )
+    assert analyzer_registry.__all__ == EXPLICIT_PUBLIC_SURFACE
     assert analyzer_registry.ENABLED_ANALYZERS is detector_registry.ENABLED_ANALYZERS
 
 
 def test_canonical_registry_exposes_only_the_explicit_public_surface() -> None:
     """The canonical registry should keep helper logic outside its public surface."""
-    assert detector_registry.__all__ == (
-        "ENABLED_ANALYZERS",
-        "get_enabled_analyzers",
-        "list_available_detectors",
-    )
+    assert detector_registry.__all__ == EXPLICIT_PUBLIC_SURFACE
 
 
 def test_list_available_detectors_returns_frontend_metadata() -> None:
@@ -99,33 +119,18 @@ def test_list_available_detectors_returns_frontend_metadata() -> None:
 
 def test_registry_preserves_expected_detector_contracts() -> None:
     """The explicit registry should keep the shipped detector contract stable."""
-    expected_by_id = {
-        "video_metrics": {
-            "supported_modes": ["video_segments", "video_files", "api_stream"],
-            "supported_suffixes": [".ts", ".mp4"],
-            "default_rule_id": "video_metrics.default_rule",
-            "display_name": "Black Screen",
-            "status": "core",
-            "produces_alerts": True,
-        },
-        "video_blur": {
-            "supported_modes": ["video_segments", "video_files", "api_stream"],
-            "supported_suffixes": [".ts", ".mp4"],
-            "default_rule_id": "video_blur.default_rule",
-            "display_name": "Blur Check",
-            "status": "optional",
-            "produces_alerts": True,
-        },
-    }
-
     registrations = list(detector_registry.ENABLED_ANALYZERS)
     detectors = list_available_detectors()
 
-    assert [registration.name for registration in registrations] == list(expected_by_id)
-    assert [detector["id"] for detector in detectors] == list(expected_by_id)
+    assert [registration.name for registration in registrations] == list(
+        EXPECTED_REGISTRY_CONTRACT
+    )
+    assert [detector["id"] for detector in detectors] == list(
+        EXPECTED_REGISTRY_CONTRACT
+    )
 
     for registration, detector in zip(registrations, detectors, strict=True):
-        expected = expected_by_id[registration.name]
+        expected = EXPECTED_REGISTRY_CONTRACT[registration.name]
 
         assert registration.name == detector["id"]
         assert detector["display_name"] == expected["display_name"]
@@ -180,17 +185,11 @@ def test_list_available_detectors_preserves_null_default_rule_ids() -> None:
     original_registrations = detector_registry.ENABLED_ANALYZERS
     registration = original_registrations[0]
     detector_registry.ENABLED_ANALYZERS = (
-        registration.__class__(
+        replace(
+            registration,
             name="custom_detector",
-            analyzer=registration.analyzer,
-            store_name=registration.store_name,
-            supported_modes=registration.supported_modes,
-            supported_suffixes=registration.supported_suffixes,
             display_name="Custom Detector",
             description="Detector without a bundled rule",
-            category=registration.category,
-            origin=registration.origin,
-            status=registration.status,
             default_rule_id=None,
             default_selected=False,
             produces_alerts=False,

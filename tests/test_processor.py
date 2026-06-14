@@ -1,4 +1,4 @@
-"""Tests for processor-level detector execution, routing, and failure policy.
+"""Tests for processor-level detector execution, registry routing, and failure policy.
 
 This suite documents the current behavior of the processor as an execution
 boundary:
@@ -18,6 +18,25 @@ from detectors import registry as detector_registry
 import processor
 from analyzer_contract import AnalysisSlice, AnalyzerRegistration, VideoMetricsRow
 from session_models import AlertEvent
+
+
+def _patched_builtin_registrations(
+    *,
+    fake_metrics,
+    fake_blur,
+) -> tuple[AnalyzerRegistration, ...]:
+    """Return the shipped registry with only the detector callables swapped."""
+    return tuple(
+        replace(
+            registration,
+            analyzer=(
+                fake_metrics
+                if registration.name == "video_metrics"
+                else fake_blur
+            ),
+        )
+        for registration in detector_registry.ENABLED_ANALYZERS
+    )
 
 
 @dataclass(slots=True)
@@ -282,20 +301,16 @@ def test_run_enabled_analyzers_bundle_uses_canonical_registry_contract(
             consecutive_blurry_windows=0,
         )
 
-    original_registrations = detector_registry.ENABLED_ANALYZERS
-    patched_registrations = tuple(
-        replace(
-            registration,
-            analyzer=(
-                fake_metrics
-                if registration.name == "video_metrics"
-                else fake_blur
-            ),
-        )
-        for registration in original_registrations
+    patched_registrations = _patched_builtin_registrations(
+        fake_metrics=fake_metrics,
+        fake_blur=fake_blur,
     )
     monkeypatch.setattr(detector_registry, "ENABLED_ANALYZERS", patched_registrations)
-    monkeypatch.setattr(processor, "get_enabled_analyzers", detector_registry.get_enabled_analyzers)
+    monkeypatch.setattr(
+        processor,
+        "get_enabled_analyzers",
+        detector_registry.get_enabled_analyzers,
+    )
 
     metrics_store = DummyStore()
     blur_store = DummyStore()

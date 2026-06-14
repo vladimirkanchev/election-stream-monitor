@@ -1,8 +1,9 @@
-"""Production detector tests for typed rows, media-tool fallbacks, and metric contracts.
+"""Production detector tests for typed rows, metric contracts, and runtime compatibility.
 
 These tests intentionally stay close to the production runtime surface:
 
 - detector rows should expose the current typed in-memory contract
+- typed rows should stay compatible with the processor-facing runtime row shape
 - ffprobe / ffmpeg failures should fail closed without surprising callers
 - blur and black metrics should keep their current export semantics
 """
@@ -44,6 +45,59 @@ SHARED_DETECTOR_FIELDS = {
     "timestamp_utc",
     "processing_sec",
 }
+
+
+def _sample_video_metrics_row(**overrides: object) -> VideoMetricsRow:
+    """Build one representative production black-screen row for contract tests."""
+    row = {
+        "analyzer": "video_metrics",
+        "source_type": "video",
+        "source_group": "fixtures",
+        "source_name": "sample.mp4",
+        "window_index": 0,
+        "window_start_sec": 0.0,
+        "window_duration_sec": 1.0,
+        "timestamp_utc": "2026-06-05 12:00:00",
+        "processing_sec": 0.01,
+        "duration_sec": 2.0,
+        "black_detected": False,
+        "black_segment_count": 0,
+        "total_black_sec": 0.0,
+        "longest_black_sec": 0.0,
+        "black_ratio": 0.0,
+        "picture_threshold_used": 0.98,
+        "pixel_threshold_used": 0.10,
+        "min_duration_sec": 0.5,
+    }
+    row.update(overrides)
+    return VideoMetricsRow(**row)
+
+
+def _sample_video_blur_row(**overrides: object) -> VideoBlurRow:
+    """Build one representative production blur row for contract tests."""
+    row = {
+        "analyzer": "video_blur",
+        "source_type": "video",
+        "source_group": "fixtures",
+        "source_name": "sample.ts",
+        "window_index": 1,
+        "window_start_sec": 1.0,
+        "window_duration_sec": 1.0,
+        "timestamp_utc": "2026-06-05 12:00:01",
+        "processing_sec": 0.02,
+        "sample_count": 5,
+        "sharpness_p10": 0.1,
+        "sharpness_p90": 0.2,
+        "motion_mean": 0.03,
+        "motion_p90": 0.05,
+        "blur_score": 0.4,
+        "blur_detected": False,
+        "threshold_used": 0.88,
+        "window_size": 3,
+        "consecutive_blurry_windows": 0,
+    }
+    row.update(overrides)
+    return VideoBlurRow(**row)
 
 
 def test_analyze_video_metrics_returns_expected_schema(
@@ -157,26 +211,11 @@ def test_analyze_video_blur_returns_expected_schema(
 
 def test_typed_detector_rows_serialize_to_flat_dict() -> None:
     """Typed detector rows should still expose a flat persistence-friendly dict."""
-    blur_row = VideoBlurRow(
-        analyzer="video_blur",
-        source_type="video",
-        source_group="fixtures",
+    blur_row = _sample_video_blur_row(
         source_name="sample.mp4",
         window_index=0,
         window_start_sec=0.0,
-        window_duration_sec=1.0,
-        timestamp_utc="2026-06-05 12:00:00",
         processing_sec=0.01,
-        sample_count=5,
-        sharpness_p10=0.1,
-        sharpness_p90=0.2,
-        motion_mean=0.03,
-        motion_p90=0.05,
-        blur_score=0.4,
-        blur_detected=False,
-        threshold_used=0.88,
-        window_size=3,
-        consecutive_blurry_windows=0,
     )
 
     serialized = blur_row.to_dict()
@@ -191,26 +230,7 @@ def test_typed_detector_rows_serialize_to_flat_dict() -> None:
     ("row", "expected_extra_fields"),
     [
         (
-            VideoMetricsRow(
-                analyzer="video_metrics",
-                source_type="video",
-                source_group="fixtures",
-                source_name="sample.mp4",
-                window_index=0,
-                window_start_sec=0.0,
-                window_duration_sec=1.0,
-                timestamp_utc="2026-06-05 12:00:00",
-                processing_sec=0.01,
-                duration_sec=2.0,
-                black_detected=False,
-                black_segment_count=0,
-                total_black_sec=0.0,
-                longest_black_sec=0.0,
-                black_ratio=0.0,
-                picture_threshold_used=0.98,
-                pixel_threshold_used=0.10,
-                min_duration_sec=0.5,
-            ),
+            _sample_video_metrics_row(),
             {
                 "duration_sec",
                 "black_detected",
@@ -224,27 +244,7 @@ def test_typed_detector_rows_serialize_to_flat_dict() -> None:
             },
         ),
         (
-            VideoBlurRow(
-                analyzer="video_blur",
-                source_type="video",
-                source_group="fixtures",
-                source_name="sample.ts",
-                window_index=1,
-                window_start_sec=1.0,
-                window_duration_sec=1.0,
-                timestamp_utc="2026-06-05 12:00:01",
-                processing_sec=0.02,
-                sample_count=5,
-                sharpness_p10=0.1,
-                sharpness_p90=0.2,
-                motion_mean=0.03,
-                motion_p90=0.05,
-                blur_score=0.4,
-                blur_detected=False,
-                threshold_used=0.88,
-                window_size=3,
-                consecutive_blurry_windows=0,
-            ),
+            _sample_video_blur_row(),
             {
                 "sample_count",
                 "sharpness_p10",
