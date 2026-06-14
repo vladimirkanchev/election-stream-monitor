@@ -15,7 +15,9 @@
 # - Cheap local hygiene belongs in `pre-commit`; broader verification belongs
 #   here or in CI.
 
-set shell := ["bash", "-cu"]
+# These recipes stay within POSIX shell features, so `sh -eu` keeps local
+# runs deterministic without inheriting host-specific Bash startup noise.
+set shell := ["sh", "-eu", "-c"]
 
 venv_python := ".venv/bin/python"
 venv_pytest := ".venv/bin/pytest"
