@@ -27,14 +27,28 @@ Work from:
 4. impact on runtime, workflow, or maintainability
 5. best next phase or sequence
 
-Scale the planning depth to the task:
+Scale the planning depth to the task so simple work stays cheap and risky work
+gets enough structure:
 
 - simple, obvious, low-risk tasks
-  - do the work directly
+  - do the work directly and report the result
 - medium tasks
-  - use the short checklist
+  - use the short checklist from
+    [docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md)
+    before execution
 - broad or shared-boundary tasks
-  - give the fuller staged plan
+  - give the fuller staged plan with validation lanes
+
+For refactors and architecture cleanup, reuse the execution pattern from
+[docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md)
+instead of carrying a second copy here.
+
+For medium tasks, the human-readable checklist also lives in
+[docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md).
+Use it to force a lightweight test decision:
+
+- which existing test or docs-check already proves the change?
+- if none, is one focused test worth adding?
 
 Use these rating categories:
 
@@ -46,20 +60,6 @@ Use these rating categories:
   - how broad the likely change surface is
 - `complexity`
   - how hard the task is to implement or validate well
-
-## Short checklist
-
-Use this for medium tasks when a full plan would be more structure than value:
-
-1. What boundary changes?
-2. What behavior must stay the same?
-3. What test needs update or addition?
-4. What smallest validation command should run?
-5. Any docs or harness update needed?
-6. Still inside branch scope?
-
-For the human-readable owner of this checklist and the matching branch
-execution pattern, use [docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md).
 
 ## Output shape
 

@@ -32,6 +32,25 @@ Work from:
 Use `docs/testing-and-validation.md` to stay aligned with the current
 validation model and local harness lanes.
 
+Force the test decision before recommending commands:
+
+- what existing focused test or `just docs-check` already proves the change?
+- if none, is one nearby focused test worth adding before broader validation?
+
+Use this validation-lane chooser before recommending commands:
+
+- docs, repo-skill, or workflow-only change
+  - start with `just docs-check` or the focused repo-skill test slice
+- one narrow runtime boundary
+  - start with the nearest focused lane such as `just test-detectors`,
+    `just test-alert-rules`, `just test-processor`, or `just test-hls`
+- several production runtime boundaries changed together
+  - start with `just test-fast`
+- push or PR readiness question
+  - use `just ci-local` after the focused lane, not before it
+- real-media or environment-coupled confidence need
+  - use the focused confidence lane only when the change actually needs it
+
 ## Output shape
 
 Choose one mode first, then keep the answer inside that mode.
@@ -55,10 +74,11 @@ For test-quality review:
 For local validation choice:
 
 1. `Change area`
-2. `Best first command`
-3. `Why this lane fits`
-4. `When to run something broader`
-5. `Next broader option`
+2. `Closest owning boundary`
+3. `Best first command`
+4. `Why this lane fits`
+5. `When to run something broader`
+6. `Next broader option`
 
 Keep the three outputs distinct:
 

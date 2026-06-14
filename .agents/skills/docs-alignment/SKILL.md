@@ -27,15 +27,31 @@ Work from:
 4. smallest concise update
 5. low-value repetition that can be removed instead of copied
 
-Prefer one owner, not three copies. The usual owners are:
+Prefer one owner, not three copies. Use the docs-owner hint below to choose the
+smallest doc surface that actually owns the change.
 
-- root `README.md` for project overview and entry points
-- `docs/README.md` for maintainer navigation
-- `docs/testing-and-validation.md` for validation and CI lane guidance
-- narrower docs under `docs/` for subsystem-specific ownership
-- short module, class, or function docstrings for code-level responsibility drift
-- the closest owning code surface when the issue is docstring drift rather than
-  maintainer-doc drift
+Use this docs-owner hint before proposing edits:
+
+- project overview or contributor entrypoint
+  - root `README.md`
+- maintainer routing, branch workflow, or skill/doc map
+  - `docs/README.md`
+- validation lanes, CI checks, or harness command guidance
+  - `docs/testing-and-validation.md`
+- branch purpose, execution pattern, or medium-task checklist
+  - `docs/branch-purpose-template.md`
+- subsystem-specific behavior, contracts, or promotion rules
+  - the closest narrower doc under `docs/`
+- code-level responsibility drift
+  - the nearest module, class, or function docstring
+
+Use this public-contract check before concluding that docs updates are local
+only:
+
+- does the change affect an API route, CLI output, persisted session data, or
+  frontend/backend bridge shape?
+- if yes, check `docs/contracts.md` first, then the nearest boundary tests
+- if no, keep the update in the nearest owning maintainer doc or docstring
 
 ## Output shape
 

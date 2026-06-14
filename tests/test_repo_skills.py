@@ -5,6 +5,8 @@ skill layer by checking:
 
 - inventory and structure
 - ownership boundaries and explicit handoffs
+- workflow-owner guidance for planning depth, validation lanes, docs routing,
+  and branch readiness
 - representative scenarios and fixed output snapshots
 - recently merged skill shapes that should stay distinct
 """
@@ -78,6 +80,8 @@ SCENARIO_EXPECTATIONS = [
             "Recommended PR shape",
             "Readiness summary",
             "one coherent PR",
+            "follow-up extraction hint",
+            "commit grouping",
         ),
     ),
     ScenarioExpectation(
@@ -86,6 +90,8 @@ SCENARIO_EXPECTATIONS = [
             "Strong tests",
             "Weak or low-value tests",
             "environment-coupled tests",
+            "validation-lane chooser",
+            "Closest owning boundary",
             "Recommended lane",
             "Best first command",
             "focused harness lanes",
@@ -154,6 +160,10 @@ SCENARIO_EXPECTATIONS = [
         skill_name="docs-alignment",
         required_snippets=(
             "Drift summary",
+            "docs-owner hint",
+            "public-contract check",
+            "docs/contracts.md",
+            "Prefer one owner, not three copies.",
             "Recommended updates",
             "low-value repetition",
         ),
@@ -164,6 +174,9 @@ SCENARIO_EXPECTATIONS = [
             "Drift assessment",
             "Recommended PR shape",
             "Merged-vs-main state",
+            "branch-end closure",
+            "contract-sensitive work moved with the owning docs and nearby tests",
+            "move to a follow-up branch",
         ),
     ),
     ScenarioExpectation(
