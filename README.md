@@ -198,7 +198,9 @@ with explicit runtime registration in
 small compatibility wrapper.
 
 Blur and motion-blur experiments beyond that live in
-[`detector_lab/`](./detector_lab/README.md) until they are promoted on purpose.
+[`detector_lab/`](./detector_lab/README.md) until they are promoted on
+purpose. For the production promotion rule, use
+[`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md).
 
 The current detector/rule test split mirrors that boundary:
 

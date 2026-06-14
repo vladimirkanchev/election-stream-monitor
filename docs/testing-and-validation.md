@@ -175,8 +175,22 @@ For detector-lab specifically:
 - focused detector-lab tests and fixture runs validate experimental comparison
   logic
 - they are valuable for promotion candidates
-- they should not be read on their own as proof that an experimental detector
-  or alert lane is runtime-ready
+- they should not be read on their own as proof of supported runtime behavior
+
+Use the lane split this way when a detector-lab idea may become supported
+runtime behavior:
+
+- `tests/test_detector_lab.py`
+  - validates lab-only comparison behavior
+- production detector, processor, and alert-rule lanes
+  - validate supported runtime behavior:
+    - `tests/test_detectors.py`
+    - `tests/test_processor.py`
+    - `tests/test_alert_rules.py`
+    - `tests/test_alert_rules_black.py`
+    - `tests/test_alert_rules_blur.py`
+
+Promotion needs the production-facing lanes, not only the detector-lab lane.
 
 Useful focused examples:
 

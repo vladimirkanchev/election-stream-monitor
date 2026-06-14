@@ -34,6 +34,8 @@ Use these first depending on what you are doing:
   - treat `src/detectors/` as the canonical production detector package and
     `src/detectors/registry.py` as the canonical runtime registration owner
   - [`../detector_lab/README.md`](../detector_lab/README.md) for experimental work
+  - use [adding-an-analyzer.md](./adding-an-analyzer.md) as the canonical
+    promotion rule when an experiment may become supported runtime behavior
   - [detector-lab-analysis.md](./detector-lab-analysis.md) for the current detector-lab structure and evaluation intent
   - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split

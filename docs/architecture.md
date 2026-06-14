@@ -284,8 +284,9 @@ Current supported runtime quality surface:
 - production alert rule: `video_blur.default_rule`
 
 Experimental practical blur or motion-blur policies in `detector_lab/` are not
-part of this supported runtime contract unless they are promoted explicitly
-into `src/detectors/registry.py` and `src/alert_rules.py`.
+part of this supported runtime contract. Use
+[`adding-an-analyzer.md`](./adding-an-analyzer.md) for the production
+promotion rule.
 
 This is the stable contract other layers rely on.
 

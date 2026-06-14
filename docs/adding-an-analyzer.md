@@ -142,10 +142,15 @@ Keep the maturity split explicit:
 Promotion from detector-lab into the runtime should be intentional, not
 implicit.
 
+Treat `detector_lab` as proof-of-comparison space, not as proof of production
+support.
+
 The promotion target today is not just “a detector function exists.” It means:
 
 - detector wiring belongs in [`src/detectors/registry.py`](../src/detectors/registry.py)
-- runtime row semantics fit the processor and alert-rule boundary
+- runtime row semantics fit the processor boundary
+- runtime alert behavior is defined in [`src/alert_rules.py`](../src/alert_rules.py) if alerts are expected
+- production-facing tests cover the supported runtime path
 - runtime docs describe it as supported behavior
 
 ## Step 5: think about supported modes honestly
@@ -185,7 +190,9 @@ Before treating a detector-lab idea as production runtime behavior, verify:
 
 - detector row shape is stable and well named
 - runtime ownership is clear in [`src/detectors/registry.py`](../src/detectors/registry.py)
+- processor compatibility is understood and validated
 - runtime alert policy, if needed, is defined in [`src/alert_rules.py`](../src/alert_rules.py)
+- production-facing tests cover the detector and any runtime alert behavior
 - session, processor, and persistence impact are understood
 - runtime docs are updated alongside detector-lab docs
 
