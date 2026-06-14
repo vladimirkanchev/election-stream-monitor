@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Shared contracts for production detectors, rules, and runtime rows.
 
 This module keeps the detector-facing boundary explicit without adding a large
@@ -9,6 +7,8 @@ modeling layer. The important seam is:
 - mutable runtime rows for alert evaluation
 - flat dictionaries at storage and transport boundaries
 """
+
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
