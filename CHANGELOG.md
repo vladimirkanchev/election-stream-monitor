@@ -7,6 +7,19 @@ stage.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-14
+
+Workflow and AI-harness follow-up release.
+
+Highlights:
+
+- planning, validation, docs-alignment, and branch-readiness skills now share
+  a clearer lightweight execution pattern
+- branch workflow docs now keep one smaller owner per topic and route contract-
+  sensitive changes more explicitly
+- the harness now asks for explicit test evidence, honest manual-only
+  confidence when needed, and dependency-file justification before merge
+
 ## [0.5.0] - 2026-06-14
 
 Detector/runtime extension-contract release.
