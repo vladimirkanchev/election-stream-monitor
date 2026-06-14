@@ -1,26 +1,22 @@
-"""Shared detector, slice, and runtime-boundary contracts.
+"""Shared contracts for production detectors, rules, and runtime rows.
 
-The goal of this module is stability. Production detectors, alert rules, local
-runner code, and detector-lab experiments all meet here at a few explicit
-types. The project does not need a large modeling layer yet, but it does need a
-clear in-memory boundary between:
+This module keeps the detector-facing boundary explicit without adding a large
+modeling layer. The important seam is:
 
-- typed detector results
-- mutable runtime rule rows
-- flat transport or persistence payloads
+- typed detector rows in memory
+- mutable runtime rows for alert evaluation
+- flat dictionaries at storage and transport boundaries
 """
+
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterator, Literal, Mapping, NotRequired, Protocol, TypedDict
+from typing import Iterator, Literal, Mapping, NotRequired, Protocol, TypeAlias, TypedDict, Union
 
 
 class AnalyzerResult(TypedDict):
-    """Base metadata shape expected in every analyzer result.
-
-    Concrete analyzers may add more keys, but these shared fields should always
-    be present so the processor and stores can handle results consistently.
-    """
+    """Legacy dict-style detector payload with the shared runtime fields."""
 
     analyzer: str
     source_type: str
@@ -52,13 +48,12 @@ class AnalyzerResult(TypedDict):
     min_duration_sec: NotRequired[float]
 
 
+DetectorResult: TypeAlias = Union[AnalyzerResult, "AnalyzerRow"]
+
+
 @dataclass(frozen=True)
 class AnalyzerRow:
-    """Typed in-memory detector row with flat-dict serialization support.
-
-    Runtime code can use explicit row objects while stores, alerts, and JSONL
-    persistence still receive plain dictionaries at the boundary.
-    """
+    """Typed detector row that still serializes to the flat runtime shape."""
 
     def to_dict(self) -> dict[str, object]:
         """Return a flat dictionary representation suitable for persistence."""
@@ -147,13 +142,7 @@ class VideoBlurRow(DetectorRowBase):
 
 @dataclass
 class RuntimeResultRow:
-    """Mutable runtime row used between processor, rules, and event shaping.
-
-    This is the current production seam for alert evaluation. Detectors can
-    return typed rows, the processor normalizes them here, rules annotate this
-    object in memory, and only the outer persistence/event boundary drops back
-    to flat dictionaries.
-    """
+    """Mutable row shared between the processor, alert rules, and event shaping."""
 
     analyzer: str
     source_type: str
@@ -326,8 +315,8 @@ class AlertRuleCatalogEntry(TypedDict):
 
 
 # pylint: disable=too-few-public-methods
-class Analyzer(Protocol):
-    """Callable contract for analyzers that process one input file at a time."""
+class Detector(Protocol):
+    """Callable contract for one production detector."""
 
     def __call__(
         self,
@@ -338,8 +327,12 @@ class Analyzer(Protocol):
         window_index: int | None = None,
         window_start_sec: float | None = None,
         window_duration_sec: float | None = None,
-    ) -> AnalyzerResult | AnalyzerRow:
+    ) -> DetectorResult:
         """Analyze one file and return a standardized typed row or dict."""
+
+
+class Analyzer(Detector, Protocol):
+    """Backward-compatible alias for older detector naming in the repo."""
 
 
 StoreName = Literal["video_metrics", "blur_metrics"]
@@ -351,12 +344,7 @@ PluginOrigin = Literal["built_in", "user"]
 
 
 class PluginManifest(TypedDict):
-    """Manifest shape reserved for future plugin loading and validation.
-
-    The runtime does not discover external plugins yet. This manifest exists so
-    built-in and future user-owned extension bundles can already share one
-    explicit validation contract.
-    """
+    """Reserved manifest shape for future plugin validation and loading."""
 
     plugin_id: str
     display_name: str
@@ -372,14 +360,10 @@ class PluginManifestValidationError(ValueError):
 
 @dataclass(frozen=True)
 class AnalyzerRegistration:
-    """Registry entry describing one enabled analyzer.
-
-    Each registration links a callable analyzer with the input modes, file
-    suffixes, output store, and frontend-facing metadata it supports.
-    """
+    """One enabled detector registration and its runtime metadata."""
 
     name: str
-    analyzer: Analyzer
+    analyzer: Detector
     store_name: StoreName
     supported_modes: tuple[InputMode, ...]
     supported_suffixes: tuple[str, ...]
@@ -391,6 +375,11 @@ class AnalyzerRegistration:
     default_rule_id: str | None = None
     default_selected: bool = False
     produces_alerts: bool = False
+
+    @property
+    def detector(self) -> Detector:
+        """Return the registered detector using the future-facing name."""
+        return self.analyzer
 
 
 @dataclass(frozen=True)
@@ -411,6 +400,15 @@ class AnalysisSlice:
     window_index: int | None = None
     window_start_sec: float | None = None
     window_duration_sec: float | None = None
+
+
+@dataclass(frozen=True)
+class RuleEvaluationContext:
+    """Minimal context passed into one rule evaluation."""
+
+    session_id: str
+    detector_id: str
+    row: RuntimeResultRow
 
 
 def validate_plugin_manifest(

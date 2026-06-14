@@ -15,13 +15,13 @@ Use this document as a compact field guide when you are:
 - checking whether a field belongs to detector output, session progress, or
   playback-only state
 
-## Analyzer result
+## Detector result
 
 Defined from the shared contract in:
 
 - [`src/analyzer_contract.py`](../src/analyzer_contract.py)
 
-Base fields every analyzer result should have:
+Base fields every detector result should have:
 
 - `analyzer`
 - `source_type`
@@ -32,6 +32,10 @@ Base fields every analyzer result should have:
 - `window_duration_sec`
 - `timestamp_utc`
 - `processing_sec`
+
+Production detectors now live in [`../src/detectors/`](../src/detectors), and
+the processor normalizes those typed rows into `RuntimeResultRow` before alert
+evaluation and persistence.
 
 Then each detector adds its own fields.
 

@@ -35,13 +35,14 @@ That separation is already in the project and should stay.
 
 ## Step 1: implement detector logic
 
-Add the detector in [`src/detectors.py`](../src/detectors.py) or move it into a dedicated detector module if it becomes large enough.
+Add the detector in the [`src/detectors/`](../src/detectors) package. Prefer
+one focused module per production detector rather than growing one large file.
 
 A detector should:
 
 - accept one input file
 - optionally accept light context like `prefix`
-- return a stable typed row or analyzer-shaped mapping
+- return a stable typed row or detector-shaped mapping
 - include shared metadata fields
 - not write to stores directly
 - not generate alerts directly
@@ -71,7 +72,7 @@ If not:
 
 ## Step 3: register the detector
 
-Add the detector in [`src/analyzer_registry.py`](../src/analyzer_registry.py).
+Add the detector in [`src/detectors/registry.py`](../src/detectors/registry.py).
 
 Registration should define:
 
@@ -88,6 +89,12 @@ Registration should define:
 - whether it produces alerts
 
 Keep registrations explicit.
+Treat [`src/detectors/registry.py`](../src/detectors/registry.py) as the
+source of truth. The older
+[`src/analyzer_registry.py`](../src/analyzer_registry.py) file remains only as
+a compatibility shim for older imports.
+Use [`../tests/test_analyzer_registry.py`](../tests/test_analyzer_registry.py)
+when you need to confirm registry ownership or detector catalog expectations.
 
 ## Step 4: add alert logic if needed
 
@@ -129,16 +136,19 @@ Keep the maturity split explicit:
   - acceptable place for competing algorithms, practical lab-only alerts, and
     motion-blur prototypes
 - production runtime
-  - only detectors registered in [`src/analyzer_registry.py`](../src/analyzer_registry.py)
+  - only detectors registered in [`src/detectors/registry.py`](../src/detectors/registry.py)
   - only runtime alert policy registered in [`src/alert_rules.py`](../src/alert_rules.py)
 
 Promotion from detector-lab into the runtime should be intentional, not
 implicit.
 
-The promotion target today is not just “a detector function exists.” It means:
+Treat `detector_lab` as proof-of-comparison space, not proof of production
+support. Promotion means more than “a detector function exists”:
 
-- detector wiring belongs in [`src/analyzer_registry.py`](../src/analyzer_registry.py)
-- runtime row semantics fit the processor and alert-rule boundary
+- detector wiring belongs in [`src/detectors/registry.py`](../src/detectors/registry.py)
+- runtime row semantics fit the processor boundary
+- runtime alert behavior is defined in [`src/alert_rules.py`](../src/alert_rules.py) if alerts are expected
+- production-facing tests cover the supported runtime path
 - runtime docs describe it as supported behavior
 
 ## Step 5: think about supported modes honestly
@@ -169,7 +179,8 @@ At minimum, add:
 
 - one detector unit test
 - one alert rule test if alerts were added
-- one registry or processor test if routing changed
+- one registry test if detector metadata changed
+- one processor test if runtime routing changed
 - one session test if the detector affects rolling state or session behavior
 
 ## Promotion checklist
@@ -177,12 +188,12 @@ At minimum, add:
 Before treating a detector-lab idea as production runtime behavior, verify:
 
 - detector row shape is stable and well named
-- runtime ownership is clear in [`src/analyzer_registry.py`](../src/analyzer_registry.py)
+- runtime ownership is clear in [`src/detectors/registry.py`](../src/detectors/registry.py)
+- processor compatibility is understood and validated
 - runtime alert policy, if needed, is defined in [`src/alert_rules.py`](../src/alert_rules.py)
+- production-facing tests cover the detector and any runtime alert behavior
 - session, processor, and persistence impact are understood
 - runtime docs are updated alongside detector-lab docs
-
-Do not rely on detector-lab documentation alone to imply runtime support.
 
 ## Best order for agents and contributors
 
@@ -197,29 +208,29 @@ If you are a coding agent or a human contributor, the safest order is:
 
 That order fits this repo better than starting from the UI first.
 
-Treat `src/analyzer_contract.py` and `src/analyzer_registry.py` as the first
+Treat `src/analyzer_contract.py` and `src/detectors/registry.py` as the first
 places to verify before editing detector wiring. They are the most common
 source-of-truth files that agents and contributors accidentally bypass.
 
 ## Safe Edit Checklist
 
-When adding or changing an analyzer, review these together:
+When adding or changing a detector, review these together:
 
 - `src/analyzer_contract.py`
-- `src/analyzer_registry.py`
-- the analyzer implementation file
+- `src/detectors/registry.py`
+- the detector implementation file
 - alert-rule registration if alerts are expected
 - frontend detector catalog assumptions
-- backend tests for analyzer output
+- backend tests for detector output
 - any frontend or contract docs that describe detector catalog behavior
 
 In practice, this usually means:
 
-1. define or update the analyzer result shape
-2. register the analyzer explicitly
+1. define or update the detector result shape
+2. register the detector explicitly
 3. confirm the detector catalog still makes sense to the frontend
-4. add or update alert-rule behavior if the analyzer should emit warnings
-5. add tests before treating the analyzer as stable
+4. add or update alert-rule behavior if the detector should emit warnings
+5. add tests before treating the detector as stable
 
 This keeps detector logic, registration, alert behavior, and UI visibility from
 drifting apart.

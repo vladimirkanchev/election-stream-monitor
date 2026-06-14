@@ -1,8 +1,9 @@
-"""Production detector tests for typed rows, media-tool fallbacks, and metric contracts.
+"""Production detector tests for typed rows, metric contracts, and runtime compatibility.
 
 These tests intentionally stay close to the production runtime surface:
 
 - detector rows should expose the current typed in-memory contract
+- typed rows should stay compatible with the processor-facing runtime row shape
 - ffprobe / ffmpeg failures should fail closed without surprising callers
 - blur and black metrics should keep their current export semantics
 """
@@ -12,8 +13,10 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import config
-from analyzer_contract import VideoBlurRow, VideoMetricsRow
+from analyzer_contract import RuntimeResultRow, VideoBlurRow, VideoMetricsRow
 from detectors import (
     BlurScoreSummary,
     BlurWindowMetrics,
@@ -31,6 +34,71 @@ BLUR_SAMPLE_BOUNDS = (
     config.VIDEO_BLUR_SAMPLE_MAX_HEIGHT,
 )
 
+SHARED_DETECTOR_FIELDS = {
+    "analyzer",
+    "source_type",
+    "source_group",
+    "source_name",
+    "window_index",
+    "window_start_sec",
+    "window_duration_sec",
+    "timestamp_utc",
+    "processing_sec",
+}
+
+
+def _sample_video_metrics_row(**overrides: object) -> VideoMetricsRow:
+    """Build one representative production black-screen row for contract tests."""
+    row = {
+        "analyzer": "video_metrics",
+        "source_type": "video",
+        "source_group": "fixtures",
+        "source_name": "sample.mp4",
+        "window_index": 0,
+        "window_start_sec": 0.0,
+        "window_duration_sec": 1.0,
+        "timestamp_utc": "2026-06-05 12:00:00",
+        "processing_sec": 0.01,
+        "duration_sec": 2.0,
+        "black_detected": False,
+        "black_segment_count": 0,
+        "total_black_sec": 0.0,
+        "longest_black_sec": 0.0,
+        "black_ratio": 0.0,
+        "picture_threshold_used": 0.98,
+        "pixel_threshold_used": 0.10,
+        "min_duration_sec": 0.5,
+    }
+    row.update(overrides)
+    return VideoMetricsRow(**row)
+
+
+def _sample_video_blur_row(**overrides: object) -> VideoBlurRow:
+    """Build one representative production blur row for contract tests."""
+    row = {
+        "analyzer": "video_blur",
+        "source_type": "video",
+        "source_group": "fixtures",
+        "source_name": "sample.ts",
+        "window_index": 1,
+        "window_start_sec": 1.0,
+        "window_duration_sec": 1.0,
+        "timestamp_utc": "2026-06-05 12:00:01",
+        "processing_sec": 0.02,
+        "sample_count": 5,
+        "sharpness_p10": 0.1,
+        "sharpness_p90": 0.2,
+        "motion_mean": 0.03,
+        "motion_p90": 0.05,
+        "blur_score": 0.4,
+        "blur_detected": False,
+        "threshold_used": 0.88,
+        "window_size": 3,
+        "consecutive_blurry_windows": 0,
+    }
+    row.update(overrides)
+    return VideoBlurRow(**row)
+
 
 def test_analyze_video_metrics_returns_expected_schema(
     monkeypatch, tmp_path: Path
@@ -47,7 +115,7 @@ def test_analyze_video_metrics_returns_expected_schema(
             stderr="black_start:0 black_end:1.5 black_duration:1.5\n",
         )
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.black_screen.subprocess.run", fake_run)
 
     result = analyze_video_metrics(file_path=video_path)
 
@@ -84,7 +152,7 @@ def test_analyze_video_metrics_handles_invalid_ffprobe_output(
             return SimpleNamespace(stdout="not-json")
         return SimpleNamespace(stderr="")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.black_screen.subprocess.run", fake_run)
 
     result = analyze_video_metrics(file_path=video_path)
 
@@ -121,7 +189,7 @@ def test_analyze_video_blur_returns_expected_schema(
             )
         return SimpleNamespace(returncode=0, stdout=raw_frames, stderr=b"")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -143,26 +211,11 @@ def test_analyze_video_blur_returns_expected_schema(
 
 def test_typed_detector_rows_serialize_to_flat_dict() -> None:
     """Typed detector rows should still expose a flat persistence-friendly dict."""
-    blur_row = VideoBlurRow(
-        analyzer="video_blur",
-        source_type="video",
-        source_group="fixtures",
+    blur_row = _sample_video_blur_row(
         source_name="sample.mp4",
         window_index=0,
         window_start_sec=0.0,
-        window_duration_sec=1.0,
-        timestamp_utc="2026-06-05 12:00:00",
         processing_sec=0.01,
-        sample_count=5,
-        sharpness_p10=0.1,
-        sharpness_p90=0.2,
-        motion_mean=0.03,
-        motion_p90=0.05,
-        blur_score=0.4,
-        blur_detected=False,
-        threshold_used=0.88,
-        window_size=3,
-        consecutive_blurry_windows=0,
     )
 
     serialized = blur_row.to_dict()
@@ -171,6 +224,58 @@ def test_typed_detector_rows_serialize_to_flat_dict() -> None:
     assert serialized["analyzer"] == "video_blur"
     assert serialized["source_name"] == "sample.mp4"
     assert serialized["blur_score"] == 0.4
+
+
+@pytest.mark.parametrize(
+    ("row", "expected_extra_fields"),
+    [
+        (
+            _sample_video_metrics_row(),
+            {
+                "duration_sec",
+                "black_detected",
+                "black_segment_count",
+                "total_black_sec",
+                "longest_black_sec",
+                "black_ratio",
+                "picture_threshold_used",
+                "pixel_threshold_used",
+                "min_duration_sec",
+            },
+        ),
+        (
+            _sample_video_blur_row(),
+            {
+                "sample_count",
+                "sharpness_p10",
+                "sharpness_p90",
+                "motion_mean",
+                "motion_p90",
+                "blur_score",
+                "blur_detected",
+                "threshold_used",
+                "window_size",
+                "consecutive_blurry_windows",
+            },
+        ),
+    ],
+)
+def test_typed_detector_rows_keep_shared_fields_and_runtime_roundtrip(
+    row: VideoMetricsRow | VideoBlurRow,
+    expected_extra_fields: set[str],
+) -> None:
+    """Typed detector rows should expose shared metadata and stay runtime-friendly."""
+    shared = row.shared_fields()
+    serialized = row.to_dict()
+
+    assert set(shared) == SHARED_DETECTOR_FIELDS
+    assert shared == {field_name: serialized[field_name] for field_name in SHARED_DETECTOR_FIELDS}
+    assert set(serialized) == SHARED_DETECTOR_FIELDS | expected_extra_fields
+
+    runtime_row = RuntimeResultRow.from_mapping(serialized)
+
+    assert runtime_row is not None
+    assert runtime_row.to_dict() == serialized
 
 
 def test_analyze_video_blur_ignores_effectively_black_frames(
@@ -194,7 +299,7 @@ def test_analyze_video_blur_ignores_effectively_black_frames(
             )
         return SimpleNamespace(returncode=0, stdout=raw_frames, stderr=b"")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -212,12 +317,12 @@ def test_analyze_video_blur_preserves_zero_sample_fallback_contract(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    monkeypatch.setattr("detectors._resolve_blur_sample_size", lambda path: (4, 4))
+    monkeypatch.setattr("detectors.blur._resolve_blur_sample_size", lambda path: (4, 4))
     monkeypatch.setattr(
-        "detectors._extract_sampled_gray_frames",
+        "detectors.blur._extract_sampled_gray_frames",
         lambda **kwargs: [bytes([0] * 16), bytes([1] * 16)],
     )
-    monkeypatch.setattr("detectors._select_blur_analysis_frames", lambda frames: [])
+    monkeypatch.setattr("detectors.blur._select_blur_analysis_frames", lambda frames: [])
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -267,7 +372,7 @@ def test_analyze_video_blur_filters_frames_at_exact_black_ratio_boundary(
             )
         return SimpleNamespace(returncode=0, stdout=raw_frames, stderr=b"")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -284,11 +389,11 @@ def test_analyze_video_blur_exports_measured_sharpness_percentiles(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    monkeypatch.setattr("detectors._resolve_blur_sample_size", lambda path: (4, 4))
-    monkeypatch.setattr("detectors._extract_sampled_gray_frames", lambda **kwargs: [b"frame"] * 3)
-    monkeypatch.setattr("detectors._select_blur_analysis_frames", lambda frames: frames)
+    monkeypatch.setattr("detectors.blur._resolve_blur_sample_size", lambda path: (4, 4))
+    monkeypatch.setattr("detectors.blur._extract_sampled_gray_frames", lambda **kwargs: [b"frame"] * 3)
+    monkeypatch.setattr("detectors.blur._select_blur_analysis_frames", lambda frames: frames)
     monkeypatch.setattr(
-        "detectors._measure_blur_window",
+        "detectors.blur._measure_blur_window",
         lambda **kwargs: BlurWindowMetrics(
             frame_scores=[0.1, 0.5, 0.9],
             motion_scores=[0.0, 0.0, 0.0],
@@ -298,7 +403,7 @@ def test_analyze_video_blur_exports_measured_sharpness_percentiles(
         ),
     )
     monkeypatch.setattr(
-        "detectors._summarize_blur_scores",
+        "detectors.blur._summarize_blur_scores",
         lambda per_frame_blur_scores, threshold: BlurScoreSummary(
             window_size=3,
             rolling_scores=[0.3],
@@ -321,11 +426,11 @@ def test_analyze_video_blur_exports_summary_window_fields(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    monkeypatch.setattr("detectors._resolve_blur_sample_size", lambda path: (4, 4))
-    monkeypatch.setattr("detectors._extract_sampled_gray_frames", lambda **kwargs: [b"frame"] * 4)
-    monkeypatch.setattr("detectors._select_blur_analysis_frames", lambda frames: frames)
+    monkeypatch.setattr("detectors.blur._resolve_blur_sample_size", lambda path: (4, 4))
+    monkeypatch.setattr("detectors.blur._extract_sampled_gray_frames", lambda **kwargs: [b"frame"] * 4)
+    monkeypatch.setattr("detectors.blur._select_blur_analysis_frames", lambda frames: frames)
     monkeypatch.setattr(
-        "detectors._measure_blur_window",
+        "detectors.blur._measure_blur_window",
         lambda **kwargs: BlurWindowMetrics(
             frame_scores=[0.2, 0.3, 0.4, 0.5],
             motion_scores=[0.0, 0.05, 0.05, 0.0],
@@ -335,7 +440,7 @@ def test_analyze_video_blur_exports_summary_window_fields(
         ),
     )
     monkeypatch.setattr(
-        "detectors._summarize_blur_scores",
+        "detectors.blur._summarize_blur_scores",
         lambda per_frame_blur_scores, threshold: BlurScoreSummary(
             window_size=3,
             rolling_scores=[0.92, 0.93],
@@ -371,7 +476,7 @@ def test_analyze_video_metrics_aggregates_multiple_black_segments(
             ),
         )
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.black_screen.subprocess.run", fake_run)
 
     result = analyze_video_metrics(file_path=video_path)
 
@@ -400,7 +505,7 @@ def test_analyze_video_metrics_ignores_malformed_blackdetect_lines(
             ),
         )
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.black_screen.subprocess.run", fake_run)
 
     result = analyze_video_metrics(file_path=video_path)
 
@@ -465,11 +570,11 @@ def test_analyze_video_blur_contracts_rolling_window_to_available_samples(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    monkeypatch.setattr("detectors._resolve_blur_sample_size", lambda path: (4, 4))
-    monkeypatch.setattr("detectors._extract_sampled_gray_frames", lambda **kwargs: [b"frame"] * 2)
-    monkeypatch.setattr("detectors._select_blur_analysis_frames", lambda frames: frames)
+    monkeypatch.setattr("detectors.blur._resolve_blur_sample_size", lambda path: (4, 4))
+    monkeypatch.setattr("detectors.blur._extract_sampled_gray_frames", lambda **kwargs: [b"frame"] * 2)
+    monkeypatch.setattr("detectors.blur._select_blur_analysis_frames", lambda frames: frames)
     monkeypatch.setattr(
-        "detectors._measure_blur_window",
+        "detectors.blur._measure_blur_window",
         lambda **kwargs: BlurWindowMetrics(
             frame_scores=[0.2, 0.3],
             motion_scores=[0.0, 0.05],
@@ -512,7 +617,7 @@ def test_analyze_video_blur_exports_zero_motion_for_single_usable_frame(
             )
         return SimpleNamespace(returncode=0, stdout=sharp_frame, stderr=b"")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -535,7 +640,7 @@ def test_analyze_video_metrics_handles_ffprobe_timeout(
             raise subprocess.TimeoutExpired(cmd, timeout=kwargs.get("timeout") or 10)
         return SimpleNamespace(stderr="")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.black_screen.subprocess.run", fake_run)
 
     result = analyze_video_metrics(file_path=video_path)
 
@@ -554,7 +659,7 @@ def test_analyze_video_blur_handles_ffmpeg_timeout(
         _ = kwargs
         raise subprocess.TimeoutExpired(cmd, timeout=kwargs.get("timeout") or 20)
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -574,7 +679,7 @@ def test_analyze_video_blur_handles_ffmpeg_non_zero_exit(
         _ = (cmd, kwargs)
         return SimpleNamespace(returncode=1, stdout=b"", stderr=b"decode failed")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
     result = analyze_video_blur(file_path=video_path)
 
@@ -599,8 +704,8 @@ def test_analyze_video_blur_ignores_empty_short_tail_window_without_warning(
             )
         return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
 
-    monkeypatch.setattr("detectors.subprocess.run", fake_run)
-    monkeypatch.setattr("detectors.logger.warning", lambda message, *args: warnings.append(message % args))
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur.logger.warning", lambda message, *args: warnings.append(message % args))
 
     result = analyze_video_blur(
         file_path=video_path,

@@ -73,6 +73,7 @@ If you are:
 - changing detectors or alert rules
   - read [docs/adding-an-analyzer.md](./docs/adding-an-analyzer.md)
   - read [docs/adding-an-alert-rule.md](./docs/adding-an-alert-rule.md)
+  - treat `src/detectors/` and `src/detectors/registry.py` as the canonical production detector owners
   - read [docs/testing-and-validation.md](./docs/testing-and-validation.md) for the focused detector/rule test lanes
   - use [detector_lab/README.md](./detector_lab/README.md) if the idea is still experimental
 - navigating the whole maintainer docs set
@@ -190,19 +191,39 @@ Today the production detector and alert surface is intentionally small:
 - alert rule: `video_metrics.default_rule`
 - alert rule: `video_blur.default_rule`
 
+Production detector code now lives in [`src/detectors/`](./src/detectors),
+with explicit runtime registration in
+[`src/detectors/registry.py`](./src/detectors/registry.py). The older
+[`src/analyzer_registry.py`](./src/analyzer_registry.py) file remains only as a
+small compatibility wrapper.
+
 Blur and motion-blur experiments beyond that live in
-[`detector_lab/`](./detector_lab/README.md) until they are promoted on purpose.
+[`detector_lab/`](./detector_lab/README.md) until they are promoted on
+purpose. For the production promotion rule, use
+[`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md).
 
 The current detector/rule test split mirrors that boundary:
 
+- registry and detector-catalog contracts
+  - [`tests/test_analyzer_registry.py`](./tests/test_analyzer_registry.py)
+- API detector-catalog contract
+  - [`tests/test_api_boundary_contracts.py`](./tests/test_api_boundary_contracts.py)
+- CLI detector-catalog contract
+  - [`tests/test_session_cli_tooling.py`](./tests/test_session_cli_tooling.py)
+- exported detector-catalog JSON contract
+  - [`tests/test_export_detector_catalog.py`](./tests/test_export_detector_catalog.py)
 - production detector contracts
   - [`tests/test_detectors.py`](./tests/test_detectors.py)
+- production processor compatibility and detector routing
+  - [`tests/test_processor.py`](./tests/test_processor.py)
 - production alert-rule metadata and shared failure handling
   - [`tests/test_alert_rules.py`](./tests/test_alert_rules.py)
 - production black-screen rule behavior
   - [`tests/test_alert_rules_black.py`](./tests/test_alert_rules_black.py)
 - production blur-rule behavior
   - [`tests/test_alert_rules_blur.py`](./tests/test_alert_rules_blur.py)
+- future plugin-manifest validation contract
+  - [`tests/test_plugin_manifest_validation.py`](./tests/test_plugin_manifest_validation.py)
 - detector-lab experiments and practical alert policies
   - [`tests/test_detector_lab.py`](./tests/test_detector_lab.py)
 
@@ -423,6 +444,10 @@ Branch workflow templates:
 - [`.github/pull_request_template.md`](./.github/pull_request_template.md)
 - [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
 
+Keep the lightweight execution pattern and the medium-task checklist in
+[branch-purpose-template.md](./docs/branch-purpose-template.md). The planning
+skill reuses that pattern instead of owning a second copy.
+
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under
@@ -453,6 +478,16 @@ Use these skills when you want quick repo-aware help with:
 These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are
 not required to run the project.
+
+`task-planning-evaluation` is the planning-depth skill:
+
+- small tasks
+  - do the work directly
+- medium tasks
+  - use the short checklist from
+    [branch-purpose-template.md](./docs/branch-purpose-template.md)
+- broad tasks
+  - use a fuller staged plan
 
 For the fuller skill map and maintainer-oriented ownership notes, use
 [docs/README.md](./docs/README.md).
@@ -631,7 +666,7 @@ For the authoritative owner docs, start with
 
 ## Versioning And Releases
 
-- the project is now in an early `0.4.1` stage
+- the project is now in an early `0.5.0` stage
 - expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)

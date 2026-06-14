@@ -84,10 +84,22 @@ It is now:
 6. [`src/session_runner.py`](../src/session_runner.py) coordinates the actual
    monitoring run inside that worker and delegates local discovery/progress
    shaping to its focused helper modules.
-7. [`src/analyzer_registry.py`](../src/analyzer_registry.py) decides which
-   detectors are enabled for that mode.
-8. [`src/detectors.py`](../src/detectors.py) extracts detector facts and
-   returns typed detector rows.
+7. [`src/detectors/registry.py`](../src/detectors/registry.py) decides which
+   detectors are enabled for that mode and keeps the explicit detector runtime
+   contract in one place on purpose:
+   - detector ids
+   - detector callable wiring
+   - supported modes and suffixes
+   - store targets
+   - frontend catalog metadata
+   - default alert-rule linkage
+   The older
+   [`src/analyzer_registry.py`](../src/analyzer_registry.py) file now exists as
+   a thin compatibility wrapper for older imports. Future plugin metadata can
+   build on this explicit registration contract without replacing it with
+   dynamic discovery yet.
+8. [`src/detectors/`](../src/detectors) extracts detector facts and returns
+   typed detector rows through focused detector modules.
 9. [`src/processor.py`](../src/processor.py) normalizes detector output into
    the runtime row contract.
 10. [`src/alert_rules.py`](../src/alert_rules.py) evaluates production alert
@@ -235,8 +247,8 @@ Right now the behavior is:
 
 Defines:
 
-- analyzer result base shape
-- analyzer callable contract
+- detector result base shape
+- detector callable contract
 - registration metadata
 - analysis slice metadata
 
@@ -272,14 +284,15 @@ Current supported runtime quality surface:
 - production alert rule: `video_blur.default_rule`
 
 Experimental practical blur or motion-blur policies in `detector_lab/` are not
-part of this supported runtime contract unless they are promoted explicitly
-into `src/analyzer_registry.py` and `src/alert_rules.py`.
+part of this supported runtime contract. Use
+[`adding-an-analyzer.md`](./adding-an-analyzer.md) for the production
+promotion rule.
 
 This is the stable contract other layers rely on.
 
 ### Detector registry
 
-[`src/analyzer_registry.py`](../src/analyzer_registry.py)
+[`src/detectors/registry.py`](../src/detectors/registry.py)
 
 The registry defines:
 
@@ -296,7 +309,7 @@ This is the main extension point for new detectors.
 
 ### Detector implementation
 
-[`src/detectors.py`](../src/detectors.py)
+[`src/detectors/`](../src/detectors)
 
 Detectors are expected to:
 
@@ -363,7 +376,7 @@ Responsibilities:
   - reset rule state and perform final runtime cleanup
 - keep pending-session setup and pending-to-running transitions in
   `src/session_runner_lifecycle.py`
-- keep finite local-loop execution, live `api_stream` execution, analyzer-bundle
+- keep finite local-loop execution, live `api_stream` execution, detector-bundle
   invocation, and bundle-event persistence in
   `src/session_runner_execution.py`
 - keep terminal outcome persistence, api-stream cleanup accounting, and
@@ -519,7 +532,7 @@ This split is important because playback state and backend session state are rel
 If you are deciding where a change belongs:
 
 - detector math / extracted metrics
-  - `src/detectors.py`
+  - `src/detectors/`
 - alert thresholds / re-alert semantics / operator wording from detector output
   - `src/alert_rules.py`
 - session lifecycle / completion / cancel / failure behavior

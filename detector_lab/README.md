@@ -19,6 +19,10 @@ Use this package for:
 Do not read this package as proof that a detector or alert is part of the
 default runtime or UI model.
 
+If an experiment may become supported runtime behavior, use
+[`../docs/adding-an-analyzer.md`](../docs/adding-an-analyzer.md) for the
+production promotion rule.
+
 Current status labels:
 
 - runtime-backed baseline
@@ -191,8 +195,9 @@ Current practical lab-only alert policies:
   - motion-blur policy experiment
 
 All of the practical policies above are detector-lab-only comparison logic.
-They are not part of the supported production detector catalog, runtime alert
-catalog, or default UI alert model unless they are promoted explicitly.
+They are not part of the supported runtime surface. Use
+[`../docs/adding-an-analyzer.md`](../docs/adding-an-analyzer.md) for the
+production promotion rule.
 
 The full experiment export is one row per algorithm per analyzed window.
 

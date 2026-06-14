@@ -14,7 +14,7 @@ Keep this file focused on argparse, command dispatch, and JSON printing.
 import argparse
 import json
 
-from analyzer_registry import list_available_detectors
+from detectors.registry import list_available_detectors
 from logger import format_log_context, get_logger
 from playback_sources import resolve_playback_source
 from session_runner import run_local_session

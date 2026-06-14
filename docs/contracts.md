@@ -27,6 +27,9 @@ This is the document to use when you need to know:
 
 For code-level truth, the closest sources are:
 
+- [`src/analyzer_contract.py`](../src/analyzer_contract.py)
+- [`src/detectors/registry.py`](../src/detectors/registry.py)
+- [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
 - [`src/source_validation.py`](../src/source_validation.py)
 - [`src/stream_loader.py`](../src/stream_loader.py)
 - [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py)
@@ -58,11 +61,22 @@ For the current project stage:
 - FastAPI request/response contract source of truth:
   - [`src/api/schemas.py`](../src/api/schemas.py)
   - [`src/api/routers/`](../src/api/routers)
+- detector catalog and detector-result contract source of truth:
+  - [`src/analyzer_contract.py`](../src/analyzer_contract.py)
+  - [`src/detectors/registry.py`](../src/detectors/registry.py)
+  - [`src/processor.py`](../src/processor.py)
+  - [`src/alert_rules.py`](../src/alert_rules.py)
+  - [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
 
 ## Do Not Drift These Together By Accident
 
 When changing one of these, review the others too:
 
+- [`src/analyzer_contract.py`](../src/analyzer_contract.py)
+- [`src/detectors/registry.py`](../src/detectors/registry.py)
+- [`src/processor.py`](../src/processor.py)
+- [`src/alert_rules.py`](../src/alert_rules.py)
+- [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
 - [`src/api/schemas.py`](../src/api/schemas.py)
 - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
 - [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
@@ -71,6 +85,11 @@ When changing one of these, review the others too:
 - [`frontend/src/bridge/contract.testSupport.ts`](../frontend/src/bridge/contract.testSupport.ts)
 - [`docs/session-model.md`](./session-model.md)
 - [`tests/test_api_boundary_contracts.py`](../tests/test_api_boundary_contracts.py)
+- [`tests/test_analyzer_registry.py`](../tests/test_analyzer_registry.py)
+- [`tests/test_processor.py`](../tests/test_processor.py)
+- [`tests/test_alert_rules.py`](../tests/test_alert_rules.py)
+- [`tests/test_session_cli_tooling.py`](../tests/test_session_cli_tooling.py)
+- [`tests/test_export_detector_catalog.py`](../tests/test_export_detector_catalog.py)
 - [`tests/test_api_boundary_sessions_read.py`](../tests/test_api_boundary_sessions_read.py)
 - [`tests/test_api_boundary_sessions_start.py`](../tests/test_api_boundary_sessions_start.py)
 - [`tests/test_api_boundary_sessions_cancel.py`](../tests/test_api_boundary_sessions_cancel.py)
@@ -438,6 +457,17 @@ Notes:
   - `experimental`
 - `default_rule_id` points to the bundled default alert policy for this detector
   when one exists
+
+Implementation note:
+
+- detector catalog entries are declared explicitly in
+  [`src/detectors/registry.py`](../src/detectors/registry.py)
+- the shared detector/result types live in
+  [`src/analyzer_contract.py`](../src/analyzer_contract.py)
+- FastAPI exposes the catalog through
+  [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
+- CLI and export surfaces should stay aligned with the same registry-owned
+  shape rather than defining parallel detector metadata contracts
 
 ### Bundled default rule concept
 

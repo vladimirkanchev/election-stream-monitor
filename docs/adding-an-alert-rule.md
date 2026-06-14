@@ -145,7 +145,7 @@ policy shape looks similar. Promotion into the runtime should be explicit and
 should update:
 
 - [`src/alert_rules.py`](../src/alert_rules.py)
-- [`src/analyzer_registry.py`](../src/analyzer_registry.py) if detector
+- [`src/detectors/registry.py`](../src/detectors/registry.py) if detector
   metadata or rule linkage changes
 - runtime docs such as [architecture.md](./architecture.md)
 

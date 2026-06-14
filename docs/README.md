@@ -31,15 +31,25 @@ Use these first depending on what you are doing:
 - changing detectors or alert rules
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
   - [adding-an-alert-rule.md](./adding-an-alert-rule.md)
+  - treat `src/detectors/` as the canonical production detector package and
+    `src/detectors/registry.py` as the canonical runtime registration owner
   - [`../detector_lab/README.md`](../detector_lab/README.md) for experimental work
+  - use [adding-an-analyzer.md](./adding-an-analyzer.md) as the canonical
+    promotion rule when an experiment may become supported runtime behavior
   - [detector-lab-analysis.md](./detector-lab-analysis.md) for the current detector-lab structure and evaluation intent
   - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
   - high-signal test files:
+    - `tests/test_analyzer_registry.py`
+    - `tests/test_api_boundary_contracts.py`
+    - `tests/test_session_cli_tooling.py`
+    - `tests/test_export_detector_catalog.py`
     - `tests/test_detectors.py`
+    - `tests/test_processor.py`
     - `tests/test_alert_rules.py`
     - `tests/test_alert_rules_black.py`
     - `tests/test_alert_rules_blur.py`
+    - `tests/test_plugin_manifest_validation.py`
     - `tests/test_detector_lab.py`
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)
@@ -83,7 +93,8 @@ Use these first depending on what you are doing:
     details and CI ownership
   - use the workflow template trio as one branch flow:
     - start with [branch-purpose-template.md](./branch-purpose-template.md)
-      to define one branch purpose sentence, scope, and split trigger
+      for branch purpose, scope, split trigger, and the lightweight
+      execution checklist
     - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
       while opening or updating the PR so validation, fixture impact, and docs impact stay explicit
     - finish with [merge-readiness-checklist.md](./merge-readiness-checklist.md)
@@ -142,6 +153,8 @@ For the current alert-storage rollout state, use:
   - [adding-an-analyzer.md](./adding-an-analyzer.md)
   - [testing-and-validation.md](./testing-and-validation.md)
   - [architecture.md](./architecture.md)
+  - `src/detectors/`
+  - `src/detectors/registry.py`
 - experimenting with detector metrics before production integration:
   - [`../detector_lab/README.md`](../detector_lab/README.md)
   - [detector-lab-analysis.md](./detector-lab-analysis.md)
@@ -155,6 +168,8 @@ For the current alert-storage rollout state, use:
   - [architecture.md](./architecture.md)
 - working on repo-local Codex skills or their tests:
   - [testing-and-validation.md](./testing-and-validation.md)
+  - [branch-purpose-template.md](./branch-purpose-template.md) for the
+    lightweight execution pattern reused by planning-oriented skills
   - `./.agents/skills/`
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:

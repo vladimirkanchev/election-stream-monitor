@@ -91,7 +91,7 @@ def test_run_enabled_analyzers_bundle_logs_failure_context(
 
     assert logged
     message, args = logged[0]
-    assert message == "Analyzer %s failed for %s [%s]"
+    assert message == "Detector %s failed for %s [%s]"
     assert args[0] == "broken_detector"
     assert args[2] == (
         "session_id='session-log-ctx' "
@@ -389,7 +389,7 @@ def test_run_enabled_analyzers_bundle_logs_file_name_when_analysis_slice_is_miss
 
     assert logged
     message, args = logged[0]
-    assert message == "Analyzer %s failed for %s [%s]"
+    assert message == "Detector %s failed for %s [%s]"
     assert args[2] == (
         "session_id='session-fallback-current-item' "
         "source_kind='video_segments' "

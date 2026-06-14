@@ -5,14 +5,22 @@ All notable changes to this project should be documented in this file.
 The format is intentionally lightweight and practical for the current project
 stage.
 
-## [0.4.0] - 2026-05-20
-
-- ongoing transport, session, and operational hardening
-- continued frontend/operator UX refinement
-- PostgreSQL alert storage is now implemented and supported as an opt-in
-  backend, while file-backed alerts remain the default rollout mode
-
 ## [Unreleased]
+
+## [0.5.0] - 2026-06-14
+
+Detector/runtime extension-contract release.
+
+Highlights:
+
+- production detectors now live under `src/detectors/` with explicit runtime
+  registration and cleaner shared contracts
+- detector catalog parity is now covered across the canonical registry, FastAPI
+  route, session CLI, and export CLI
+- processor, detector, and alert-rule contract coverage is tighter and easier
+  to route through during refactors
+- maintainer workflow docs, planning guidance, and validation ownership were
+  aligned with the current extension-focused architecture
 
 ## [0.4.1] - 2026-06-13
 
@@ -27,6 +35,13 @@ Highlights:
 - lightweight guardrails for fixture/environment policy, dependency drift, and
   PR-template completeness
 - expanded focused tests for repo-local skills and optional local hook routing
+
+## [0.4.0] - 2026-05-20
+
+- ongoing transport, session, and operational hardening
+- continued frontend/operator UX refinement
+- PostgreSQL alert storage is now implemented and supported as an opt-in
+  backend, while file-backed alerts remain the default rollout mode
 
 ## [0.3.1] - 2026-05-18
 

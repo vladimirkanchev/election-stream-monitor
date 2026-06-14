@@ -1,241 +1,24 @@
-"""Production detectors for local video inputs.
+"""Production blur detector for local files and time slices."""
 
-At the current project stage the production runtime supports a deliberately
-small detector surface:
-
-- ``video_metrics`` for black-screen intervals
-- ``video_blur`` for strong blur and motion context
-
-This module owns signal extraction only. Alert entry, suppression, recovery,
-and operator wording live in ``alert_rules.py``. Public analyzers return typed
-detector rows that are easy to reason about in memory and still flatten cleanly
-at the processor/storage boundary.
-"""
-
-import json
-import re
 import subprocess  # nosec B404
 import time
-from dataclasses import dataclass
 from math import floor
 from pathlib import Path
 from statistics import median
 
 import config
-from analyzer_contract import AnalyzerResult, DetectorRowBase, VideoBlurRow, VideoMetricsRow
+from analyzer_contract import DetectorResult, VideoBlurRow
 from logger import logger
 from source_validation import validate_local_media_size
 
-
-@dataclass(frozen=True)
-class BlurWindowMetrics:
-    """Blur features derived once from one sampled grayscale window."""
-
-    frame_scores: list[float]
-    motion_scores: list[float]
-    sharpness_p10: float
-    sharpness_p90: float
-    per_frame_blur_scores: list[float]
-
-    @property
-    def sample_count(self) -> int:
-        """Return the number of usable frames in the analyzed window."""
-        return len(self.frame_scores)
-
-    @property
-    def motion_mean(self) -> float:
-        """Return the average frame-to-frame motion across the window."""
-        return _mean(self.motion_scores)
-
-    @property
-    def motion_p90(self) -> float:
-        """Return the upper-end motion level across the window."""
-        return _percentile(self.motion_scores, 90) if self.motion_scores else 0.0
-
-
-@dataclass(frozen=True)
-class BlurScoreSummary:
-    """Window-level blur summary ready for detector-row export."""
-
-    window_size: int
-    rolling_scores: list[float]
-    blur_score: float
-    consecutive_blurry_windows: int
-    required_windows: int
-
-    @property
-    def detected(self) -> bool:
-        """Return whether the summarized window crosses the blur entry threshold."""
-        return (
-            self.blur_score >= config.VIDEO_BLUR_ALERT_THRESHOLD
-            and self.consecutive_blurry_windows >= self.required_windows
-        )
-
-
-def _build_detector_row(
-    *,
-    analyzer: str,
-    source_group: str,
-    source_name: str,
-    window_index: int | None,
-    window_start_sec: float | None,
-    window_duration_sec: float | None,
-    start_time: float,
-) -> DetectorRowBase:
-    """Return the shared detector metadata carried by every result row."""
-    return DetectorRowBase(
-        analyzer=analyzer,
-        source_type="video",
-        source_group=source_group,
-        source_name=source_name,
-        window_index=window_index,
-        window_start_sec=_round_optional_seconds(window_start_sec),
-        window_duration_sec=_round_optional_seconds(window_duration_sec),
-        timestamp_utc=time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()),
-        processing_sec=round(time.time() - start_time, 3),
-    )
-
-
-def _warn_blur_sample_extraction_failure(file_path: Path) -> None:
-    """Log one consistent warning for blur sample extraction failures."""
-    logger.warning("ffmpeg failed to extract blur samples for %s", file_path.name)
-
-
-def _default_blur_sample_size() -> tuple[int, int]:
-    """Return the fallback blur-analysis bounds when probing cannot resolve size."""
-    return (
-        config.VIDEO_BLUR_SAMPLE_MAX_WIDTH,
-        config.VIDEO_BLUR_SAMPLE_MAX_HEIGHT,
-    )
-
-
-def _display_source_labels(
-    video_path: Path,
-    *,
-    source_group: str | None,
-    source_name: str | None,
-) -> tuple[str, str]:
-    """Return stable detector-facing source labels for one media input."""
-    resolved_source_name = source_name or video_path.name
-    resolved_source_group = source_group or video_path.parent.name or video_path.name
-    return (resolved_source_name, resolved_source_group)
-
-
-def _round_optional_seconds(value: float | None) -> float | None:
-    """Round optional second-valued payload fields to the detector precision."""
-    return round(value, 3) if value is not None else None
-
-
-def _extend_timed_media_input_args(
-    cmd: list[str],
-    *,
-    file_path: Path,
-    window_start_sec: float | None,
-    window_duration_sec: float | None,
-) -> None:
-    """Append optional slice bounds and the input path to one ffmpeg command."""
-    if window_start_sec is not None:
-        cmd.extend(["-ss", f"{window_start_sec:.3f}"])
-    cmd.extend(["-i", str(file_path.resolve())])
-    if window_duration_sec is not None:
-        cmd.extend(["-t", f"{window_duration_sec:.3f}"])
-
-
-def analyze_video_metrics(
-    file_path: Path,
-    prefix: str | None = None,
-    source_group: str | None = None,
-    source_name: str | None = None,
-    window_index: int | None = None,
-    window_start_sec: float | None = None,
-    window_duration_sec: float | None = None,
-) -> AnalyzerResult | VideoMetricsRow:
-    """Measure black-screen intervals for one local input or time slice.
-
-    This is the production black-screen detector. It stays intentionally narrow:
-    ffmpeg blackdetect in, typed runtime row out, with no alert policy mixed in.
-    """
-    _ = prefix
-    video_path = Path(file_path)
-    validate_local_media_size(video_path)
-    start_time = time.time()
-
-    display_source_name, display_source_group = _display_source_labels(
-        video_path,
-        source_group=source_group,
-        source_name=source_name,
-    )
-    duration_sec = (
-        round(window_duration_sec, 3)
-        if window_duration_sec is not None
-        else _probe_video_duration(video_path)
-    )
-    picture_threshold = config.VIDEO_BLACK_PICTURE_THRESHOLD
-    pixel_threshold = config.VIDEO_BLACK_PIXEL_THRESHOLD
-    min_duration = config.VIDEO_BLACK_MIN_DURATION_SEC
-
-    cmd = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "info",
-        "-nostats",
-    ]
-    _extend_timed_media_input_args(
-        cmd,
-        file_path=video_path,
-        window_start_sec=window_start_sec,
-        window_duration_sec=window_duration_sec,
-    )
-    cmd.extend(
-        [
-            "-vf",
-            (
-                "blackdetect="
-                f"d={min_duration}:pic_th={picture_threshold}:pix_th={pixel_threshold}"
-            ),
-            "-an",
-            "-f",
-            "null",
-            "-",
-        ]
-    )
-    proc = _run_media_command(
-        cmd,
-        stderr=subprocess.PIPE,
-        text=True,
-        timeout=config.FFMPEG_TIMEOUT_SEC,
-        failure_label=f"ffmpeg blackdetect on {video_path.name}",
-    )
-    if proc is None:
-        black_durations = []
-    else:
-        black_durations = _parse_blackdetect_durations(proc.stderr)
-    total_black_sec = round(sum(black_durations), 3)
-    longest_black_sec = round(max(black_durations, default=0.0), 3)
-    black_ratio = round(total_black_sec / duration_sec, 3) if duration_sec > 0 else 0.0
-
-    base_row = _build_detector_row(
-        analyzer="video_metrics",
-        source_group=display_source_group,
-        source_name=display_source_name,
-        window_index=window_index,
-        window_start_sec=window_start_sec,
-        window_duration_sec=window_duration_sec,
-        start_time=start_time,
-    )
-    return VideoMetricsRow(
-        **base_row.shared_fields(),
-        duration_sec=round(duration_sec, 3),
-        black_detected=bool(black_durations),
-        black_segment_count=len(black_durations),
-        total_black_sec=total_black_sec,
-        longest_black_sec=longest_black_sec,
-        black_ratio=black_ratio,
-        picture_threshold_used=picture_threshold,
-        pixel_threshold_used=pixel_threshold,
-        min_duration_sec=min_duration,
-    )
+from ._shared import (
+    build_detector_row,
+    display_source_labels,
+    extend_timed_media_input_args,
+    probe_ffprobe_json,
+    run_media_command,
+)
+from .contracts import BlurScoreSummary, BlurWindowMetrics
 
 
 def analyze_video_blur(
@@ -246,20 +29,14 @@ def analyze_video_blur(
     window_index: int | None = None,
     window_start_sec: float | None = None,
     window_duration_sec: float | None = None,
-) -> AnalyzerResult | VideoBlurRow:
-    """Measure blur and motion for one local input or time slice.
-
-    The detector samples a bounded grayscale view, extracts per-frame
-    sharpness and frame-transition motion, converts sharpness into blur
-    evidence, and collapses the window into one stable ``blur_score``.
-    Alert policy remains outside this module.
-    """
+) -> DetectorResult:
+    """Measure blur and motion for one local input or time slice."""
     _ = prefix
     video_path = Path(file_path)
     validate_local_media_size(video_path)
     start_time = time.time()
     threshold = config.VIDEO_BLUR_ALERT_THRESHOLD
-    display_source_name, display_source_group = _display_source_labels(
+    display_source_name, display_source_group = display_source_labels(
         video_path,
         source_group=source_group,
         source_name=source_name,
@@ -288,7 +65,7 @@ def analyze_video_blur(
         threshold=threshold,
     )
 
-    base_row = _build_detector_row(
+    base_row = build_detector_row(
         analyzer="video_blur",
         source_group=display_source_group,
         source_name=display_source_name,
@@ -312,18 +89,26 @@ def analyze_video_blur(
     )
 
 
+def _warn_blur_sample_extraction_failure(file_path: Path) -> None:
+    """Log one consistent warning for blur sample extraction failures."""
+    logger.warning("ffmpeg failed to extract blur samples for %s", file_path.name)
+
+
+def _default_blur_sample_size() -> tuple[int, int]:
+    """Return the fallback blur-analysis bounds when probing cannot resolve size."""
+    return (
+        config.VIDEO_BLUR_SAMPLE_MAX_WIDTH,
+        config.VIDEO_BLUR_SAMPLE_MAX_HEIGHT,
+    )
+
+
 def _measure_blur_window(
     *,
     width: int,
     height: int,
     raw_frames: list[bytes],
 ) -> BlurWindowMetrics:
-    """Collect reusable blur features from sampled grayscale frames.
-
-    The returned metrics are detector-facing building blocks. They are reused
-    by the production blur detector and by detector-lab experiments so the
-    project compares policy ideas on top of the same base measurements.
-    """
+    """Collect reusable blur features from sampled grayscale frames."""
     frame_scores = [
         _frame_sharpness_score(width, height, pixels)
         for pixels in raw_frames
@@ -345,11 +130,7 @@ def _measure_blur_window(
 
 
 def _select_blur_analysis_frames(raw_frames: list[bytes]) -> list[bytes]:
-    """Drop sampled frames that belong to the black-screen failure lane.
-
-    Production blur detection should not spend blur budget on frames that the
-    black-screen lane already explains more accurately.
-    """
+    """Drop sampled frames that belong to the black-screen failure lane."""
     return [
         pixels
         for pixels in raw_frames
@@ -382,67 +163,9 @@ def _summarize_blur_scores(
     )
 
 
-def _probe_video_duration(file_path: Path) -> float:
-    """Return container duration in seconds, or ``0.0`` on probe failure."""
-    data = _probe_ffprobe_json(
-        file_path,
-        show_entries="format=duration",
-        failure_label=f"ffprobe duration probe on {file_path.name}",
-    )
-    if data is None:
-        return 0.0
-    try:
-        return float(data.get("format", {}).get("duration", 0.0) or 0.0)
-    except (TypeError, ValueError, AttributeError):
-        logger.warning("ffprobe failed to read duration for %s", file_path.name)
-        return 0.0
-
-
-def _probe_ffprobe_json(
-    file_path: Path,
-    *,
-    show_entries: str,
-    failure_label: str,
-    select_streams: str | None = None,
-) -> dict[str, object] | None:
-    """Return parsed ffprobe JSON output, or ``None`` when probing fails."""
-    cmd = [
-        "ffprobe",
-        "-v",
-        "error",
-    ]
-    if select_streams is not None:
-        cmd.extend(["-select_streams", select_streams])
-    cmd.extend(
-        [
-            "-show_entries",
-            show_entries,
-            "-of",
-            "json",
-            str(file_path),
-        ]
-    )
-    probe = _run_media_command(
-        cmd,
-        stdout=subprocess.PIPE,
-        text=True,
-        timeout=config.FFPROBE_TIMEOUT_SEC,
-        failure_label=failure_label,
-    )
-    if probe is None:
-        return None
-    try:
-        data = json.loads(probe.stdout)
-        if isinstance(data, dict):
-            return data
-    except (OSError, ValueError, json.JSONDecodeError):
-        pass
-    return None
-
-
 def _probe_video_dimensions(file_path: Path) -> tuple[int, int] | None:
     """Return the source frame size, or ``None`` when it cannot be resolved."""
-    data = _probe_ffprobe_json(
+    data = probe_ffprobe_json(
         file_path,
         show_entries="stream=width,height",
         select_streams="v:0",
@@ -457,7 +180,7 @@ def _probe_video_dimensions(file_path: Path) -> tuple[int, int] | None:
         if width < 2 or height < 2:
             return None
         return (width, height)
-    except (OSError, ValueError, json.JSONDecodeError, TypeError, IndexError):
+    except (OSError, ValueError, TypeError, IndexError):
         logger.warning("ffprobe failed to read dimensions for %s", file_path.name)
         return None
 
@@ -512,16 +235,8 @@ def _resolve_blur_sample_fps(window_duration_sec: float | None) -> float:
     )
 
 
-def _parse_blackdetect_durations(stderr_output: str) -> list[float]:
-    """Extract black interval durations from ffmpeg ``blackdetect`` output."""
-    pattern = re.compile(
-        r"black_start:(?P<start>[\d\.]+)\s+black_end:(?P<end>[\d\.]+)\s"
-        r"+black_duration:(?P<dur>[\d\.]+)"
-    )
-    return [float(duration) for _, _, duration in pattern.findall(stderr_output)]
-
-
 def _extract_sampled_gray_frames(
+    *,
     file_path: Path,
     width: int,
     height: int,
@@ -538,7 +253,7 @@ def _extract_sampled_gray_frames(
         "error",
         "-nostats",
     ]
-    _extend_timed_media_input_args(
+    extend_timed_media_input_args(
         cmd,
         file_path=file_path,
         window_start_sec=window_start_sec,
@@ -557,7 +272,7 @@ def _extract_sampled_gray_frames(
             "-",
         ]
     )
-    proc = _run_media_command(
+    proc = run_media_command(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -567,6 +282,7 @@ def _extract_sampled_gray_frames(
     if proc is None or proc.returncode != 0:
         _warn_blur_sample_extraction_failure(file_path)
         return []
+
     if not proc.stdout:
         if _is_short_tail_window_without_samples(window_duration_sec=window_duration_sec, fps=fps):
             return []
@@ -590,31 +306,10 @@ def _is_short_tail_window_without_samples(
     window_duration_sec: float | None,
     fps: float,
 ) -> bool:
-    """Return whether a short valid tail slice can legitimately yield zero frames."""
+    """Return whether an empty extraction likely came from a valid short tail slice."""
     if window_duration_sec is None or window_duration_sec <= 0 or fps <= 0:
         return False
-    return window_duration_sec < (1.0 / fps)
-
-
-def _run_media_command(
-    cmd: list[str],
-    *,
-    timeout: float,
-    failure_label: str,
-    **kwargs,
-):
-    """Run one media command with timeout-aware error handling."""
-    try:
-        return subprocess.run(
-            cmd,
-            check=False,
-            shell=False,
-            timeout=timeout,
-            **kwargs,
-        )  # nosec B603
-    except subprocess.TimeoutExpired:
-        logger.warning("%s timed out after %.1f sec", failure_label, timeout)
-        return None
+    return window_duration_sec < (1 / fps)
 
 
 def _frame_sharpness_score(width: int, height: int, pixels: bytes) -> float:
@@ -694,7 +389,7 @@ def _rolling_window_medians(values: list[float], window_size: int) -> list[float
 
 
 def _longest_threshold_run(values: list[float], threshold: float) -> int:
-    """Return the longest consecutive run whose values meet the threshold."""
+    """Return the longest consecutive run of values at or above the threshold."""
     longest = 0
     current = 0
     for value in values:
