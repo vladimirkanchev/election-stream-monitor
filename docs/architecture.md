@@ -85,9 +85,19 @@ It is now:
    monitoring run inside that worker and delegates local discovery/progress
    shaping to its focused helper modules.
 7. [`src/detectors/registry.py`](../src/detectors/registry.py) decides which
-   detectors are enabled for that mode. The older
+   detectors are enabled for that mode and keeps the explicit detector runtime
+   contract in one place on purpose:
+   - detector ids
+   - detector callable wiring
+   - supported modes and suffixes
+   - store targets
+   - frontend catalog metadata
+   - default alert-rule linkage
+   The older
    [`src/analyzer_registry.py`](../src/analyzer_registry.py) file now exists as
-   a thin compatibility wrapper.
+   a thin compatibility wrapper for older imports. Future plugin metadata can
+   build on this explicit registration contract without replacing it with
+   dynamic discovery yet.
 8. [`src/detectors/`](../src/detectors) extracts detector facts and returns
    typed detector rows through focused detector modules.
 9. [`src/processor.py`](../src/processor.py) normalizes detector output into

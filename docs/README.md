@@ -38,10 +38,12 @@ Use these first depending on what you are doing:
   - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
   - high-signal test files:
+    - `tests/test_analyzer_registry.py`
     - `tests/test_detectors.py`
     - `tests/test_alert_rules.py`
     - `tests/test_alert_rules_black.py`
     - `tests/test_alert_rules_blur.py`
+    - `tests/test_plugin_manifest_validation.py`
     - `tests/test_detector_lab.py`
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)

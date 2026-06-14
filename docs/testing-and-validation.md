@@ -121,6 +121,8 @@ Current focused ownership map:
   - canonical production detector package
 - `src/detectors/registry.py`
   - explicit runtime detector registration and catalog metadata
+- `tests/test_analyzer_registry.py`
+  - explicit registry ownership, mode exposure, detector catalog metadata, and shim behavior
 - `tests/test_detectors.py`
   - production detector rows, media-tool fallback behavior, and metric contracts
 - `tests/test_alert_rules.py`
@@ -129,6 +131,8 @@ Current focused ownership map:
   - `video_metrics` black-screen entry, recovery, and source/session isolation
 - `tests/test_alert_rules_blur.py`
   - `video_blur` warm-up, motion guards, recovery, and source/session isolation
+- `tests/test_plugin_manifest_validation.py`
+  - future-facing plugin manifest ownership and id-boundary rules
 - `tests/test_detector_lab.py`
   - detector-lab runner wiring, experiment families, practical alert policies,
     and export shaping

@@ -89,6 +89,12 @@ Registration should define:
 - whether it produces alerts
 
 Keep registrations explicit.
+Treat [`src/detectors/registry.py`](../src/detectors/registry.py) as the
+source of truth. The older
+[`src/analyzer_registry.py`](../src/analyzer_registry.py) file remains only as
+a compatibility shim for older imports.
+Use [`../tests/test_analyzer_registry.py`](../tests/test_analyzer_registry.py)
+when you need to confirm registry ownership or detector catalog expectations.
 
 ## Step 4: add alert logic if needed
 

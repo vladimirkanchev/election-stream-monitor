@@ -202,6 +202,8 @@ Blur and motion-blur experiments beyond that live in
 
 The current detector/rule test split mirrors that boundary:
 
+- registry and detector-catalog contracts
+  - [`tests/test_analyzer_registry.py`](./tests/test_analyzer_registry.py)
 - production detector contracts
   - [`tests/test_detectors.py`](./tests/test_detectors.py)
 - production alert-rule metadata and shared failure handling
@@ -210,6 +212,8 @@ The current detector/rule test split mirrors that boundary:
   - [`tests/test_alert_rules_black.py`](./tests/test_alert_rules_black.py)
 - production blur-rule behavior
   - [`tests/test_alert_rules_blur.py`](./tests/test_alert_rules_blur.py)
+- future plugin-manifest validation contract
+  - [`tests/test_plugin_manifest_validation.py`](./tests/test_plugin_manifest_validation.py)
 - detector-lab experiments and practical alert policies
   - [`tests/test_detector_lab.py`](./tests/test_detector_lab.py)
 
