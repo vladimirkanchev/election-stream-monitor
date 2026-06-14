@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 import session_cli
+from detectors.registry import list_available_detectors
 from session_alert_store import clear_default_session_alert_store_cache
 from session_models import SessionMetadata
 from tests.session_alert_test_support import (
@@ -49,6 +50,13 @@ def _set_argv(monkeypatch, *args: str) -> None:
     monkeypatch.setattr("sys.argv", ["session_cli.py", *args])
 
 
+def _run_cli_json(monkeypatch, capsys, *args: str) -> object:
+    """Run one CLI command and parse its stable JSON stdout payload."""
+    _set_argv(monkeypatch, *args)
+    session_cli.main()
+    return json.loads(capsys.readouterr().out)
+
+
 def _read_session_payload(
     monkeypatch,
     capsys,
@@ -56,9 +64,9 @@ def _read_session_payload(
     session_id: str,
 ) -> dict[str, object]:
     """Run the CLI read-session command and parse its stable JSON payload."""
-    _set_argv(monkeypatch, "read-session", "--session-id", session_id)
-    session_cli.main()
-    return json.loads(capsys.readouterr().out)
+    payload = _run_cli_json(monkeypatch, capsys, "read-session", "--session-id", session_id)
+    assert isinstance(payload, dict)
+    return payload
 
 
 def _cli_snapshot_alert(
@@ -109,9 +117,21 @@ def test_cli_keeps_the_supported_tooling_commands() -> None:
     assert "resolve-playback-source" in commands
 
 
+def test_list_detectors_returns_canonical_registry_catalog(monkeypatch, capsys) -> None:
+    """List-detectors should print the canonical registry catalog for the requested mode."""
+    assert _run_cli_json(
+        monkeypatch,
+        capsys,
+        "list-detectors",
+        "--mode",
+        "video_segments",
+    ) == list_available_detectors(
+        "video_segments"
+    )
+
+
 def test_cancel_session_returns_full_session_shape(monkeypatch, capsys) -> None:
     """Cancel-session should preserve source metadata for tooling/debugging use."""
-    _set_argv(monkeypatch, "cancel-session", "--session-id", "session-123")
     monkeypatch.setattr(
         session_cli,
         "cancel_session_service",
@@ -124,9 +144,14 @@ def test_cancel_session_returns_full_session_shape(monkeypatch, capsys) -> None:
         },
     )
 
-    session_cli.main()
-
-    payload = json.loads(capsys.readouterr().out)
+    payload = _run_cli_json(
+        monkeypatch,
+        capsys,
+        "cancel-session",
+        "--session-id",
+        "session-123",
+    )
+    assert isinstance(payload, dict)
     assert payload["session_id"] == "session-123"
     assert payload["mode"] == "video_segments"
     assert payload["input_path"] == "/data/streams/segments"
@@ -136,16 +161,19 @@ def test_cancel_session_returns_full_session_shape(monkeypatch, capsys) -> None:
 
 def test_cancel_session_missing_returns_legacy_cli_shape(monkeypatch, capsys) -> None:
     """Cancel-session should keep the CLI's compatibility payload when missing."""
-    _set_argv(monkeypatch, "cancel-session", "--session-id", "missing-session")
     monkeypatch.setattr(
         session_cli,
         "cancel_session_service",
         lambda session_id: (_ for _ in ()).throw(session_cli.SessionServiceNotFoundError(session_id)),
     )
 
-    session_cli.main()
-
-    payload = json.loads(capsys.readouterr().out)
+    payload = _run_cli_json(
+        monkeypatch,
+        capsys,
+        "cancel-session",
+        "--session-id",
+        "missing-session",
+    )
     assert payload == {
         "session_id": "missing-session",
         "mode": None,
@@ -213,7 +241,6 @@ def test_start_session_passes_cli_args_to_service(
         "status": "pending",
     }
 
-    _set_argv(monkeypatch, *resolved_argv)
     monkeypatch.setattr(
         session_cli,
         "start_session_service",
@@ -227,21 +254,22 @@ def test_start_session_passes_cli_args_to_service(
         ),
     )
 
-    session_cli.main()
-
-    payload = json.loads(capsys.readouterr().out)
+    payload = _run_cli_json(monkeypatch, capsys, *resolved_argv)
     assert payload == resolved_metadata
     assert calls == [resolved_call]
 
 
 def test_read_session_returns_empty_snapshot_shape_when_missing(monkeypatch, capsys) -> None:
     """Read-session should preserve the CLI's empty snapshot shape for missing sessions."""
-    _set_argv(monkeypatch, "read-session", "--session-id", "missing-session")
     monkeypatch.setattr(session_cli, "read_session_snapshot_or_none", lambda session_id: None)
 
-    session_cli.main()
-
-    payload = json.loads(capsys.readouterr().out)
+    payload = _run_cli_json(
+        monkeypatch,
+        capsys,
+        "read-session",
+        "--session-id",
+        "missing-session",
+    )
     assert payload == {
         "session": None,
         "progress": None,
@@ -253,7 +281,6 @@ def test_read_session_returns_empty_snapshot_shape_when_missing(monkeypatch, cap
 
 def test_read_session_returns_existing_snapshot_shape(monkeypatch, capsys) -> None:
     """Read-session should print the shared snapshot unchanged when it exists."""
-    _set_argv(monkeypatch, "read-session", "--session-id", "session-123")
     monkeypatch.setattr(
         session_cli,
         "read_session_snapshot_or_none",
@@ -272,9 +299,13 @@ def test_read_session_returns_existing_snapshot_shape(monkeypatch, capsys) -> No
         },
     )
 
-    session_cli.main()
-
-    payload = json.loads(capsys.readouterr().out)
+    payload = _run_cli_json(
+        monkeypatch,
+        capsys,
+        "read-session",
+        "--session-id",
+        "session-123",
+    )
     assert payload == {
         "session": {
             "session_id": "session-123",

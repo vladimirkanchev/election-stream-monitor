@@ -1,6 +1,16 @@
+"""FastAPI boundary tests for structured failures and stable detector/session shapes.
+
+This suite protects the outer HTTP contract when backend internals move:
+
+- read-only route smoke shapes
+- detector catalog error handling and canonical catalog export
+- fail-closed session snapshot validation
+"""
+
 import pytest
 
 from api.routers.sessions import SessionServiceCancelFailedError
+from detectors.registry import list_available_detectors
 from tests.api_boundary_test_support import request
 
 
@@ -88,6 +98,15 @@ def test_detectors_unexpected_failure_returns_structured_payload(monkeypatch) ->
         "status_reason": "internal_error",
         "status_detail": "catalog exploded",
     }
+
+
+def test_detectors_route_returns_canonical_registry_catalog_for_video_segments() -> None:
+    """The API detector catalog should match the canonical registry contract."""
+    expected_catalog = list_available_detectors("video_segments")
+    response = request("GET", "/detectors?mode=video_segments")
+
+    assert response.status_code == 200
+    assert response.json() == expected_catalog
 
 
 def test_read_session_malformed_nested_payload_fails_closed_with_structured_error(
