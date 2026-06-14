@@ -14,10 +14,17 @@ For branch workflow and PR shape, use this sequence alongside the review:
 Before going deep on code, make sure the PR notes state:
 
 - the validation commands that were run
+- what existing focused test, updated nearby test, new focused test, or
+  docs/workflow-only check proves the changed seam
 - fixture/environment impact
 - docs impact
 - why dependency metadata changes belong, if `pyproject.toml` or `uv.lock` changed
+- whether any contract-sensitive change moved with `docs/contracts.md` and
+  nearby boundary tests
 - whether the branch used focused lanes, `test-fast`, or `ci-local` for the right reason
+
+If the change is real but still manual-only to validate honestly, the PR
+should say that plainly instead of implying automation that does not exist yet.
 
 The pull-request CI also fails early if those validation, fixture/environment,
 or docs sections are left effectively blank.

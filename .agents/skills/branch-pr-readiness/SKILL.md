@@ -43,6 +43,13 @@ wider:
 - move it to a follow-up branch when it is useful but no longer part of the
   branch story
 
+When a follow-up branch is the right answer, prefer a short descriptive name
+such as:
+
+- `docs/...` for docs or harness-owner cleanup
+- `refactor/...` for internal structure cleanup
+- `fix/...` for narrow behavior corrections
+
 ## Output shape
 
 Choose one mode. Do not mix all three unless the user clearly needs that.
@@ -94,8 +101,10 @@ For branch-end closure, reuse the merge checklist and confirm:
    - or docs/workflow-only check when no runtime behavior changed
 3. docs impact and fixture/environment impact are explicit
 4. contract-sensitive work moved with the owning docs and nearby tests
-5. branch purpose still matches the actual content
-6. unrelated drift is excluded before merge
+5. any `pyproject.toml` or `uv.lock` change belongs to the branch story or is
+   moved out
+6. branch purpose still matches the actual content
+7. unrelated drift is excluded before merge
 
 Keep the answer narrow:
 

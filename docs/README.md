@@ -436,11 +436,11 @@ separate automation framework.
 Keep workflow ownership split:
 
 - [branch-purpose-template.md](./branch-purpose-template.md)
-  - execution pattern and medium-task checklist
+  - execution pattern, medium-task checklist, and early test/contract/dependency prompts
 - [testing-and-validation.md](./testing-and-validation.md)
-  - validation lanes and CI depth
+  - validation lanes, CI depth, and honest manual-only validation notes
 - [merge-readiness-checklist.md](./merge-readiness-checklist.md)
-  - final branch-ready pass
+  - final branch-ready pass and seam-evidence check
 - repo-local skill files under `./.agents/skills/`
   - question-specific prompts only
 
@@ -475,6 +475,8 @@ Most common starting points:
 - CI failure and smallest honest next lane
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
+- dependency metadata drift
+  - `./.agents/skills/dependency-change-review/`
 - detector/rule changes
   - `./.agents/skills/detector-rule-review/`
 - frontend or bridge changes

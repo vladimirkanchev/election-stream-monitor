@@ -2,6 +2,11 @@
 
 This project is still in an active `0.x` stage.
 
+Current public stage: `0.5.1`
+
+- `0.5.0` marked the detector/runtime extension-contract refactor stage
+- `0.5.1` is the workflow and AI-harness follow-up on top of that stage
+
 ## Current Approach
 
 - versions are expected to move quickly as the architecture hardens
@@ -33,6 +38,15 @@ For now, a small practical release process is enough:
 3. rerun the main verification commands
 4. tag and publish from a known-good commit
 
+For this repo, the normal version-bearing files are:
+
+- `pyproject.toml`
+- `frontend/package.json`
+- `frontend/package-lock.json`
+- `src/api/app.py`
+- `uv.lock`
+- any user-facing stage references such as `README.md`
+
 When a release includes alert-storage changes, state the rollout mode
 explicitly in the release notes:
 
@@ -49,3 +63,5 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
+- current `0.5.1` work improves workflow discipline and reviewability more than
+  product surface area

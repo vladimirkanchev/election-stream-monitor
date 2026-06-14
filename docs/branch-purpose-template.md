@@ -34,9 +34,12 @@ Use this when the task is moderate but does not need a full plan.
 2. What behavior must stay the same?
 3. What existing test or docs-check proves this change?
 4. If none, is one focused test worth adding?
-5. What smallest validation command should run?
-6. Any docs or harness update needed?
-7. Still inside branch scope?
+5. Does this change touch API, CLI, persisted data, or bridge shape?
+6. If yes, should `docs/contracts.md` and nearby tests move too?
+7. What smallest validation command should run?
+8. Did `pyproject.toml` or `uv.lock` change, and does that belong to this branch story?
+9. Any docs or harness update needed?
+10. Still inside branch scope?
 ```
 
 ## Example

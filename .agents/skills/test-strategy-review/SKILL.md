@@ -36,6 +36,8 @@ Force the test decision before recommending commands:
 
 - what existing focused test or `just docs-check` already proves the change?
 - if none, is one nearby focused test worth adding before broader validation?
+- if no honest automated lane fits yet, say `manual confidence only for now`
+  and name the manual step plainly
 
 Use this validation-lane chooser before recommending commands:
 
@@ -105,7 +107,8 @@ short.
 - Use `just ci-local` as the main "ready to push?" lane, not as the default first response.
 - For detector-lab work, keep synthetic and real-media lanes distinct.
 - For docs or repo-skill-only changes, prefer `just docs-check` or the focused repo-skill test slice before broader validation.
-- If a behavior is intentionally manual-only for now, say that instead of pretending it should already be fully automated.
+- If a behavior is intentionally manual-only for now, say `manual confidence
+  only for now` instead of pretending it should already be fully automated.
 - Prefer the cheapest lane that still protects the real risk.
 
 ## Skill boundaries
