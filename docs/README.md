@@ -433,6 +433,17 @@ Treat these as lightweight workflow helpers for the current project stage.
 They are intentionally small, text-first, and easy to extend without adding a
 separate automation framework.
 
+Keep workflow ownership split:
+
+- [branch-purpose-template.md](./branch-purpose-template.md)
+  - execution pattern and medium-task checklist
+- [testing-and-validation.md](./testing-and-validation.md)
+  - validation lanes and CI depth
+- [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+  - final branch-ready pass
+- repo-local skill files under `./.agents/skills/`
+  - question-specific prompts only
+
 Use the skill set by question type:
 
 - explain what happened
@@ -459,6 +470,8 @@ Most common starting points:
 
 - branch drift, commit shape, or merge readiness
   - `./.agents/skills/branch-pr-readiness/`
+- branch/task sizing before implementation
+  - `./.agents/skills/task-planning-evaluation/`
 - CI failure and smallest honest next lane
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
@@ -468,6 +481,9 @@ Most common starting points:
   - `./.agents/skills/frontend-bridge-review/`
 - docs or docstring drift
   - `./.agents/skills/docs-alignment/`
+- API, CLI, persisted-data, or bridge contract drift
+  - `./.agents/skills/docs-alignment/`
+  - then [contracts.md](./contracts.md)
 
 The deterministic tests for them live in:
 

@@ -2,6 +2,7 @@
 
 Use this at branch start or when scope starts to drift.
 Keep it short. One clear sentence is better than a broad mini-spec.
+This file owns the lightweight execution pattern and the medium-task checklist.
 
 ## Template
 
@@ -31,10 +32,11 @@ Use this when the task is moderate but does not need a full plan.
 ```text
 1. What boundary changes?
 2. What behavior must stay the same?
-3. What test needs update or addition?
-4. What smallest validation command should run?
-5. Any docs or harness update needed?
-6. Still inside branch scope?
+3. What existing test or docs-check proves this change?
+4. If none, is one focused test worth adding?
+5. What smallest validation command should run?
+6. Any docs or harness update needed?
+7. Still inside branch scope?
 ```
 
 ## Example

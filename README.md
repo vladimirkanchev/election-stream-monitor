@@ -373,6 +373,15 @@ Design intent:
 - the harness stays readable and stable by mirroring the current project
   structure rather than hiding it
 
+Workflow owners around that harness stay split on purpose:
+
+- [docs/branch-purpose-template.md](./docs/branch-purpose-template.md)
+  - lightweight execution pattern and medium-task checklist
+- [docs/testing-and-validation.md](./docs/testing-and-validation.md)
+  - local lanes, CI shape, and confidence depth
+- [docs/README.md](./docs/README.md)
+  - maintainer routing and docs ownership
+
 Current high-value commands:
 
 - lane policy:
@@ -444,10 +453,6 @@ Branch workflow templates:
 - [`.github/pull_request_template.md`](./.github/pull_request_template.md)
 - [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
 
-Keep the lightweight execution pattern and the medium-task checklist in
-[branch-purpose-template.md](./docs/branch-purpose-template.md). The planning
-skill reuses that pattern instead of owning a second copy.
-
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under
@@ -479,15 +484,17 @@ These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are
 not required to run the project.
 
-`task-planning-evaluation` is the planning-depth skill:
+The most common workflow helpers are:
 
-- small tasks
-  - do the work directly
-- medium tasks
-  - use the short checklist from
-    [branch-purpose-template.md](./docs/branch-purpose-template.md)
-- broad tasks
-  - use a fuller staged plan
+- `task-planning-evaluation`
+  - scales planning depth to the task and reuses the branch template for the
+    execution pattern
+- `test-strategy-review`
+  - chooses the smallest honest validation lane before broader checks
+- `docs-alignment`
+  - routes doc updates to the owning file and flags contract-sensitive changes
+- `branch-pr-readiness`
+  - checks branch drift, commit grouping, and merge readiness
 
 For the fuller skill map and maintainer-oriented ownership notes, use
 [docs/README.md](./docs/README.md).
