@@ -173,6 +173,14 @@ For the current alert-storage rollout state, use:
   - [branch-purpose-template.md](./branch-purpose-template.md) for the
     lightweight execution pattern reused by planning-oriented skills
   - `./.agents/skills/`
+  - use `./.agents/skills/readme-alignment-review/` for root README section
+    fit, stage honesty, or README trimming
+  - use `./.agents/skills/docs-drift-check/` for pre-edit docs drift audits
+    and owner routing
+  - use `./.agents/skills/architecture-diagram-review/` for diagram flow,
+    boundaries, visual quality, and current-stage honesty
+  - these three stay intentionally separate: root README fit, docs drift
+    audit, and diagram honesty
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)

@@ -1675,6 +1675,10 @@ the branch's current typing focus.
 The repo-local Codex skills under `./.agents/skills/` are validated with a
 small deterministic Python slice rather than live model calls.
 
+Recent coverage also protects three nearby review shapes that are easy to blur
+together in AI-assisted work: root README fit, docs drift audit, and
+architecture-diagram review.
+
 Current test files:
 
 - `tests/test_repo_skills.py`

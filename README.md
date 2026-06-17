@@ -66,7 +66,7 @@ Today the runtime is local-first:
 - the UI, alert routes, grouped incident routes, and MCP tools all read alerts through that shared backend
 
 FastAPI auth and rate limiting are available for shared access modes. MCP remains a separate local `stdio` tool surface.
-0
+
 
 ## Current Readiness
 
@@ -376,9 +376,18 @@ The most common workflow helpers are:
 These skills help with local planning, validation, docs alignment, and review,
 but they do not replace the project's tests or CI lanes.
 
+Three newer review helpers keep nearby docs work separate on purpose:
+
+- `readme-alignment-review`
+  - root README section fit, stage honesty, and trimming
+- `docs-drift-check`
+  - pre-edit audit of whether docs are really drifting and which file owns the fix
+- `architecture-diagram-review`
+  - diagram flow clarity, boundaries, visual quality, and stage honesty
+
 The repo also includes narrower helpers for incident explanation, CI failure
-triage, manual validation planning, fixture/environment review, boundary
-review, and security-surface checks.
+triage, manual validation planning, fixture/environment review, and
+security-surface checks.
 
 For the fuller skill map and maintainer-oriented ownership notes, use
 [docs/README.md](./docs/README.md).
