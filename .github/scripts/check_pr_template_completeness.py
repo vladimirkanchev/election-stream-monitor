@@ -20,6 +20,11 @@ SECTION_DOCS = "Docs Impact"
 COMMANDS_MARKER = "Commands run:"
 WHY_MARKER = "Why these lanes were enough:"
 PLACEHOLDER_MARKER = "# paste the commands you actually ran"
+NO_COMMAND_PATTERNS = (
+    re.compile(r"\bno commands? ran\b", re.IGNORECASE),
+    re.compile(r"\bdid not run any commands?\b", re.IGNORECASE),
+    re.compile(r"\bno automated commands? ran\b", re.IGNORECASE),
+)
 
 
 def _section_body(body: str, heading: str) -> str | None:
@@ -61,6 +66,11 @@ def _has_real_command(section_body: str) -> bool:
     return False
 
 
+def _has_explicit_no_command_note(section_body: str) -> bool:
+    """Return whether the validation section honestly says no commands ran."""
+    return any(pattern.search(section_body) for pattern in NO_COMMAND_PATTERNS)
+
+
 def validation_failures(body: str) -> tuple[str, ...]:
     """Return all missing or incomplete required PR-template parts.
 
@@ -80,9 +90,13 @@ def validation_failures(body: str) -> tuple[str, ...]:
             failures.append(f"missing required PR section: {heading}")
 
     validation_section = sections.get(SECTION_VALIDATION)
-    if validation_section is not None and not _has_real_command(validation_section):
+    if (
+        validation_section is not None
+        and not _has_real_command(validation_section)
+        and not _has_explicit_no_command_note(validation_section)
+    ):
         failures.append(
-            "Validation Run must list at least one actual command, not only the template placeholder"
+            "Validation Run must list at least one actual command or explicitly say that no commands were run"
         )
 
     fixture_section = sections.get(SECTION_FIXTURE)
