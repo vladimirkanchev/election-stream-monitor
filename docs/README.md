@@ -179,8 +179,8 @@ For the current alert-storage rollout state, use:
     and owner routing
   - use `./.agents/skills/architecture-diagram-review/` for diagram flow,
     boundaries, visual quality, and current-stage honesty
-  - these three stay intentionally separate: root README fit, docs drift
-    audit, and diagram honesty
+  - these three stay intentionally separate, and the repo skill tests protect
+    that split with paired boundary checks
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)

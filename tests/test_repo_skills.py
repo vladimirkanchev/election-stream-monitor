@@ -5,6 +5,7 @@ skill layer by checking:
 
 - inventory and structure
 - ownership boundaries and explicit handoffs
+- bidirectional boundary checks for nearby skill pairs
 - workflow-owner guidance for planning depth, validation lanes, docs routing,
   and branch readiness
 - representative scenarios and fixed output snapshots
@@ -307,6 +308,31 @@ REAL_INCIDENT_REGRESSIONS = [
 
 # Prompts that could plausibly fit two nearby skills, but should still resolve
 # to one clear owner.
+def _bidirectional_boundary_cases(
+    left_skill: str,
+    left_summary: str,
+    left_required: tuple[str, ...],
+    right_required: tuple[str, ...],
+    right_skill: str,
+    right_summary: str,
+) -> list[tuple[str, str, tuple[str, ...], tuple[str, ...]]]:
+    """Keep paired skill-boundary expectations compact and symmetric."""
+    return [
+        (
+            left_skill,
+            left_summary,
+            left_required,
+            right_required,
+        ),
+        (
+            right_skill,
+            right_summary,
+            right_required,
+            left_required,
+        ),
+    ]
+
+
 AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
     (
         "summarization",
@@ -381,6 +407,48 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
         ),
     ),
 ]
+AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
+    "docs-drift-check",
+    "docs drift audit versus docs editing",
+    (
+        "Drift class",
+        "Severity",
+    ),
+    (
+        "Recommended updates",
+        "Best next doc pass",
+    ),
+    "docs-alignment",
+    "docs editing versus docs drift audit",
+)
+AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
+    "readme-alignment-review",
+    "README wording review versus diagram review",
+    (
+        "README fit",
+        "Heavy-section warning",
+    ),
+    (
+        "Flow arrow review",
+        "Boundary review",
+    ),
+    "architecture-diagram-review",
+    "diagram review versus README wording review",
+)
+AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
+    "ci-failure-triage",
+    "CI failure classification versus likely underlying cause",
+    (
+        "Most likely failure class",
+        "Smallest local reproduction",
+    ),
+    (
+        "Most likely root cause",
+        "Cheapest next validation",
+    ),
+    "root-cause-suggestion",
+    "likely underlying cause versus CI failure classification",
+)
 
 # High-value handoffs that should stay explicit instead of being implied.
 EXPLICIT_HANDOFF_EXPECTATIONS = [

@@ -1675,14 +1675,17 @@ the branch's current typing focus.
 The repo-local Codex skills under `./.agents/skills/` are validated with a
 small deterministic Python slice rather than live model calls.
 
-Recent coverage also protects three nearby review shapes that are easy to blur
-together in AI-assisted work: root README fit, docs drift audit, and
-architecture-diagram review.
+Recent coverage also protects nearby skill boundaries that are easy to blur in
+AI-assisted work. The main guarded pairs are:
+
+- root README fit versus architecture-diagram review
+- docs drift audit versus docs editing
+- CI failure classification versus likely underlying cause
 
 Current test files:
 
 - `tests/test_repo_skills.py`
-  - structure, skill-boundary, scenario, and snapshot checks
+  - structure, handoff, boundary, scenario, and snapshot checks
 - `tests/skill_test_support.py`
   - parsing and reusable test helpers
 - `tests/fixtures/skill_output_snapshots/`

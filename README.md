@@ -385,6 +385,9 @@ Three newer review helpers keep nearby docs work separate on purpose:
 - `architecture-diagram-review`
   - diagram flow clarity, boundaries, visual quality, and stage honesty
 
+Their deterministic skill tests also protect those boundaries so README fit,
+docs drift, and diagram review do not collapse into one generic docs mode.
+
 The repo also includes narrower helpers for incident explanation, CI failure
 triage, manual validation planning, fixture/environment review, and
 security-surface checks.
