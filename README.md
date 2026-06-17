@@ -2,18 +2,16 @@
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-Election Stream Monitor is a local-first AI video monitoring system for
-election-related media sources.
+Election Stream Monitor is a local-first AI video monitoring system for election-related media sources.
 
-It watches polling-station streams, archived recordings, or segmented video
-feeds and surfaces the quality problems that matter during monitoring.
+It watches polling-station streams, archived recordings, or segmented video feeds and surfaces the quality problems that matter during monitoring.
 
-Today it is a desktop-first advanced prototype with:
+Today it is an advanced desktop-first prototype with:
 
 - a React/Electron app and local FastAPI backend
 - three input modes: local video files, local segmented/HLS-style folders, and direct remote `api_stream` inputs
 - two built-in detectors: `Black Screen` and `Blur Check`
-- two built-in production alert rules layered on top of those detectors
+- two built-in production alert rules built on top of those detectors
 - a small local MCP server with read-only alert-query tools
 - selectable alert backend: file by default, PostgreSQL opt-in
 
@@ -26,24 +24,7 @@ monitoring runs.
 The project is intentionally small. I want it to stay readable, useful, and
 easy to extend without turning into a much heavier platform too early.
 
-For maintainer workflow support, the repo also includes a small set of
-workflow templates:
-
-- branch start:
-  [`docs/branch-purpose-template.md`](./docs/branch-purpose-template.md)
-- PR shaping:
-  [`.github/pull_request_template.md`](./.github/pull_request_template.md)
-- merge/readiness pass:
-  [`docs/merge-readiness-checklist.md`](./docs/merge-readiness-checklist.md)
-
-For doc ownership and where each maintainer-facing note belongs, use
-[docs/README.md](./docs/README.md).
-
-For a short contributor and maintainer entrypoint, use
-[CONTRIBUTING.md](./CONTRIBUTING.md).
-
-For optional local Git hooks that reinforce the same harness rules, use
-[docs/git-hooks.md](./docs/git-hooks.md).
+For contributor and maintainer workflows, start with [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/README.md](./docs/README.md).
 
 ## Why this project exists
 
@@ -54,14 +35,15 @@ If a stream goes black, blurry, broken, or becomes too low quality, that is
 not only a technical issue. It can make real-time observation harder and
 reduce public oversight when it matters most.
 
-It also gives users a practical way to add new video detectors around a real
-civic use case. With an AI-assisted coding agent, they can describe the
+Today the project is a small desktop-first prototype for exploring that workflow in practice and for extending it with new video detectors as the monitoring needs become clearer.
+
+With an AI-assisted coding agent, they can describe the
 monitoring problem they want to catch in plain language instead of needing
 strong manual coding skills or deep video-processing knowledge.
 
 ## Where To Start
 
-If you are:
+Start here if you are:
 
 - trying the project locally
   - start with [Running The Project](./README.md#running-the-project)
@@ -70,36 +52,21 @@ If you are:
 - learning the current product/runtime shape
   - read [Current Capabilities](./README.md#current-capabilities)
   - then [docs/architecture.md](./docs/architecture.md)
-- changing detectors or alert rules
-  - read [docs/adding-an-analyzer.md](./docs/adding-an-analyzer.md)
-  - read [docs/adding-an-alert-rule.md](./docs/adding-an-alert-rule.md)
-  - treat `src/detectors/` and `src/detectors/registry.py` as the canonical production detector owners
-  - read [docs/testing-and-validation.md](./docs/testing-and-validation.md) for the focused detector/rule test lanes
-  - use [detector_lab/README.md](./detector_lab/README.md) if the idea is still experimental
 - navigating the whole maintainer docs set
   - use [docs/README.md](./docs/README.md)
 
 ## Desktop Runtime Summary
 
-Most people will use the project through the Electron app. Electron starts
-and talks to a local FastAPI backend for session control, detector loading,
-playback-source resolution, and alert/session reads.
+Most people will use the project through the Electron app. The desktop app talks to a local FastAPI backend that manages sessions, detector execution, playback-source handling, and alert/session reads.
 
-Electron still owns the desktop-only work: app startup, local media serving,
-the HLS proxy path, and the UI bridge. Session snapshots are polled by the UI
-while a run is active.
-
-Today the local app works like this:
+Today the runtime is local-first:
 
 - session metadata, progress, and results stay on local disk
-- alerts use one shared backend: file-backed by default, PostgreSQL as an
-  explicit opt-in backend
-- the session snapshot, alert routes, grouped incident routes, and MCP tools
-  all read alerts through that shared alert backend
+- alerts use one shared backend: file-backed by default, PostgreSQL as an explicit opt-in backend
+- the UI, alert routes, grouped incident routes, and MCP tools all read alerts through that shared backend
 
-FastAPI auth and rate limiting are available for shared access. `local` mode
-keeps them off by default, while `share` mode turns them on for the alerts
-HTTP routes. MCP remains a separate local `stdio` tool surface.
+FastAPI auth and rate limiting are available for shared access modes. MCP remains a separate local `stdio` tool surface.
+0
 
 ## Current Readiness
 
@@ -130,40 +97,15 @@ For live Postgres validation and weekly confidence runs, use
 
 ## FastAPI Access Modes
 
-### Local mode
+FastAPI currently supports two access modes:
 
-```bash
-. .venv/bin/activate
-PYTHONPATH=src python -m api_server_cli local
-```
+- `local` for normal desktop and development use, with auth and rate limiting
+  off by default
+- `share` for temporary local or demo sharing, with API-key auth and rate
+  limiting on by default
 
-Auth and rate limiting are off by default. These examples use the default
-file-backed alert backend.
-
-### Share mode
-
-```bash
-. .venv/bin/activate
-PYTHONPATH=src python -m api_server_cli share
-```
-
-Auth and rate limiting are on by default. If you do not pass `--api-key`, the
-CLI generates one and prints it once.
-
-```bash
-. .venv/bin/activate
-PYTHONPATH=src python -m api_server_cli share --api-key my-demo-key
-```
-
-Use any long random string for `my-demo-key`.
-Quick strong-key generator:
-
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(24))"
-```
-
-`share` mode is for temporary local/demo sharing, not production deployment.
-These examples keep the default file-backed alert backend.
+For the exact startup commands and key examples, see
+[Running The Project](./README.md#running-the-project).
 
 ## Current Capabilities
 
@@ -186,46 +128,21 @@ Current built-ins:
 
 Today the production detector and alert surface is intentionally small:
 
-- detector: `video_metrics`
-- detector: `video_blur`
-- alert rule: `video_metrics.default_rule`
-- alert rule: `video_blur.default_rule`
+- production black-screen detection and its default alert rule
+- production blur detection and its default alert rule
 
-Production detector code now lives in [`src/detectors/`](./src/detectors),
-with explicit runtime registration in
-[`src/detectors/registry.py`](./src/detectors/registry.py). The older
-[`src/analyzer_registry.py`](./src/analyzer_registry.py) file remains only as a
-small compatibility wrapper.
+Production detector code lives in [`src/detectors/`](./src/detectors), with
+explicit runtime registration in
+[`src/detectors/registry.py`](./src/detectors/registry.py).
 
 Blur and motion-blur experiments beyond that live in
 [`detector_lab/`](./detector_lab/README.md) until they are promoted on
 purpose. For the production promotion rule, use
 [`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md).
 
-The current detector/rule test split mirrors that boundary:
-
-- registry and detector-catalog contracts
-  - [`tests/test_analyzer_registry.py`](./tests/test_analyzer_registry.py)
-- API detector-catalog contract
-  - [`tests/test_api_boundary_contracts.py`](./tests/test_api_boundary_contracts.py)
-- CLI detector-catalog contract
-  - [`tests/test_session_cli_tooling.py`](./tests/test_session_cli_tooling.py)
-- exported detector-catalog JSON contract
-  - [`tests/test_export_detector_catalog.py`](./tests/test_export_detector_catalog.py)
-- production detector contracts
-  - [`tests/test_detectors.py`](./tests/test_detectors.py)
-- production processor compatibility and detector routing
-  - [`tests/test_processor.py`](./tests/test_processor.py)
-- production alert-rule metadata and shared failure handling
-  - [`tests/test_alert_rules.py`](./tests/test_alert_rules.py)
-- production black-screen rule behavior
-  - [`tests/test_alert_rules_black.py`](./tests/test_alert_rules_black.py)
-- production blur-rule behavior
-  - [`tests/test_alert_rules_blur.py`](./tests/test_alert_rules_blur.py)
-- future plugin-manifest validation contract
-  - [`tests/test_plugin_manifest_validation.py`](./tests/test_plugin_manifest_validation.py)
-- detector-lab experiments and practical alert policies
-  - [`tests/test_detector_lab.py`](./tests/test_detector_lab.py)
+For the detector/rule architecture and the focused validation lanes, use
+[`docs/architecture.md`](./docs/architecture.md) and
+[`docs/testing-and-validation.md`](./docs/testing-and-validation.md).
 
 ### Frontend
 
@@ -265,9 +182,9 @@ The current feature set is still narrow, but easy to extend.
 ## Architecture At A Glance
 
 This is still one local-first project, not a distributed platform, but the
-main splits between frontend, backend, and tools are there on purpose. That
-fits the current project stage: an advanced prototype moving toward pre-pilot,
-with clearer responsibilities than broad operational maturity.
+main splits between frontend, backend, and tools are intentional. That fits
+the current project stage: an advanced prototype approaching pre-pilot, with
+clearer responsibilities than broad operational maturity.
 
 In practice, the flow looks like this:
 
@@ -284,8 +201,8 @@ In practice, the flow looks like this:
    the shared alert backend keep progress, results, and alerts. File-backed
    alerts stay the default, with PostgreSQL available as an opt-in backend.
 
-FastAPI and MCP are separate entry points over the same local alert/session
-data. FastAPI owns the main desktop-backed HTTP path, while MCP stays a local
+FastAPI and MCP are separate entry points over the same local alert and session
+data. FastAPI owns the main desktop HTTP path, while MCP remains a local
 read-only tool surface over the same saved data.
 
 The diagram below shows the same flow in one picture.
@@ -310,9 +227,9 @@ You will need:
 - Python `3.12+`
 - Node.js and npm
 - `ffmpeg` and `ffprobe` on `PATH`
-- optionally `uv` if you prefer that setup flow
+- optionally, `uv` if you prefer that setup flow
 
-Quick setup for the backend runtime plus the desktop app:
+Quick setup for the backend and desktop app:
 
 ```bash
 python3 -m venv .venv
@@ -344,8 +261,10 @@ pip install -e .[dev]
 ```
 
 Frontend dependencies are installed under [`frontend/`](./frontend).
+
 PostgreSQL is optional and only needed for the opt-in alert backend or live
 Postgres validation.
+
 For normal local use, start the Electron app rather than the backend alone.
 
 The normal app startup path is Electron. Direct FastAPI startup is covered
@@ -365,6 +284,10 @@ The repo now includes a small local command harness in
 [`justfile`](./justfile). Use it as the default entrypoint for the most common
 developer validation loops.
 
+The harness is intentionally small and repo-shaped: it helps local
+development and branch readiness, but it is not a deployment or runtime
+orchestration layer.
+
 Design intent:
 
 - focused lanes own one seam each
@@ -373,7 +296,7 @@ Design intent:
 - the harness stays readable and stable by mirroring the current project
   structure rather than hiding it
 
-Workflow owners around that harness stay split on purpose:
+Workflow ownership stays split on purpose:
 
 - [docs/branch-purpose-template.md](./docs/branch-purpose-template.md)
   - lightweight execution pattern and medium-task checklist
@@ -384,62 +307,30 @@ Workflow owners around that harness stay split on purpose:
 
 Current high-value commands:
 
-- lane policy:
-  - smallest honest lane first
-  - `just test-fast` for multi-seam fast runtime checks
-  - `just ci-local` for push-readiness
-  - weekly/slower lanes only when the change really needs that depth
 - `just env-check`
   - lightweight local tool and version sanity check
-- focused lanes first:
+- focused lanes first
   - use `just test-detectors`, `just test-processor`, `just test-alert-rules`,
     `just test-hls`, or `just test-frontend` when the changed seam is already clear
 - `just test-fast`
-  - best default fast production-runtime validation lane for everyday backend/frontend work
-  - use it when you want one honest fast runtime pass without selecting a narrower lane
+  - best default fast runtime validation lane for everyday backend/frontend work
 - `just ci-local`
-  - best local “ready to push?” lane for fast branch feedback
-  - use it after focused lanes or `test-fast`, not as the first answer for every change
-- `just fixture-check`
-  - fixture ownership and environment-assumption policy lane
-- `just test-detectors`
-  - focused production detector contract and metric lane
-- `just test-processor`
-  - focused production processor and orchestration lane
-- `just test-alert-rules`
-  - focused production alert-rule policy lane
-- `just test-hls`
-  - focused HLS / `api_stream` loader and reconnect-policy lane
-- `just test-frontend`
-  - focused frontend runtime and bridge checkpoint lane
+  - best local push-readiness lane after focused checks or `just test-fast`
 - `just docs-check`
   - docs/workflow consistency and CI-ownership alignment lane
-- `just branch-cleanup`
-  - non-destructive branch hygiene and push/review readiness check
-- `just test-detector-lab`
-  - fast synthetic detector-lab lane for experiment and runner confidence
-- `just test-real-media`
-  - slower checked-in fixture lane for detector-lab real-media confidence
-- `just lint`
-  - backend Ruff plus frontend ESLint
-- `just typecheck`
-  - backend mypy, backend pyright, and frontend TypeScript typecheck
 
-Use the `justfile` for the daily loop. Use
-[docs/testing-and-validation.md](./docs/testing-and-validation.md) for the
-full CI and slow-lane picture.
+Use the smallest honest lane first. For the full validation map, slow lanes,
+and detector-lab confidence paths, use
+[docs/testing-and-validation.md](./docs/testing-and-validation.md).
 
 Harness layers:
 
 - [`justfile`](./justfile)
-  - daily local commands
-  - focused lanes first, broader lanes later
+  - daily local validation commands
 - [`pre-commit`](./.pre-commit-config.yaml)
   - cheap commit-time hygiene only
-  - do not treat it as a replacement for `just test-fast` or `just ci-local`
 - [`.editorconfig`](./.editorconfig)
-  - shared whitespace and indentation defaults across Python, frontend files,
-    and docs
+  - shared whitespace and indentation defaults
 
 Cheap local guardrails in [`pre-commit`](./.pre-commit-config.yaml):
 
@@ -453,39 +344,17 @@ Branch workflow templates:
 - [`.github/pull_request_template.md`](./.github/pull_request_template.md)
 - [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
 
-That branch flow now keeps a few questions explicit on purpose:
+That branch flow keeps three checks explicit:
 
 - what existing test or `docs-check` already proves the change?
 - if the change touches API, CLI, persisted data, or bridge shape, should
-  [docs/contracts.md](./docs/contracts.md) and nearby tests move too?
+  [docs/contracts.md](./docs/contracts.md) and nearby tests move with it?
 - if `pyproject.toml` or `uv.lock` changed, does that belong to the branch story?
 
 ## Repo-Local Codex Skills
 
 The repo includes a small set of repo-local Codex skills under
 [`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review.
-
-Use these skills when you want quick repo-aware help with:
-
-- understanding or explaining what happened:
-  - `summarization`
-  - `incident-timeline`
-  - `root-cause-suggestion`
-- shaping branch, PR, and merge workflow:
-  - `branch-pr-readiness`
-  - `ci-failure-triage`
-  - `dependency-change-review`
-  - `task-planning-evaluation`
-- choosing what to test or run next:
-  - `test-strategy-review`
-  - `manual-validation-planner`
-  - `fixture-environment-safety`
-- reviewing core code or boundaries:
-  - `detector-rule-review`
-  - `frontend-bridge-review`
-  - `alert-backend-parity-review`
-  - `security-surface-review`
-  - `docs-alignment`
 
 These are mainly for AI-assisted contributors and debugging workflows. They
 are lightweight text helpers, not a separate plugin framework, and they are
@@ -504,22 +373,32 @@ The most common workflow helpers are:
 - `branch-pr-readiness`
   - checks branch drift, commit grouping, merge readiness, and dependency-file fit
 
+These skills help with local planning, validation, docs alignment, and review,
+but they do not replace the project's tests or CI lanes.
+
+The repo also includes narrower helpers for incident explanation, CI failure
+triage, manual validation planning, fixture/environment review, boundary
+review, and security-surface checks.
+
 For the fuller skill map and maintainer-oriented ownership notes, use
 [docs/README.md](./docs/README.md).
 
-The deterministic tests for these skills live in:
-
-- [test_repo_skills.py](/home/vlad/Projects/election-stream-monitor/tests/test_repo_skills.py)
-- [skill_test_support.py](/home/vlad/Projects/election-stream-monitor/tests/skill_test_support.py)
-- [skill_output_snapshots](/home/vlad/Projects/election-stream-monitor/tests/fixtures/skill_output_snapshots)
-
 ## Running The Project
 
-Normal desktop app:
+1. Start the normal desktop app:
 
 ```bash
 npm run dev
 ```
+
+2. For a quick first run:
+
+Run `npm run dev` from the repo root, wait for the Electron window to open,
+pick an input mode and choose a source, then hit `Start Monitoring`.
+
+Sample local inputs are listed in [Example Inputs](./README.md#example-inputs).
+
+3. Use these optional entry points when you need a narrower workflow:
 
 Backend only:
 
@@ -527,6 +406,10 @@ Backend only:
 . .venv/bin/activate
 PYTHONPATH=src python -m api_server_cli local
 ```
+
+`local` mode is the normal desktop and development path. Auth and rate
+limiting are off by default, and these examples use the default file-backed
+alert backend.
 
 Browser-only frontend for UI work:
 
@@ -544,8 +427,17 @@ PYTHONPATH=src python -m api_server_cli share
 ```
 
 `share` mode turns on API-key auth and rate limiting. If you do not pass a
-manual key, the CLI generates one and prints it once. See
-[FastAPI Access Modes](./README.md#fastapi-access-modes).
+manual key, the CLI generates one and prints it once. `share` mode is for
+temporary local or demo sharing, not production deployment.
+
+Explicit shared-demo key:
+
+```bash
+. .venv/bin/activate
+PYTHONPATH=src python -m api_server_cli share --api-key my-demo-key
+```
+
+Use any long random string for `my-demo-key`.
 
 If you want Electron to use a separately started `share` backend:
 
@@ -571,15 +463,6 @@ PYTHONPATH=src python -m esm_mcp
 This runs the MCP server over local `stdio`. See
 [docs/mcp-server.md](./docs/mcp-server.md).
 
-Quick first run:
-
-1. Run `npm run dev` from the repo root.
-2. Wait for the Electron window to open.
-3. Pick an input mode and choose a source.
-4. Hit `Start Monitoring`.
-
-Sample local inputs are listed in [Example Inputs](./README.md#example-inputs).
-
 Frontend build:
 
 ```bash
@@ -599,6 +482,8 @@ If Electron startup behaves differently on your machine, start here:
 - desktop workflow tuned mostly for Linux/X11
 - playback and media behavior may differ on Wayland, macOS, or Windows
 
+PostgreSQL is optional and not needed for the default local workflow.
+
 Tested with:
 
 - React `19.1.0`
@@ -610,6 +495,7 @@ Tested with:
 ## Example Inputs
 
 If you are trying the app for the first time, start with `video_files`.
+Repo-local examples are the most reliable first run.
 
 Useful repo-local examples:
 
@@ -651,16 +537,15 @@ FastAPI/MCP boundary behavior.
 Quick local confidence check:
 
 ```bash
-. .venv/bin/activate
-pip install -e .[test]
-pytest -q -m "not e2e and not slow"
-npm --prefix frontend run test
-npm run build
+just test-fast
 ```
 
-That fast pass focuses on unit and service-level coverage. Use
-[`docs/testing-and-validation.md`](./docs/testing-and-validation.md) for the
-slower e2e, snapshot-smoke, and live-validation checks.
+That fast lane is the best default local confidence pass for everyday backend
+and frontend changes. Use
+[`docs/testing-and-validation.md`](./docs/testing-and-validation.md) for
+focused lanes, slower e2e coverage, snapshot-smoke checks, and live
+validation.
+Use a focused lane first when the changed area is already clear.
 
 For more detail:
 
@@ -669,8 +554,11 @@ For more detail:
 
 ## Docs
 
-For the authoritative owner docs, start with
+For the main owner docs, start with
 [docs/README.md](./docs/README.md). The main deep dives are:
+
+If a change affects API, CLI, persisted data, or bridge shape, start with
+[docs/contracts.md](./docs/contracts.md).
 
 - [docs/architecture.md](./docs/architecture.md) for the current system shape
 - [docs/contracts.md](./docs/contracts.md) for backend and frontend API/data rules
@@ -696,7 +584,7 @@ Useful references:
 Outputs are still local-first:
 
 - detector metrics: `data/metrics/`
-- per-session metadata, progress, and results: `data/sessions/`
+- per-session metadata, progress, and results: file-backed under `data/sessions/`
 - alerts: file-backed by default, with PostgreSQL available as an opt-in backend
 
 ## Repo Layout
@@ -707,21 +595,21 @@ Quick map:
 - `frontend/` — React/Electron app, playback, and frontend tests
 - `tests/` — automated tests, fixtures, and helpers
 - `docs/` — architecture, contracts, and workflow notes
-- `data/` — local metrics, session outputs, and sample inputs
+- `data/` — local outputs, metrics, and sample inputs
 - `scripts/` — small developer and repo utilities
 - `.agents/` — repo-local Codex skills
 - `.github/` — CI and repo automation
 
 ## Known Roadmap Areas
 
-What I would work on next:
+Likely next areas of work::
 
 - add more detectors and keep alerts easy to tune
 - improve runtime debugging and status information
 - keep hardening the local Electron + FastAPI app
-- add more MCP tools and strengthen security carefully
-- decide when PostgreSQL-backed alerts should stay opt-in or become the default
-- make packaging and releases easier over time
+- strengthen MCP tools security carefully
+- decide when PostgreSQL-backed alerts should stay opt-in or or become the default
+- implement the session-data PostgreSQL transition
 
 ## Feedback Welcome On
 
@@ -730,6 +618,7 @@ The most useful feedback right now is:
 - first-run usability and clarity
 - runtime stability, especially which public streams work reliably
 - which detectors or alerts would be most useful next
+- session-data persistence and PostgreSQL migration priorities
 - where MCP or AI help would actually be useful
 
 ## CI
@@ -767,7 +656,7 @@ Remote media fetching is intentionally limited:
 
 The current backend security scope is still intentionally narrow:
 
-- FastAPI `share` mode adds API-key auth and rate limiting on the alerts routes
+- FastAPI `share` mode adds API-key auth and rate limiting on the alert routes
 - FastAPI `local` mode keeps auth and rate limiting off
 - MCP remains a local `stdio` read-only tool surface over local alert/session
   data, outside FastAPI auth and rate limiting
@@ -782,14 +671,15 @@ Owning files:
 - [src/api/alert_route_policy.py](./src/api/alert_route_policy.py) for FastAPI auth and rate-limiting on alerts routes
 - [src/esm_mcp/](./src/esm_mcp/) for the local MCP server and tools
 
-## Easy To Work On
+## Working Style
 
 This repo leans toward:
 
 - explicit detector and alert-rule registration
 - clear Electron, FastAPI, and MCP boundaries
-- simple local session files and selectable alert backend
+- file-backed session state with a selectable alert backend
 - readable code over heavy abstraction
+- promote experiments into production only on purpose
 
 The easiest extension points are:
 
@@ -805,8 +695,9 @@ If you want to contribute, that is very welcome.
 Useful contributions right now include:
 
 - new detectors and alert rules for real stream problems
-- playback and runtime fixes, especially around difficult public streams
-- FastAPI, MCP, and alert-query improvements
+- playback, runtime, and source-handling fixes, especially around difficult public streams
+- MCP boundary improvements and local security hardening
+- session-data persistence and PostgreSQL transition work
 - better docs, tests, and first-run usability
 
 Small focused contributions are especially helpful here.
