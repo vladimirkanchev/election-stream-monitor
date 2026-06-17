@@ -70,6 +70,8 @@ Use these first depending on what you are doing:
     - CI owns broader branch and weekly confidence
   - dependency metadata rule:
     - if `pyproject.toml` or `uv.lock` changes, explain why in the PR or commit
+    - if it is unclear whether they belong, use
+      `./.agents/skills/dependency-change-review/`
   - commit-message rule:
     - describe the actual change, not the branch purpose
     - keep one clear theme per commit when practical
@@ -94,7 +96,7 @@ Use these first depending on what you are doing:
   - use the workflow template trio as one branch flow:
     - start with [branch-purpose-template.md](./branch-purpose-template.md)
       for branch purpose, scope, split trigger, and the lightweight
-      execution checklist
+      execution checklist, including early test/contract/dependency prompts
     - use [`.github/pull_request_template.md`](../.github/pull_request_template.md)
       while opening or updating the PR so validation, fixture impact, and docs impact stay explicit
     - finish with [merge-readiness-checklist.md](./merge-readiness-checklist.md)
@@ -171,6 +173,14 @@ For the current alert-storage rollout state, use:
   - [branch-purpose-template.md](./branch-purpose-template.md) for the
     lightweight execution pattern reused by planning-oriented skills
   - `./.agents/skills/`
+  - use `./.agents/skills/readme-alignment-review/` for root README section
+    fit, stage honesty, or README trimming
+  - use `./.agents/skills/docs-drift-check/` for pre-edit docs drift audits
+    and owner routing
+  - use `./.agents/skills/architecture-diagram-review/` for diagram flow,
+    boundaries, visual quality, and current-stage honesty
+  - these three stay intentionally separate, and the repo skill tests protect
+    that split with paired boundary checks
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
@@ -433,6 +443,17 @@ Treat these as lightweight workflow helpers for the current project stage.
 They are intentionally small, text-first, and easy to extend without adding a
 separate automation framework.
 
+Keep workflow ownership split:
+
+- [branch-purpose-template.md](./branch-purpose-template.md)
+  - execution pattern, medium-task checklist, and early test/contract/dependency prompts
+- [testing-and-validation.md](./testing-and-validation.md)
+  - validation lanes, CI depth, and honest manual-only validation notes
+- [merge-readiness-checklist.md](./merge-readiness-checklist.md)
+  - final branch-ready pass and seam-evidence check
+- repo-local skill files under `./.agents/skills/`
+  - question-specific prompts only
+
 Use the skill set by question type:
 
 - explain what happened
@@ -459,15 +480,24 @@ Most common starting points:
 
 - branch drift, commit shape, or merge readiness
   - `./.agents/skills/branch-pr-readiness/`
+- branch/task sizing before implementation
+  - `./.agents/skills/task-planning-evaluation/`
 - CI failure and smallest honest next lane
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
+  - if no honest automated lane fits yet, say `manual confidence only for now`
+    and name the manual step plainly
+- dependency metadata drift
+  - `./.agents/skills/dependency-change-review/`
 - detector/rule changes
   - `./.agents/skills/detector-rule-review/`
 - frontend or bridge changes
   - `./.agents/skills/frontend-bridge-review/`
 - docs or docstring drift
   - `./.agents/skills/docs-alignment/`
+- API, CLI, persisted-data, or bridge contract drift
+  - `./.agents/skills/docs-alignment/`
+  - then [contracts.md](./contracts.md)
 
 The deterministic tests for them live in:
 

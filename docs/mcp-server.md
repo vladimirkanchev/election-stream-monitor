@@ -9,10 +9,20 @@ The current MCP server:
 - runs locally over `stdio`
 - is read-only and query-only
 - reads persisted local alert and session data
+- reads through the same shared alert/session services used by the local
+  FastAPI boundary
 - stays outside FastAPI auth and rate limiting
 
 It is meant for local MCP clients and coding agents, not for browser or HTTP
 access.
+
+Today that also means:
+
+- file-backed alerts remain the default backend
+- PostgreSQL-backed alerts can back the same read surface when explicitly
+  enabled for the local runtime
+- moving to a remote/authenticated MCP transport would be a later boundary
+  change, not an implied side effect of the current FastAPI security work
 
 ## How To Run It
 

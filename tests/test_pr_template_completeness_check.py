@@ -123,6 +123,32 @@ Why these lanes were enough:
     )
 
 
+def test_explicit_no_command_note_passes() -> None:
+    body = """
+## Validation Run
+
+Commands run:
+
+```bash
+# paste the commands you actually ran
+```
+
+Why these lanes were enough:
+
+- no commands ran; this PR only updates PR text after a failed completeness check
+
+## Fixture / Environment Impact
+
+- [x] no special fixture or environment impact
+
+## Docs Impact
+
+- [x] no docs change needed
+"""
+
+    assert check_pr_template_completeness.validation_failures(body) == ()
+
+
 def test_fixture_and_docs_sections_require_a_choice() -> None:
     body = """
 ## Validation Run

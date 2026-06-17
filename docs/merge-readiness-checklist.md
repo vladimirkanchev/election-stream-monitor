@@ -6,9 +6,11 @@ Keep it practical. This is a final guard, not a second planning document.
 ## Checklist
 
 - [ ] focused validation is done for the changed seam
+- [ ] the changed seam has explicit proof: existing test, updated nearby test, new focused test, or docs/workflow-only check
 - [ ] the PR notes list the actual commands that were run
 - [ ] broader validation was added only when the change needed it
 - [ ] docs impact and fixture/environment impact are both stated explicitly
+- [ ] API, CLI, persisted-data, and bridge-contract changes moved with owning docs and nearby tests
 - [ ] docs are aligned if workflow, behavior, contracts, or ownership moved
 - [ ] any `pyproject.toml` or `uv.lock` change is intentional and explained
 - [ ] branch purpose still matches the actual content
@@ -40,6 +42,7 @@ Check whether the change should update:
 - root `README.md`
 - `docs/README.md`
 - `docs/testing-and-validation.md`
+- `docs/contracts.md` when API, CLI, persisted-data, or bridge-contract behavior changed
 - subsystem docs under `docs/`
 - code docstrings
 
@@ -55,6 +58,7 @@ Ask:
 
 - does this branch still tell one clear story?
 - should any unrelated follow-up move to another branch?
+- should any adjacent work stay here, split into its own commit, or move to a follow-up branch?
 - is the stacked-branch or merged-vs-main state still understood?
 
 ### Unrelated files excluded

@@ -5,6 +5,9 @@ skill layer by checking:
 
 - inventory and structure
 - ownership boundaries and explicit handoffs
+- bidirectional boundary checks for nearby skill pairs
+- workflow-owner guidance for planning depth, validation lanes, docs routing,
+  and branch readiness
 - representative scenarios and fixed output snapshots
 - recently merged skill shapes that should stay distinct
 """
@@ -31,15 +34,18 @@ from tests.skill_test_support import (
 
 EXPECTED_SKILLS = {
     "alert-backend-parity-review",
+    "architecture-diagram-review",
     "branch-pr-readiness",
     "ci-failure-triage",
     "dependency-change-review",
     "detector-rule-review",
     "docs-alignment",
+    "docs-drift-check",
     "fixture-environment-safety",
     "frontend-bridge-review",
     "incident-timeline",
     "manual-validation-planner",
+    "readme-alignment-review",
     "root-cause-suggestion",
     "security-surface-review",
     "summarization",
@@ -78,6 +84,8 @@ SCENARIO_EXPECTATIONS = [
             "Recommended PR shape",
             "Readiness summary",
             "one coherent PR",
+            "follow-up extraction hint",
+            "commit grouping",
         ),
     ),
     ScenarioExpectation(
@@ -86,6 +94,8 @@ SCENARIO_EXPECTATIONS = [
             "Strong tests",
             "Weak or low-value tests",
             "environment-coupled tests",
+            "validation-lane chooser",
+            "Closest owning boundary",
             "Recommended lane",
             "Best first command",
             "focused harness lanes",
@@ -154,8 +164,50 @@ SCENARIO_EXPECTATIONS = [
         skill_name="docs-alignment",
         required_snippets=(
             "Drift summary",
+            "docs-owner hint",
+            "public-contract check",
+            "docs/contracts.md",
+            "Prefer one owner, not three copies.",
             "Recommended updates",
             "low-value repetition",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="docs-drift-check",
+        required_snippets=(
+            "Drift class",
+            "no real drift",
+            "wording drift",
+            "behavior drift",
+            "contract drift",
+            "workflow drift",
+            "Current accuracy",
+            "What should move with it",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="architecture-diagram-review",
+        required_snippets=(
+            "Diagram rating",
+            "Visual quality",
+            "Flow arrow review",
+            "Boundary review",
+            "Arrow-origin check",
+            "Arrow-end check",
+            "Stage honesty",
+            "local-first advanced-prototype stage",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="readme-alignment-review",
+        required_snippets=(
+            "README fit",
+            "keep here",
+            "shrink here",
+            "move to deeper docs",
+            "Stage honesty",
+            "Heavy-section warning",
+            "local-first advanced-prototype stage",
         ),
     ),
     ScenarioExpectation(
@@ -164,6 +216,9 @@ SCENARIO_EXPECTATIONS = [
             "Drift assessment",
             "Recommended PR shape",
             "Merged-vs-main state",
+            "branch-end closure",
+            "contract-sensitive work moved with the owning docs and nearby tests",
+            "move to a follow-up branch",
         ),
     ),
     ScenarioExpectation(
@@ -235,6 +290,12 @@ REAL_INCIDENT_REGRESSIONS = [
     ("task-planning-evaluation", "building a 2-week versus 2-month project roadmap"),
     ("docs-alignment", "the harness commands changed and the README plus testing guide no longer match"),
     ("docs-alignment", "CI lane ownership changed and the maintainer docs still describe the old shape"),
+    ("docs-drift-check", "a README section is shorter than the maintainer docs and we need to know whether that is real drift"),
+    ("docs-drift-check", "a FastAPI auth doc may now describe the wrong protected boundary after route changes"),
+("architecture-diagram-review", "a worker arrow may look like a data relationship instead of execution flow"),
+("architecture-diagram-review", "a README architecture diagram may now blur Electron, FastAPI, and detached-worker ownership"),
+    ("readme-alignment-review", "a root README workflow section feels too heavy and may need to shrink and point to deeper docs"),
+    ("readme-alignment-review", "the root README may now overstate project maturity after a runtime boundary refactor"),
     ("branch-pr-readiness", "a branch started as real-media hardening but now also carries detector-lab and CI work"),
     ("branch-pr-readiness", "two stacked PRs were merged remotely and it is unclear what can now be deleted"),
     ("ci-failure-triage", "`backend-tests` fails after detector or alert-rule changes"),
@@ -247,6 +308,31 @@ REAL_INCIDENT_REGRESSIONS = [
 
 # Prompts that could plausibly fit two nearby skills, but should still resolve
 # to one clear owner.
+def _bidirectional_boundary_cases(
+    left_skill: str,
+    left_summary: str,
+    left_required: tuple[str, ...],
+    right_required: tuple[str, ...],
+    right_skill: str,
+    right_summary: str,
+) -> list[tuple[str, str, tuple[str, ...], tuple[str, ...]]]:
+    """Keep paired skill-boundary expectations compact and symmetric."""
+    return [
+        (
+            left_skill,
+            left_summary,
+            left_required,
+            right_required,
+        ),
+        (
+            right_skill,
+            right_summary,
+            right_required,
+            left_required,
+        ),
+    ]
+
+
 AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
     (
         "summarization",
@@ -296,7 +382,73 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
             "Why this lane fits",
         ),
     ),
+    (
+        "docs-drift-check",
+        "docs drift audit versus docs editing",
+        (
+            "Drift class",
+            "Severity",
+        ),
+        (
+            "Recommended updates",
+            "Smallest useful rewrite",
+        ),
+    ),
+    (
+        "architecture-diagram-review",
+        "diagram review versus README wording review",
+        (
+            "Flow arrow review",
+            "Boundary review",
+        ),
+        (
+            "README fit",
+            "Smallest useful rewrite",
+        ),
+    ),
 ]
+AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
+    "docs-drift-check",
+    "docs drift audit versus docs editing",
+    (
+        "Drift class",
+        "Severity",
+    ),
+    (
+        "Recommended updates",
+        "Best next doc pass",
+    ),
+    "docs-alignment",
+    "docs editing versus docs drift audit",
+)
+AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
+    "readme-alignment-review",
+    "README wording review versus diagram review",
+    (
+        "README fit",
+        "Heavy-section warning",
+    ),
+    (
+        "Flow arrow review",
+        "Boundary review",
+    ),
+    "architecture-diagram-review",
+    "diagram review versus README wording review",
+)
+AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
+    "ci-failure-triage",
+    "CI failure classification versus likely underlying cause",
+    (
+        "Most likely failure class",
+        "Smallest local reproduction",
+    ),
+    (
+        "Most likely root cause",
+        "Cheapest next validation",
+    ),
+    "root-cause-suggestion",
+    "likely underlying cause versus CI failure classification",
+)
 
 # High-value handoffs that should stay explicit instead of being implied.
 EXPLICIT_HANDOFF_EXPECTATIONS = [
@@ -523,6 +675,48 @@ SNAPSHOT_EXPECTATIONS = [
             "Recommended updates:",
             "Low-value wording to remove:",
             "Best next code-doc pass:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="docs-drift-check",
+        snapshot_name="docs_drift_check_workflow.md",
+        required_order=(
+            "Drift target:",
+            "Current accuracy:",
+            "Drift class:",
+            "Severity:",
+            "Owning doc:",
+            "Smallest useful fix:",
+            "What should move with it:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="architecture-diagram-review",
+        snapshot_name="architecture_diagram_review_runtime_flow.md",
+        required_order=(
+            "Diagram rating:",
+            "Visual quality:",
+            "What matches well:",
+            "Flow arrow review:",
+            "Boundary review:",
+            "Arrow-origin check:",
+            "Arrow-end check:",
+            "Stage honesty:",
+            "Biggest mismatch:",
+            "Smallest useful fixes:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="readme-alignment-review",
+        snapshot_name="readme_alignment_review_root_section.md",
+        required_order=(
+            "Section:",
+            "Rating:",
+            "What works:",
+            "README fit:",
+            "Stage honesty:",
+            "Heavy-section warning:",
+            "Smallest useful rewrite:",
         ),
     ),
     SnapshotExpectation(
@@ -864,15 +1058,18 @@ def test_snapshot_outputs_match_skill_intent(
 def test_skill_root_stays_small_and_repo_local() -> None:
     assert list_skill_files() == [
         SKILLS_ROOT.joinpath("alert-backend-parity-review", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("architecture-diagram-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("branch-pr-readiness", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("ci-failure-triage", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("dependency-change-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("detector-rule-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("docs-alignment", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("docs-drift-check", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("fixture-environment-safety", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("frontend-bridge-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("incident-timeline", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("manual-validation-planner", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("readme-alignment-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("root-cause-suggestion", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("security-surface-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("summarization", "SKILL.md").relative_to(SKILLS_ROOT),

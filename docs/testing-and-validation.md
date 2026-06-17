@@ -24,6 +24,18 @@ The branch template owns the lightweight execution pattern and the medium-task
 checklist. Reuse that pattern in planning and review notes instead of copying
 it into multiple workflow docs.
 
+When the next question is "what is the smallest honest lane?" use the
+`test-strategy-review` skill first. When a validation or workflow change also
+touches API, CLI, persisted-data, or bridge contracts, move
+`docs/contracts.md` with it instead of treating the update as local-only docs
+polish.
+
+Keep the test rule lightweight:
+
+- first ask what existing focused test or `just docs-check` already proves the change
+- if none, decide whether one nearby focused test is worth adding
+- only then choose whether broader validation is needed
+
 Keep two confidence lanes separate when reading this document:
 
 - production runtime confidence
@@ -1037,6 +1049,8 @@ It currently covers:
 For the full skill routing map, use [docs/README.md](./README.md#repo-local-codex-skills).
 In this validation doc, the most relevant skill questions are:
 
+- "How big is this task and how much structure does it need?"
+  - `task-planning-evaluation`
 - "What is the smallest honest validation lane or the next test improvement?"
   - `ci-failure-triage`
   - `test-strategy-review`
@@ -1045,6 +1059,8 @@ In this validation doc, the most relevant skill questions are:
 - "Did the docs, fixtures, or validation ownership drift?"
   - `docs-alignment`
   - `fixture-environment-safety`
+- "Is the branch still coherent and ready to merge?"
+  - `branch-pr-readiness`
 
 The lightweight workflow templates that pair with this skill slice are:
 
@@ -1659,10 +1675,17 @@ the branch's current typing focus.
 The repo-local Codex skills under `./.agents/skills/` are validated with a
 small deterministic Python slice rather than live model calls.
 
+Recent coverage also protects nearby skill boundaries that are easy to blur in
+AI-assisted work. The main guarded pairs are:
+
+- root README fit versus architecture-diagram review
+- docs drift audit versus docs editing
+- CI failure classification versus likely underlying cause
+
 Current test files:
 
 - `tests/test_repo_skills.py`
-  - structure, skill-boundary, scenario, and snapshot checks
+  - structure, handoff, boundary, scenario, and snapshot checks
 - `tests/skill_test_support.py`
   - parsing and reusable test helpers
 - `tests/fixtures/skill_output_snapshots/`

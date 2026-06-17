@@ -28,6 +28,28 @@ Work from:
 5. focused validation already run and any open risks
 6. safest cleanup or next review action
 
+When checking drift, explicitly ask:
+
+1. What changed outside the branch purpose?
+2. Should that work stay, become a separate commit, or move to a follow-up branch?
+3. Does the PR description explain why any adjacent work belongs here?
+
+Use this follow-up extraction hint when the branch is still useful but getting
+wider:
+
+- keep work in the branch when it directly supports the stated purpose
+- split it into a separate commit when it belongs here but should review on its
+  own
+- move it to a follow-up branch when it is useful but no longer part of the
+  branch story
+
+When a follow-up branch is the right answer, prefer a short descriptive name
+such as:
+
+- `docs/...` for docs or harness-owner cleanup
+- `refactor/...` for internal structure cleanup
+- `fix/...` for narrow behavior corrections
+
 ## Output shape
 
 Choose one mode. Do not mix all three unless the user clearly needs that.
@@ -50,6 +72,16 @@ For commit and PR grouping:
 4. `What should stay out`
 5. `Best next step`
 
+For commit grouping, use this hint before suggesting the final shape:
+
+1. one commit
+   - one narrow theme with one validation story
+2. two commits
+   - one reviewable split such as runtime/test or code/docs
+3. three commits
+   - only when the branch really has three distinct review themes such as
+     runtime, tests, and docs
+
 For merge readiness:
 
 1. `Readiness summary`
@@ -58,6 +90,21 @@ For merge readiness:
 4. `Missing checks`
 5. `Cleanup before merge`
 6. `Recommended next step`
+
+For branch-end closure, reuse the merge checklist and confirm:
+
+1. focused validation was run
+2. the changed seam has explicit evidence:
+   - existing focused test
+   - updated nearby test
+   - new focused test
+   - or docs/workflow-only check when no runtime behavior changed
+3. docs impact and fixture/environment impact are explicit
+4. contract-sensitive work moved with the owning docs and nearby tests
+5. any `pyproject.toml` or `uv.lock` change belongs to the branch story or is
+   moved out
+6. branch purpose still matches the actual content
+7. unrelated drift is excluded before merge
 
 Keep the answer narrow:
 

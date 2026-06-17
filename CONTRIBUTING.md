@@ -21,6 +21,12 @@ Keep the branch execution pattern light and reuse the short checklist in
 [docs/branch-purpose-template.md](./docs/branch-purpose-template.md) instead of
 copying it into each task or PR note.
 
+That checklist now forces three useful questions early:
+
+- what existing test or `docs-check` already proves the change?
+- does the change also touch API, CLI, persisted data, or bridge shape?
+- if `pyproject.toml` or `uv.lock` changed, does that belong to this branch story?
+
 ## Local Commands
 
 Use the smallest honest lane first:
@@ -39,6 +45,9 @@ Use the smallest honest lane first:
   - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
 - `just ci-local`
   - use before push or PR for the closest fast local CI proxy
+
+If no honest automated lane fits yet, say `manual confidence only for now` and
+name the manual step plainly instead of pretending the change is fully covered.
 
 Keep cheap hygiene in:
 
