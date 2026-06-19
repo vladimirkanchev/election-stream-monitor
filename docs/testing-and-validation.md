@@ -301,6 +301,7 @@ The current GitHub Actions workflow uses three practical layers:
   - lightweight PR-body guard for validation commands plus docs and
     fixture/environment choices
 - `frontend-checkpoint`
+  - fast early-feedback frontend lane
   - quick Electron/bridge/session-flow regression signal
 - `backend-tests`
   - packaging/import smoke check after editable install
@@ -324,9 +325,10 @@ The current GitHub Actions workflow uses three practical layers:
 - `backend-pyright`
   - advisory VSCode-aligned type signal for the same Python boundary modules
 - `test-and-build`
+  - protected shared `main` PR lane behind `CI / main-gate`
   - shared `contract_boundary` backend and frontend checks
   - full frontend tests
-  - frontend build
+  - frontend production build
 - `main` pull-request guards
   - external required status: `CI / main-gate`
   - aggregate protected checks: `feature-gate`, `main-pr-consistency`,
@@ -506,9 +508,8 @@ Workflow consumers:
   - `contract_boundary` backend contract checks read `backend_contract` and
     `mcp_fastapi_parity`
   - `contract_boundary` frontend contract checks read `frontend_contract`
-  - the job also runs the full frontend Vitest suite after the shared
-    frontend contract slice
-  - the job also runs the frontend production build
+  - after the shared frontend contract slice, the job runs the full frontend
+    Vitest suite and frontend production build
   - the job now validates the manifest boundary before resolving those groups
   - both shared contract checks resolve their targets through
     `read_ci_test_targets.py`

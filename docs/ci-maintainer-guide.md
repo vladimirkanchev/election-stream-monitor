@@ -66,6 +66,50 @@ The internal required graph for pull requests targeting `main` is:
 This keeps the GitHub settings layer simple while preserving the internal
 meaning of that one protected status.
 
+## Frontend Validation Split For `main` PRs
+
+Use this as the concise lane contract for frontend confidence:
+
+- `frontend-checkpoint`
+  - fast early-feedback lane for ordinary feature work
+  - intentionally smaller and cheaper than the protected `main` PR lane
+- `test-and-build`
+  - protected shared lane behind `CI / main-gate`
+  - still needs: `changes`, `frontend-checkpoint`, `backend-tests`,
+    `frontend-typecheck`
+  - keeps the cheaper policy and boundary checks first, then runs the full
+    frontend test suite and frontend production build
+
+Current `test-and-build` order:
+
+1. manifest/path/drift guards
+2. backend `contract_boundary` suites
+3. frontend `contract_boundary` suites
+4. full frontend `npm run test`
+5. frontend `npm run build`
+
+Trigger model for the heavier frontend work:
+
+- ordinary PRs run it when `frontend`, `backend`, or `contract` paths changed
+- pull requests targeting `main` force it on through `github.base_ref ==
+  'main'`
+
+Protection rule:
+
+- `main-gate` must continue to require `test-and-build`
+- full frontend validation belongs inside `test-and-build`, not in a separate
+  `frontend-full` top-level job
+- GitHub branch protection should keep requiring `CI / main-gate`, not a
+  growing list of leaf frontend statuses
+
+Expected tradeoff:
+
+- slower protected `main` PR validation is intentional
+- earlier feature-branch feedback should still come from
+  `frontend-checkpoint`
+- if this lane becomes too slow later, optimize the internal test/build shape
+  first instead of removing protected frontend coverage from `main`
+
 ## Remaining Gaps After The Audit
 
 Do not expand this list during the audit pass. Keep only the real remaining
