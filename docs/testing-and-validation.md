@@ -317,18 +317,23 @@ The current GitHub Actions workflow uses three practical layers:
   - useful as a single CI signal, even though feature branches are no longer
     protected merge targets
 - `contract-checks`
-  - boundary-focused backend and frontend contract checks for PRs
+  - protected PR boundary lane
+  - currently enforces frontend lint in the contract-sensitive PR path
 - `backend-typecheck`
   - targeted type defense for the contract-sensitive Python boundary modules
 - `backend-pyright`
   - advisory VSCode-aligned type signal for the same Python boundary modules
 - `test-and-build`
+  - shared `contract_boundary` backend and frontend checks
   - full frontend tests
   - frontend build
 - `main` pull-request guards
-  - a small integration smoke test
-  - a lightweight docs/contract consistency check
+  - external required status: `CI / main-gate`
+  - aggregate protected checks: `feature-gate`, `main-pr-consistency`,
+    `integration-smoke`, `contract-checks`, `test-and-build`
   - contract-sensitive changes must move with nearby tests and owning docs
+  - use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the exact
+    required-check graph and skip/forced-on behavior
 - `docs-consistency`
   - path-aware docs and workflow consistency checks for non-`main` pull requests
 - `weekly-validation`
@@ -501,6 +506,9 @@ Workflow consumers:
   - `contract_boundary` backend contract checks read `backend_contract` and
     `mcp_fastapi_parity`
   - `contract_boundary` frontend contract checks read `frontend_contract`
+  - the job also runs the full frontend Vitest suite after the shared
+    frontend contract slice
+  - the job also runs the frontend production build
   - the job now validates the manifest boundary before resolving those groups
   - both shared contract checks resolve their targets through
     `read_ci_test_targets.py`
@@ -584,7 +592,8 @@ Selector ownership summary:
 
 - shared contract and weekly-heavy suites are manifest-backed
 - `test-and-build` is the reader-backed execution path for shared
-  `contract_boundary` coverage
+  `contract_boundary` coverage and also runs the full frontend test and build
+  pass for protected `main` PR confidence
 - `integration-smoke` stays inline because it is a tiny local smoke path
 - `backend-tests` stays the `fast_synthetic` pytest marker lane
 

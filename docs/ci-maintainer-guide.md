@@ -12,6 +12,101 @@ Use it when you need the shortest safe path for:
 For the full CI behavior and validation model, use
 [testing-and-validation.md](./testing-and-validation.md).
 
+## Gate Entrypoints
+
+Use this as the smallest top-down map before tracing individual job
+dependencies.
+
+- workflow triggers
+  - `push` runs on all branches except `main`
+  - `pull_request` runs for pull requests
+- aggregate gates
+  - `feature-gate`
+  - `main-gate`
+- `main` PR-only jobs
+  - `main-pr-consistency`
+  - `integration-smoke`
+  - `main-gate`
+
+## Intended Required-Check Contract
+
+Use this as the branch decision artifact for `main` protection.
+
+- required external status for `main` protection:
+  - `CI / main-gate`
+- internal required chain behind it:
+  - `feature-gate`
+  - `main-pr-consistency`
+  - `integration-smoke`
+  - `contract-checks`
+  - `test-and-build`
+- advisory-only today:
+  - `frontend-lint`
+  - `backend-pyright`
+- not currently protected by `main-gate`:
+  - `pr-template-completeness`
+
+## Required Check Graph For `main` PRs
+
+For GitHub branch protection, require the stable top-level status:
+
+- `CI / main-gate`
+
+The internal required graph for pull requests targeting `main` is:
+
+| Job | Runs on every `main` PR | Directly required by `main-gate` | What it validates |
+| --- | --- | --- | --- |
+| `main-gate` | yes | n/a | final aggregate protected status for `main`; fails unless each required upstream job finishes as `success` |
+| `feature-gate` | yes | yes | aggregate fast required checks: `frontend-checkpoint`, `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff` |
+| `main-pr-consistency` | yes | yes | protected-PR manifest structure, CI-owned path existence, workflow/policy drift, split-suite registration, and narrower `main` PR policy |
+| `integration-smoke` | yes | yes | small backend integration smoke through `tests/test_e2e_local_session.py` |
+| `contract-checks` | yes | yes | PR-only protected boundary lane that currently enforces frontend lint in the contract-sensitive PR path |
+| `test-and-build` | yes | yes | manifest/path/drift checks, shared backend/frontend `contract_boundary` suites, full frontend tests, and frontend build |
+
+This keeps the GitHub settings layer simple while preserving the internal
+meaning of that one protected status.
+
+## Remaining Gaps After The Audit
+
+Do not expand this list during the audit pass. Keep only the real remaining
+follow-up items.
+
+- decide whether `pr-template-completeness` should join the protected
+  `main-gate` aggregate
+- verify GitHub branch protection requires `CI / main-gate`
+- verify GitHub is not still requiring older leaf statuses instead of the
+  aggregate protected status
+- open one real PR against `main` and confirm the protected statuses appear
+  exactly as documented
+
+Current check classification:
+
+- blocking by aggregate contract: `main-gate`, `feature-gate`,
+  `main-pr-consistency`, `integration-smoke`, `contract-checks`,
+  `test-and-build`
+- indirect blockers through `feature-gate`: `frontend-checkpoint`,
+  `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff`
+- advisory only: `frontend-lint`, `backend-pyright`
+- informational but not protected: `changes`, `pr-template-completeness`,
+  `docs-consistency`
+
+Nuance: standalone `frontend-lint` is advisory, but frontend lint still
+becomes blocking for `main` PRs through `contract-checks`.
+
+## Skip And Forced-On Behavior For `main` PRs
+
+This is the highest-signal protection audit in the workflow. Unexpected
+`skipped` states are the easiest way for a branch to look protected while
+actually missing validation. Keep step-level skipping separate from job-level
+skipping.
+
+| Job | Can it skip on ordinary PRs? | Forced on for `main` PRs? | If it skips, what happens? |
+| --- | --- | --- | --- |
+| `frontend-checkpoint`, `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff` | work steps can skip on ordinary PRs when their path filters do not match; each job still succeeds through an explicit skip step | yes, through step-level `github.base_ref == 'main'` guards | `feature-gate` still sees `success`, not `skipped`, on ordinary PRs; on `main` PRs the real work is forced on |
+| `contract-checks` | yes, at the job level; it runs only for PRs with `backend`, `frontend`, or `contract` changes | yes, through the job-level `github.base_ref == 'main'` clause | if it were `skipped` on a `main` PR, `main-gate` would fail because it requires `success`; current logic avoids that by forcing the job on for `main` |
+| `test-and-build` | the job itself does not skip; some heavier install/test/build steps can skip on ordinary non-relevant PRs, while manifest/path/drift checks still run | yes, through step-level `github.base_ref == 'main'` guards on the heavier frontend/backend work | it does not disappear from the graph, so `main-gate` keeps a stable upstream status; on `main` PRs the protected test/build work is forced on regardless of path filter |
+| `main-gate` | yes, at the job level; it exists only on PRs targeting `main` | yes, by definition | outside `main` PRs there is no protected aggregate status; on `main` PRs it fails unless every required upstream job finishes as `success` |
+
 ## Current Owner Surfaces
 
 - canonical CI target manifest: `.github/ci_test_targets.json`
