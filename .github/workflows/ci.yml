@@ -661,6 +661,16 @@ jobs:
         working-directory: frontend
         run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
 
+      - name: Run full frontend test suite
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+        working-directory: frontend
+        run: npm run test
+
+      - name: Run frontend production build
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+        working-directory: frontend
+        run: npm run build
+
   docs-consistency:
     if: github.event_name == 'pull_request' && github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.contract == 'true')
     runs-on: ubuntu-24.04
