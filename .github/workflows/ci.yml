@@ -661,6 +661,10 @@ jobs:
         working-directory: frontend
         run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
 
+      # Keep full frontend validation behind the same heavy-work trigger model
+      # as dependency installation above: relevant `frontend` / `backend` /
+      # `contract` changes wake it on ordinary PRs, and `main` PRs force it on
+      # regardless of path-filter outcome so the protected lane stays honest.
       - name: Run full frontend test suite
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         working-directory: frontend
