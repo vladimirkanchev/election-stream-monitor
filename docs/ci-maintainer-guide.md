@@ -12,6 +12,65 @@ Use it when you need the shortest safe path for:
 For the full CI behavior and validation model, use
 [testing-and-validation.md](./testing-and-validation.md).
 
+For AI-assisted tools, keep this split strict:
+
+- use this guide for protection policy, dependency graphs, advisory versus
+  required meaning, and skip/forced-on behavior
+- use `testing-and-validation.md` for local commands, validation scope, and
+  contributor run choices
+- prefer linking across the two docs instead of copying the same CI rule twice
+
+## Lane Terminology
+
+Use these terms consistently when reading or changing CI:
+
+- **required**: blocks a pull request to `main` through the protected
+  `CI / main-gate` status, either directly or through its dependency graph
+- **advisory**: runs in CI and reports useful failures, but cannot block merge
+- **informational**: reports process, policy, or coordination status outside
+  the protected merge contract
+- **weekly**: deeper validation started by the scheduled weekly workflow or
+  manual workflow dispatch; it is not an ordinary PR merge gate
+- **local**: contributor-run validation such as `just test-fast` or
+  `just ci-local`; it produces no GitHub required status
+
+Running in CI does not by itself make a job required. Required status is
+defined by the `main-gate` dependency contract and the matching GitHub branch
+protection or ruleset.
+
+## Lane Classification
+
+Use this matrix as the authoritative high-level policy view. The sections
+below explain the required dependency graph and activation details.
+
+| Lane | Examples | Blocks `main` merge? | Activation |
+| --- | --- | --- | --- |
+| Required | `main-gate` and its protected dependency chain | yes | path-aware normally; protected work is forced on for `main` PRs |
+| Advisory | standalone `frontend-lint`, `backend-pyright` | no | path-aware branch or PR runs |
+| Informational | `changes`, `pr-template-completeness`, `docs-consistency` | no | workflow or policy conditions |
+| Weekly | slow media, lifecycle, deep `api_stream`, audits, PostgreSQL confidence | no | Sunday 03:00 UTC or manual dispatch |
+| Local | `just test-fast`, `just ci-local`, focused `just` recipes | no | contributor initiated |
+
+Weekly failures fail the weekly workflow but do not block an ordinary PR
+merge. Local lanes produce no GitHub status and do not reproduce the complete
+protected workflow.
+
+## Important Distinctions
+
+Keep these five distinctions explicit when reviewing or editing CI:
+
+- `CI / main-gate` is the external required status for `main` branch
+  protection
+- standalone `frontend-lint` and `backend-pyright` are advisory jobs, even
+  though protected `main` PRs still enforce frontend lint through
+  `contract-checks`
+- informational jobs are not the same as advisory jobs; they report process or
+  policy state outside the protected merge contract
+- weekly checks fail the weekly workflow when they break, but they do not
+  block an ordinary PR
+- local commands approximate CI intent for contributors, but they do not
+  replace protected checks, GitHub event handling, or branch-protection wiring
+
 ## Gate Entrypoints
 
 Use this as the smallest top-down map before tracing individual job
@@ -180,17 +239,6 @@ has to require the right external status:
   status
 - confirm one real PR against `main` shows the protected statuses exactly as
   documented
-
-Current check classification:
-
-- blocking by aggregate contract: `main-gate`, `feature-gate`,
-  `main-pr-consistency`, `integration-smoke`, `contract-checks`,
-  `test-and-build`
-- indirect blockers through `feature-gate`: `frontend-checkpoint`,
-  `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff`
-- advisory only: standalone `frontend-lint`, `backend-pyright`
-- informational but not protected: `changes`, `pr-template-completeness`,
-  `docs-consistency`
 
 Nuance: standalone `frontend-lint` is advisory, but protected `main` PRs still
 block on frontend lint through `contract-checks`.
