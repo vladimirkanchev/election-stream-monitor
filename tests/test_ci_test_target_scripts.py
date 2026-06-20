@@ -1,24 +1,24 @@
-"""Focused tests for CI manifest helpers, path guards, and drift checks.
+"""Regression tests for task-4 CI helper scripts and ownership rules.
 
-This file keeps the repo's CI-hardening seams readable in one place:
-- manifest-backed target and lane ownership helpers
-- CI-owned test-path existence coverage
-- protected-lane alignment behavior
-- guarded split-suite registration behavior
-- high-signal `changes` filter assumptions in `ci.yml`
-
-For task 9, it also locks in the final frontend CI ownership split:
-- shared `frontend_contract` manifest targets
-- narrower hook-level frontend policy-only tests
-- the workflow reader command that resolves the shared frontend lane
+This file covers the helper layer around the protected workflow contract:
+- manifest-backed target ownership
+- CI-owned path existence guards
+- protected-lane drift checks
+- guarded split-suite registration
+- focused script CLI behavior
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 import importlib
 from pathlib import Path
+import subprocess
 import sys
+from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / ".github" / "scripts"
@@ -32,6 +32,8 @@ check_split_suite_registration = importlib.import_module(
     "check_split_suite_registration"
 )
 ci_target_manifest = importlib.import_module("ci_target_manifest")
+read_ci_test_targets = importlib.import_module("read_ci_test_targets")
+validate_ci_test_targets = importlib.import_module("validate_ci_test_targets")
 
 PROTECTED_ALIGNMENT_GROUPS = (
     "backend_contract",
@@ -83,6 +85,17 @@ DOCS_CONSISTENCY_NON_MAIN_PR_IF = (
     "needs.changes.outputs.workflow == 'true' || "
     "needs.changes.outputs.contract == 'true')"
 )
+CI_MAINTAINER_GUIDE_REGRESSION_TOKENS = (
+    "tests/test_ci_workflow.py",
+    "tests/test_ci_test_target_scripts.py",
+    "owns the protected `ci.yml` contract through one narrow workflow reader",
+    "owns manifest/helper/ownership drift checks around that workflow",
+    "exact `main-gate` direct dependencies",
+    "protected frontend `npm run test` and `npm run build` ownership",
+    "forced-on behavior for protected `main` PR jobs and work steps",
+    "advisory-job classification for standalone `frontend-lint` and",
+    "`backend-pyright`",
+)
 FRONTEND_CONTRACT_WORKFLOW_COMMAND = (
     "npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py "
     "frontend_contract --separator space --strip-prefix frontend/)"
@@ -112,10 +125,28 @@ def _current_ci_workflow_text() -> str:
     return (ci_target_manifest.REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
 
+def _ci_maintainer_guide_text() -> str:
+    """Return the current CI maintainer guide text for focused doc checks."""
+    return (ci_target_manifest.REPO_ROOT / "docs" / "ci-maintainer-guide.md").read_text()
+
+
 def _assert_contains_all(text: str, expected_snippets: tuple[str, ...]) -> None:
     """Assert that one text blob contains every expected snippet."""
     for snippet in expected_snippets:
         assert snippet in text
+
+
+def _run_cli_main(
+    module: Any,
+    monkeypatch,
+    capsys,
+    argv: list[str],
+) -> tuple[int, str, str]:
+    """Run one script-style `main()` entrypoint with patched argv."""
+    monkeypatch.setattr(module.sys, "argv", argv)
+    exit_code = module.main()
+    captured = capsys.readouterr()
+    return exit_code, captured.out, captured.err
 
 
 def _path_summaries_by_label() -> dict[str, Any]:
@@ -134,6 +165,52 @@ def _frontend_contract_targets() -> tuple[str, ...]:
 def _frontend_policy_only_tests() -> tuple[str, ...]:
     """Return the current narrower frontend policy-only test slice."""
     return check_main_pr_consistency.FRONTEND_BRIDGE_POLICY_ONLY_TESTS
+
+
+def _live_ci_target_manifest() -> Any:
+    """Return the current canonical CI target manifest."""
+    return ci_target_manifest.load_ci_target_manifest()
+
+
+def _patch_manifest_loader(monkeypatch, manifest: Any) -> None:
+    """Patch manifest-validator loads to one controlled manifest instance."""
+    monkeypatch.setattr(
+        validate_ci_test_targets,
+        "load_ci_target_manifest",
+        lambda: manifest,
+    )
+
+
+def _patch_main_pr_changed_files(monkeypatch, changed_files: list[str]) -> None:
+    """Patch main-PR consistency checks to one controlled changed-file batch."""
+    monkeypatch.setattr(
+        check_main_pr_consistency,
+        "_changed_files",
+        lambda diff_range: changed_files,
+    )
+
+
+def _patch_split_suite_args(
+    monkeypatch,
+    *,
+    diff_range: str | None,
+    changed_files: list[str],
+) -> None:
+    """Patch split-suite CLI args to one controlled invocation."""
+    monkeypatch.setattr(
+        check_split_suite_registration,
+        "_parse_args",
+        lambda: SimpleNamespace(
+            diff_range=diff_range,
+            changed_files=changed_files,
+        ),
+    )
+
+
+def _manifest_validation_failures(monkeypatch, manifest: Any) -> list[str]:
+    """Return manifest validation failures for one patched manifest."""
+    _patch_manifest_loader(monkeypatch, manifest)
+    return validate_ci_test_targets._validate_manifest()
 
 
 def _patch_clean_doc_alignment(monkeypatch) -> None:
@@ -179,6 +256,7 @@ def _assert_registration_passes(
 
 
 def test_ci_owned_test_paths_keep_inline_and_policy_inventory() -> None:
+    """The live manifest inventory should keep the expected path split."""
     manifest = ci_target_manifest.load_ci_target_manifest()
     inventory_paths = ci_target_manifest.ci_owned_test_paths()
     inline_paths = ci_target_manifest.workflow_inline_ci_test_paths()
@@ -214,6 +292,7 @@ def test_ci_owned_test_paths_keep_inline_and_policy_inventory() -> None:
 
 
 def test_manifest_lane_ownership_matches_current_ci_split() -> None:
+    """The live manifest should keep the current lane-to-group ownership split."""
     manifest = ci_target_manifest.load_ci_target_manifest()
     lane_group_map = manifest.lane_group_map()
 
@@ -234,6 +313,7 @@ def test_manifest_lane_ownership_matches_current_ci_split() -> None:
 
 
 def test_lane_category_helpers_expose_metadata_and_fail_cleanly() -> None:
+    """Lane-category helpers should expose live metadata and readable errors."""
     category = ci_target_manifest.ci_lane_category("contract_boundary")
 
     assert category.name == "contract_boundary"
@@ -266,6 +346,7 @@ def test_lane_category_helpers_expose_metadata_and_fail_cleanly() -> None:
 
 
 def test_ci_owned_test_path_existence_guard_passes_on_current_repo() -> None:
+    """The live repo should satisfy the CI-owned path existence guard."""
     summaries = _path_summaries_by_label()
 
     for label in PATH_EXISTENCE_SUMMARY_LABELS:
@@ -273,9 +354,34 @@ def test_ci_owned_test_path_existence_guard_passes_on_current_repo() -> None:
     assert check_ci_test_paths_exist._policy_inventory_drift_failures() == []
 
 
+def test_ci_owned_test_path_existence_guard_reports_policy_inventory_drift(
+    monkeypatch,
+) -> None:
+    """Policy inventory drift should be reported by the path existence guard."""
+    manifest = ci_target_manifest.load_ci_target_manifest()
+    manifest_policy_paths = manifest.path_existence_inventory.policy_only_test_paths
+    drifted_policy_paths = (
+        *manifest_policy_paths[:-1],
+        "frontend/src/hooks/syntheticDrift.test.tsx",
+    )
+
+    monkeypatch.setattr(
+        check_ci_test_paths_exist,
+        "policy_only_test_paths",
+        lambda: drifted_policy_paths,
+    )
+
+    failures = check_ci_test_paths_exist._policy_inventory_drift_failures()
+
+    assert len(failures) == 1
+    assert "Manifest policy-only path inventory drifted" in failures[0]
+    assert "syntheticDrift.test.tsx" in failures[0]
+
+
 def test_workflow_reader_groups_handle_multiline_shell_invocations(
     tmp_path: Path,
 ) -> None:
+    """Workflow reader discovery should handle multiline shell commands."""
     workflow_text = """
     run: |
       PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \\
@@ -292,6 +398,103 @@ def test_workflow_reader_groups_handle_multiline_shell_invocations(
         "mcp_fastapi_parity",
         "frontend_contract",
     )
+
+
+def test_workflow_reader_groups_ignore_near_miss_reader_invocations(
+    tmp_path: Path,
+) -> None:
+    """Workflow reader discovery should ignore near-miss command shapes."""
+    workflow_text = """
+    run: |
+      python3 .github/scripts/read_ci_test_targets.sh backend_contract
+      node .github/scripts/read_ci_test_targets.py frontend_contract
+      python .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space
+    """
+    workflow_path = tmp_path / "workflow-snippet.yml"
+    workflow_path.write_text(workflow_text)
+
+    assert ci_target_manifest.workflow_reader_groups(workflow_path) == (
+        "mcp_fastapi_parity",
+    )
+
+
+def test_read_ci_test_targets_cli_supports_space_separator_and_prefix_strip(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The target-reader CLI should support space output and prefix stripping."""
+    exit_code, out, err = _run_cli_main(
+        read_ci_test_targets,
+        monkeypatch,
+        capsys,
+        [
+            "read_ci_test_targets.py",
+            "frontend_contract",
+            "--separator",
+            "space",
+            "--strip-prefix",
+            "frontend/",
+        ],
+    )
+    assert exit_code == 0
+    assert err == ""
+    assert out.strip().split() == [
+        path.removeprefix("frontend/")
+        for path in FRONTEND_CONTRACT_TEST_PATHS
+    ]
+
+
+def test_read_ci_test_targets_cli_defaults_to_newline_output(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The target-reader CLI should default to newline-separated output."""
+    exit_code, out, err = _run_cli_main(
+        read_ci_test_targets,
+        monkeypatch,
+        capsys,
+        ["read_ci_test_targets.py", "frontend_contract"],
+    )
+    assert exit_code == 0
+    assert err == ""
+    assert out.strip().splitlines() == list(FRONTEND_CONTRACT_TEST_PATHS)
+
+
+def test_read_ci_test_targets_cli_rejects_deprecated_subgroups(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The target-reader CLI should reject the retired subgroup option."""
+    exit_code, out, err = _run_cli_main(
+        read_ci_test_targets,
+        monkeypatch,
+        capsys,
+        [
+            "read_ci_test_targets.py",
+            "frontend_contract",
+            "--subgroup",
+            "legacy",
+        ],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "Nested subgroups are no longer supported" in err
+
+
+def test_read_ci_test_targets_cli_reports_unknown_groups(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The target-reader CLI should report unknown manifest groups clearly."""
+    exit_code, out, err = _run_cli_main(
+        read_ci_test_targets,
+        monkeypatch,
+        capsys,
+        ["read_ci_test_targets.py", "unknown_group"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "Unknown CI target manifest group: unknown_group" in err
 
 
 def test_frontend_contract_manifest_group_matches_current_shared_lane() -> None:
@@ -313,6 +516,7 @@ def test_ci_workflow_frontend_contract_reader_command_stays_aligned() -> None:
 
 
 def test_ci_workflow_changes_filter_keeps_refined_high_signal_contract_scope() -> None:
+    """The live workflow should keep the refined high-signal contract filter."""
     workflow_text = _current_ci_workflow_text()
 
     _assert_contains_all(
@@ -324,6 +528,332 @@ def test_ci_workflow_changes_filter_keeps_refined_high_signal_contract_scope() -
             *tuple(f"- '{path}'" for path in REFINED_CONTRACT_FILTER_PATHS),
             DOCS_CONSISTENCY_NON_MAIN_PR_IF,
         ),
+    )
+
+
+def test_ci_target_manifest_validator_reports_duplicate_target_paths(
+    monkeypatch,
+) -> None:
+    """Duplicate manifest target paths should be reported."""
+    manifest = _live_ci_target_manifest()
+    duplicated_path = manifest.targets["backend_contract"][0]
+    mutated_targets = dict(manifest.targets)
+    mutated_targets["frontend_contract"] = (
+        *mutated_targets["frontend_contract"],
+        duplicated_path,
+    )
+    mutated = replace(manifest, targets=mutated_targets)
+
+    failures = _manifest_validation_failures(monkeypatch, mutated)
+
+    assert (
+        f"Manifest target path '{duplicated_path}' is duplicated across groups."
+        in failures
+    )
+
+
+def test_ci_target_manifest_validator_reports_lane_ownership_drift(
+    monkeypatch,
+) -> None:
+    """Lane-category drift should be reported by the manifest validator."""
+    manifest = _live_ci_target_manifest()
+    mutated_group_lane_categories = dict(manifest.group_lane_categories)
+    mutated_group_lane_categories["frontend_contract"] = "weekly_slow_real_media"
+    mutated = replace(
+        manifest,
+        group_lane_categories=mutated_group_lane_categories,
+    )
+
+    failures = _manifest_validation_failures(monkeypatch, mutated)
+
+    assert (
+        "Manifest contract_boundary lane groups drifted from the protected PR contract groups."
+        in failures
+    )
+
+
+def test_ci_target_manifest_validator_reports_retired_target_paths(
+    monkeypatch,
+) -> None:
+    """Retired target paths should still be rejected by the validator."""
+    manifest = _live_ci_target_manifest()
+    retired_path = validate_ci_test_targets.RETIRED_TARGET_PATHS[0]
+    mutated_targets = dict(manifest.targets)
+    mutated_targets["backend_contract"] = (
+        *mutated_targets["backend_contract"],
+        retired_path,
+    )
+    mutated = replace(manifest, targets=mutated_targets)
+
+    failures = _manifest_validation_failures(monkeypatch, mutated)
+
+    assert f"Manifest still references stale retired path '{retired_path}'." in failures
+
+
+def test_ci_target_manifest_validator_reports_invalid_guarded_area_metadata(
+    monkeypatch,
+) -> None:
+    """Invalid guarded-area metadata should be reported by the validator."""
+    manifest = _live_ci_target_manifest()
+    area_name = "frontend_contract_and_hook_boundary"
+    mutated_areas = dict(manifest.guarded_split_suite_areas)
+    mutated_areas[area_name] = replace(
+        mutated_areas[area_name],
+        patterns=(),
+    )
+    mutated = replace(manifest, guarded_split_suite_areas=mutated_areas)
+
+    failures = _manifest_validation_failures(monkeypatch, mutated)
+
+    assert (
+        f"Guarded split-suite area '{area_name}' must define at least one pattern."
+        in failures
+    )
+
+
+def test_ci_target_manifest_validator_main_reports_failure_output(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The manifest validator CLI should print readable failure output."""
+    manifest = _live_ci_target_manifest()
+    duplicated_path = manifest.targets["backend_contract"][0]
+    mutated_targets = dict(manifest.targets)
+    mutated_targets["frontend_contract"] = (
+        *mutated_targets["frontend_contract"],
+        duplicated_path,
+    )
+    mutated = replace(manifest, targets=mutated_targets)
+
+    _patch_manifest_loader(monkeypatch, mutated)
+
+    exit_code, out, err = _run_cli_main(
+        validate_ci_test_targets,
+        monkeypatch,
+        capsys,
+        ["validate_ci_test_targets.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "ci_test_targets manifest validation failed:" in err
+    assert duplicated_path in err
+
+
+def test_main_pr_consistency_reports_expected_policy_failures(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The main-PR consistency CLI should report the expected failure bundle."""
+    _patch_main_pr_changed_files(
+        monkeypatch,
+        [
+            ".github/workflows/ci.yml",
+            "src/session_io.py",
+        ],
+    )
+    exit_code, out, err = _run_cli_main(
+        check_main_pr_consistency,
+        monkeypatch,
+        capsys,
+        ["check_main_pr_consistency.py", "origin/main...HEAD"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "main-pr-consistency check failed:" in err
+    assert (
+        "Workflow or package CI entrypoints changed without any docs update"
+        in err
+    )
+    assert (
+        "Contract-sensitive code changed without updating docs/contracts.md."
+        in err
+    )
+    assert "Backend contract changed without a matching test update" in err
+    assert "Backend contract changed without a matching docs update" in err
+    assert "changed files:" in err
+    assert "src/session_io.py" in err
+
+
+def test_main_pr_consistency_reports_usage_error_without_diff_range(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The main-PR consistency CLI should reject missing diff ranges."""
+    exit_code, out, err = _run_cli_main(
+        check_main_pr_consistency,
+        monkeypatch,
+        capsys,
+        ["check_main_pr_consistency.py"],
+    )
+    assert exit_code == 2
+    assert out == ""
+    assert "usage: check_main_pr_consistency.py <diff-range>" in err
+
+
+def test_main_pr_consistency_reports_changed_files_subprocess_failure(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Subprocess failures should still surface out of the consistency CLI."""
+    monkeypatch.setattr(
+        check_main_pr_consistency,
+        "_changed_files",
+        lambda diff_range: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(
+                1,
+                ["git", "diff", "--name-only", diff_range],
+            )
+        ),
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        _run_cli_main(
+            check_main_pr_consistency,
+            monkeypatch,
+            capsys,
+            ["check_main_pr_consistency.py", "origin/main...HEAD"],
+        )
+
+
+def test_main_pr_consistency_passes_with_matching_tests_and_docs(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Matching tests and docs should let the consistency CLI pass."""
+    _patch_main_pr_changed_files(
+        monkeypatch,
+        [
+            "frontend/src/hooks/usePlaybackSource.tsx",
+            "frontend/src/hooks/usePlaybackSource.test.tsx",
+            "docs/contracts.md",
+        ],
+    )
+    exit_code, out, err = _run_cli_main(
+        check_main_pr_consistency,
+        monkeypatch,
+        capsys,
+        ["check_main_pr_consistency.py", "origin/main...HEAD"],
+    )
+    assert exit_code == 0
+    assert err == ""
+    assert out.strip() == "main-pr-consistency check passed"
+
+
+def test_split_suite_registration_prefers_explicit_changed_files_over_diff_range(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Explicit changed-file arguments should win over diff-range discovery."""
+    _patch_split_suite_args(
+        monkeypatch,
+        diff_range="origin/main...HEAD",
+        changed_files=[REGISTERED_SHARED_MANIFEST_SPLIT_SUITE],
+    )
+    monkeypatch.setattr(
+        check_split_suite_registration,
+        "_added_files",
+        lambda diff_range: (_ for _ in ()).throw(
+            AssertionError("_added_files should not run when --changed-file is present")
+        ),
+    )
+
+    exit_code, out, err = _run_cli_main(
+        check_split_suite_registration,
+        monkeypatch,
+        capsys,
+        ["check_split_suite_registration.py"],
+    )
+    assert exit_code == 0
+    assert err == ""
+    assert "split-suite registration check passed" in out
+    assert "new guarded files=1" in out
+
+
+def test_split_suite_registration_main_reports_missing_cli_inputs(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The split-suite CLI should reject empty invocation inputs."""
+    _patch_split_suite_args(monkeypatch, diff_range=None, changed_files=[])
+
+    exit_code, out, err = _run_cli_main(
+        check_split_suite_registration,
+        monkeypatch,
+        capsys,
+        ["check_split_suite_registration.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "Provide either <diff-range> or at least one --changed-file value." in err
+
+
+def test_split_suite_registration_main_reports_subprocess_failures(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The split-suite CLI should print subprocess failures clearly."""
+    _patch_split_suite_args(
+        monkeypatch,
+        diff_range="origin/main...HEAD",
+        changed_files=[],
+    )
+    monkeypatch.setattr(
+        check_split_suite_registration,
+        "_added_files",
+        lambda diff_range: (_ for _ in ()).throw(
+            subprocess.CalledProcessError(
+                1,
+                ["git", "diff"],
+                stderr="synthetic git failure",
+            )
+        ),
+    )
+
+    exit_code, out, err = _run_cli_main(
+        check_split_suite_registration,
+        monkeypatch,
+        capsys,
+        ["check_split_suite_registration.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "Command '['git', 'diff']' returned non-zero exit status 1." in err
+
+
+def test_split_suite_registration_main_reports_manifest_failures(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The split-suite CLI should print manifest failures clearly."""
+    _patch_split_suite_args(
+        monkeypatch,
+        diff_range=None,
+        changed_files=[REGISTERED_SHARED_MANIFEST_SPLIT_SUITE],
+    )
+    monkeypatch.setattr(
+        check_split_suite_registration,
+        "collect_registration_statuses",
+        lambda changed_files: (_ for _ in ()).throw(
+            ci_target_manifest.ManifestError("synthetic manifest failure")
+        ),
+    )
+
+    exit_code, out, err = _run_cli_main(
+        check_split_suite_registration,
+        monkeypatch,
+        capsys,
+        ["check_split_suite_registration.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "synthetic manifest failure" in err
+
+
+def test_ci_maintainer_guide_keeps_workflow_contract_regression_note() -> None:
+    """The maintainer guide should keep the focused workflow regression note honest."""
+    _assert_contains_all(
+        _ci_maintainer_guide_text(),
+        CI_MAINTAINER_GUIDE_REGRESSION_TOKENS,
     )
 
 
@@ -449,7 +979,7 @@ def _alignment_contract(
     protected_groups: tuple[str, ...] = PROTECTED_ALIGNMENT_GROUPS,
     doc_requirements: tuple[Any, ...] = (),
 ) -> Any:
-    """Build one narrow protected-lane alignment contract for drift tests."""
+    """Build one narrow alignment contract for drift-focused tests."""
     return ci_target_manifest.AlignmentContract(
         protected_workflow_groups=protected_groups,
         doc_requirements=doc_requirements,
@@ -463,7 +993,7 @@ def _patch_drift_inputs(
     workflow_groups: set[str] | None = None,
     policy_groups: set[str] | None = None,
 ) -> set[str]:
-    """Patch the drift checker to one controlled protected-lane scenario."""
+    """Patch the drift checker to one controlled alignment scenario."""
     expected_groups = set(contract.protected_workflow_groups)
     monkeypatch.setattr(check_ci_target_drift, "alignment_contract", lambda: contract)
     monkeypatch.setattr(
@@ -483,20 +1013,27 @@ def test_ci_target_drift_check_passes_for_matching_alignment(
     monkeypatch,
     capsys,
 ) -> None:
+    """Matching workflow, policy, and docs alignment should pass."""
     contract = _alignment_contract()
     _patch_drift_inputs(monkeypatch, contract)
     _patch_clean_doc_alignment(monkeypatch)
 
-    assert check_ci_target_drift.main() == 0
-    captured = capsys.readouterr()
-    assert captured.err == ""
-    assert captured.out.strip() == "ci target drift check passed"
+    exit_code, out, err = _run_cli_main(
+        check_ci_target_drift,
+        monkeypatch,
+        capsys,
+        ["check_ci_target_drift.py"],
+    )
+    assert exit_code == 0
+    assert err == ""
+    assert out.strip() == "ci target drift check passed"
 
 
 def test_ci_target_drift_check_reports_workflow_alignment_mismatch(
     monkeypatch,
     capsys,
 ) -> None:
+    """Workflow-group drift should be reported by the drift checker."""
     contract = _alignment_contract()
     workflow_groups = {"backend_contract", "frontend_contract"}
 
@@ -508,15 +1045,22 @@ def test_ci_target_drift_check_reports_workflow_alignment_mismatch(
     )
     _patch_clean_doc_alignment(monkeypatch)
 
-    assert check_ci_target_drift.main() == 1
-    captured = capsys.readouterr()
-    assert "Main workflow contract-lane usage drifted" in captured.err
+    exit_code, out, err = _run_cli_main(
+        check_ci_target_drift,
+        monkeypatch,
+        capsys,
+        ["check_ci_target_drift.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "Main workflow contract-lane usage drifted" in err
 
 
 def test_ci_target_drift_check_reports_policy_alignment_mismatch(
     monkeypatch,
     capsys,
 ) -> None:
+    """Policy-group drift should be reported by the drift checker."""
     contract = _alignment_contract()
     policy_groups = {"backend_contract", "mcp_fastapi_parity"}
 
@@ -527,15 +1071,22 @@ def test_ci_target_drift_check_reports_policy_alignment_mismatch(
     )
     _patch_clean_doc_alignment(monkeypatch)
 
-    assert check_ci_target_drift.main() == 1
-    captured = capsys.readouterr()
-    assert "Consistency-script manifest-group usage drifted" in captured.err
+    exit_code, out, err = _run_cli_main(
+        check_ci_target_drift,
+        monkeypatch,
+        capsys,
+        ["check_ci_target_drift.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "Consistency-script manifest-group usage drifted" in err
 
 
 def test_ci_target_drift_check_reports_doc_alignment_mismatch(
     monkeypatch,
     capsys,
 ) -> None:
+    """Missing required docs tokens should be reported by the drift checker."""
     contract = _alignment_contract(
         doc_requirements=(
             ci_target_manifest.DocAlignmentRequirement(
@@ -546,6 +1097,12 @@ def test_ci_target_drift_check_reports_doc_alignment_mismatch(
     )
     _patch_drift_inputs(monkeypatch, contract)
 
-    assert check_ci_target_drift.main() == 1
-    captured = capsys.readouterr()
-    assert "missing manifest ownership references" in captured.err
+    exit_code, out, err = _run_cli_main(
+        check_ci_target_drift,
+        monkeypatch,
+        capsys,
+        ["check_ci_target_drift.py"],
+    )
+    assert exit_code == 1
+    assert out == ""
+    assert "missing manifest ownership references" in err
