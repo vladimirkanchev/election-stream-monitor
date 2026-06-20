@@ -373,6 +373,41 @@ often explain runner state, cancel behavior, and terminal outcomes.
 This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier.
 
+## Task-4 Workflow Contract Checks
+
+Task 4 adds one narrow regression layer around the protected `main` PR CI
+contract. Keep it read as a maintainer safeguard, not as a second workflow
+implementation.
+
+Code owners for that layer:
+
+- `.github/scripts/ci_workflow.py`
+  - structural reader for the subset of `ci.yml` that the contract tests use
+- `.github/scripts/ci_workflow_contract.py`
+  - protected/advisory policy validator over that narrow workflow model
+- `tests/test_ci_workflow.py`
+  - live and mutation-style checks for the workflow reader and contract
+- `tests/test_ci_test_target_scripts.py`
+  - focused checks for manifest ownership, helper CLI behavior, drift checks,
+    and split-suite registration
+
+The highest-signal invariants under regression test are:
+
+- exact `main-gate` direct dependencies
+- protected frontend `npm run test` and `npm run build` ownership inside
+  `test-and-build`
+- forced-on behavior for protected `main` PR jobs and work steps
+- advisory classification for standalone `frontend-lint` and
+  `backend-pyright`
+
+Use this focused local command when changing the task-4 helper layer:
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q \
+  tests/test_ci_workflow.py \
+  tests/test_ci_test_target_scripts.py
+```
+
 Feature branches now rely on CI feedback rather than required branch
 protection. The protected workflow still runs on pull requests and now also
 runs on feature-branch pushes so branch work gets feedback before a PR exists.
@@ -701,33 +736,6 @@ This stays intentionally narrow. It does not require docs churn for every new
 test file, and it does not treat unguarded test files as CI-registration
 failures.
 
-Where to update ownership when this guard fails:
-
-- shared manifest ownership
-  - update `.github/ci_test_targets.json`
-  - use `.github/scripts/ci_target_manifest.py` as the read-side helper seam
-- main-PR policy ownership
-  - update `.github/scripts/check_main_pr_consistency.py`
-- docs ownership
-  - update this file only when ownership meaning changes
-  - keep `docs/README.md` and `docs/contracts.md` as shorter handoff docs,
-    not full duplicate owners
-
-Chosen detection strategy for the live registration guard:
-
-- inspect changed files in protected PR CI
-- do not scan the full repo or try to infer historical split ownership
-
-That keeps the guard cheaper, clearer, and more maintainable. It should
-fail when a new guarded file is introduced without the required ownership
-updates, not re-lint the whole repository on every run.
-
-Split-suite registration command:
-
-```bash
-python3 .github/scripts/check_split_suite_registration.py <diff-range>
-```
-
 Current registration surfaces checked by that guard:
 
 - `shared_manifest`
@@ -748,7 +756,7 @@ The current rule is still intentionally narrow:
 - ordinary split-file additions that stay within an existing guarded area and
   ownership model do not require docs churn on their own
 
-Where to update ownership:
+Where to update ownership when this guard fails:
 
 - shared manifest ownership
   - update `.github/ci_test_targets.json`
@@ -759,7 +767,7 @@ Where to update ownership:
   - update this file only when ownership meaning changes
   - keep `docs/README.md` and `docs/contracts.md` as shorter handoff docs
 
-How the guard detects new files:
+Chosen detection strategy:
 
 - inspect changed files in protected PR CI
 - do not scan the full repo or infer historical ownership
@@ -768,7 +776,7 @@ That keeps the guard cheaper and clearer. It should fail when a new guarded
 file is introduced without the required ownership updates, not re-lint the
 whole repository on every run.
 
-Command:
+Split-suite registration command:
 
 ```bash
 python3 .github/scripts/check_split_suite_registration.py <diff-range>

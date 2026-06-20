@@ -28,26 +28,33 @@ dependencies.
   - `integration-smoke`
   - `main-gate`
 
-## Intended Required-Check Contract
+## Main Protection Contract
 
-Use this as the branch decision artifact for `main` protection.
+Use this as the shortest branch decision artifact for `main` protection.
 
-- required external status for `main` protection:
+- external required status:
   - `CI / main-gate`
-- internal required chain behind it:
+- direct blockers behind `main-gate`:
   - `feature-gate`
   - `main-pr-consistency`
   - `integration-smoke`
   - `contract-checks`
   - `test-and-build`
-- advisory-only today:
-  - `frontend-lint` as a standalone job; protected `main` PRs still enforce
-    frontend lint through `contract-checks`
+- indirect blockers through `feature-gate`:
+  - `frontend-checkpoint`
+  - `backend-tests`
+  - `frontend-typecheck`
+  - `backend-typecheck`
+  - `backend-ruff`
+- advisory only:
+  - standalone `frontend-lint`; protected `main` PRs still enforce frontend
+    lint through `contract-checks`
   - `backend-pyright`; `backend-typecheck` remains the protected primary
     Python type gate
-- not currently protected by `main-gate`:
-  - `pr-template-completeness`; it remains informational unless the repo
-    intentionally decides to block merges on missing PR-process text
+- informational, not protected:
+  - `pr-template-completeness`
+  - `docs-consistency`
+  - `changes`
 
 ## Required Check Graph For `main` PRs
 
@@ -69,9 +76,10 @@ The internal required graph for pull requests targeting `main` is:
 This keeps the GitHub settings layer simple while preserving the internal
 meaning of that one protected status.
 
-## Current `main-gate` Coverage Vs Target Contract
+## Coverage Map
 
-Use this gap table before changing `main-gate` dependencies.
+Use this table before changing `main-gate` dependencies or promoting advisory
+checks.
 
 | Target validation | Current workflow path | Protected now? | Notes |
 | --- | --- | --- | --- |
@@ -162,63 +170,16 @@ Keep one protected Python type gate:
 - do not add `backend-pyright` into `feature-gate` or `main-gate` unless the
   repo intentionally wants two blocking Python type tools
 
-## Final `main-gate` Dependency Set
+## GitHub Settings Follow-up
 
-No additional top-level protected jobs are needed after the current policy
-decisions.
+The workflow contract is now explicit in-repo. GitHub branch protection still
+has to require the right external status:
 
-Keep `main-gate` depending on:
-
-- `feature-gate`
-- `main-pr-consistency`
-- `integration-smoke`
-- `contract-checks`
-- `test-and-build`
-
-Why this stays final for now:
-
-- the intended protected backend/frontend/runtime checks are already covered
-  through this aggregate chain
-- advisory-only jobs such as standalone `frontend-lint` and `backend-pyright`
-  stay out of the top-level protected surface
-- informational process checks such as `pr-template-completeness` also stay
-  out of the protected chain
-- the goal is a stricter contract, not a noisier or more duplicated one
-
-## Protected Contract Summary
-
-Use this as the shortest direct versus indirect map for `main` protection:
-
-- directly blocked by `main-gate`:
-  - `feature-gate`
-  - `main-pr-consistency`
-  - `integration-smoke`
-  - `contract-checks`
-  - `test-and-build`
-- protected indirectly through `feature-gate`:
-  - `frontend-checkpoint`
-  - `backend-tests`
-  - `frontend-typecheck`
-  - `backend-typecheck`
-  - `backend-ruff`
-- advisory only:
-  - standalone `frontend-lint`
-  - `backend-pyright`
-- informational, not protected:
-  - `pr-template-completeness`
-  - `docs-consistency`
-  - `changes`
-
-## Remaining Gaps After The Audit
-
-Do not expand this list during the audit pass. Keep only the real remaining
-follow-up items.
-
-- verify GitHub branch protection requires `CI / main-gate`
-- verify GitHub is not still requiring older leaf statuses instead of the
-  aggregate protected status
-- open one real PR against `main` and confirm the protected statuses appear
-  exactly as documented
+- require `CI / main-gate`
+- avoid requiring older leaf statuses instead of the aggregate protected
+  status
+- confirm one real PR against `main` shows the protected statuses exactly as
+  documented
 
 Current check classification:
 
@@ -266,14 +227,37 @@ informational rather than protected by `main-gate`.
 - shared Python read-side helper: `.github/scripts/ci_target_manifest.py`
 - protected PR workflow: `.github/workflows/ci.yml`
 - weekly heavy workflow: `.github/workflows/weekly-validation.yml`
+- narrow workflow reader: `.github/scripts/ci_workflow.py`
+- protected workflow-contract validator:
+  `.github/scripts/ci_workflow_contract.py`
 - narrower protected-PR policy guard:
   `.github/scripts/check_main_pr_consistency.py`
-- focused CI-helper regression coverage:
-  `tests/test_ci_test_target_scripts.py`
+- focused workflow-regression tests:
+  - `tests/test_ci_workflow.py`
+    - owns the protected `ci.yml` contract through one narrow workflow reader
+  - `tests/test_ci_test_target_scripts.py`
+    - owns manifest/helper/ownership drift checks around that workflow
+
+Task-4 workflow regression coverage intentionally stays narrow. The protected
+invariants under test are:
+
+- exact `main-gate` direct dependencies
+- protected frontend `npm run test` and `npm run build` ownership in
+  `test-and-build`
+- forced-on behavior for protected `main` PR jobs and work steps
+- advisory-job classification for standalone `frontend-lint` and
+  `backend-pyright`
 
 The weekly workflow now also owns the live PostgreSQL alert-confidence bundles
 through a disposable GitHub Actions `postgres:16` service container. It does
 not depend on a shared external database secret for the normal weekly path.
+
+Focused local validation for this task-4 surface:
+
+- `python3 .github/scripts/validate_ci_test_targets.py`
+- `python3 .github/scripts/check_ci_test_paths_exist.py`
+- `python3 .github/scripts/check_ci_target_drift.py`
+- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/test_ci_workflow.py tests/test_ci_test_target_scripts.py`
 
 ## Canonical CI Target Manifests
 
