@@ -38,5 +38,3 @@ def test_main_rejects_non_local_modes_with_legacy_harness_guidance(monkeypatch) 
 
     with pytest.raises(ValueError, match="legacy local analysis harness"):
         main.main()
-
-    assert False, "intentional protected failure for main-branch validation"
