@@ -300,6 +300,7 @@ The current GitHub Actions workflow uses three practical layers:
 - `pr-template-completeness`
   - lightweight PR-body guard for validation commands plus docs and
     fixture/environment choices
+  - informational process check, not part of the protected `main` merge gate
 - `frontend-checkpoint`
   - fast early-feedback frontend lane
   - quick Electron/bridge/session-flow regression signal
@@ -312,16 +313,17 @@ The current GitHub Actions workflow uses three practical layers:
 - `frontend-typecheck`
   - frontend TypeScript typecheck
 - `frontend-lint`
-  - advisory frontend ESLint signal on `src` TypeScript files
+  - advisory standalone frontend ESLint signal on `src` TypeScript files
 - `feature-gate`
   - summary job for the fast backend/frontend checks on pull requests
   - useful as a single CI signal, even though feature branches are no longer
     protected merge targets
 - `contract-checks`
   - protected PR boundary lane
-  - currently enforces frontend lint in the contract-sensitive PR path
+  - protected `main` PRs still block on frontend lint through this lane
 - `backend-typecheck`
-  - targeted type defense for the contract-sensitive Python boundary modules
+  - protected primary backend Python type gate for the contract-sensitive
+    boundary modules
 - `backend-pyright`
   - advisory VSCode-aligned type signal for the same Python boundary modules
 - `test-and-build`
@@ -333,11 +335,24 @@ The current GitHub Actions workflow uses three practical layers:
   - external required status: `CI / main-gate`
   - aggregate protected checks: `feature-gate`, `main-pr-consistency`,
     `integration-smoke`, `contract-checks`, `test-and-build`
+  - no additional top-level protected jobs are currently intended beyond that
+    aggregate chain
+  - direct blockers live in that aggregate list; fast backend/frontend checks
+    stay protected indirectly through `feature-gate`
+  - advisory signals stay separate: standalone `frontend-lint`,
+    `backend-pyright`
+  - informational checks stay outside the protected merge contract:
+    `pr-template-completeness`, `docs-consistency`
+  - path-aware protected jobs may skip on ordinary PRs, but `main` PRs force
+    protected work on and `main-pr-consistency` itself is a dedicated `main`
+    policy lane
   - contract-sensitive changes must move with nearby tests and owning docs
+  - `main-pr-consistency` is the protected owner for CI/docs/workflow
+    consistency checks on `main` PRs
   - use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the exact
     required-check graph and skip/forced-on behavior
 - `docs-consistency`
-  - path-aware docs and workflow consistency checks for non-`main` pull requests
+  - non-`main` early-feedback lane for docs and workflow consistency checks
 - `weekly-validation`
   - scheduled slow e2e media tests
   - detector-lab real-media confidence checks
@@ -378,12 +393,16 @@ Current `changes` filter contract:
 - `backend`
   - broad backend trigger
   - paths: `src/**`, `tests/**`
-  - main direct gates: `backend-tests`, `backend-ruff`, `backend-typecheck`, `backend-pyright`
+  - main-triggered jobs: `backend-tests`, `backend-ruff`,
+    `backend-typecheck`, `backend-pyright`
+  - protected versus advisory meaning still comes from the `main-gate` and
+    `feature-gate` contract, not from this trigger list alone
   - also feeds: `frontend-checkpoint`, `contract-checks`, `test-and-build`
 - `frontend`
   - broad frontend trigger
   - paths: `frontend/**` except `frontend/README.md`
-  - main direct gates: `frontend-checkpoint`, `frontend-typecheck`, `frontend-lint`
+  - main-triggered jobs: `frontend-checkpoint`, `frontend-typecheck`,
+    `frontend-lint`
   - also feeds: `contract-checks`, `test-and-build`
 - `docs`
   - docs-oriented consistency trigger
@@ -396,7 +415,10 @@ Current `changes` filter contract:
 - `contract`
   - narrower contract-sensitive trigger
   - paths: selected backend boundary files, current session/stream contract owners, `frontend/src/bridge/**`, contract-sensitive monitoring hooks, `frontend/src/types.ts`, and `frontend/src/uiErrors.ts`
-  - main direct gates: `frontend-checkpoint`, `backend-tests`, `backend-ruff`, `frontend-typecheck`, `frontend-lint`, `backend-typecheck`, `backend-pyright`, `docs-consistency`
+  - main-triggered jobs: `frontend-checkpoint`, `backend-tests`,
+    `backend-ruff`, `frontend-typecheck`, `frontend-lint`,
+    `backend-typecheck`, `backend-pyright`
+  - protected `main` policy still runs through `main-pr-consistency`
   - also feeds: `contract-checks`, `test-and-build`
 
 Filter intent:
@@ -845,8 +867,9 @@ Protected CI lane order:
 
 1. `validate_ci_test_targets.py`
 2. `check_ci_test_paths_exist.py`
-3. `check_ci_target_drift.py`
-4. broader workflow or policy checks
+3. `check_fixture_environment_policy.py`
+4. `check_ci_target_drift.py`
+5. broader workflow or policy checks
 
 That keeps missing-path failures early, fast, and easier to read than later
 policy or contract-lane failures.

@@ -41,10 +41,13 @@ Use this as the branch decision artifact for `main` protection.
   - `contract-checks`
   - `test-and-build`
 - advisory-only today:
-  - `frontend-lint`
-  - `backend-pyright`
+  - `frontend-lint` as a standalone job; protected `main` PRs still enforce
+    frontend lint through `contract-checks`
+  - `backend-pyright`; `backend-typecheck` remains the protected primary
+    Python type gate
 - not currently protected by `main-gate`:
-  - `pr-template-completeness`
+  - `pr-template-completeness`; it remains informational unless the repo
+    intentionally decides to block merges on missing PR-process text
 
 ## Required Check Graph For `main` PRs
 
@@ -58,13 +61,30 @@ The internal required graph for pull requests targeting `main` is:
 | --- | --- | --- | --- |
 | `main-gate` | yes | n/a | final aggregate protected status for `main`; fails unless each required upstream job finishes as `success` |
 | `feature-gate` | yes | yes | aggregate fast required checks: `frontend-checkpoint`, `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff` |
-| `main-pr-consistency` | yes | yes | protected-PR manifest structure, CI-owned path existence, workflow/policy drift, split-suite registration, and narrower `main` PR policy |
+| `main-pr-consistency` | yes | yes | protected-PR manifest structure, CI-owned path existence, fixture/environment policy assumptions, workflow/policy drift, split-suite registration, and narrower `main` PR policy |
 | `integration-smoke` | yes | yes | small backend integration smoke through `tests/test_e2e_local_session.py` |
 | `contract-checks` | yes | yes | PR-only protected boundary lane that currently enforces frontend lint in the contract-sensitive PR path |
 | `test-and-build` | yes | yes | manifest/path/drift checks, shared backend/frontend `contract_boundary` suites, full frontend tests, and frontend build |
 
 This keeps the GitHub settings layer simple while preserving the internal
 meaning of that one protected status.
+
+## Current `main-gate` Coverage Vs Target Contract
+
+Use this gap table before changing `main-gate` dependencies.
+
+| Target validation | Current workflow path | Protected now? | Notes |
+| --- | --- | --- | --- |
+| backend fast tests and packaging smoke | `main-gate -> feature-gate -> backend-tests` | yes | includes editable-install packaging check, import smoke, compile smoke, and fast backend tests |
+| Ruff | `main-gate -> feature-gate -> backend-ruff` | yes | already part of the aggregate fast protected backend lane |
+| backend mypy | `main-gate -> feature-gate -> backend-typecheck` | yes | current primary Python type gate |
+| frontend typecheck | `main-gate -> feature-gate -> frontend-typecheck` | yes | already protected through the fast aggregate gate |
+| full frontend tests and build | `main-gate -> test-and-build` | yes | protected shared lane now carries the full frontend suite and production build |
+| contract checks | `main-gate -> contract-checks` | yes | protected PR boundary lane |
+| integration smoke | `main-gate -> integration-smoke` | yes | protected `main` PR smoke path |
+| CI consistency checks | `main-gate -> main-pr-consistency`; `docs-consistency` stays non-`main` | yes | `main-pr-consistency` is the protected `main` policy owner; `docs-consistency` remains the non-`main` early-feedback lane |
+| PR-template completeness | standalone `pr-template-completeness` job | no | intentionally informational process policy, not part of `main-gate` |
+| standalone frontend lint | standalone `frontend-lint` stays advisory; protected `main` PRs still block on frontend lint through `contract-checks` | yes, through `contract-checks` | no separate top-level protected frontend-lint status is currently intended |
 
 ## Frontend Validation Split For `main` PRs
 
@@ -110,13 +130,90 @@ Expected tradeoff:
 - if this lane becomes too slow later, optimize the internal test/build shape
   first instead of removing protected frontend coverage from `main`
 
+## Frontend Lint Policy
+
+Keep the current lint shape unless you intentionally want a separate required
+status:
+
+- standalone `frontend-lint` remains advisory
+- protected `main` PRs still block on frontend lint through `contract-checks`
+- do not add `frontend-lint` separately into `feature-gate` or `main-gate`
+  unless you want an additional top-level blocking policy surface
+
+## PR Template Policy
+
+Keep `pr-template-completeness` informational for now:
+
+- it is process policy, not product-correctness validation
+- it should not block `main` merges unless the repo intentionally wants that
+  extra friction
+- missing validation/docs text should still be fixed in review, but the
+  protected merge contract remains centered on runtime, test, type, lint, and
+  CI-consistency checks
+
+## Python Type Policy
+
+Keep one protected Python type gate:
+
+- `backend-typecheck` is the protected backend Python type gate
+- `backend-typecheck` currently runs `mypy` and remains the primary merge
+  blocker for backend typing
+- `backend-pyright` stays advisory for extra signal and editor alignment
+- do not add `backend-pyright` into `feature-gate` or `main-gate` unless the
+  repo intentionally wants two blocking Python type tools
+
+## Final `main-gate` Dependency Set
+
+No additional top-level protected jobs are needed after the current policy
+decisions.
+
+Keep `main-gate` depending on:
+
+- `feature-gate`
+- `main-pr-consistency`
+- `integration-smoke`
+- `contract-checks`
+- `test-and-build`
+
+Why this stays final for now:
+
+- the intended protected backend/frontend/runtime checks are already covered
+  through this aggregate chain
+- advisory-only jobs such as standalone `frontend-lint` and `backend-pyright`
+  stay out of the top-level protected surface
+- informational process checks such as `pr-template-completeness` also stay
+  out of the protected chain
+- the goal is a stricter contract, not a noisier or more duplicated one
+
+## Protected Contract Summary
+
+Use this as the shortest direct versus indirect map for `main` protection:
+
+- directly blocked by `main-gate`:
+  - `feature-gate`
+  - `main-pr-consistency`
+  - `integration-smoke`
+  - `contract-checks`
+  - `test-and-build`
+- protected indirectly through `feature-gate`:
+  - `frontend-checkpoint`
+  - `backend-tests`
+  - `frontend-typecheck`
+  - `backend-typecheck`
+  - `backend-ruff`
+- advisory only:
+  - standalone `frontend-lint`
+  - `backend-pyright`
+- informational, not protected:
+  - `pr-template-completeness`
+  - `docs-consistency`
+  - `changes`
+
 ## Remaining Gaps After The Audit
 
 Do not expand this list during the audit pass. Keep only the real remaining
 follow-up items.
 
-- decide whether `pr-template-completeness` should join the protected
-  `main-gate` aggregate
 - verify GitHub branch protection requires `CI / main-gate`
 - verify GitHub is not still requiring older leaf statuses instead of the
   aggregate protected status
@@ -130,25 +227,37 @@ Current check classification:
   `test-and-build`
 - indirect blockers through `feature-gate`: `frontend-checkpoint`,
   `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff`
-- advisory only: `frontend-lint`, `backend-pyright`
+- advisory only: standalone `frontend-lint`, `backend-pyright`
 - informational but not protected: `changes`, `pr-template-completeness`,
   `docs-consistency`
 
-Nuance: standalone `frontend-lint` is advisory, but frontend lint still
-becomes blocking for `main` PRs through `contract-checks`.
+Nuance: standalone `frontend-lint` is advisory, but protected `main` PRs still
+block on frontend lint through `contract-checks`.
 
 ## Skip And Forced-On Behavior For `main` PRs
 
 This is the highest-signal protection audit in the workflow. Unexpected
 `skipped` states are the easiest way for a branch to look protected while
 actually missing validation. Keep step-level skipping separate from job-level
-skipping.
+skipping. The protected forced-on audit for this contract covers:
+
+- `backend-tests`
+- `backend-ruff`
+- `backend-typecheck`
+- `frontend-typecheck`
+- `contract-checks`
+- `test-and-build`
+- `main-pr-consistency`
+
+`pr-template-completeness` is intentionally outside this audit because it is
+informational rather than protected by `main-gate`.
 
 | Job | Can it skip on ordinary PRs? | Forced on for `main` PRs? | If it skips, what happens? |
 | --- | --- | --- | --- |
 | `frontend-checkpoint`, `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff` | work steps can skip on ordinary PRs when their path filters do not match; each job still succeeds through an explicit skip step | yes, through step-level `github.base_ref == 'main'` guards | `feature-gate` still sees `success`, not `skipped`, on ordinary PRs; on `main` PRs the real work is forced on |
 | `contract-checks` | yes, at the job level; it runs only for PRs with `backend`, `frontend`, or `contract` changes | yes, through the job-level `github.base_ref == 'main'` clause | if it were `skipped` on a `main` PR, `main-gate` would fail because it requires `success`; current logic avoids that by forcing the job on for `main` |
 | `test-and-build` | the job itself does not skip; some heavier install/test/build steps can skip on ordinary non-relevant PRs, while manifest/path/drift checks still run | yes, through step-level `github.base_ref == 'main'` guards on the heavier frontend/backend work | it does not disappear from the graph, so `main-gate` keeps a stable upstream status; on `main` PRs the protected test/build work is forced on regardless of path filter |
+| `main-pr-consistency` | no, for `main` PRs; it is a dedicated protected `main` PR policy lane rather than a path-filtered branch lane | yes, by construction; the job exists only for pull requests targeting `main` | it cannot silently path-skip protected `main` consistency work; if it is absent, `main-gate` cannot pass for a `main` PR |
 | `main-gate` | yes, at the job level; it exists only on PRs targeting `main` | yes, by definition | outside `main` PRs there is no protected aggregate status; on `main` PRs it fails unless every required upstream job finishes as `success` |
 
 ## Current Owner Surfaces
@@ -228,7 +337,8 @@ Then verify the change with:
 ## What `main-pr-consistency` Guards
 
 `.github/scripts/check_main_pr_consistency.py` is the narrower protected-PR
-policy layer.
+policy layer, and the `main-pr-consistency` job is the protected `main`
+owner for CI/docs/workflow consistency checks.
 
 It guards:
 
@@ -236,6 +346,7 @@ It guards:
 - contract-sensitive code moving with `docs/contracts.md`
 - contract gates moving with nearby tests
 - contract gates moving with the owning docs
+- fixture and environment policy assumptions in the protected `main` path
 
 It reuses shared manifest groups where the repo already has stable CI target
 ownership, and keeps narrower policy-only expectations for cases that should
