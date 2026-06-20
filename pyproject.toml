@@ -44,6 +44,7 @@ detectorlab = [
 ]
 test = [
     "httpx>=0.28.1",
+    "PyYAML>=6.0.3",
     "pytest>=8.4.2",
 ]
 lint = [
@@ -63,6 +64,7 @@ dev = [
     "numpy>=2.1.0",
     "opencv-python-headless>=4.10.0",
     "pre-commit>=4.3.0",
+    "PyYAML>=6.0.3",
     "pyright>=1.1.408",
     "ruff>=0.13.0",
     "pytest>=8.4.2",

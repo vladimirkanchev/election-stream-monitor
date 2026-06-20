@@ -286,6 +286,7 @@ dev = [
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pre-commit" },
+    { name = "pyyaml" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -297,6 +298,7 @@ lint = [
 ]
 test = [
     { name = "httpx" },
+    { name = "pyyaml" },
     { name = "pytest" },
 ]
 typecheck = [
@@ -327,6 +329,8 @@ requires-dist = [
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3.0" },
     { name = "pydantic", specifier = ">=2.13.1" },
     { name = "pynacl", specifier = "==1.5.0" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.3" },
+    { name = "pyyaml", marker = "extra == 'test'", specifier = ">=6.0.3" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.408" },
     { name = "pyright", marker = "extra == 'typecheck'", specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.2" },
