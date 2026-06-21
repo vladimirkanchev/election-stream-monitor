@@ -229,16 +229,38 @@ Keep one protected Python type gate:
 - do not add `backend-pyright` into `feature-gate` or `main-gate` unless the
   repo intentionally wants two blocking Python type tools
 
-## GitHub Settings Follow-up
+## GitHub Settings Shape
 
-The workflow contract is now explicit in-repo. GitHub branch protection still
-has to require the right external status:
+The workflow contract is now explicit both in-repo and in GitHub settings. The
+active repository ruleset targeting `main` owns the external protection layer:
 
-- require `CI / main-gate`
-- avoid requiring older leaf statuses instead of the aggregate protected
-  status
-- confirm one real PR against `main` shows the protected statuses exactly as
-  documented
+- required external status: `CI / main-gate`
+- pull request required: yes
+- required approvals: `1`
+- stale approvals dismissed on push: no
+- latest-push approval required: no
+- branch deletion blocked: yes
+- force pushes blocked: yes
+- bypass actors: none
+
+Keep GitHub protection centered on that ruleset:
+
+- require `CI / main-gate`, not older leaf statuses
+- keep `main` under the repository ruleset instead of reintroducing overlapping
+  classic branch protection
+- confirm an occasional real PR against `main` still shows the protected
+  statuses exactly as documented
+
+Team-oriented review strictness can increase later, but it is a policy choice
+rather than a code-correctness requirement:
+
+- `dismiss_stale_reviews_on_push`
+  - keep `false` for now to avoid extra friction while the repo is still
+    mostly solo or small-team driven
+- `require_last_push_approval`
+  - keep `false` for now for the same reason
+- revisit both settings if the repo moves to a larger team, stricter reviewer
+  handoff, or enterprise-style merge control expectations
 
 Nuance: standalone `frontend-lint` is advisory, but protected `main` PRs still
 block on frontend lint through `contract-checks`.
