@@ -1,13 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches-ignore:
-      - main
   pull_request:
 
 env:
-  # Fast PR/branch CI stays on the default synthetic path. Real Postgres
+  # Protected PR CI stays on the default synthetic path. Real Postgres
   # confidence belongs to the weekly workflow, which overrides these values in
   # its dedicated live-DB jobs.
   ESM_ALERT_STORE_BACKEND: file

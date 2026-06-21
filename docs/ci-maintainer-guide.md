@@ -76,9 +76,14 @@ Keep these five distinctions explicit when reviewing or editing CI:
 Use this as the smallest top-down map before tracing individual job
 dependencies.
 
-- workflow triggers
-  - `push` runs on all branches except `main`
-  - `pull_request` runs for pull requests
+- workflow entrypoints
+  - `CI`
+    - runs on `pull_request`
+    - owns the protected `CI / main-gate` status
+  - `Branch CI`
+    - runs on `push` for all branches except `main`
+    - owns ordinary fast branch feedback so push runs do not emit competing
+      `CI / main-gate` contexts
 - aggregate gates
   - `feature-gate`
   - `main-gate`
@@ -134,6 +139,13 @@ The internal required graph for pull requests targeting `main` is:
 
 This keeps the GitHub settings layer simple while preserving the internal
 meaning of that one protected status.
+
+Why the workflow split exists:
+
+- `CI` is PR-only so the required `CI / main-gate` context is emitted by one
+  workflow only
+- `Branch CI` keeps ordinary branch push feedback without producing a second
+  workflow/check context that can confuse merge readiness on the same commit
 
 ## Coverage Map
 

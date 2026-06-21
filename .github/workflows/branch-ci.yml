@@ -1,0 +1,372 @@
+name: Branch CI
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+env:
+  # Ordinary branch feedback stays on the default synthetic path. Real
+  # Postgres confidence belongs to the weekly workflow, which overrides these
+  # values in its dedicated live-DB jobs.
+  ESM_ALERT_STORE_BACKEND: file
+  POSTGRES_ALERT_STORE_REAL_SMOKE: "0"
+
+concurrency:
+  group: branch-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docs: ${{ steps.filter.outputs.docs }}
+      workflow: ${{ steps.filter.outputs.workflow }}
+      contract: ${{ steps.filter.outputs.contract }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+          fetch-depth: 0
+
+      # Keep the branch-feedback path filter model aligned with the protected
+      # PR workflow so local branch pushes and PRs wake the same fast seams.
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'detector_lab/**'
+              - 'tests/**'
+            frontend:
+              - 'frontend/**'
+              - '!frontend/README.md'
+            docs:
+              - 'docs/**'
+              - 'README.md'
+              - 'frontend/README.md'
+            workflow:
+              - '.github/workflows/**'
+              - '.github/scripts/**'
+              - 'frontend/package.json'
+              - 'pyproject.toml'
+            contract:
+              - 'src/source_validation.py'
+              - 'src/stream_loader.py'
+              - 'src/session_io.py'
+              - 'src/session_models.py'
+              - 'src/alert_rules.py'
+              - 'src/stream_loader_contracts.py'
+              - 'src/stream_loader_http_hls.py'
+              - 'src/api/routers/sessions.py'
+              - 'src/api/schemas.py'
+              - 'src/session_runner.py'
+              - 'src/session_runner_progress.py'
+              - 'src/session_service.py'
+              - 'frontend/src/bridge/**'
+              - 'frontend/src/hooks/useMonitoringSession*.tsx'
+              - 'frontend/src/hooks/usePlaybackSource*.tsx'
+              - 'frontend/src/types.ts'
+              - 'frontend/src/uiErrors.ts'
+
+  frontend-checkpoint:
+    runs-on: ubuntu-24.04
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python dependencies
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend checkpoint
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        working-directory: frontend
+        run: npm run test:frontend-checkpoint
+
+      - name: Skip frontend checkpoint
+        if: needs.changes.outputs.frontend != 'true' && needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No frontend, backend, or contract changes detected; skipping frontend checkpoint."
+
+  backend-tests:
+    runs-on: ubuntu-24.04
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run editable-install packaging check
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m venv /tmp/esm-packaging-check
+          /tmp/esm-packaging-check/bin/python -m pip install --upgrade pip setuptools wheel
+          /tmp/esm-packaging-check/bin/python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Install Python dependencies
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test,detectorlab]
+
+      - name: Run packaging smoke check
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -c "import api.app, api.routers.sessions, session_service, session_cli, session_alert_report"
+
+      - name: Run report tooling compile smoke check
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m py_compile src/session_alert_report.py scripts/session_alert_demo_report.py
+
+      - name: Run fast_synthetic backend tests
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          mkdir -p ci-artifacts
+          set -o pipefail
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q -m "not e2e and not slow" 2>&1 | tee ci-artifacts/backend-tests.log
+
+      - name: Skip backend tests
+        if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No backend or contract changes detected; skipping backend tests."
+
+      - name: Upload backend test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-tests-${{ github.run_id }}
+          path: ci-artifacts/backend-tests.log
+          retention-days: 7
+
+  backend-ruff:
+    runs-on: ubuntu-24.04
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python lint dependencies
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[lint]
+
+      - name: Run backend Ruff lint
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: ruff check src scripts tests
+
+      - name: Skip backend Ruff lint
+        if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No backend or contract changes detected; skipping backend Ruff lint."
+
+  frontend-typecheck:
+    runs-on: ubuntu-24.04
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend typecheck
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Skip frontend typecheck
+        if: needs.changes.outputs.frontend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No frontend or contract changes detected; skipping frontend typecheck."
+
+  frontend-lint:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend lint
+        if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
+        working-directory: frontend
+        run: npm run lint:frontend
+
+      - name: Skip frontend lint
+        if: needs.changes.outputs.frontend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No frontend or contract changes detected; skipping frontend lint."
+
+  backend-typecheck:
+    runs-on: ubuntu-24.04
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python typecheck dependencies
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[typecheck]
+
+      - name: Run backend typecheck
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alert_report.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+
+      - name: Skip backend typecheck
+        if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No backend or contract changes detected; skipping backend typecheck."
+
+  backend-pyright:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python typecheck dependencies
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .[typecheck]
+
+      - name: Run backend pyright
+        if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
+        run: .venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alert_report.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+
+      - name: Skip backend pyright
+        if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true'
+        run: echo "No backend or contract changes detected; skipping backend pyright."
+
+  feature-gate:
+    runs-on: ubuntu-24.04
+    if: always()
+    needs:
+      - frontend-checkpoint
+      - backend-tests
+      - frontend-typecheck
+      - backend-typecheck
+      - backend-ruff
+
+    steps:
+      - name: Verify required branch checks
+        env:
+          FRONTEND_CHECKPOINT_RESULT: ${{ needs.frontend-checkpoint.result }}
+          BACKEND_TESTS_RESULT: ${{ needs.backend-tests.result }}
+          FRONTEND_TYPECHECK_RESULT: ${{ needs.frontend-typecheck.result }}
+          BACKEND_TYPECHECK_RESULT: ${{ needs.backend-typecheck.result }}
+          BACKEND_RUFF_RESULT: ${{ needs.backend-ruff.result }}
+        run: |
+          set -eu
+          for check in \
+            "frontend-checkpoint:${FRONTEND_CHECKPOINT_RESULT}" \
+            "backend-tests:${BACKEND_TESTS_RESULT}" \
+            "frontend-typecheck:${FRONTEND_TYPECHECK_RESULT}" \
+            "backend-typecheck:${BACKEND_TYPECHECK_RESULT}" \
+            "backend-ruff:${BACKEND_RUFF_RESULT}"
+          do
+            name=${check%%:*}
+            result=${check#*:}
+            if [ "$result" != "success" ]; then
+              echo "::error::Required branch check '$name' finished as '$result'"
+              exit 1
+            fi
+          done
+          echo "Branch feedback gate passed."

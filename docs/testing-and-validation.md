@@ -339,11 +339,13 @@ The current GitHub Actions workflow is easiest to read as five contributor
 facing lanes:
 
 - fast branch feedback
+  - `Branch CI` on ordinary branch pushes
   - `frontend-checkpoint`, `backend-tests`, Ruff, frontend typecheck, and
     advisory Pyright/frontend lint
   - closest local proxy: `just ci-local`
 - protected `main` PR validation
-  - `CI / main-gate` plus its required dependency chain
+  - `CI` on pull requests, with `CI / main-gate` plus its required dependency
+    chain
   - includes contract checks, integration smoke, full frontend test, and
     frontend production build
   - use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the exact
@@ -371,6 +373,13 @@ This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier. For exact merge-blocking policy, advisory status, and
 the protected dependency graph, switch to
 [ci-maintainer-guide.md](./ci-maintainer-guide.md).
+
+The split between `Branch CI` and `CI` is intentional:
+
+- branch pushes still get fast feedback
+- pull requests to `main` still get the protected gate
+- only the PR workflow emits the required `CI / main-gate` context, which
+  avoids duplicate-status merge confusion on the same commit SHA
 
 ## Task-4 Workflow Contract Checks
 

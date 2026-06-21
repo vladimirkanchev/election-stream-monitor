@@ -3,6 +3,8 @@
 This file keeps two seams honest:
 - the small YAML reader used by task-4 workflow checks
 - the protected/advisory policy enforced over the live `ci.yml`
+- the workflow split that keeps protected PR statuses separate from branch
+  push feedback
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 ci_workflow = importlib.import_module("ci_workflow")
 ci_workflow_contract = importlib.import_module("ci_workflow_contract")
 CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "ci.yml"
+BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
 MAIN_GATE_REQUIRED_JOBS = ci_workflow_contract.MAIN_GATE_REQUIRED_JOBS
 FEATURE_GATE_REQUIRED_JOBS = ci_workflow_contract.FEATURE_GATE_REQUIRED_JOBS
 ADVISORY_JOBS = ci_workflow_contract.ADVISORY_JOBS
@@ -43,6 +46,11 @@ FRONTEND_BUILD_STEP = "Run frontend production build"
 def _live_workflow() -> Any:
     """Load the current repository workflow through the public reader."""
     return ci_workflow.load_workflow(CI_WORKFLOW_PATH)
+
+
+def _workflow_text(path: Path) -> str:
+    """Return one workflow file as raw text for trigger-shape assertions."""
+    return path.read_text()
 
 
 def _load_text_workflow(tmp_path: Path, text: str) -> Any:
@@ -148,6 +156,25 @@ def test_reader_loads_current_ci_job_structure() -> None:
 
     assert main_gate.dependencies
     assert "github.base_ref == 'main'" in main_gate.condition
+
+
+def test_protected_ci_workflow_is_pull_request_only() -> None:
+    """Protected CI should be PR-only so push runs cannot emit `CI / main-gate`."""
+    workflow_text = _workflow_text(CI_WORKFLOW_PATH)
+
+    assert "pull_request:" in workflow_text
+    assert "branches-ignore:" not in workflow_text.split("jobs:", 1)[0]
+    assert "\n  push:" not in workflow_text.split("jobs:", 1)[0]
+
+
+def test_branch_feedback_workflow_is_push_only() -> None:
+    """Branch CI should own ordinary push feedback outside the protected PR lane."""
+    workflow_text = _workflow_text(BRANCH_CI_WORKFLOW_PATH)
+
+    assert "name: Branch CI" in workflow_text
+    assert "\n  push:" in workflow_text.split("jobs:", 1)[0]
+    assert "branches-ignore:" in workflow_text
+    assert "pull_request:" not in workflow_text.split("jobs:", 1)[0]
 
 
 def test_current_ci_workflow_satisfies_complete_contract() -> None:
