@@ -344,7 +344,7 @@ facing lanes:
     advisory Pyright/frontend lint
   - closest local proxy: `just ci-local`
 - protected `main` PR validation
-  - `CI` on pull requests, with `CI / main-gate` plus its required dependency
+  - `CI` on pull requests, with `main-gate` plus its required dependency
     chain
   - includes contract checks, integration smoke, full frontend test, and
     frontend production build
@@ -378,7 +378,7 @@ The split between `Branch CI` and `CI` is intentional:
 
 - branch pushes still get fast feedback
 - pull requests to `main` still get the protected gate
-- only the PR workflow emits the required `CI / main-gate` context, which
+- only the PR workflow emits the required `main-gate` context, which
   avoids duplicate-status merge confusion on the same commit SHA
 
 ## Task-4 Workflow Contract Checks

@@ -159,7 +159,7 @@ def test_reader_loads_current_ci_job_structure() -> None:
 
 
 def test_protected_ci_workflow_is_pull_request_only() -> None:
-    """Protected CI should be PR-only so push runs cannot emit `CI / main-gate`."""
+    """Protected CI should be PR-only so push runs cannot emit `main-gate`."""
     workflow_text = _workflow_text(CI_WORKFLOW_PATH)
 
     assert "pull_request:" in workflow_text

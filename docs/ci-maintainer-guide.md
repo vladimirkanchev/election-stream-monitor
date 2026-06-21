@@ -25,7 +25,7 @@ For AI-assisted tools, keep this split strict:
 Use these terms consistently when reading or changing CI:
 
 - **required**: blocks a pull request to `main` through the protected
-  `CI / main-gate` status, either directly or through its dependency graph
+  `main-gate` status, either directly or through its dependency graph
 - **advisory**: runs in CI and reports useful failures, but cannot block merge
 - **informational**: reports process, policy, or coordination status outside
   the protected merge contract
@@ -59,7 +59,7 @@ protected workflow.
 
 Keep these five distinctions explicit when reviewing or editing CI:
 
-- `CI / main-gate` is the external required status for `main` branch
+- `main-gate` is the external required status for `main` branch
   protection
 - standalone `frontend-lint` and `backend-pyright` are advisory jobs, even
   though protected `main` PRs still enforce frontend lint through
@@ -79,11 +79,11 @@ dependencies.
 - workflow entrypoints
   - `CI`
     - runs on `pull_request`
-    - owns the protected `CI / main-gate` status
+    - owns the protected `main-gate` status
   - `Branch CI`
     - runs on `push` for all branches except `main`
     - owns ordinary fast branch feedback so push runs do not emit competing
-      `CI / main-gate` contexts
+      `main-gate` contexts
 - aggregate gates
   - `feature-gate`
   - `main-gate`
@@ -97,7 +97,7 @@ dependencies.
 Use this as the shortest branch decision artifact for `main` protection.
 
 - external required status:
-  - `CI / main-gate`
+  - `main-gate`
 - direct blockers behind `main-gate`:
   - `feature-gate`
   - `main-pr-consistency`
@@ -124,7 +124,7 @@ Use this as the shortest branch decision artifact for `main` protection.
 
 For GitHub branch protection, require the stable top-level status:
 
-- `CI / main-gate`
+- `main-gate`
 
 The internal required graph for pull requests targeting `main` is:
 
@@ -142,7 +142,7 @@ meaning of that one protected status.
 
 Why the workflow split exists:
 
-- `CI` is PR-only so the required `CI / main-gate` context is emitted by one
+- `CI` is PR-only so the required `main-gate` context is emitted by one
   workflow only
 - `Branch CI` keeps ordinary branch push feedback without producing a second
   workflow/check context that can confuse merge readiness on the same commit
@@ -173,7 +173,7 @@ Use this as the concise lane contract for frontend confidence:
   - fast early-feedback lane for ordinary feature work
   - intentionally smaller and cheaper than the protected `main` PR lane
 - `test-and-build`
-  - protected shared lane behind `CI / main-gate`
+  - protected shared lane behind `main-gate`
   - still needs: `changes`, `frontend-checkpoint`, `backend-tests`,
     `frontend-typecheck`
   - keeps the cheaper policy and boundary checks first, then runs the full
@@ -198,7 +198,7 @@ Protection rule:
 - `main-gate` must continue to require `test-and-build`
 - full frontend validation belongs inside `test-and-build`, not in a separate
   `frontend-full` top-level job
-- GitHub branch protection should keep requiring `CI / main-gate`, not a
+- GitHub branch protection should keep requiring `main-gate`, not a
   growing list of leaf frontend statuses
 
 Expected tradeoff:
@@ -246,7 +246,7 @@ Keep one protected Python type gate:
 The workflow contract is now explicit both in-repo and in GitHub settings. The
 active repository ruleset targeting `main` owns the external protection layer:
 
-- required external status: `CI / main-gate`
+- required external status: `main-gate`
 - pull request required: yes
 - required approvals: `0`
 - stale approvals dismissed on push: no
@@ -257,7 +257,7 @@ active repository ruleset targeting `main` owns the external protection layer:
 
 Keep GitHub protection centered on that ruleset:
 
-- require `CI / main-gate`, not older leaf statuses
+- require `main-gate`, not older leaf statuses
 - keep `main` under the repository ruleset instead of reintroducing overlapping
   classic branch protection
 - confirm an occasional real PR against `main` still shows the protected
@@ -272,7 +272,7 @@ rather than a code-correctness requirement:
 - `require_last_push_approval`
   - keep `false` for now for the same reason
 - `required_approving_review_count`
-  - keep `0` for now because this repo currently treats `CI / main-gate` as
+  - keep `0` for now because this repo currently treats `main-gate` as
     the primary merge barrier and does not need approval friction for a
     solo-maintained `main`
 - revisit both settings if the repo moves to a larger team, stricter reviewer
