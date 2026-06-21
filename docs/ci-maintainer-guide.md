@@ -236,7 +236,7 @@ active repository ruleset targeting `main` owns the external protection layer:
 
 - required external status: `CI / main-gate`
 - pull request required: yes
-- required approvals: `1`
+- required approvals: `0`
 - stale approvals dismissed on push: no
 - latest-push approval required: no
 - branch deletion blocked: yes
@@ -259,6 +259,10 @@ rather than a code-correctness requirement:
     mostly solo or small-team driven
 - `require_last_push_approval`
   - keep `false` for now for the same reason
+- `required_approving_review_count`
+  - keep `0` for now because this repo currently treats `CI / main-gate` as
+    the primary merge barrier and does not need approval friction for a
+    solo-maintained `main`
 - revisit both settings if the repo moves to a larger team, stricter reviewer
   handoff, or enterprise-style merge control expectations
 
