@@ -108,6 +108,9 @@ Recommended local command order for most day-to-day work:
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
   - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
+- `just ci-contract-check`
+  - use when changing `.github/workflows/ci.yml`, the task-4 workflow helpers,
+    or their focused regression tests
 - `just ci-local`
   - use before push or PR when you want the closest fast local CI proxy
 
@@ -295,6 +298,12 @@ commands directly, use the matching `justfile` recipes:
     `pyproject.toml`
   - keeps broader intent and explanation rules with the PR template and
     merge/readiness checklist
+- `just ci-contract-check`
+  - focused task-4 workflow-contract regression lane
+  - runs `tests/test_ci_workflow.py` and
+    `tests/test_ci_test_target_scripts.py`
+  - best local check when editing `ci.yml`, workflow-helper scripts, or the
+    protected/advisory lane contract
 - `just branch-cleanup`
   - non-destructive branch hygiene lane
   - shows branch name, status, upstream divergence, and changed-file summaries
@@ -359,32 +368,15 @@ The weekly lifecycle lane also uploads the persisted session files that most
 often explain runner state, cancel behavior, and terminal outcomes.
 
 This keeps ordinary branch feedback reasonably fast while giving `main` a
-stricter merge barrier.
-
-Contributor reminder:
-
-- only GitHub can produce the protected `CI / main-gate` status for `main`
-- standalone `frontend-lint` and `backend-pyright` are advisory CI signal, not
-  merge blockers
-- informational and weekly lanes are separate from the protected ordinary PR
-  path
-- local commands such as `just ci-local` approximate CI shape, but they do not
-  replace protected checks
+stricter merge barrier. For exact merge-blocking policy, advisory status, and
+the protected dependency graph, switch to
+[ci-maintainer-guide.md](./ci-maintainer-guide.md).
 
 ## Task-4 Workflow Contract Checks
 
 Task 4 adds one narrow regression layer around the protected `main` PR CI
 contract. Read it as a maintainer safeguard, not as a second workflow
 implementation.
-
-That layer protects four high-signal invariants:
-
-- `main-gate` direct dependencies stay exact
-- full frontend `npm run test` and `npm run build` stay inside
-  `test-and-build`
-- protected `main` PR work keeps its forced-on behavior
-- advisory jobs such as standalone `frontend-lint` and `backend-pyright` do
-  not silently change policy class
 
 For ownership and policy meaning, use
 [ci-maintainer-guide.md](./ci-maintainer-guide.md). The local helper surface
@@ -396,6 +388,12 @@ is:
 - `tests/test_ci_test_target_scripts.py`
 
 Use this focused local command when changing the task-4 helper layer:
+
+```bash
+just ci-contract-check
+```
+
+Equivalent raw command:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q \
