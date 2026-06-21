@@ -60,17 +60,31 @@ For detector and alert work specifically, keep this mental split:
 
 For a shorter CI ownership handoff, use
 [ci-maintainer-guide.md](./ci-maintainer-guide.md).
+That guide owns the definitions of required, advisory, informational, weekly,
+and local lanes used throughout this document.
+
+For AI-assisted tools, use this doc as the execution owner:
+
+- stay here when choosing local commands, validation depth, or what a local
+  run can and cannot prove
+- switch to `ci-maintainer-guide.md` for merge-blocking policy, `main-gate`
+  dependencies, or skip/forced-on CI behavior
+- prefer cross-links over repeating the same CI policy detail here
 
 ## Routine Validation
 
-Validation-lane policy:
+Choose the smallest honest lane first.
 
-- smallest honest lane first
-- use `just test-fast` for multi-seam fast production-runtime checks
-- use `just ci-local` for fast push-readiness
-- use weekly and slower confidence lanes only when the change really reaches that depth
+### Execution Guide
 
-Harness ownership for this workflow:
+| Change shape | Start locally | CI follow-up | Local limit |
+| --- | --- | --- | --- |
+| One clear seam such as detectors, alert rules, HLS, or docs/workflow helpers | Matching focused lane such as `just test-detectors`, `just test-alert-rules`, `just test-hls`, or `just docs-check` | Path-aware branch lanes and the protected `main` chain when the change reaches those areas | Focused runs do not prove neighboring seams stayed intact |
+| Multi-seam runtime work that crosses backend plus frontend/operator flow | `just test-fast` | Fast branch-feedback lanes such as `backend-tests`, `frontend-checkpoint`, and aggregate gates | Does not prove packaging smoke, full frontend production validation, or PR-only policy checks |
+| "Ready to push" confidence for ordinary day-to-day work | `just ci-local` | Required and advisory PR lanes | Still does not reproduce clean-runner setup, editable-install packaging checks, full frontend test/build, or GitHub event/branch-protection behavior |
+| Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk | `weekly-validation` | Too slow and environment-sensitive for routine local or PR use |
+
+Harness ownership for this workflow is intentionally split:
 
 - `justfile`
   - daily local validation entrypoints
@@ -79,7 +93,7 @@ Harness ownership for this workflow:
 - optional `pre-push`
   - last cheap local push guard for `just test-fast` or `just docs-check`
 - CI
-  - broader branch-feedback lanes and weekly confidence
+  - branch feedback, protected `main` validation, and weekly deeper confidence
 
 Recommended local command order for most day-to-day work:
 
@@ -94,8 +108,26 @@ Recommended local command order for most day-to-day work:
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
   - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
+- `just ci-contract-check`
+  - use when changing `.github/workflows/ci.yml`, the task-4 workflow helpers,
+    or their focused regression tests
 - `just ci-local`
   - use before push or PR when you want the closest fast local CI proxy
+
+Use weekly or manual-depth validation only when the change materially reaches:
+
+- real media or `ffmpeg` behavior
+- deeper `api_stream` lifecycle and recovery semantics
+- persisted session/lifecycle artifacts that only show up in longer runs
+- dependency or security audit work
+- live PostgreSQL backend or operator-flow confidence
+
+Local validation is intentionally incomplete. It cannot prove:
+
+- clean GitHub runner setup and dependency install behavior
+- event-driven job activation, path-filter behavior, or branch-protection wiring
+- protected `main` PR-only checks such as the full frontend test/build lane
+- weekly/manual environment-sensitive checks against slower or external surfaces
 
 For the shortest contributor-facing command summary, use
 [../CONTRIBUTING.md](../CONTRIBUTING.md). This document keeps the fuller lane
@@ -266,6 +298,12 @@ commands directly, use the matching `justfile` recipes:
     `pyproject.toml`
   - keeps broader intent and explanation rules with the PR template and
     merge/readiness checklist
+- `just ci-contract-check`
+  - focused task-4 workflow-contract regression lane
+  - runs `tests/test_ci_workflow.py` and
+    `tests/test_ci_test_target_scripts.py`
+  - best local check when editing `ci.yml`, workflow-helper scripts, or the
+    protected/advisory lane contract
 - `just branch-cleanup`
   - non-destructive branch hygiene lane
   - shows branch name, status, upstream divergence, and changed-file summaries
@@ -285,62 +323,45 @@ commands directly, use the matching `justfile` recipes:
   - backend mypy, backend pyright, and frontend TypeScript typecheck
 - `just ci-local`
   - best local "ready to push?" lane
-  - mirrors the current fast branch-feedback CI shape more closely:
+  - approximates the current fast branch-feedback CI shape:
     `backend-tests` fast synthetic lane, `frontend-checkpoint`, backend Ruff,
     backend mypy, backend pyright, frontend ESLint, and frontend typecheck
-  - intentionally does not replace weekly slow lanes or PR-only consistency
-    guards
+  - does not reproduce CI environment setup, the editable-install packaging
+    check, full frontend test/build, PR-only policy guards, or weekly lanes
 
 ## CI Shape
 
-The current GitHub Actions workflow uses three practical layers:
+Use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the authoritative
+required/advisory/informational lane contract. This section stays focused on
+what contributors should expect to run later in CI.
 
-- `changes`
-  - path filter job that classifies backend, frontend, docs, workflow, and contract-sensitive edits
-- `pr-template-completeness`
-  - lightweight PR-body guard for validation commands plus docs and
-    fixture/environment choices
-- `frontend-checkpoint`
-  - quick Electron/bridge/session-flow regression signal
-- `backend-tests`
-  - packaging/import smoke check after editable install
-  - compile smoke check for the compact session-alert report module and CLI
-  - backend tests
-- `backend-ruff`
-  - primary Python lint check with Ruff
-- `frontend-typecheck`
-  - frontend TypeScript typecheck
-- `frontend-lint`
-  - advisory frontend ESLint signal on `src` TypeScript files
-- `feature-gate`
-  - summary job for the fast backend/frontend checks on pull requests
-  - useful as a single CI signal, even though feature branches are no longer
-    protected merge targets
-- `contract-checks`
-  - boundary-focused backend and frontend contract checks for PRs
-- `backend-typecheck`
-  - targeted type defense for the contract-sensitive Python boundary modules
-- `backend-pyright`
-  - advisory VSCode-aligned type signal for the same Python boundary modules
-- `test-and-build`
-  - full frontend tests
-  - frontend build
-- `main` pull-request guards
-  - a small integration smoke test
-  - a lightweight docs/contract consistency check
-  - contract-sensitive changes must move with nearby tests and owning docs
-- `docs-consistency`
-  - path-aware docs and workflow consistency checks for non-`main` pull requests
-- `weekly-validation`
-  - scheduled slow e2e media tests
-  - detector-lab real-media confidence checks
-  - lifecycle-focused backend test coverage
-  - deeper `api_stream` validation
-  - Bandit security audit
-  - `pip-audit` Python dependency scan
-  - `npm audit` frontend dependency scan
-  - dependency consistency check
-  - packaging smoke check
+The current GitHub Actions workflow is easiest to read as five contributor
+facing lanes:
+
+- fast branch feedback
+  - `Branch CI` on ordinary branch pushes
+  - `frontend-checkpoint`, `backend-tests`, Ruff, frontend typecheck, and
+    advisory Pyright/frontend lint
+  - closest local proxy: `just ci-local`
+- protected `main` PR validation
+  - `CI` on pull requests, with `main-gate` plus its required dependency
+    chain
+  - includes contract checks, integration smoke, full frontend test, and
+    frontend production build
+  - use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the exact
+    dependency graph and skip/forced-on policy
+- informational policy checks
+  - `changes`, `pr-template-completeness`, `docs-consistency`
+  - useful review/process signal, but not merge blockers for `main`
+- weekly deeper confidence
+  - Sunday 03:00 UTC or manual dispatch
+  - slow media, deeper lifecycle and `api_stream`, audits, packaging smoke,
+    and live PostgreSQL confidence
+- local-only validation
+  - focused `just` recipes, `just test-fast`, `just docs-check`, and
+    `just ci-local`
+  - faster feedback, but still incomplete compared with protected and weekly
+    CI lanes
 
 Failure-only artifacts are now uploaded for the heaviest backend PR lane, the
 weekly lifecycle lane, the slow e2e lane, and the weekly `api_stream`
@@ -349,174 +370,77 @@ The weekly lifecycle lane also uploads the persisted session files that most
 often explain runner state, cancel behavior, and terminal outcomes.
 
 This keeps ordinary branch feedback reasonably fast while giving `main` a
-stricter merge barrier.
+stricter merge barrier. For exact merge-blocking policy, advisory status, and
+the protected dependency graph, switch to
+[ci-maintainer-guide.md](./ci-maintainer-guide.md).
 
-Feature branches now rely on CI feedback rather than required branch
-protection. The protected workflow still runs on pull requests and now also
-runs on feature-branch pushes so branch work gets feedback before a PR exists.
-`main` stays out of the push trigger to avoid duplicate status contexts, and
-stale PR runs are canceled automatically with GitHub Actions concurrency.
+The split between `Branch CI` and `CI` is intentional:
 
-The workflow is now path-aware:
+- branch pushes still get fast feedback
+- pull requests to `main` still get the protected gate
+- only the PR workflow emits the required `main-gate` context, which
+  avoids duplicate-status merge confusion on the same commit SHA
 
-- backend-heavy work runs only when backend or contract files change
-- frontend-heavy work runs only when frontend or contract files change
-- docs/workflow consistency checks run on docs-oriented pull requests
-- PRs into `main` still receive the full validation set
-- contract-boundary edits on `main` PRs are expected to come with matching
-  tests and the owning docs update
+## Task-4 Workflow Contract Checks
 
-Current `changes` filter contract:
+Task 4 adds one narrow regression layer around the protected `main` PR CI
+contract. Read it as a maintainer safeguard, not as a second workflow
+implementation.
 
-- `backend`
-  - broad backend trigger
-  - paths: `src/**`, `tests/**`
-  - main direct gates: `backend-tests`, `backend-ruff`, `backend-typecheck`, `backend-pyright`
-  - also feeds: `frontend-checkpoint`, `contract-checks`, `test-and-build`
-- `frontend`
-  - broad frontend trigger
-  - paths: `frontend/**` except `frontend/README.md`
-  - main direct gates: `frontend-checkpoint`, `frontend-typecheck`, `frontend-lint`
-  - also feeds: `contract-checks`, `test-and-build`
-- `docs`
-  - docs-oriented consistency trigger
-  - paths: `docs/**`, `README.md`, `frontend/README.md`
-  - direct gate: `docs-consistency` on non-`main` pull requests
-- `workflow`
-  - CI/support-tooling trigger
-  - paths: `.github/workflows/**`, `.github/scripts/**`, `frontend/package.json`, `pyproject.toml`
-  - direct gate: `docs-consistency` on non-`main` pull requests
-- `contract`
-  - narrower contract-sensitive trigger
-  - paths: selected backend boundary files, current session/stream contract owners, `frontend/src/bridge/**`, contract-sensitive monitoring hooks, `frontend/src/types.ts`, and `frontend/src/uiErrors.ts`
-  - main direct gates: `frontend-checkpoint`, `backend-tests`, `backend-ruff`, `frontend-typecheck`, `frontend-lint`, `backend-typecheck`, `backend-pyright`, `docs-consistency`
-  - also feeds: `contract-checks`, `test-and-build`
+For ownership and policy meaning, use
+[ci-maintainer-guide.md](./ci-maintainer-guide.md). The local helper surface
+is:
 
-Filter intent:
-
-- broad convenience scopes: `backend`, `frontend`
-- narrower high-signal scopes: `contract`, `workflow`
-- docs-oriented policy scope: `docs`
-
-`backend` and `frontend` stay intentionally coarse. `contract` is the curated
-cross-boundary signal and should be read more precisely.
-
-Current contract-filter refinement result:
-
-- added: `src/stream_loader.py`, `src/stream_loader_http_hls.py`,
-  `src/session_runner.py`, `src/session_runner_progress.py`,
-  `src/session_service.py`,
-  `frontend/src/hooks/useMonitoringSession*.tsx`,
-  `frontend/src/hooks/usePlaybackSource*.tsx`,
-  `frontend/src/uiErrors.ts`
-- intentionally left out: docs-only ownership such as `docs/contracts.md`,
-  weekly-only owners, and electron trust/playback files that still belong to
-  a local-only policy gate
-
-Current broad-filter review result:
-
-- `backend` stays broad as `src/**` plus `tests/**`
-  - reason: narrowing it now would add more under-trigger risk than real CI savings
-- `frontend` stays broad for real frontend work, but now excludes the docs-only
-  handoff file `frontend/README.md`
-  - reason: that file already belongs to the `docs` trigger
-- no broader exclusions were applied yet for tracked frontend source, Electron,
-  package, or config files
-  - reason: those files still have meaningful impact on current frontend lanes
-
-Downstream trigger model in `ci.yml` now matches that intent:
-
-- backend-heavy jobs (`backend-tests`, `backend-ruff`, `backend-typecheck`,
-  `backend-pyright`)
-  - wake on `backend` or `contract`, plus protected `main` PR fallback
-- frontend-heavy jobs (`frontend-typecheck`, `frontend-lint`)
-  - wake on `frontend` or `contract`, plus protected `main` PR fallback
-- `frontend-checkpoint`
-  - wakes on `frontend`, `backend`, or `contract`, plus protected `main` PR fallback
-- PR-only boundary lanes (`contract-checks`, `test-and-build`)
-  - can be reached from broad `backend` / `frontend` scopes or the narrower `contract` scope
-- `docs-consistency`
-  - stays the non-`main` PR lane for `docs`, `workflow`, and narrower `contract` alignment work
-
-`main` pull requests still run the protected lanes even when these branch-level
-filters would otherwise skip them.
-
-The CI hardening owner is `.github/ci_test_targets.json`. For the short owner
-surface map, use [ci-maintainer-guide.md](./ci-maintainer-guide.md).
-
-Key Python-side consumers:
-
-- `.github/scripts/ci_target_manifest.py`
-  - shared manifest access seam for target groups, lane ownership, path
-    inventory, and the protected alignment model
-- `.github/scripts/read_ci_test_targets.py`
-  - resolves one stable target group for workflow shell steps
-- `.github/scripts/validate_ci_test_targets.py`
-  - checks manifest shape, approved scope, target hygiene, and lane ownership
-- `.github/scripts/check_ci_test_paths_exist.py`
-  - checks that CI-owned test paths still exist, including the inline smoke
-    exception and the policy-owned paths from
-    `.github/scripts/check_main_pr_consistency.py`
-- `.github/scripts/check_ci_target_drift.py`
-  - checks that manifest, workflows, `.github/scripts/check_main_pr_consistency.py`,
-    and CI-facing docs still agree on the protected contract lane
+- `.github/scripts/ci_workflow.py`
+- `.github/scripts/ci_workflow_contract.py`
+- `tests/test_ci_workflow.py`
 - `tests/test_ci_test_target_scripts.py`
-  - focused coverage for the shared path inventory, lane-helper seam, current
-    drift outcomes, and split-suite registration outcomes
-  - includes split-suite checks for:
-    accepted-surface semantics, guarded-pattern matching, mixed changed-file
-    batches, and representative owner-seam alignment
-  - also covers the high-signal `changes` filter assumptions that now protect
-    the refined contract trigger and the docs-only `frontend/README.md`
-    exclusion
 
-Those checks are complementary:
-
-- `validate_ci_test_targets.py` catches bad manifest shape or scope
-- `check_ci_test_paths_exist.py` catches missing CI-owned test files
-- `check_ci_target_drift.py` catches workflow/policy/docs drift
-
-The chosen manifest format is JSON. That keeps the source of truth easy to read
-in Python tooling and straightforward to consume from workflow shell steps via
-`python3`, without adding an extra YAML parser dependency.
-
-Stable target groups:
-
-- `backend_contract`
-- `mcp_fastapi_parity`
-- `frontend_contract`
-- `weekly_slow_media`
-- `weekly_api_stream_deep`
-- `weekly_lifecycle`
-
-Reader example:
+Use this focused local command when changing the task-4 helper layer:
 
 ```bash
-python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space
+just ci-contract-check
 ```
 
-Workflow consumers:
+Equivalent raw command:
 
-- `test-and-build`
-  - `contract_boundary` backend contract checks read `backend_contract` and
-    `mcp_fastapi_parity`
-  - `contract_boundary` frontend contract checks read `frontend_contract`
-  - the job now validates the manifest boundary before resolving those groups
-  - both shared contract checks resolve their targets through
-    `read_ci_test_targets.py`
-  - the frontend lane strips the leading `frontend/` prefix because Vitest runs
-    from the `frontend/` working directory
-- `weekly-validation`
-  - `weekly_slow_real_media` slow media reads `weekly_slow_media`
-  - `weekly_slow_real_media` deeper `api_stream` validation reads
-    `weekly_api_stream_deep`
-  - `weekly_slow_real_media` lifecycle validation reads `weekly_lifecycle`
-  - each weekly heavy job now validates the manifest boundary before resolving
-    its target group
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q \
+  tests/test_ci_workflow.py \
+  tests/test_ci_test_target_scripts.py
+```
 
-This section is the primary CI lane-ownership reference for the repo. Keep the
-full lane explanation here, and keep shorter CI mentions in `docs/README.md`
-and `docs/contracts.md` role-specific.
+The workflow is path-aware, but the contributor-facing consequence is the part
+that matters here:
+
+- ordinary PRs and pushes may skip irrelevant lanes
+- pull requests targeting `main` still force on the protected work
+- contract-sensitive changes should move with matching tests and the owning
+  docs update
+
+The CI helper surface uses one manifest-backed source of truth and focused
+regression tests. The pieces are complementary:
+
+- `validate_ci_test_targets.py`
+  - catches bad manifest shape or scope
+- `check_ci_test_paths_exist.py`
+  - catches missing CI-owned test files
+- `check_ci_target_drift.py`
+  - catches workflow/policy/docs drift
+
+Use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the exact trigger
+graph, filter ownership, and protected-policy meaning.
+
+The matching repo helpers are:
+
+- `.github/ci_test_targets.json`
+- `.github/scripts/read_ci_test_targets.py`
+- `.github/scripts/check_ci_target_drift.py`
+- `.github/scripts/check_main_pr_consistency.py`
+
+This section documents validation scope and local reproduction commands. Keep
+the CI policy and protection graph in `docs/ci-maintainer-guide.md`, and keep
+shorter CI mentions in `docs/README.md` and `docs/contracts.md` role-specific.
 
 Lane-ownership model:
 
@@ -584,7 +508,8 @@ Selector ownership summary:
 
 - shared contract and weekly-heavy suites are manifest-backed
 - `test-and-build` is the reader-backed execution path for shared
-  `contract_boundary` coverage
+  `contract_boundary` coverage and also runs the full frontend test and build
+  pass for protected `main` PR confidence
 - `integration-smoke` stays inline because it is a tiny local smoke path
 - `backend-tests` stays the `fast_synthetic` pytest marker lane
 
@@ -669,33 +594,6 @@ This stays intentionally narrow. It does not require docs churn for every new
 test file, and it does not treat unguarded test files as CI-registration
 failures.
 
-Where to update ownership when this guard fails:
-
-- shared manifest ownership
-  - update `.github/ci_test_targets.json`
-  - use `.github/scripts/ci_target_manifest.py` as the read-side helper seam
-- main-PR policy ownership
-  - update `.github/scripts/check_main_pr_consistency.py`
-- docs ownership
-  - update this file only when ownership meaning changes
-  - keep `docs/README.md` and `docs/contracts.md` as shorter handoff docs,
-    not full duplicate owners
-
-Chosen detection strategy for the live registration guard:
-
-- inspect changed files in protected PR CI
-- do not scan the full repo or try to infer historical split ownership
-
-That keeps the guard cheaper, clearer, and more maintainable. It should
-fail when a new guarded file is introduced without the required ownership
-updates, not re-lint the whole repository on every run.
-
-Split-suite registration command:
-
-```bash
-python3 .github/scripts/check_split_suite_registration.py <diff-range>
-```
-
 Current registration surfaces checked by that guard:
 
 - `shared_manifest`
@@ -716,7 +614,7 @@ The current rule is still intentionally narrow:
 - ordinary split-file additions that stay within an existing guarded area and
   ownership model do not require docs churn on their own
 
-Where to update ownership:
+Where to update ownership when this guard fails:
 
 - shared manifest ownership
   - update `.github/ci_test_targets.json`
@@ -727,7 +625,7 @@ Where to update ownership:
   - update this file only when ownership meaning changes
   - keep `docs/README.md` and `docs/contracts.md` as shorter handoff docs
 
-How the guard detects new files:
+Chosen detection strategy:
 
 - inspect changed files in protected PR CI
 - do not scan the full repo or infer historical ownership
@@ -736,7 +634,7 @@ That keeps the guard cheaper and clearer. It should fail when a new guarded
 file is introduced without the required ownership updates, not re-lint the
 whole repository on every run.
 
-Command:
+Split-suite registration command:
 
 ```bash
 python3 .github/scripts/check_split_suite_registration.py <diff-range>
@@ -835,8 +733,9 @@ Protected CI lane order:
 
 1. `validate_ci_test_targets.py`
 2. `check_ci_test_paths_exist.py`
-3. `check_ci_target_drift.py`
-4. broader workflow or policy checks
+3. `check_fixture_environment_policy.py`
+4. `check_ci_target_drift.py`
+5. broader workflow or policy checks
 
 That keeps missing-path failures early, fast, and easier to read than later
 policy or contract-lane failures.
@@ -2154,22 +2053,6 @@ Current high-value gaps:
 - no focused Electron test for read-session missing-session bridge mapping
 - no frontend app-flow coverage for cancel-after-completion
 
-## Current Branch Validation Baseline
-
-This branch currently has a green full-suite validation baseline:
-
-- backend: `350 passed, 3 skipped`
-- frontend/Electron: `24 files passed, 203 tests passed`
-
-That is strong coverage for the current late-prototype / MVP stage.
-The remaining gaps are mostly security-policy activation and deeper Electron
-main-process composition checks, not broad missing functional coverage.
-  - stale poll result arriving after cancel request
-  - repeated end/cancel requests from the UI
-
-Use this audit before adding more lifecycle tests so new coverage fills a real
-gap instead of duplicating an existing layer.
-
 ### Runtime Doc Alignment
 
 When the desktop runtime model changes, keep these docs aligned:
@@ -2215,14 +2098,9 @@ path for real-stream confidence checks.
 - long-run operational confidence is improving but not finished
 - broader multi-user or service-mode validation still belongs to the next stage
 
-## What CI Should Cover
+## What Local Validation Does Not Replace
 
-The current GitHub Actions workflow is intentionally lightweight:
-
-- backend runtime install plus `test` extra for pytest jobs
-- frontend install
-- frontend test run
-- frontend build
-
-That is enough to catch common regressions without pretending CI replaces
-manual real-stream validation.
+Local commands are there to shorten feedback loops, not to replace the
+protected and scheduled CI lanes. Use CI results for merge readiness, and use
+weekly/manual validation when the change reaches slower or environment-shaped
+surfaces that routine local runs cannot honestly prove.
