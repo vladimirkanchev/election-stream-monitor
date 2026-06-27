@@ -811,6 +811,613 @@
       }
     }
   ],
+  "representative_local_hls_cases": [
+    {
+      "id": "representative_hls_stable_docs_baseline_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "stable_docs__source_baseline",
+        "subset_name": "stable_docs_baseline_subset_ground_truth",
+        "segment_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted clean representative HLS baseline. This first-run subset should stay exactly black-negative.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 12,
+        "result_count": 12,
+        "alert_count": 0,
+        "current_item": "segment_0011.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": []
+      }
+    },
+    {
+      "id": "representative_hls_messy_activity_baseline_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "messy_activity__source_baseline",
+        "subset_name": "messy_activity_baseline_subset_ground_truth",
+        "segment_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted higher-motion clean representative HLS baseline. Natural activity should still stay black-negative.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 12,
+        "result_count": 12,
+        "alert_count": 0,
+        "current_item": "segment_0011.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": []
+      }
+    },
+    {
+      "id": "representative_hls_stable_docs_black_strong_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "stable_docs__black_strong_mid_12s",
+        "subset_name": "stable_docs_black_strong_subset_ground_truth",
+        "segment_indices": [68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted strong-black representative HLS subset. The current detector emits one black alert and six black-positive windows.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 16,
+        "result_count": 16,
+        "alert_count": 1,
+        "current_item": "segment_0083.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 6
+        },
+        "alerts": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0072.ts",
+            "window_index": 4,
+            "window_start_sec": null
+          }
+        ],
+        "key_results": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0071.ts",
+            "payload": {
+              "black_detected": false
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0072.ts",
+            "payload": {
+              "black_detected": true
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0077.ts",
+            "payload": {
+              "black_detected": true
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0078.ts",
+            "payload": {
+              "black_detected": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "representative_hls_crowded_ballot_blur_strong_video_blur",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "crowded_ballot__gblur_strong_mid_20s",
+        "subset_name": "crowded_ballot_blur_strong_subset_ground_truth",
+        "segment_indices": [66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83]
+      },
+      "selected_detectors": [
+        "video_blur"
+      ],
+      "notes": "Trusted strong-blur representative HLS subset. The current detector stays blur-positive for the full reviewed window and emits one alert.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 18,
+        "result_count": 18,
+        "alert_count": 1,
+        "current_item": "segment_0083.ts",
+        "latest_result_detectors": [
+          "video_blur"
+        ],
+        "detector_true_counts": {
+          "video_blur": 18
+        },
+        "alerts": [
+          {
+            "detector_id": "video_blur",
+            "source_name": "segment_0070.ts",
+            "window_index": 4,
+            "window_start_sec": null
+          }
+        ],
+        "key_results": [
+          {
+            "detector_id": "video_blur",
+            "source_name": "segment_0066.ts",
+            "payload": {
+              "blur_detected": true
+            }
+          },
+          {
+            "detector_id": "video_blur",
+            "source_name": "segment_0070.ts",
+            "payload": {
+              "blur_detected": true
+            }
+          },
+          {
+            "detector_id": "video_blur",
+            "source_name": "segment_0083.ts",
+            "payload": {
+              "blur_detected": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "representative_hls_crowded_ballot_compression_black_guard_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "crowded_ballot__compression_strong_repeated_3x20s",
+        "subset_name": "crowded_ballot_compression_mid_subset_ground_truth",
+        "segment_indices": [68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted compression-noise false-positive guard. The reviewed repeated-burst window should stay black-negative even under heavy quality damage.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 16,
+        "result_count": 16,
+        "alert_count": 0,
+        "current_item": "segment_0083.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": []
+      }
+    },
+    {
+      "id": "representative_hls_stable_docs_lowres_black_guard_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "stable_docs__lowres_moderate_start_30s",
+        "subset_name": "stable_docs_lowres_start_subset_ground_truth",
+        "segment_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted low-resolution representative HLS subset for the current black-negative contract. Keep blur intentionally out of exact ground truth here because this remains a borderline quality sample.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 18,
+        "result_count": 18,
+        "alert_count": 0,
+        "current_item": "segment_0017.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": []
+      }
+    },
+    {
+      "id": "representative_hls_messy_activity_compression_black_guard_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "messy_activity__compression_strong_mid_45s",
+        "subset_name": "messy_activity_compression_mid_subset_ground_truth",
+        "segment_indices": [53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted messy-activity compression subset for the current black-negative false-positive guard. Keep blur and broader quality semantics out of exact ground truth until that behavior is reviewed separately.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 23,
+        "result_count": 23,
+        "alert_count": 0,
+        "current_item": "segment_0075.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": []
+      }
+    },
+    {
+      "id": "representative_hls_wide_observer_black_start_video_metrics",
+      "mode": "video_segments",
+      "fixture": {
+        "kind": "representative_local_hls_subset",
+        "fixture_id": "wide_observer__black_strong_start_12s",
+        "subset_name": "wide_observer_black_start_subset_ground_truth",
+        "segment_indices": [0, 1, 2, 3, 4, 5, 6, 7]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Trusted startup-black representative HLS subset. Promote only the reviewed early black-positive window here, not the full long fixture or later recovery behavior.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 8,
+        "result_count": 8,
+        "alert_count": 1,
+        "current_item": "segment_0007.ts",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 8
+        },
+        "alerts": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0000.ts",
+            "window_index": 0,
+            "window_start_sec": null
+          }
+        ],
+        "key_results": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0000.ts",
+            "payload": {
+              "black_detected": true
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "segment_0007.ts",
+            "payload": {
+              "black_detected": true
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "representative_local_video_file_cases": [
+    {
+      "id": "representative_mp4_wide_observer_black_start_video_metrics",
+      "mode": "video_files",
+      "fixture": {
+        "kind": "representative_local_video_file_subset",
+        "fixture_id": "wide_observer__black_strong_start_12s",
+        "subset_name": "wide_observer_black_start_video_file_ground_truth",
+        "window_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Focused representative MP4 startup-black review window aligned with the promoted HLS subset. Keep this exact lane on the reviewed early window instead of the full long source clip.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 16,
+        "result_count": 16,
+        "alert_count": 1,
+        "current_item": "wide_observer__black_strong_start_12s.mp4 @ 00:15",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 13
+        },
+        "alerts": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "wide_observer__black_strong_start_12s.mp4 @ 00:00",
+            "window_index": 0,
+            "window_start_sec": 0.0
+          }
+        ],
+        "key_results": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "wide_observer__black_strong_start_12s.mp4 @ 00:00",
+            "payload": {
+              "black_detected": true
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "wide_observer__black_strong_start_12s.mp4 @ 00:08",
+            "payload": {
+              "black_detected": true
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "wide_observer__black_strong_start_12s.mp4 @ 00:15",
+            "payload": {
+              "black_detected": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "representative_mp4_crowded_ballot_blur_strong_video_blur",
+      "mode": "video_files",
+      "fixture": {
+        "kind": "representative_local_video_file_subset",
+        "fixture_id": "crowded_ballot__gblur_strong_mid_20s",
+        "subset_name": "crowded_ballot_blur_strong_video_file_ground_truth",
+        "window_indices": [132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167]
+      },
+      "selected_detectors": [
+        "video_blur"
+      ],
+      "notes": "Focused representative MP4 blur-positive review window aligned with the promoted HLS subset. The current `video_files` seam stays blur-positive across this trusted core window and emits one alert.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 36,
+        "result_count": 36,
+        "alert_count": 1,
+        "current_item": "crowded_ballot__gblur_strong_mid_20s.mp4 @ 02:47",
+        "latest_result_detectors": [
+          "video_blur"
+        ],
+        "detector_true_counts": {
+          "video_blur": 36
+        },
+        "alerts": [
+          {
+            "detector_id": "video_blur",
+            "source_name": "crowded_ballot__gblur_strong_mid_20s.mp4 @ 02:16",
+            "window_index": 136,
+            "window_start_sec": 136.0
+          }
+        ],
+        "key_results": [
+          {
+            "detector_id": "video_blur",
+            "source_name": "crowded_ballot__gblur_strong_mid_20s.mp4 @ 02:12",
+            "payload": {
+              "blur_detected": true
+            }
+          },
+          {
+            "detector_id": "video_blur",
+            "source_name": "crowded_ballot__gblur_strong_mid_20s.mp4 @ 02:20",
+            "payload": {
+              "blur_detected": true
+            }
+          },
+          {
+            "detector_id": "video_blur",
+            "source_name": "crowded_ballot__gblur_strong_mid_20s.mp4 @ 02:47",
+            "payload": {
+              "blur_detected": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "representative_mp4_messy_activity_compression_black_guard_video_metrics",
+      "mode": "video_files",
+      "fixture": {
+        "kind": "representative_local_video_file_subset",
+        "fixture_id": "messy_activity__compression_strong_mid_45s",
+        "subset_name": "messy_activity_compression_video_file_ground_truth",
+        "window_indices": [106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Focused representative MP4 compression review window aligned with the promoted HLS subset. This exact lane stays black-negative while the quality semantics remain broader than one detector count.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 46,
+        "result_count": 46,
+        "alert_count": 0,
+        "current_item": "messy_activity__compression_strong_mid_45s.mp4 @ 02:31",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": [],
+        "key_results": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "messy_activity__compression_strong_mid_45s.mp4 @ 01:46",
+            "payload": {
+              "black_detected": false
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "messy_activity__compression_strong_mid_45s.mp4 @ 02:09",
+            "payload": {
+              "black_detected": false
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "messy_activity__compression_strong_mid_45s.mp4 @ 02:31",
+            "payload": {
+              "black_detected": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "representative_mp4_stable_docs_lowres_blur_video_blur",
+      "mode": "video_files",
+      "fixture": {
+        "kind": "representative_local_video_file_subset",
+        "fixture_id": "stable_docs__lowres_moderate_start_30s",
+        "subset_name": "stable_docs_lowres_video_file_blur_ground_truth",
+        "window_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+      },
+      "selected_detectors": [
+        "video_blur"
+      ],
+      "notes": "Focused representative MP4 low-resolution startup review window. Repeated `video_files` runs stayed blur-positive with the same single alert, so this subset is now trusted as exact `video_blur` truth.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 36,
+        "result_count": 36,
+        "alert_count": 1,
+        "current_item": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:35",
+        "latest_result_detectors": [
+          "video_blur"
+        ],
+        "detector_true_counts": {
+          "video_blur": 36
+        },
+        "alerts": [
+          {
+            "detector_id": "video_blur",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:04",
+            "window_index": 4,
+            "window_start_sec": 4.0
+          }
+        ],
+        "key_results": [
+          {
+            "detector_id": "video_blur",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:00",
+            "payload": {
+              "blur_detected": true
+            }
+          },
+          {
+            "detector_id": "video_blur",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:18",
+            "payload": {
+              "blur_detected": true
+            }
+          },
+          {
+            "detector_id": "video_blur",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:35",
+            "payload": {
+              "blur_detected": true
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "representative_mp4_stable_docs_lowres_black_guard_video_metrics",
+      "mode": "video_files",
+      "fixture": {
+        "kind": "representative_local_video_file_subset",
+        "fixture_id": "stable_docs__lowres_moderate_start_30s",
+        "subset_name": "stable_docs_lowres_video_file_ground_truth",
+        "window_indices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+      },
+      "selected_detectors": [
+        "video_metrics"
+      ],
+      "notes": "Focused representative MP4 low-resolution review window aligned with the promoted HLS subset. Keep this exact lane black-negative only; blur stays calibration-oriented rather than fake-precise.",
+      "ground_truth": {
+        "session_status": "completed",
+        "progress_status": "completed",
+        "processed_count": 36,
+        "result_count": 36,
+        "alert_count": 0,
+        "current_item": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:35",
+        "latest_result_detectors": [
+          "video_metrics"
+        ],
+        "detector_true_counts": {
+          "video_metrics": 0
+        },
+        "alerts": [],
+        "key_results": [
+          {
+            "detector_id": "video_metrics",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:00",
+            "payload": {
+              "black_detected": false
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:18",
+            "payload": {
+              "black_detected": false
+            }
+          },
+          {
+            "detector_id": "video_metrics",
+            "source_name": "stable_docs__lowres_moderate_start_30s.mp4 @ 00:35",
+            "payload": {
+              "black_detected": false
+            }
+          }
+        ]
+      }
+    }
+  ],
   "simulated_api_stream_cases": [
     {
       "id": "api_stream_dual_detector_ground_truth",
