@@ -1921,10 +1921,50 @@ For the backend E2E suites, the current split is:
   - small snapshot-contract smoke check
 - `tests/test_e2e_local_session_real_media.py`
   - curated real-media local-session coverage
+- `tests/test_e2e_local_session_representative_hls.py`
+  - local-only representative HLS intent checks over focused subset playlists
+- `tests/test_e2e_local_session_representative_hls_ground_truth.py`
+  - exact session truth for the few representative HLS subsets that proved stable enough
+- `tests/test_e2e_api_stream_representative_hls.py`
+  - the same reviewed representative HLS subsets served through the real `api_stream` seam
+- `tests/test_e2e_local_session_representative_mp4_ground_truth.py`
+  - exact truth for reviewed representative MP4 windows on the real `video_files` seam
+- `tests/test_e2e_local_session_representative_mp4_soak.py`
+  - small full-file soak smoke for selected longer representative MP4 fixtures
 - `tests/test_e2e_session_ground_truth_api_stream.py`
   - synthetic `api_stream` ground-truth contract cases
 - `tests/test_e2e_session_ground_truth_local.py`
   - slower real-media ground-truth matrix
+
+The representative-media support and calibration layers stay separate on purpose:
+
+- `tests/test_representative_hls_test_support.py`
+  - representative catalog and helper ownership
+  - fixture resolution, route-map shape, and catalog consistency across
+    `manifest.json`, `expected_results.json`, and `ground_truth.json`
+- `tests/test_detector_lab_representative_media.py`
+  - calibration-oriented score-shape checks for reviewed low-resolution and
+    compression windows
+  - useful for detector tuning, not exact production truth
+
+Read the representative-media ladder this way:
+
+- intent lane
+  - `tests/test_e2e_local_session_representative_hls.py`
+- exact reviewed-subset truth
+  - `tests/test_e2e_local_session_representative_hls_ground_truth.py`
+  - `tests/test_e2e_local_session_representative_mp4_ground_truth.py`
+- transport-backed confidence
+  - `tests/test_e2e_api_stream_representative_hls.py`
+- calibration-only confidence
+  - `tests/test_detector_lab_representative_media.py`
+- long-run confidence
+  - `tests/test_e2e_local_session_representative_mp4_soak.py`
+
+Keep the exact representative lanes small. Promote only reviewed stable
+subsets into exact truth. Leave borderline, threshold-sensitive, or mainly
+diagnostic cases in intent or calibration lanes instead of forcing fake
+precision.
 
 Use markers to keep local feedback tight:
 
@@ -1951,6 +1991,17 @@ Note:
 - some Electron/HLS tests bind loopback listeners on `127.0.0.1`
 - those cases may fail inside stricter sandboxes even when the code is healthy
 - if that happens, rerun the same targeted suite in a normal local shell
+
+For representative-media work specifically:
+
+- start with the smallest honest lane
+  - support/catalog checks for metadata or fixture-shape changes
+  - intent checks for broader detector/runtime behavior
+  - exact truth only when a reviewed subset is already proven stable
+- use the `api_stream` representative lane when the change reaches transport,
+  loader, or temp-file lifecycle behavior
+- keep the MP4 soak lane as weekly/manual-depth confidence unless the branch is
+  explicitly about longer-run runtime behavior
 
 Recommended backend order for session-runner work:
 

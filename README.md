@@ -559,6 +559,12 @@ focused lanes, slower e2e coverage, snapshot-smoke checks, and live
 validation.
 Use a focused lane first when the changed area is already clear.
 
+Representative-media validation is now split on purpose: reviewed HLS intent,
+exact reviewed HLS and MP4 truth, transport-backed `api_stream` confidence,
+calibration-only detector-lab checks, and a small full-file soak lane. The
+deep owner for that split is
+[`docs/testing-and-validation.md`](./docs/testing-and-validation.md).
+
 For more detail:
 
 - [testing-and-validation.md](./docs/testing-and-validation.md)
