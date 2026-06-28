@@ -67,6 +67,10 @@ Use the representative-media lanes as a ladder, not as one big suite:
 - `tests/test_detector_lab_representative_media.py`
   - calibration-oriented score-shape checks for reviewed low-resolution and
     compression windows
+  - includes a repeated-compression calibration block that checks:
+    black-negative behavior, blur-score movement, repeated-burst profile
+    consistency, review-only metadata boundaries, and lead-in versus
+    compression-core score separation
 - `tests/test_e2e_local_session_representative_mp4_soak.py`
   - capped representative `video_files` confidence in the ordinary slow lane
   - includes a long-window output-shape check plus focused positive and
@@ -79,6 +83,11 @@ Keep exact truth intentionally small. Promote only reviewed stable subsets into
 `tests/fixtures/media/ground_truth.json`. Leave borderline, threshold-sensitive,
 or mainly diagnostic cases in the intent or calibration lanes instead of
 inventing exact truth.
+
+Compression-heavy representative cases deserve extra restraint here. They are
+useful today for calibration, detector comparison, and false-positive guards,
+but they should stay out of exact alert truth until a reviewed runtime lane
+shows a stable promotable subset.
 
 Read the representative-media stack this way:
 

@@ -191,6 +191,15 @@ Current focused ownership map:
     and export shaping
 - `tests/test_detector_lab_real_media.py`
   - slower real-media confidence lane for detector-lab motion/flow behavior
+- `tests/test_detector_lab_representative_media.py`
+  - reviewed representative MP4 calibration lane for low-resolution and
+    compression cases
+  - keeps repeated-compression checks in calibration territory:
+    black-negative guard, blur-score movement, repeated-burst profile
+    consistency, metadata boundary guard, and lead-in versus compression-core
+    separation
+  - useful for detector tuning and false-positive control, not for exact
+    production truth promotion
 
 Use two explicit backend modes when validating this branch:
 
@@ -244,6 +253,14 @@ runtime behavior:
     - `tests/test_alert_rules_blur.py`
 
 Promotion needs the production-facing lanes, not only the detector-lab lane.
+
+For the representative-media detector-lab lane specifically, keep one extra
+boundary in mind:
+
+- repeated compression fixtures are currently review-only calibration samples
+- they may prove score shape, false-positive resistance, or burst consistency
+- they should not be promoted into exact alert truth until a reviewed runtime
+  lane proves a stable subset worth promoting
 
 Useful focused examples:
 
