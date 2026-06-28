@@ -1931,9 +1931,11 @@ For the backend E2E suites, the current split is:
   - exact truth for reviewed representative MP4 windows on the real `video_files` seam
 - `tests/test_e2e_local_session_representative_mp4_soak.py`
   - capped representative `video_files` confidence in the ordinary slow lane
+  - includes a long-window output-shape check plus focused positive and
+    false-positive guards on reviewed subsets
   - full-file `pytest -m soak` confidence for selected longer MP4 fixtures
-  - broad runtime contracts such as repeatability, interruption/recovery, and
-    long-baseline false-positive posture
+  - repeatability, interruption/recovery, and long-baseline false-positive
+    posture stay under `pytest -m soak`, not ordinary PR validation
 - `tests/test_e2e_session_ground_truth_api_stream.py`
   - synthetic `api_stream` ground-truth contract cases
 - `tests/test_e2e_session_ground_truth_local.py`
@@ -1943,8 +1945,9 @@ The representative-media support and calibration layers stay separate on purpose
 
 - `tests/test_representative_hls_test_support.py`
   - representative catalog and helper ownership
-  - fixture resolution, route-map shape, and catalog consistency across
-    `manifest.json`, `expected_results.json`, and `ground_truth.json`
+  - fixture resolution, route-map shape, promoted-truth consistency, and
+    confidence-lane metadata checks across `manifest.json`,
+    `expected_results.json`, and `ground_truth.json`
 - `tests/test_detector_lab_representative_media.py`
   - calibration-oriented score-shape checks for reviewed low-resolution and
     compression windows
@@ -1952,7 +1955,9 @@ The representative-media support and calibration layers stay separate on purpose
 
 Read the representative-media ladder this way:
 
-- intent lane
+- support and catalog guards
+  - `tests/test_representative_hls_test_support.py`
+- reviewed runtime intent
   - `tests/test_e2e_local_session_representative_hls.py`
 - exact reviewed-subset truth
   - `tests/test_e2e_local_session_representative_hls_ground_truth.py`
@@ -1961,9 +1966,9 @@ Read the representative-media ladder this way:
   - `tests/test_e2e_api_stream_representative_hls.py`
 - calibration-only confidence
   - `tests/test_detector_lab_representative_media.py`
-- capped long-run confidence
-  - the non-marker lane inside `tests/test_e2e_local_session_representative_mp4_soak.py`
-- full-file soak confidence
+- capped MP4 confidence
+  - the non-`soak` lanes inside `tests/test_e2e_local_session_representative_mp4_soak.py`
+- full-file MP4 soak confidence
   - `tests/test_e2e_local_session_representative_mp4_soak.py`
 
 Keep the exact representative lanes small. Promote only reviewed stable
@@ -1988,7 +1993,7 @@ Run the fuller real-media E2E pass when changing detector behavior, windowing,
 or persisted snapshot expectations for checked-in media fixtures:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "e2e and slow" tests/test_e2e_*.py -q
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "e2e and slow and not soak" tests/test_e2e_*.py -q
 ```
 
 Note:
@@ -2005,10 +2010,14 @@ For representative-media work specifically:
   - exact truth only when a reviewed subset is already proven stable
 - use the capped representative MP4 lane when the branch reaches longer
   `video_files` execution but does not need full-file manual-depth coverage yet
+  - this lane is the right home for capped output-shape checks and focused
+    positive or false-positive guards on reviewed windows
 - use the `api_stream` representative lane when the change reaches transport,
   loader, or temp-file lifecycle behavior
 - keep the MP4 soak lane as weekly/manual-depth confidence unless the branch is
   explicitly about longer-run runtime behavior
+- keep repeatability and interruption/recovery under that soak lane too; they
+  should not ride along in ordinary PR validation
 - use `pytest -m soak` for the full-file representative MP4 lane when you want
   scheduled/manual-depth confidence without pulling it into ordinary PR
   validation

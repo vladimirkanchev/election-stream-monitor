@@ -54,7 +54,8 @@ Use the representative-media lanes as a ladder, not as one big suite:
 
 - `tests/test_representative_hls_test_support.py`
   - catalog and helper ownership
-  - fixture resolution, route maps, and metadata consistency across catalogs
+  - fixture resolution, route maps, promoted-truth consistency, and
+    confidence-lane metadata checks across catalogs
 - `tests/test_e2e_local_session_representative_hls.py`
   - reviewed HLS intent checks on short copied subset playlists
 - `tests/test_e2e_local_session_representative_hls_ground_truth.py`
@@ -68,20 +69,26 @@ Use the representative-media lanes as a ladder, not as one big suite:
     compression windows
 - `tests/test_e2e_local_session_representative_mp4_soak.py`
   - capped representative `video_files` confidence in the ordinary slow lane
+  - includes a long-window output-shape check plus focused positive and
+    false-positive guards on reviewed subsets
   - full-file `pytest -m soak` confidence for selected longer MP4 fixtures
-  - broad runtime contracts such as repeatability, interruption/recovery, and
-    long-baseline false-positive posture
+  - repeatability, interruption/recovery, and long-baseline false-positive
+    posture stay in that full-file soak lane, not ordinary PR validation
 
 Keep exact truth intentionally small. Promote only reviewed stable subsets into
 `tests/fixtures/media/ground_truth.json`. Leave borderline, threshold-sensitive,
 or mainly diagnostic cases in the intent or calibration lanes instead of
 inventing exact truth.
 
-Read the MP4 side as three layers:
+Read the representative-media stack this way:
 
-- reviewed-subset exact truth
-- capped long-run confidence
-- full-file soak confidence
+- support and catalog guards
+- reviewed runtime intent
+- exact reviewed-subset truth
+- transport-backed confidence
+- calibration-only confidence
+- capped MP4 confidence
+- full-file MP4 soak confidence
 
 The full-file soak lane is confidence-building only. Run it with `pytest -m
 soak` in scheduled or manual-depth validation. It proves long-run completion,
@@ -124,3 +131,9 @@ Use a focused slice first: one source baseline, one strong positive, and one
 borderline case for the changed detector area. Run broader representative
 coverage only when the branch actually reaches real-media, transport, or
 longer-run runtime risk.
+
+When changing metadata or fixture shape, start with support/catalog checks.
+When changing detector/runtime behavior, start with intent or exact reviewed
+subset lanes. Use capped MP4 confidence only when the branch really needs a
+longer `video_files` run, and keep full-file soak for scheduled or manual-depth
+validation.
