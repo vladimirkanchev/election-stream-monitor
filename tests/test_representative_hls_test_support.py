@@ -2,8 +2,8 @@
 
 These tests keep the representative media catalogs usable for both engineers
 and AI-assisted contributors by checking a few simple contracts:
-- fixture paths resolve
-- exported HLS folders stay readable
+- catalog and expectation metadata resolve everywhere
+- exported local HLS folders stay readable when those local-only assets exist
 - promoted entries stay aligned across manifest, expectations, and truth
 """
 
@@ -26,6 +26,7 @@ from tests.representative_hls_test_support import (
     representative_hls_fixture_dir_from_mp4_fixture,
     representative_hls_subset_from_ground_truth_fixture,
     representative_video_file_subset_from_ground_truth_fixture,
+    require_representative_local_hls,
 )
 
 REPRESENTATIVE_HLS_SEGMENT_COUNTS = (
@@ -42,6 +43,11 @@ class ConfidenceFixtureExpectation:
 
     fixture_id: str
     expectation_id: str
+
+
+def _require_local_hls_exports(*fixture_ids: str) -> None:
+    """Skip file-backed HLS checks when local representative exports are absent."""
+    require_representative_local_hls(*fixture_ids)
 
 
 def _load_representative_json(path) -> dict[str, Any]:
@@ -219,6 +225,7 @@ def _assert_mp4_confidence_metadata_contract(
 
 def test_mp4_fixture_resolves_to_cataloged_hls_folder() -> None:
     """A representative MP4 fixture id should resolve to the matching HLS folder."""
+    _require_local_hls_exports("stable_docs__black_strong_mid_12s")
     fixture_dir = representative_hls_fixture_dir_from_mp4_fixture(
         "stable_docs__black_strong_mid_12s"
     )
@@ -229,6 +236,7 @@ def test_mp4_fixture_resolves_to_cataloged_hls_folder() -> None:
 
 def test_local_hls_fixture_reader_returns_playlist_summary() -> None:
     """The HLS fixture reader should expose a stable playlist summary."""
+    _require_local_hls_exports("stable_docs__black_strong_mid_12s")
     fixture = read_representative_local_hls_fixture("stable_docs__black_strong_mid_12s")
 
     assert fixture["playlist_path"].name == "index.m3u8"
@@ -268,6 +276,7 @@ def test_mp4_fixture_resolves_to_cataloged_hls_folder_for_representative_hls_cas
     expected_segment_count: int,
 ) -> None:
     """Representative MP4 fixture ids should resolve to usable HLS folders."""
+    _require_local_hls_exports(fixture_id)
     fixture_dir = representative_hls_fixture_dir_from_mp4_fixture(fixture_id)
 
     assert fixture_dir.name == fixture_id
@@ -284,6 +293,7 @@ def test_local_hls_fixture_reader_returns_playlist_summary_for_representative_ca
     expected_segment_count: int,
 ) -> None:
     """Representative HLS fixtures should expose stable playlist summaries."""
+    _require_local_hls_exports(fixture_id)
     fixture = read_representative_local_hls_fixture(fixture_id)
 
     assert fixture["fixture_id"] == fixture_id
@@ -330,6 +340,7 @@ def test_hls_routes_include_playlist_and_first_segment_for_representative_cases(
     fixture_id: str,
 ) -> None:
     """Representative HLS folders should build route maps for local HTTP tests."""
+    _require_local_hls_exports(fixture_id)
     fixture = read_representative_local_hls_fixture(fixture_id)
     routes = build_local_hls_routes(fixture["fixture_dir"])
 
