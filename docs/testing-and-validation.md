@@ -1930,7 +1930,10 @@ For the backend E2E suites, the current split is:
 - `tests/test_e2e_local_session_representative_mp4_ground_truth.py`
   - exact truth for reviewed representative MP4 windows on the real `video_files` seam
 - `tests/test_e2e_local_session_representative_mp4_soak.py`
-  - small full-file soak smoke for selected longer representative MP4 fixtures
+  - capped representative `video_files` confidence in the ordinary slow lane
+  - full-file `pytest -m soak` confidence for selected longer MP4 fixtures
+  - broad runtime contracts such as repeatability, interruption/recovery, and
+    long-baseline false-positive posture
 - `tests/test_e2e_session_ground_truth_api_stream.py`
   - synthetic `api_stream` ground-truth contract cases
 - `tests/test_e2e_session_ground_truth_local.py`
@@ -1958,7 +1961,9 @@ Read the representative-media ladder this way:
   - `tests/test_e2e_api_stream_representative_hls.py`
 - calibration-only confidence
   - `tests/test_detector_lab_representative_media.py`
-- long-run confidence
+- capped long-run confidence
+  - the non-marker lane inside `tests/test_e2e_local_session_representative_mp4_soak.py`
+- full-file soak confidence
   - `tests/test_e2e_local_session_representative_mp4_soak.py`
 
 Keep the exact representative lanes small. Promote only reviewed stable
@@ -1998,10 +2003,15 @@ For representative-media work specifically:
   - support/catalog checks for metadata or fixture-shape changes
   - intent checks for broader detector/runtime behavior
   - exact truth only when a reviewed subset is already proven stable
+- use the capped representative MP4 lane when the branch reaches longer
+  `video_files` execution but does not need full-file manual-depth coverage yet
 - use the `api_stream` representative lane when the change reaches transport,
   loader, or temp-file lifecycle behavior
 - keep the MP4 soak lane as weekly/manual-depth confidence unless the branch is
   explicitly about longer-run runtime behavior
+- use `pytest -m soak` for the full-file representative MP4 lane when you want
+  scheduled/manual-depth confidence without pulling it into ordinary PR
+  validation
 
 Recommended backend order for session-runner work:
 

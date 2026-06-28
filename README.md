@@ -561,9 +561,13 @@ Use a focused lane first when the changed area is already clear.
 
 Representative-media validation is now split on purpose: reviewed HLS intent,
 exact reviewed HLS and MP4 truth, transport-backed `api_stream` confidence,
-calibration-only detector-lab checks, and a small full-file soak lane. The
-deep owner for that split is
+calibration-only detector-lab checks, and a separate MP4 confidence layer for
+capped long-run checks plus full-file soak coverage. The deep owner for that split is
 [`docs/testing-and-validation.md`](./docs/testing-and-validation.md).
+Use the capped representative MP4 lane in ordinary slow local validation when
+the branch reaches longer `video_files` behavior. Use `pytest -m soak` only
+for the full-file representative MP4 confidence run, and keep that lane in
+scheduled or manual-depth validation rather than ordinary PR work.
 
 For more detail:
 

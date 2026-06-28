@@ -67,15 +67,26 @@ Use the representative-media lanes as a ladder, not as one big suite:
   - calibration-oriented score-shape checks for reviewed low-resolution and
     compression windows
 - `tests/test_e2e_local_session_representative_mp4_soak.py`
-  - small full-file soak smoke for selected longer MP4 fixtures
+  - capped representative `video_files` confidence in the ordinary slow lane
+  - full-file `pytest -m soak` confidence for selected longer MP4 fixtures
+  - broad runtime contracts such as repeatability, interruption/recovery, and
+    long-baseline false-positive posture
 
 Keep exact truth intentionally small. Promote only reviewed stable subsets into
 `tests/fixtures/media/ground_truth.json`. Leave borderline, threshold-sensitive,
 or mainly diagnostic cases in the intent or calibration lanes instead of
 inventing exact truth.
 
-The full-file soak lane is confidence-building only. It proves long-run
-completion and readable persisted output, not exact detector truth.
+Read the MP4 side as three layers:
+
+- reviewed-subset exact truth
+- capped long-run confidence
+- full-file soak confidence
+
+The full-file soak lane is confidence-building only. Run it with `pytest -m
+soak` in scheduled or manual-depth validation. It proves long-run completion,
+restart/cancel honesty, and readable persisted output, not exact detector
+truth.
 
 ## Metadata Files
 
