@@ -194,6 +194,10 @@ Current focused ownership map:
 - `tests/test_detector_lab_representative_media.py`
   - reviewed representative MP4 calibration lane for low-resolution and
     compression cases
+  - keeps low-resolution review-only work split honestly:
+    black-negative guards, score-shift calibration, and explicit metadata
+    boundaries between promoted MP4 blur truth and review-only HLS black
+    guards
   - keeps repeated-compression checks in calibration territory:
     black-negative guard, blur-score movement, repeated-burst profile
     consistency, metadata boundary guard, and lead-in versus compression-core
@@ -1940,6 +1944,9 @@ For the backend E2E suites, the current split is:
   - curated real-media local-session coverage
 - `tests/test_e2e_local_session_representative_hls.py`
   - local-only representative HLS intent checks over focused subset playlists
+  - includes broad low-res MP4/HLS parity without forcing exact blur counts,
+    plus black-negative guards for clean, compression, and review-only low-res
+    subsets
 - `tests/test_e2e_local_session_representative_hls_ground_truth.py`
   - exact session truth for the few representative HLS subsets that proved stable enough
 - `tests/test_e2e_api_stream_representative_hls.py`
@@ -1965,10 +1972,13 @@ The representative-media support and calibration layers stay separate on purpose
   - fixture resolution, route-map shape, promoted-truth consistency, and
     confidence-lane metadata checks across `manifest.json`,
     `expected_results.json`, and `ground_truth.json`
+  - guards that promoted exact-truth references still point at real reviewed
+    ground-truth cases
 - `tests/test_detector_lab_representative_media.py`
   - calibration-oriented score-shape checks for reviewed low-resolution and
     compression windows
-  - useful for detector tuning, not exact production truth
+  - useful for detector tuning, false-positive control, and promotion-boundary
+    review, not exact production truth
 
 Read the representative-media ladder this way:
 
@@ -1976,6 +1986,7 @@ Read the representative-media ladder this way:
   - `tests/test_representative_hls_test_support.py`
 - reviewed runtime intent
   - `tests/test_e2e_local_session_representative_hls.py`
+  - this is where broad low-res MP4/HLS agreement belongs before exact truth
 - exact reviewed-subset truth
   - `tests/test_e2e_local_session_representative_hls_ground_truth.py`
   - `tests/test_e2e_local_session_representative_mp4_ground_truth.py`
@@ -1992,6 +2003,14 @@ Keep the exact representative lanes small. Promote only reviewed stable
 subsets into exact truth. Leave borderline, threshold-sensitive, or mainly
 diagnostic cases in intent or calibration lanes instead of forcing fake
 precision.
+
+For the current low-resolution branch fixtures specifically:
+
+- use reviewed runtime-intent lanes to prove black-negative behavior and broad
+  MP4/HLS agreement
+- use detector-lab lanes to keep score-shift and false-positive behavior
+  visible
+- promote exact blur truth only after a reviewed subset proves stable enough
 
 Use markers to keep local feedback tight:
 

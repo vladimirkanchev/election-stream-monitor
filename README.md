@@ -564,6 +564,9 @@ exact reviewed HLS and MP4 truth, transport-backed `api_stream` confidence,
 calibration-only detector-lab checks, and a separate MP4 confidence layer for
 capped reviewed-window checks plus full-file soak coverage. The deep owner for
 that split is [`docs/testing-and-validation.md`](./docs/testing-and-validation.md).
+Low-resolution representative cases now follow that same split: black-negative
+runtime guards and broad MP4/HLS parity can be enforced before blur behavior is
+promoted into exact truth.
 Use the capped representative MP4 lane in ordinary slow local validation when
 the branch reaches longer `video_files` behavior and needs output-shape,
 positive, or false-positive confidence on reviewed windows. Use `pytest -m
