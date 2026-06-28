@@ -1,10 +1,11 @@
 """Behavior-oriented checks for reviewed representative HLS subsets.
 
-This suite is intentionally broader than the exact-truth lane. It checks the
-stable intent we want from reviewed subsets without forcing fake precision on
-borderline cases.
+These tests sit between unit-level detector checks and exact ground-truth
+lanes. They verify stable runtime intent for representative HLS slices without
+pretending that every quality-degradation case already has exact truth.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,101 @@ from tests.representative_hls_test_support import (
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
 
+@dataclass(frozen=True)
+class RepresentativeParityScenario:
+    """Shared contract for one promoted MP4/HLS parity scenario."""
+
+    fixture_id: str
+    hls_subset_name: str
+    hls_segment_indices: tuple[int, ...]
+    mp4_subset_name: str
+    mp4_window_indices: tuple[int, ...]
+    detector_id: str
+    positive_flag: str
+    require_all_positive: bool = False
+
+
+def _run_parity_scenario(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    scenario: RepresentativeParityScenario,
+) -> tuple[object, RepresentativeHlsSubset, dict[str, Any], object, object, dict[str, Any]]:
+    """Run one promoted scenario through both HLS and MP4 session seams."""
+    hls_subset = representative_hls_subset(
+        fixture_id=scenario.fixture_id,
+        subset_name=scenario.hls_subset_name,
+        segment_indices=scenario.hls_segment_indices,
+    )
+    mp4_subset = representative_video_file_subset(
+        fixture_id=scenario.fixture_id,
+        subset_name=scenario.mp4_subset_name,
+        window_indices=scenario.mp4_window_indices,
+    )
+    require_representative_local_hls(hls_subset.fixture_id)
+    require_representative_local_files(mp4_subset.fixture_id)
+
+    hls_metadata, hls_snapshot = run_video_segments_subset_session(
+        monkeypatch,
+        tmp_path / "hls",
+        subset=hls_subset,
+        selected_detectors=[scenario.detector_id],
+    )
+    mp4_metadata, mp4_snapshot = run_video_files_subset_session(
+        monkeypatch,
+        tmp_path / "mp4",
+        subset=mp4_subset,
+        selected_detectors=[scenario.detector_id],
+    )
+    return hls_metadata, hls_subset, hls_snapshot, mp4_metadata, mp4_subset, mp4_snapshot
+
+
+def _assert_promoted_mp4_hls_parity_contract(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    scenario: RepresentativeParityScenario,
+) -> None:
+    """Assert the shared detector contract for one promoted MP4/HLS scenario."""
+    (
+        hls_metadata,
+        hls_subset,
+        hls_snapshot,
+        mp4_metadata,
+        mp4_subset,
+        mp4_snapshot,
+    ) = _run_parity_scenario(
+        monkeypatch,
+        tmp_path,
+        scenario=scenario,
+    )
+
+    _assert_subset_completed(hls_metadata, hls_snapshot, hls_subset)
+    assert_completed_session(mp4_metadata, mp4_snapshot)
+    assert mp4_snapshot["progress"]["processed_count"] == mp4_subset.window_count
+    assert mp4_snapshot["progress"]["current_item"] == mp4_subset.expected_source_names[-1]
+
+    hls_payloads = _assert_detector_payload_source_order(
+        hls_snapshot,
+        scenario.detector_id,
+        hls_subset.expected_source_names,
+    )
+    mp4_payloads = detector_payloads(mp4_snapshot, scenario.detector_id)
+    assert len(hls_payloads) == hls_subset.segment_count
+    assert len(mp4_payloads) == mp4_subset.window_count
+    assert [payload["source_name"] for payload in mp4_payloads] == mp4_subset.expected_source_names
+    assert detector_alerts(hls_snapshot, scenario.detector_id)
+    assert detector_alerts(mp4_snapshot, scenario.detector_id)
+
+    positive_check = all if scenario.require_all_positive else any
+    assert positive_check(
+        payload[scenario.positive_flag] is True for payload in hls_payloads
+    )
+    assert positive_check(
+        payload[scenario.positive_flag] is True for payload in mp4_payloads
+    )
+
+
 def _run_hls_subset_session(
     monkeypatch,
     tmp_path: Path,
@@ -40,7 +136,7 @@ def _run_hls_subset_session(
     segment_indices: tuple[int, ...],
     selected_detectors: list[str],
 ) -> tuple[object, RepresentativeHlsSubset, dict[str, Any]]:
-    """Run one reviewed HLS subset through the `video_segments` seam."""
+    """Run one reviewed HLS subset through the real `video_segments` seam."""
     subset = representative_hls_subset(
         fixture_id=fixture_id,
         subset_name=subset_name,
@@ -72,7 +168,7 @@ def _assert_detector_payload_source_order(
     detector_id: str,
     expected_source_names: list[str],
 ) -> list[dict[str, Any]]:
-    """Return detector payloads after checking persisted source ordering."""
+    """Return detector payloads after verifying persisted source ordering."""
     payloads = detector_payloads(snapshot, detector_id)
     assert [payload["source_name"] for payload in payloads] == expected_source_names
     return payloads
@@ -189,50 +285,46 @@ def test_representative_hls_strong_blur_case_keeps_shared_mp4_core_contract(
     blur-positive inside that shared core.
     """
     _ = ffmpeg_available
-    hls_subset = representative_hls_subset(
-        fixture_id="crowded_ballot__gblur_strong_mid_20s",
-        subset_name="crowded_ballot_blur_strong_parity_hls_subset",
-        segment_indices=range_indices(66, 83),
-    )
-    mp4_subset = representative_video_file_subset(
-        fixture_id="crowded_ballot__gblur_strong_mid_20s",
-        subset_name="crowded_ballot_blur_strong_parity_mp4_subset",
-        window_indices=range_indices(132, 167),
-    )
-    require_representative_local_hls(hls_subset.fixture_id)
-    require_representative_local_files(mp4_subset.fixture_id)
-
-    hls_metadata, hls_snapshot = run_video_segments_subset_session(
+    _assert_promoted_mp4_hls_parity_contract(
         monkeypatch,
-        tmp_path / "hls",
-        subset=hls_subset,
-        selected_detectors=["video_blur"],
+        tmp_path,
+        scenario=RepresentativeParityScenario(
+            fixture_id="crowded_ballot__gblur_strong_mid_20s",
+            hls_subset_name="crowded_ballot_blur_strong_parity_hls_subset",
+            hls_segment_indices=range_indices(66, 83),
+            mp4_subset_name="crowded_ballot_blur_strong_parity_mp4_subset",
+            mp4_window_indices=range_indices(132, 167),
+            detector_id="video_blur",
+            positive_flag="blur_detected",
+            require_all_positive=True,
+        ),
     )
-    mp4_metadata, mp4_snapshot = run_video_files_subset_session(
+
+
+def test_representative_hls_strong_black_case_keeps_shared_mp4_core_contract(
+    monkeypatch,
+    tmp_path: Path,
+    ffmpeg_available,
+) -> None:
+    """Promoted strong-black MP4 and HLS subsets should agree on broad black behavior.
+
+    This is intentionally a shared-contract check, not an exact-count parity
+    test. We only lock the overlap that is already stable across both seams.
+    """
+    _ = ffmpeg_available
+    _assert_promoted_mp4_hls_parity_contract(
         monkeypatch,
-        tmp_path / "mp4",
-        subset=mp4_subset,
-        selected_detectors=["video_blur"],
+        tmp_path,
+        scenario=RepresentativeParityScenario(
+            fixture_id="wide_observer__black_strong_start_12s",
+            hls_subset_name="wide_observer_black_start_parity_hls_subset",
+            hls_segment_indices=range_indices(0, 7),
+            mp4_subset_name="wide_observer_black_start_parity_mp4_subset",
+            mp4_window_indices=range_indices(0, 15),
+            detector_id="video_metrics",
+            positive_flag="black_detected",
+        ),
     )
-
-    _assert_subset_completed(hls_metadata, hls_snapshot, hls_subset)
-    assert_completed_session(mp4_metadata, mp4_snapshot)
-    assert mp4_snapshot["progress"]["processed_count"] == mp4_subset.window_count
-    assert mp4_snapshot["progress"]["current_item"] == mp4_subset.expected_source_names[-1]
-
-    hls_payloads = _assert_detector_payload_source_order(
-        hls_snapshot,
-        "video_blur",
-        hls_subset.expected_source_names,
-    )
-    mp4_payloads = detector_payloads(mp4_snapshot, "video_blur")
-    assert len(hls_payloads) == hls_subset.segment_count
-    assert len(mp4_payloads) == mp4_subset.window_count
-    assert [payload["source_name"] for payload in mp4_payloads] == mp4_subset.expected_source_names
-    assert detector_alerts(hls_snapshot, "video_blur")
-    assert detector_alerts(mp4_snapshot, "video_blur")
-    assert all(payload["blur_detected"] is True for payload in hls_payloads)
-    assert all(payload["blur_detected"] is True for payload in mp4_payloads)
 
 
 def test_representative_hls_repeated_compression_does_not_fake_black_alerts(
@@ -290,7 +382,7 @@ def test_representative_hls_repeated_compression_bursts_keep_processing_consiste
     tmp_path: Path,
     ffmpeg_available,
 ) -> None:
-    """A reviewed repeated-compression subset should preserve playlist order."""
+    """A reviewed repeated-compression subset should preserve order and black-negative behavior."""
     _ = ffmpeg_available
     subset = representative_hls_subset(
         fixture_id="crowded_ballot__compression_strong_repeated_3x20s",

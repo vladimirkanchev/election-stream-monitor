@@ -1,8 +1,16 @@
-"""Focused tests for representative-media support helpers and catalogs."""
+"""Support and catalog guards for representative MP4/HLS fixtures.
+
+These tests keep the representative media catalogs usable for both engineers
+and AI-assisted contributors by checking a few simple contracts:
+- fixture paths resolve
+- exported HLS folders stay readable
+- promoted entries stay aligned across manifest, expectations, and truth
+"""
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -28,12 +36,21 @@ REPRESENTATIVE_HLS_SEGMENT_COUNTS = (
 )
 
 
+@dataclass(frozen=True)
+class ConfidenceFixtureExpectation:
+    """Manifest/expectation pair used by representative MP4 confidence lanes."""
+
+    fixture_id: str
+    expectation_id: str
+
+
 def _load_representative_json(path) -> dict[str, Any]:
     """Load one representative catalog document."""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _promoted_manifest_cases() -> dict[str, dict[str, object]]:
+    """Return promoted representative HLS manifest entries keyed by fixture id."""
     manifest = _load_representative_json(REPRESENTATIVE_MANIFEST_PATH)
     return {
         entry["id"]: entry
@@ -43,6 +60,7 @@ def _promoted_manifest_cases() -> dict[str, dict[str, object]]:
 
 
 def _promoted_expected_cases() -> dict[str, dict[str, object]]:
+    """Return promoted HLS expectation entries keyed by fixture id."""
     expected = _load_representative_json(REPRESENTATIVE_EXPECTATIONS_PATH)
     return {
         case["id"][: -len("_hls")]: case
@@ -52,6 +70,7 @@ def _promoted_expected_cases() -> dict[str, dict[str, object]]:
 
 
 def _representative_hls_ground_truth_cases() -> dict[str, dict[str, object]]:
+    """Return representative HLS exact-truth cases keyed by case id."""
     return {
         case["id"]: case
         for case in load_ground_truth_cases("representative_local_hls_cases")
@@ -59,6 +78,7 @@ def _representative_hls_ground_truth_cases() -> dict[str, dict[str, object]]:
 
 
 def _promoted_mp4_blur_manifest_cases() -> dict[str, dict[str, object]]:
+    """Return promoted MP4 blur-positive manifest entries keyed by fixture id."""
     manifest = _load_representative_json(REPRESENTATIVE_MANIFEST_PATH)
     fixture_groups = ("source_fixtures", "derived_fixtures")
     return {
@@ -71,6 +91,7 @@ def _promoted_mp4_blur_manifest_cases() -> dict[str, dict[str, object]]:
 
 
 def _promoted_mp4_expected_cases() -> dict[str, dict[str, object]]:
+    """Return promoted MP4 blur-positive expectation entries keyed by case id."""
     expected = _load_representative_json(REPRESENTATIVE_EXPECTATIONS_PATH)
     return {
         case["id"]: case
@@ -81,15 +102,56 @@ def _promoted_mp4_expected_cases() -> dict[str, dict[str, object]]:
 
 
 def _representative_mp4_ground_truth_cases() -> dict[str, dict[str, object]]:
+    """Return representative MP4 exact-truth cases keyed by case id."""
     return {
         case["id"]: case
         for case in load_ground_truth_cases("representative_local_video_file_cases")
     }
 
 
+def _representative_local_file_manifest_cases() -> dict[str, dict[str, object]]:
+    """Return all representative MP4 manifest entries keyed by fixture id."""
+    manifest = _load_representative_json(REPRESENTATIVE_MANIFEST_PATH)
+    fixture_groups = ("source_fixtures", "derived_fixtures")
+    return {
+        entry["id"]: entry
+        for fixture_group in fixture_groups
+        for entry in manifest[fixture_group]
+    }
+
+
+def _representative_expected_cases_by_id() -> dict[str, dict[str, object]]:
+    """Return every representative expectation entry keyed by id."""
+    expected = _load_representative_json(REPRESENTATIVE_EXPECTATIONS_PATH)
+    return {case["id"]: case for case in expected["cases"]}
+
+
+def _mp4_confidence_fixture_expectations() -> tuple[ConfidenceFixtureExpectation, ...]:
+    """Return the fixture/expectation pairs exercised by capped and soak MP4 lanes."""
+    return (
+        ConfidenceFixtureExpectation(
+            fixture_id="wide_observer__black_strong_start_12s",
+            expectation_id="wide_observer__black_strong_start_12s",
+        ),
+        ConfidenceFixtureExpectation(
+            fixture_id="messy_activity__compression_strong_mid_45s",
+            expectation_id="messy_activity__compression_strong_mid_45s",
+        ),
+        ConfidenceFixtureExpectation(
+            fixture_id="stable_docs",
+            expectation_id="stable_docs__source_baseline",
+        ),
+        ConfidenceFixtureExpectation(
+            fixture_id="crowded_ballot__gblur_strong_mid_20s",
+            expectation_id="crowded_ballot__gblur_strong_mid_20s",
+        ),
+    )
+
+
 def _timeline_semantics(
     timeline: list[dict[str, object]],
 ) -> list[tuple[object, object, object, object]]:
+    """Normalize timeline entries so cross-catalog comparison stays simple."""
     return [
         (
             entry["kind"],
@@ -129,6 +191,30 @@ def _assert_subset_contained_by_second_intervals(
         and subset_end < float(interval["start_seconds"]) + float(interval["duration_seconds"])
         for interval in intervals
     ), failure_context
+
+
+def _assert_mp4_confidence_metadata_contract(
+    manifest_case: dict[str, object],
+    expected_case: dict[str, object],
+) -> None:
+    """Assert the shared catalog contract for one representative MP4 confidence case.
+
+    Source fixtures and derived fixtures use slightly different manifest shapes,
+    so this helper locks the overlap that confidence-lane tests rely on.
+    """
+    assert expected_case["mode"] == "video_files"
+    assert manifest_case["path"] == expected_case["path"]
+    assert expected_case["assertion_tier"]
+
+    if "mode" in manifest_case:
+        assert manifest_case["mode"] == "video_files"
+        assert manifest_case["source_id"] == expected_case["source_id"]
+        assert manifest_case["assertion_tier"]
+        return
+
+    assert manifest_case["id"] == expected_case["source_id"]
+    assert manifest_case["role"]
+    assert manifest_case["expected_baseline_alerts"]
 
 
 def test_mp4_fixture_resolves_to_cataloged_hls_folder() -> None:
@@ -354,4 +440,19 @@ def test_promoted_representative_mp4_blur_truth_stays_consistent_with_catalogs()
             f"Promoted MP4 blur subset {ground_truth_case_id!r} spans "
             f"{subset_start}-{subset_end}, which is outside the declared artifact timeline."
             ),
+        )
+
+
+def test_representative_mp4_confidence_fixtures_have_catalog_and_confidence_metadata() -> None:
+    """Every soak/capped MP4 fixture should resolve across catalogs with a clear tier."""
+    manifest_cases = _representative_local_file_manifest_cases()
+    expected_cases = _representative_expected_cases_by_id()
+
+    for case in _mp4_confidence_fixture_expectations():
+        assert case.fixture_id in manifest_cases
+        assert case.expectation_id in expected_cases
+
+        _assert_mp4_confidence_metadata_contract(
+            manifest_cases[case.fixture_id],
+            expected_cases[case.expectation_id],
         )

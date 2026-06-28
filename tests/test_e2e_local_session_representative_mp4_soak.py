@@ -1,9 +1,11 @@
-"""Representative MP4 soak and confidence lanes.
+"""Representative MP4 confidence lanes for the real `video_files` seam.
 
-These tests cover longer-running `video_files` scenarios without turning the
-suite into a second exact-truth detector harness. The full-file lanes stay
-broad and runtime-oriented, while the capped subset lane keeps a cheaper
-confidence check in the ordinary slow test path.
+This module separates two kinds of checks:
+- capped reviewed subsets that are still reasonable in ordinary slow runs
+- broader full-file soak lanes reserved for manual or scheduled validation
+
+The goal is runtime confidence, not detector-by-detector exact truth for every
+long media file.
 """
 
 from dataclasses import dataclass
@@ -55,7 +57,7 @@ Snapshot = dict[str, Any]
 
 @dataclass(frozen=True)
 class SoakRun:
-    """Normalized session result used by the representative soak assertions."""
+    """Normalized session result shared by representative MP4 assertions."""
 
     fixture_path: Path
     metadata: Any
@@ -67,6 +69,49 @@ class SoakRun:
         return self.snapshot["progress"]["processed_count"]
 
 
+@dataclass(frozen=True)
+class RepresentativeMp4SubsetScenario:
+    """Reviewed MP4 subset used by a capped confidence test."""
+
+    fixture_id: str
+    subset_name: str
+    window_indices: tuple[int, ...]
+    selected_detectors: tuple[str, ...]
+    expectation_case_id: str | None = None
+
+    @property
+    def detector_list(self) -> list[str]:
+        """Return the selected detectors in runner-friendly form."""
+        return list(self.selected_detectors)
+
+    @property
+    def expected_window_count(self) -> int:
+        """Return the reviewed window count for the scenario."""
+        return len(self.window_indices)
+
+
+CAPPED_OUTPUT_SHAPE_SCENARIO = RepresentativeMp4SubsetScenario(
+    fixture_id="stable_docs",
+    subset_name="stable_docs_first_15min_soak_subset",
+    window_indices=tuple(range(CAPPED_SOAK_WINDOW_COUNT)),
+    selected_detectors=tuple(DEFAULT_SOAK_DETECTORS),
+)
+CAPPED_FALSE_POSITIVE_GUARD_SCENARIO = RepresentativeMp4SubsetScenario(
+    fixture_id=BASELINE_FALSE_POSITIVE_FIXTURE_ID,
+    subset_name="stable_docs_first_15min_false_positive_guard_subset",
+    window_indices=tuple(range(CAPPED_SOAK_WINDOW_COUNT)),
+    selected_detectors=tuple(BASELINE_FALSE_POSITIVE_DETECTORS),
+    expectation_case_id=BASELINE_FALSE_POSITIVE_EXPECTATION_ID,
+)
+CAPPED_POSITIVE_GUARD_SCENARIO = RepresentativeMp4SubsetScenario(
+    fixture_id="crowded_ballot__gblur_strong_mid_20s",
+    subset_name="crowded_ballot_blur_strong_positive_guard_subset",
+    window_indices=tuple(range(20)),
+    selected_detectors=tuple(BASELINE_FALSE_POSITIVE_DETECTORS),
+    expectation_case_id="crowded_ballot__gblur_strong_mid_20s",
+)
+
+
 def _run_full_representative_mp4_session(
     monkeypatch,
     tmp_path: Path,
@@ -75,7 +120,7 @@ def _run_full_representative_mp4_session(
     selected_detectors: list[str] | None = None,
     session_suffix: str = "default",
 ) -> SoakRun:
-    """Run one full representative MP4 through the real `video_files` seam."""
+    """Run one full representative MP4 through the production-facing file seam."""
     detectors = selected_detectors or DEFAULT_SOAK_DETECTORS
     configure_session_output(monkeypatch, tmp_path)
     install_isolated_csv_stores(monkeypatch, tmp_path)
@@ -103,7 +148,7 @@ def _run_representative_mp4_subset_session(
     window_indices: list[int],
     selected_detectors: list[str] | None = None,
 ) -> SoakRun:
-    """Run a reviewed subset of one representative MP4 through `video_files`."""
+    """Run a reviewed MP4 subset through `video_files` without fake transport."""
     detectors = selected_detectors or DEFAULT_SOAK_DETECTORS
     require_representative_local_files(fixture_id)
     fixture_path = representative_local_file_path(fixture_id)
@@ -125,14 +170,31 @@ def _run_representative_mp4_subset_session(
     )
 
 
+def _run_subset_scenario(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    scenario: RepresentativeMp4SubsetScenario,
+) -> SoakRun:
+    """Run one reviewed subset scenario through the real MP4 session path."""
+    return _run_representative_mp4_subset_session(
+        monkeypatch,
+        tmp_path,
+        fixture_id=scenario.fixture_id,
+        subset_name=scenario.subset_name,
+        window_indices=list(scenario.window_indices),
+        selected_detectors=scenario.detector_list,
+    )
+
+
 def _read_metrics_csv_lines(tmp_path: Path) -> list[str]:
-    """Read the persisted `video_metrics` CSV for the current session output."""
+    """Return persisted `video_metrics` CSV rows for the current test run."""
     metrics_path = tmp_path / "metrics" / "video_metrics.csv"
     return metrics_path.read_text(encoding="utf-8").strip().splitlines()
 
 
 def _assert_session_output_contract(tmp_path: Path, run: SoakRun) -> None:
-    """Check the shared persisted-output contract for one representative run."""
+    """Assert the shared persisted-output contract for one representative run."""
     streams_dir = tmp_path / "streams"
     expected_source_groups = {
         run.fixture_path.name,
@@ -159,7 +221,7 @@ def _assert_capped_soak_output_shape(
     *,
     expected_window_count: int,
 ) -> None:
-    """Check the focused output-shape contract for the capped subset lane."""
+    """Assert the capped subset output shape used by long-run confidence checks."""
     csv_lines = _read_metrics_csv_lines(tmp_path)
 
     _assert_session_output_contract(tmp_path, run)
@@ -177,7 +239,7 @@ def _assert_selected_detector_contract(
     *,
     selected_detectors: list[str],
 ) -> None:
-    """Check that the session metadata reports the detector set it ran with."""
+    """Assert that session metadata records the detector set honestly."""
     assert getattr(run.metadata, "selected_detectors") == selected_detectors
 
 
@@ -187,7 +249,7 @@ def _assert_completed_soak_run(
     *,
     selected_detectors: list[str] | None = None,
 ) -> None:
-    """Check the shared completion contract used by the successful soak lanes."""
+    """Assert the shared completion contract for successful representative runs."""
     assert_completed_session(run.metadata, run.snapshot)
     assert run.snapshot["progress"]["status"] == "completed"
     if selected_detectors is not None:
@@ -204,7 +266,7 @@ def _assert_repeatability_smoke_contract(
     *,
     selected_detectors: list[str],
 ) -> None:
-    """Check that two long runs stay within the same broad runtime envelope."""
+    """Assert that two long runs stay within the same broad runtime envelope."""
     _assert_selected_detector_contract(
         first_run,
         selected_detectors=selected_detectors,
@@ -234,7 +296,7 @@ def _assert_partial_cancelled_soak_contract(
     tmp_path: Path,
     run: SoakRun,
 ) -> None:
-    """Check that a cancelled run leaves honest and readable partial output."""
+    """Assert that a cancelled run leaves honest and readable partial output."""
     csv_lines = _read_metrics_csv_lines(tmp_path)
 
     _assert_session_output_contract(tmp_path, run)
@@ -247,7 +309,7 @@ def _assert_partial_cancelled_soak_contract(
 
 
 def _count_alerts_by_detector(snapshot: Snapshot, detector_id: str) -> int:
-    """Count persisted alerts for one detector in a session snapshot."""
+    """Count persisted alerts for one detector inside a session snapshot."""
     return sum(1 for alert in snapshot["alerts"] if alert["detector_id"] == detector_id)
 
 
@@ -256,7 +318,7 @@ def _assert_long_baseline_false_positive_guard(
     *,
     expectation_case_id: str,
 ) -> None:
-    """Check the current false-positive posture for a long clean baseline.
+    """Assert the current false-positive posture for a long clean baseline.
 
     The representative catalog still records the source baseline as ideally
     blur-negative. The broader full-file soak run currently allows one blur
@@ -275,13 +337,28 @@ def _assert_long_baseline_false_positive_guard(
     assert blur_alert_count <= MAX_BASELINE_BLUR_ALERTS
 
 
+def _assert_expected_positive_alert_present(
+    run: SoakRun,
+    *,
+    expectation_case_id: str,
+) -> None:
+    """Assert that a reviewed strong-positive window emits its expected alert."""
+    expected_case = representative_expected_case(expectation_case_id)
+    expected = expected_case["expected"]
+
+    if expected["black_screen_alert"] == "expected":
+        assert _count_alerts_by_detector(run.snapshot, "black_screen") >= 1
+    if expected["blur_alert"] == "expected":
+        assert _count_alerts_by_detector(run.snapshot, "video_blur") >= 1
+
+
 def _install_cancel_after_n_bundle_calls(
     monkeypatch,
     *,
     target_session_id: str,
     cancel_after_call_count: int,
 ) -> None:
-    """Install a test-only cancellation hook after a chosen bundle-call count."""
+    """Install a test-only cancellation hook after a chosen analyzer-bundle call."""
     real_bundle_runner = session_runner.run_enabled_analyzers_bundle
     observed_calls = {"count": 0}
 
@@ -330,7 +407,7 @@ def test_representative_full_mp4_soak_smoke_completes_with_readable_outputs(
     tmp_path: Path,
     ffmpeg_available,
 ) -> None:
-    """Selected representative MP4s should satisfy broad full-file contracts."""
+    """Selected representative MP4s should satisfy broad full-file runtime contracts."""
     _ = ffmpeg_available
     run = _run_full_representative_mp4_session(
         monkeypatch,
@@ -354,25 +431,69 @@ def test_representative_capped_mp4_soak_keeps_emitting_results_with_sane_output_
     persisted output shape.
     """
     _ = ffmpeg_available
-    fixture_id = "stable_docs"
-    run = _run_representative_mp4_subset_session(
+    run = _run_subset_scenario(
         monkeypatch,
         tmp_path,
-        fixture_id=fixture_id,
-        subset_name="stable_docs_first_15min_soak_subset",
-        window_indices=list(range(CAPPED_SOAK_WINDOW_COUNT)),
-        selected_detectors=DEFAULT_SOAK_DETECTORS,
+        scenario=CAPPED_OUTPUT_SHAPE_SCENARIO,
     )
 
     _assert_completed_soak_run(
         tmp_path,
         run,
-        selected_detectors=DEFAULT_SOAK_DETECTORS,
+        selected_detectors=CAPPED_OUTPUT_SHAPE_SCENARIO.detector_list,
     )
     _assert_capped_soak_output_shape(
         tmp_path,
         run,
-        expected_window_count=CAPPED_SOAK_WINDOW_COUNT,
+        expected_window_count=CAPPED_OUTPUT_SHAPE_SCENARIO.expected_window_count,
+    )
+
+
+def test_representative_capped_mp4_false_positive_guard_stays_within_tolerance(
+    monkeypatch,
+    tmp_path: Path,
+    ffmpeg_available,
+) -> None:
+    """A capped clean representative MP4 window should stay within alert tolerance."""
+    _ = ffmpeg_available
+    run = _run_subset_scenario(
+        monkeypatch,
+        tmp_path,
+        scenario=CAPPED_FALSE_POSITIVE_GUARD_SCENARIO,
+    )
+
+    _assert_completed_soak_run(
+        tmp_path,
+        run,
+        selected_detectors=CAPPED_FALSE_POSITIVE_GUARD_SCENARIO.detector_list,
+    )
+    _assert_long_baseline_false_positive_guard(
+        run,
+        expectation_case_id=CAPPED_FALSE_POSITIVE_GUARD_SCENARIO.expectation_case_id,
+    )
+
+
+def test_representative_capped_mp4_positive_guard_emits_expected_alert(
+    monkeypatch,
+    tmp_path: Path,
+    ffmpeg_available,
+) -> None:
+    """A strong reviewed representative MP4 window should emit its expected alert."""
+    _ = ffmpeg_available
+    run = _run_subset_scenario(
+        monkeypatch,
+        tmp_path,
+        scenario=CAPPED_POSITIVE_GUARD_SCENARIO,
+    )
+
+    _assert_completed_soak_run(
+        tmp_path,
+        run,
+        selected_detectors=CAPPED_POSITIVE_GUARD_SCENARIO.detector_list,
+    )
+    _assert_expected_positive_alert_present(
+        run,
+        expectation_case_id=CAPPED_POSITIVE_GUARD_SCENARIO.expectation_case_id,
     )
 
 
