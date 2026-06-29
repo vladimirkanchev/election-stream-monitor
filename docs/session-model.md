@@ -149,6 +149,24 @@ The current runtime split is:
 The current persistence layer is intentionally simple, but it still has a
 useful contract.
 
+### Durable session-store boundary
+
+For the PostgreSQL migration path, treat durable session meaning as
+storage-neutral even though the default implementation is still file-backed.
+
+- Contract: `src/session_store.py` owns durable metadata, latest progress, ordered
+  detector results, snapshot reads, and known-session checks.
+- File backend: `src/session_store_file.py` adapts the current `session_io`
+  helpers without changing snapshot shape.
+- Drift guard: change `SessionStore` when durable session meaning changes;
+  change only the file backend when the public snapshot behavior stays the
+  same.
+- Out of scope: logs, temporary media, cancel markers, and HTTP/HLS replay keys
+  stay outside the durable store unless a separate contract is added.
+
+This boundary gives engineers and coding agents one stable place to check before
+changing session storage behavior.
+
 ### Session-scoped files
 
 These files belong to one session directory:
@@ -436,12 +454,19 @@ This contract is intentionally simple:
 
 ## Notes For Agents
 
-- Treat session files as the canonical persisted contract, even if helper code
-  changes around them.
+- Treat `src/session_store.py` as the canonical durable-session boundary.
+- Treat the snapshot shape and field meaning as more stable than the current
+  file layout.
+- Treat session files as the current default backend representation, not as the
+  long-term contract itself.
 - If you change a session field meaning, update:
   - this doc
   - `docs/contracts.md`
+  - `docs/session-persistence-audit.md`
   - the affected frontend readers/tests
+- If you change only file-backend mechanics, keep the public snapshot contract
+  and store behavior tests stable unless the product behavior is intentionally
+  changing.
 
 ## Important design point
 

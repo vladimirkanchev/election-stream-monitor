@@ -120,6 +120,8 @@ For the current alert-storage rollout state, use:
   - [session-persistence-audit.md](./session-persistence-audit.md)
   - [contracts.md](./contracts.md)
   - [architecture.md](./architecture.md)
+  - `src/session_store.py`
+  - `src/session_store_file.py`
   - `src/session_io.py`
   - `tests/test_session_io.py`
 - changing frontend bridge normalization or UI transport handling:
@@ -435,6 +437,7 @@ coordinated contract change:
 - frontend bridge normalization shape
 - FastAPI structured error payload shape
 - detector catalog shape
+- durable session-store boundary in `src/session_store.py`
 
 ## Repo-Local Codex Skills
 

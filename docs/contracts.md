@@ -1545,6 +1545,19 @@ Current bridge normalization:
 - malformed top-level payloads become the stable empty snapshot shape
 - explicit transport failures are raised with `SESSION_READ_FAILED`
 
+Current session-storage boundary:
+
+- `src/session_store.py` owns durable metadata, latest progress, ordered
+  results, snapshot reads, and known-session checks.
+- `src/session_store_file.py` is the current file-backed implementation.
+- FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
+  route behavior, not file names such as `session.json` or `results.jsonl`.
+- Worker logs, temp media, cancel markers, and HTTP/HLS replay keys are outside
+  the durable snapshot unless a new public contract is introduced deliberately.
+
+Update this contract doc when payload meaning or missing-session behavior
+changes.
+
 ### Session Alert Query Surfaces
 
 The backend now exposes a read-only, session-scoped alert query surface through

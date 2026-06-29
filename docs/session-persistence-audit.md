@@ -179,16 +179,42 @@ snapshot/read model. During implementation, update docs in this order:
 Use this boundary as the guide for the first PostgreSQL session-store branch.
 The goal is storage parity, not a new session product surface.
 
+The initial durable-session contract lives in `src/session_store.py` and is
+intentionally narrow: metadata, latest progress, ordered detector results,
+snapshot reads, and known-session checks. `src/session_store_file.py` proves
+that contract against the current `session_io` behavior before runtime callers
+are rewired.
+
+The guard tests are split by purpose:
+
+- `tests/test_session_store_contract.py` protects method shape and excluded
+  runtime concerns.
+- `tests/test_session_store_file.py` protects behavior through the store API:
+  missing-session reads, snapshot round trips, ordered results, latest-only
+  progress, and terminal progress.
+
+Missing or malformed durable session data must keep the low-level empty
+snapshot shape: `session = null`, `progress = null`, `alerts = []`,
+`results = []`, and `latest_result = null`. FastAPI/service code remains
+responsible for turning `session = null` into route-level not-found behavior.
+Result rows read back in append order, with `latest_result` derived from the
+final row. Progress remains latest-only. Cancellation markers and HTTP/HLS
+replay keys stay out of `SessionStore` unless a focused runtime-coordination
+contract is added later.
+
 | Area | First migration decision | Reason |
 | --- | --- | --- |
 | Session metadata and existence | In scope | This is the current known-session marker and the base for route-level `404` behavior. |
 | Latest progress snapshot | In scope | Frontend polling depends on the latest progress shape, counts, status, and terminal reason/detail fields. |
 | Detector results | In scope | Snapshot `results` and derived `latest_result` must preserve append order. |
 | Snapshot assembly | In scope | Readers should get the same five top-level keys regardless of backend. |
+| Read/write split | In scope | Snapshot reads need stable shape; writes need lifecycle and ordering guarantees. |
+| Missing-session behavior | In scope | Store reads return the empty snapshot shape; service/API layers map missing sessions to `None` and `404`. |
+| Ordering and latest progress | In scope | Results need deterministic append order; progress is overwritten as the latest read model. |
 | Store selection | In scope | Keep file-backed sessions as the default until PostgreSQL has parity tests and operational confidence. |
 | Alert/session existence coupling | In scope as a design seam | PostgreSQL alert reads still need a backend-neutral known-session check. |
-| Cancel requests | Deliberate follow-up or scoped opt-in | Live control state. Move it only if polling stays cheap and failure behavior is tested. |
-| API-stream replay keys | Deliberate follow-up or tightly scoped opt-in | Replay keys affect reconnect correctness, but they are runtime coordination rather than user-facing history. |
+| Cancel requests | Out of `SessionStore`; possible later runtime contract | Live control state. Move it only if polling stays cheap and failure behavior is tested. |
+| API-stream replay keys | Out of `SessionStore`; possible later runtime contract | Replay keys affect reconnect correctness, but they are runtime coordination rather than user-facing history. |
 | Worker logs | Out of scope | `worker.log` is local diagnostics, not public session state. |
 | API-stream temp media | Out of scope | Temporary `.ts` files are processing artifacts and should stay filesystem-only. |
 | Frontend/API payload shape changes | Out of scope | Storage migration should not change the public session contract. |
@@ -196,9 +222,9 @@ The goal is storage parity, not a new session product surface.
 
 Recommended implementation order:
 
-1. Define a small session-store seam around metadata, progress, results, and snapshot reads.
-2. Wrap the current file behavior behind that seam without changing defaults.
-3. Add store-agnostic contract tests for snapshot shape, missing-session behavior, ordering, and terminal progress.
+1. Define a small session-store contract around metadata, progress, results, and snapshot reads.
+2. Wrap the current file behavior behind that contract without changing defaults.
+3. Reuse the store-contract tests for the PostgreSQL implementation before changing runtime callers.
 4. Add the PostgreSQL implementation and schema as opt-in configuration.
 5. Add file/PostgreSQL parity tests and focused FastAPI boundary tests.
 6. Revisit cancel markers, replay keys, and alert known-session checks after the durable read model is stable.
