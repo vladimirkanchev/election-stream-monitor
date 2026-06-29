@@ -46,9 +46,17 @@ For code-level truth, the closest sources are:
 For the current project stage:
 
 - backend session snapshot source of truth:
+  - [`src/session_store.py`](../src/session_store.py)
+  - [`src/session_store_runtime.py`](../src/session_store_runtime.py)
+  - [`src/session_store_runtime_config.py`](../src/session_store_runtime_config.py)
+  - [`src/session_store_file.py`](../src/session_store_file.py)
+  - [`src/session_service.py`](../src/session_service.py)
   - [`src/session_io.py`](../src/session_io.py)
   - [`src/session_models.py`](../src/session_models.py)
   - [`src/session_runner.py`](../src/session_runner.py)
+  - [`src/session_runner_lifecycle.py`](../src/session_runner_lifecycle.py)
+  - [`src/session_runner_execution.py`](../src/session_runner_execution.py)
+  - [`src/session_runner_terminal.py`](../src/session_runner_terminal.py)
   - [`src/session_runner_progress.py`](../src/session_runner_progress.py)
 - frontend bridge normalization source of truth:
   - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
@@ -67,6 +75,13 @@ For the current project stage:
   - [`src/processor.py`](../src/processor.py)
   - [`src/alert_rules.py`](../src/alert_rules.py)
   - [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
+
+Current persistence rollout note:
+
+- the durable session-store seam now exists
+- the active runtime default is still the file-backed session store
+- PostgreSQL alert storage is opt-in today
+- PostgreSQL session storage is not active yet
 
 ## Do Not Drift These Together By Accident
 
@@ -1549,7 +1564,12 @@ Current session-storage boundary:
 
 - `src/session_store.py` owns durable metadata, latest progress, ordered
   results, snapshot reads, and known-session checks.
+- `src/session_store_runtime.py` and `src/session_store_runtime_config.py`
+  centralize the current file-backed default and rollback-safe runtime
+  selection.
 - `src/session_store_file.py` is the current file-backed implementation.
+- `src/session_service.py` and the session runner helpers consume that store
+  contract instead of choosing backend details themselves.
 - FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
   route behavior, not file names such as `session.json` or `results.jsonl`.
 - Worker logs, temp media, cancel markers, and HTTP/HLS replay keys are outside

@@ -28,6 +28,82 @@ keep [session-model.md](./session-model.md) as the semantic reference.
 - `src/session_alert_store.py` owns the alert persistence seam and default file-backed alert log.
 - `src/session_alert_store_postgres.py` owns the opt-in PostgreSQL alert table, while session metadata still decides whether a session is known.
 
+## Direct `session_io` Caller Inventory
+
+This is the practical migration map for the current branch. The first
+PostgreSQL session-store pass should focus on the callers that touch durable
+session metadata, progress, results, or snapshot reads directly.
+
+| Module | Direct `session_io` usage today | Durable-session concern | Migration priority | Keep out of this task |
+| --- | --- | --- | --- | --- |
+| `src/session_service.py` | `read_session_snapshot(...)` | Session snapshot read used by FastAPI and CLI read/cancel flows | High | `get_worker_log_path(...)` and `request_session_cancel(...)` are worker diagnostics and runtime control, not part of the first durable store move. |
+| `src/session_runner_lifecycle.py` | `initialize_session(...)`, `update_session_status(...)`, `write_session_progress(...)` | Pending and running metadata/progress writes | High | none in this module; these are core durable lifecycle writes. |
+| `src/session_runner_execution.py` | `append_result(...)`, `write_session_progress(...)` | Ordered detector-result writes and latest progress updates | High | `append_alert(...)` and `is_session_cancel_requested(...)` should stay on the alert-store and runtime-control seams for now. |
+| `src/session_runner_terminal.py` | `update_session_status(...)`, `write_session_progress(...)` | Terminal metadata/progress writes | High | none in this module; terminal persistence is part of the durable session read model. |
+| `src/session_store_file.py` | file-backed adapter over `session_exists(...)`, `read_session_snapshot(...)`, `read_session_result_events(...)`, `write_session_metadata(...)`, `write_session_progress(...)` | Compatibility backend for the new `SessionStore` contract | High | none; this adapter is the intentional bridge for parity and rollback. |
+| `src/session_alert_store.py` | `get_session_dir(...)`, `session_exists(...)` | Alert-store known-session coupling | Medium | Alert rows stay on the alert-store seam; only the known-session check matters to the session-store migration. |
+| `src/session_alert_store_postgres.py` | `session_exists(...)` | PostgreSQL alert reads still depend on file-backed session existence | Medium | Do not migrate alert persistence in this task; only remove this coupling after session metadata has a backend-neutral existence check. |
+| `src/stream_loader_http_hls.py` | `append_api_stream_seen_chunk_key(...)`, `read_api_stream_seen_chunk_keys(...)`, `is_session_cancel_requested(...)` | Replay-key persistence and cooperative cancellation | Low for this task | These are runtime coordination paths, not the first durable session-store surface. Keep them separate until the main session read model is stable. |
+
+Practical rule for the next implementation step:
+
+- Rewire `session_service.py`, `session_runner_lifecycle.py`,
+  `session_runner_execution.py`, and `session_runner_terminal.py` through the
+  `SessionStore` seam first.
+- Keep `session_alert_store*.py` on the alert seam and
+  `stream_loader_http_hls.py` on the runtime-coordination seam until the
+  durable session store has file/PostgreSQL parity.
+
+## Session Store Injection Point Decision
+
+Use the shared session layer as the default store boundary, with two explicit
+entry points:
+
+- `session_service.py` owns parent-process reads and cancel pre-checks for
+  FastAPI and CLI adapters.
+- `session_runner.run_local_session(...)` owns worker-process lifecycle writes
+  and passes the store into lifecycle, execution, and terminal helpers.
+
+`FileSessionStore` should remain the default implementation at both entry
+points until the PostgreSQL store has parity coverage. API routers and CLI
+handlers should keep calling `session_service` and `session_runner`; they
+should not choose storage backends directly.
+
+Why this point fits the current architecture:
+
+- API-runtime wiring is too high because the detached worker is launched as a
+  separate process through `session_cli.py run-session`. A FastAPI-only default
+  would not cover worker-side metadata, progress, and result writes.
+- Low-level helper wiring is too low because storage choice would spread across
+  lifecycle, execution, terminal, and tests. Helpers can accept a store, but
+  they should not decide the default backend.
+- The shared service/runner boundary keeps tests practical: service tests can
+  fake snapshot reads, runner/helper tests can pass an explicit store, and the
+  default path still proves the current file-backed behavior.
+
+Implementation rule for the next step: create one small default-store access
+path, keep it file-backed, and thread explicit stores only where tests or
+worker helper calls need control. Do not put backend selection into FastAPI
+route modules, CLI command handlers, alert stores, or HTTP/HLS loader code.
+
+The default access path now lives in `src/session_store_runtime.py`.
+`get_default_session_store()` returns the shared file-backed store for the
+current project stage, and `src/session_store_runtime_config.py` owns the
+runtime selection rule for `ESM_SESSION_STORE_BACKEND`. Missing, invalid, or
+explicit `file` config still resolves to `FileSessionStore`, which keeps the
+rollback path obvious for the later PostgreSQL cutover.
+
+Current callers now split cleanly:
+
+- `session_service.py`, `session_alert_store.py`, and
+  `session_alert_store_postgres.py` read known-session state through the
+  default store path.
+- `session_runner_lifecycle.py`, `session_runner_execution.py`, and
+  `session_runner_terminal.py` accept the same store contract for metadata,
+  progress, and result writes.
+- `session_runner.run_local_session(...)` resolves the default store once and
+  passes it through the worker flow.
+
 ## Writer And Reader Map
 
 | Persisted concern | Main writers | Main readers | Current coupling to preserve |
@@ -152,6 +228,26 @@ tests scoped to the file backend. Public API/service tests should not assert raw
 filenames such as `session.json` or `results.jsonl`; low-level file backend
 tests may.
 
+The file-backed parity lane now has a clear split:
+
+- `tests/test_session_store_file.py` proves `FileSessionStore` matches
+  `session_io` for missing-session shape, ordered result reads, and tolerant
+  malformed-file behavior.
+- `tests/test_session_store_contract.py` stays backend-neutral and checks only
+  the durable store contract.
+- Higher session-service and runner tests should keep asserting snapshot and
+  lifecycle behavior, not the private file helper layout.
+- Focused runtime integration tests now cover the default path too:
+  `tests/test_session_runner_local.py` proves runner output is readable through
+  `session_service`, and `tests/test_api_boundary_sessions_read.py` proves the
+  FastAPI session route still reads a real file-backed snapshot end to end.
+- `tests/test_session_store_runtime.py` now makes rollback intent explicit:
+  runtime config stays centralized, invalid backend values degrade to file
+  mode, and explicit `file` mode resolves to the same default store.
+- `tests/test_session_runner_store_writes.py` keeps the helper-level write
+  contract storage-neutral, so lifecycle/execution/terminal refactors do not
+  silently fall back to raw file helpers.
+
 ## Docs That Mention Session Persistence
 
 Most docs match the current stage: session metadata, progress, and results are
@@ -233,6 +329,9 @@ Hidden obstacles to keep visible:
 
 - The parent FastAPI process returns pending metadata before the detached worker creates the durable session record.
 - The detached worker and FastAPI process must resolve the same backend configuration.
+- Rollback should mean one config decision, not code edits: when PostgreSQL
+  session storage arrives, disabling it must still route both the parent
+  process and detached worker back through `ESM_SESSION_STORE_BACKEND=file`.
 - Result ordering and latest progress writes need clear transaction/consistency rules.
 - Missing-session behavior has two layers: low-level empty snapshot and route-level `404`.
 - Moving cancel or replay state too early can create slow polling, stale cancellation, or duplicate live chunks.

@@ -184,6 +184,14 @@ Current focused ownership map:
   - future-facing plugin manifest ownership and id-boundary rules
 - `tests/test_session_cli_tooling.py`
   - session CLI adapter behavior, detector catalog CLI output, and read-session snapshot wiring
+- `tests/test_session_store_contract.py`
+  - durable session-store contract shape and excluded runtime concerns
+- `tests/test_session_store_file.py`
+  - file-backed session-store parity with `session_io`
+- `tests/test_session_store_runtime.py`
+  - default store selection, fallback behavior, and rollback-safe runtime config
+- `tests/test_session_runner_store_writes.py`
+  - storage-neutral lifecycle/execution/terminal write behavior
 - `tests/test_export_detector_catalog.py`
   - exported detector-catalog JSON contract for frontend-facing tooling
 - `tests/test_detector_lab.py`
@@ -793,6 +801,9 @@ Ownership summary:
   - docs expectations
   - policy-only test expectations that are intentionally narrower than the
     shared CI groups
+  - the session-store seam now lives under that same backend-contract policy,
+    so persistence-contract changes should move with focused store tests and
+    session persistence docs
 
 Policy consumer:
 
@@ -2099,6 +2110,13 @@ Current lifecycle coverage is already spread across the main layers:
     - stable black-box local lifecycle coverage
     - local discovery and slice-expansion behavior now owned by
       `session_runner_discovery`
+  - `tests/test_session_store_runtime.py`
+    - current default store resolution
+    - invalid-backend fallback to file mode
+    - rollback-safe runtime selection behavior
+  - `tests/test_session_runner_store_writes.py`
+    - helper-level metadata/progress/result writes through the session-store contract
+    - first stop when lifecycle/execution/terminal helpers drift back toward raw file ownership
   - `tests/test_session_runner_api_stream_progress.py`
     - seam-loader `api_stream` progress-shaping, repeated temporary failure
       tolerance, alert re-entry, and multi-detector live coherence

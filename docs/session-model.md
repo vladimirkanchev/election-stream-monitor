@@ -19,6 +19,9 @@ migration, see [session-persistence-audit.md](./session-persistence-audit.md).
 - sessions are the persisted contract between backend and frontend
 - session snapshots are still built from local session files
 - metadata, progress, and results stay file-backed today
+- the durable `SessionStore` seam now exists, but its active runtime default is
+  still `FileSessionStore`
+- PostgreSQL session storage is not active yet in the normal runtime path
 - alert storage stays file-backed by default for this branch phase and can now
   switch to PostgreSQL
 - the snapshot `alerts` field now follows that same alert backend
@@ -55,7 +58,7 @@ that actually produces the persisted session artifacts described below.
 
 ## Session files
 
-Each session currently writes:
+Each session currently writes these file-backed artifacts:
 
 - `session.json`
 - `progress.json`
@@ -65,6 +68,9 @@ Each session currently writes:
 - `worker.log` as a backend-owned detached worker diagnostic trace
 
 These files live under the configured session output folder in `data/sessions/`.
+They are the current backend implementation, not the long-term semantic
+contract by themselves. The durable contract is the session snapshot plus the
+`SessionStore` boundary described below.
 
 ## What each file means
 
@@ -158,6 +164,17 @@ storage-neutral even though the default implementation is still file-backed.
   detector results, snapshot reads, and known-session checks.
 - File backend: `src/session_store_file.py` adapts the current `session_io`
   helpers without changing snapshot shape.
+- Runtime default: `src/session_store_runtime.py` still resolves to the
+  file-backed store, and `src/session_store_runtime_config.py` keeps missing or
+  invalid `ESM_SESSION_STORE_BACKEND` values on that same safe file default.
+- Shared readers: `src/session_service.py`, `src/session_alert_store.py`, and
+  `src/session_alert_store_postgres.py` resolve known-session reads through the
+  same default store path.
+- Worker writes: `src/session_runner_lifecycle.py`,
+  `src/session_runner_execution.py`, and `src/session_runner_terminal.py`
+  accept an injected store and fall back to that same default runtime store.
+- Current rollout state: PostgreSQL session storage is being prepared, not used
+  by default runtime callers yet.
 - Drift guard: change `SessionStore` when durable session meaning changes;
   change only the file backend when the public snapshot behavior stays the
   same.
@@ -166,6 +183,15 @@ storage-neutral even though the default implementation is still file-backed.
 
 This boundary gives engineers and coding agents one stable place to check before
 changing session storage behavior.
+
+Focused coverage for this boundary now lives in:
+
+- `tests/test_session_store_contract.py`
+- `tests/test_session_store_file.py`
+- `tests/test_session_store_runtime.py`
+- `tests/test_session_runner_store_writes.py`
+- `tests/test_session_service_read_cancel.py`
+- `tests/test_api_boundary_sessions_read.py`
 
 ### Session-scoped files
 
@@ -178,8 +204,9 @@ These files belong to one session directory:
 - optional `worker.log`
 - optional `api_stream_seen_chunks.jsonl`
 
-That means the frontend and local tooling should treat them as the canonical
-state for one monitoring run.
+That means one session directory still holds the current file-backed runtime
+state for one monitoring run. Frontend and API callers should still treat the
+session snapshot, not raw filenames, as the stable read contract.
 
 ### Write semantics
 

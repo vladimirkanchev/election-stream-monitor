@@ -42,8 +42,8 @@ Use this document when you need to answer:
 ## Short version
 
 The project is a local-first modular monolith with explicit detector
-registration, file-backed session state, and opt-in PostgreSQL alert storage
-for alerts.
+registration, a file-backed default session store, and opt-in PostgreSQL alert
+storage for alerts.
 
 In practice that means:
 
@@ -51,6 +51,10 @@ In practice that means:
   - a local FastAPI boundary
   - shared session services
   - a detached session worker for monitoring runs
+- durable session persistence still resolves to the file-backed store by
+  default
+- the session-store seam exists for migration work, but PostgreSQL session
+  storage is not active in the normal runtime path yet
 - one React/Electron frontend
 - explicit detector registration
 - explicit alert rules
@@ -104,9 +108,15 @@ It is now:
    the runtime row contract.
 10. [`src/alert_rules.py`](../src/alert_rules.py) evaluates production alert
     policy on those runtime rows.
-11. Session files are written under `data/sessions/`, including backend-owned
-   diagnostic artifacts such as `worker.log`.
+11. The worker persists session metadata, latest progress, and ordered results
+    through the current default `SessionStore`, which still writes under
+    `data/sessions/` for this stage, including backend-owned diagnostics such
+    as `worker.log`.
 12. The frontend polls the session snapshot and updates playback and alerts.
+
+For the current branch stage, that session persistence path is still
+file-backed at runtime. The new `SessionStore` boundary is a migration seam,
+not a signal that PostgreSQL session storage is already enabled.
 
 The new MCP surface follows the same adapter pattern:
 
@@ -451,18 +461,26 @@ orchestration in the runner.
 
 ### Session persistence
 
+[`src/session_store.py`](../src/session_store.py),
+[`src/session_store_runtime.py`](../src/session_store_runtime.py),
+[`src/session_store_runtime_config.py`](../src/session_store_runtime_config.py),
+[`src/session_store_file.py`](../src/session_store_file.py),
 [`src/session_io.py`](../src/session_io.py)
 
 Responsibilities:
 
-- initialize session files
-- append results and alerts
-- write progress safely
-- read session snapshots
+- keep `src/session_store.py` as the durable session contract
+- keep `src/session_store_runtime.py` and
+  `src/session_store_runtime_config.py` as the centralized default-store and
+  rollback configuration layer
+- keep `src/session_store_file.py` as the current file-backed backend
+- keep `src/session_io.py` as the concrete file helper layer and snapshot
+  assembly path behind that backend
 
-The current design uses local files as the persisted session contract between
-backend and frontend, but snapshot assembly is explicit and defensive against
-missing or malformed artifacts.
+The current design still persists sessions through local files at runtime, but
+the public read contract is now the session snapshot and the `SessionStore`
+boundary rather than raw filenames alone. Snapshot assembly remains explicit
+and defensive against missing or malformed artifacts.
 
 ### Stores
 
