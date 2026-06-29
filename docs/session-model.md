@@ -11,6 +11,9 @@ Do not use it as the main architecture overview or as the complete bridge
 payload catalog; see [architecture.md](./architecture.md) and
 [contracts.md](./contracts.md) for those.
 
+For the current storage inventory before the PostgreSQL session-store
+migration, see [session-persistence-audit.md](./session-persistence-audit.md).
+
 ## At a glance
 
 - sessions are the persisted contract between backend and frontend

@@ -117,6 +117,7 @@ For the current alert-storage rollout state, use:
 
 - changing session snapshot or polling behavior:
   - [session-model.md](./session-model.md)
+  - [session-persistence-audit.md](./session-persistence-audit.md)
   - [contracts.md](./contracts.md)
   - [architecture.md](./architecture.md)
   - `src/session_io.py`
