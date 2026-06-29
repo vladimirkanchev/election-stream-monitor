@@ -559,6 +559,20 @@ focused lanes, slower e2e coverage, snapshot-smoke checks, and live
 validation.
 Use a focused lane first when the changed area is already clear.
 
+Representative-media validation is now split on purpose: reviewed HLS intent,
+exact reviewed HLS and MP4 truth, transport-backed `api_stream` confidence,
+calibration-only detector-lab checks, and a separate MP4 confidence layer for
+capped reviewed-window checks plus full-file soak coverage. The deep owner for
+that split is [`docs/testing-and-validation.md`](./docs/testing-and-validation.md).
+Low-resolution representative cases now follow that same split: black-negative
+runtime guards and broad MP4/HLS parity can be enforced before blur behavior is
+promoted into exact truth.
+Use the capped representative MP4 lane in ordinary slow local validation when
+the branch reaches longer `video_files` behavior and needs output-shape,
+positive, or false-positive confidence on reviewed windows. Use `pytest -m
+soak` only for the full-file representative MP4 confidence run, and keep that
+lane in scheduled or manual-depth validation rather than ordinary PR work.
+
 For more detail:
 
 - [testing-and-validation.md](./docs/testing-and-validation.md)

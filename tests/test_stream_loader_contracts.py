@@ -16,6 +16,7 @@ import pytest
 
 import config
 import stream_loader
+import stream_loader_http_hls
 from analyzer_contract import AnalysisSlice
 from stream_loader import (
     FakeApiStreamEvent,
@@ -36,6 +37,7 @@ from stream_loader import (
 )
 from stream_loader_contracts import (
     ApiStreamHttpLoaderContract,
+    _api_stream_loader_error,
     build_api_stream_chunk_identity,
     build_api_stream_http_loader_contract,
     build_api_stream_runtime_policy,
@@ -97,6 +99,44 @@ def test_build_api_stream_runtime_policy_matches_current_live_contract() -> None
     assert policy.max_reconnect_attempts == reconnect_budget
     assert policy.max_fetch_bytes == config.API_STREAM_MAX_FETCH_BYTES
     assert policy.max_session_runtime_sec == config.API_STREAM_MAX_SESSION_RUNTIME_SEC
+
+
+def test_http_hls_loader_retries_upstream_404_and_clears_stale_terminal_reason(
+    monkeypatch,
+) -> None:
+    """A recovered upstream 404 should not leave terminal failure state behind."""
+    cleanup_api_stream_temp_session_dir("session-live-404-retry")
+    loader = HttpHlsApiStreamLoader("session-live-404-retry")
+    attempts = iter(
+        [
+            _api_stream_loader_error(
+                "terminal_failure",
+                "api_stream upstream returned HTTP 404",
+            ),
+            (b"#EXTM3U\n#EXT-X-ENDLIST\n", "https://example.com/live/index.m3u8"),
+        ]
+    )
+
+    def fake_fetch_url_bytes(url: str, *, include_final_url: bool = False):
+        result = next(attempts)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    loader._state.terminal_failure_reason = "api_stream upstream returned HTTP 404"
+    monkeypatch.setattr(loader, "_fetch_url_bytes", fake_fetch_url_bytes)
+    monkeypatch.setattr(stream_loader_http_hls.time, "sleep", lambda _: None)
+
+    playlist_text, resolved_url = loader._fetch_playlist_text_with_retries(
+        "https://example.com/live/index.m3u8"
+    )
+
+    assert playlist_text.startswith("#EXTM3U")
+    assert resolved_url == "https://example.com/live/index.m3u8"
+    assert loader.telemetry_snapshot().reconnect_attempt_count == 1
+    assert loader.telemetry_snapshot().terminal_failure_reason is None
+
+    cleanup_api_stream_temp_session_dir("session-live-404-retry")
 
 
 def test_api_stream_public_contract_builders_share_one_validated_input_path() -> None:

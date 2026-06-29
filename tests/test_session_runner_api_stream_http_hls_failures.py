@@ -132,6 +132,61 @@ def test_run_local_session_http_hls_api_stream_preserves_partial_progress_before
     assert "reconnect_budget_exhausted" in str(progress_data["status_detail"])
 
 
+def test_run_local_session_http_hls_api_stream_persists_missing_segment_404_as_terminal_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A missing advertised segment should fail honestly after preserving earlier accepted work."""
+    _configure_http_hls_runner_test(
+        monkeypatch,
+        tmp_path,
+        session_id="session-api-http-missing-segment-404",
+    )
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer({"segment_000.ts": 0.82}),
+        supported_modes=("api_stream",),
+    )
+
+    routes: dict[str, object] = {
+        "/live/index.m3u8": (
+            200,
+            _media_playlist(
+                0,
+                "segment_000.ts",
+                "segment_001.ts",
+                endlist=False,
+            ),
+            "application/vnd.apple.mpegurl",
+        ),
+        "/live/segment_000.ts": (200, b"000", "video/mp2t"),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        with pytest.raises(ValueError, match="upstream returned HTTP 404"):
+            run_local_session(
+                mode="api_stream",
+                input_path=f"{base_url}/live/index.m3u8",
+                selected_detectors=["video_blur"],
+                session_id="session-api-http-missing-segment-404",
+            )
+
+    snapshot = read_session_snapshot("session-api-http-missing-segment-404")
+    session_data = _session(snapshot)
+    progress_data = _progress(snapshot)
+
+    assert session_data["status"] == "failed"
+    assert progress_data["status"] == "failed"
+    assert progress_data["processed_count"] == 1
+    assert progress_data["current_item"] == "segment_000.ts"
+    assert len(_results(snapshot)) == 1
+    assert _alerts(snapshot) == []
+    assert progress_data["status_reason"] == "source_unreachable"
+    assert "api_stream upstream returned HTTP 404" in str(progress_data["status_detail"])
+
+
 def test_run_local_session_http_hls_api_stream_preserves_partial_progress_before_runtime_limit_failure(
     monkeypatch, tmp_path: Path
 ) -> None:

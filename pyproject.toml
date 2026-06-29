@@ -138,4 +138,5 @@ ignore = []
 markers = [
     "e2e: end-to-end session and integration coverage",
     "slow: slower real-media or matrix-backed integration coverage",
+    "soak: long-running confidence lanes reserved for scheduled or manual-depth validation",
 ]

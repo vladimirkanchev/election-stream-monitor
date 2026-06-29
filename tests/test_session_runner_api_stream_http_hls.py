@@ -217,6 +217,318 @@ def test_run_local_session_http_hls_api_stream_recovers_from_temporary_playlist_
     assert len(snapshot["results"]) == 4
 
 
+def test_run_local_session_http_hls_api_stream_recovers_from_temporary_playlist_404_and_completes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A transient playlist 404 should behave like retryable source noise."""
+    _configure_http_hls_runner_test(
+        monkeypatch,
+        tmp_path,
+        session_id="session-api-http-recover-404-complete",
+    )
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer(
+            {
+                "segment_000.ts": 0.82,
+                "segment_001.ts": 0.79,
+            }
+        ),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (404, "playlist warming up", "text/plain"),
+            (
+                200,
+                _media_playlist(0, "segment_000.ts", "segment_001.ts"),
+                "application/vnd.apple.mpegurl",
+            ),
+        ],
+    }
+    routes.update(_segment_routes("segment_000.ts", "segment_001.ts"))
+
+    with _serve_local_hls(routes) as base_url:
+        metadata = run_local_session(
+            mode="api_stream",
+            input_path=f"{base_url}/live/index.m3u8",
+            selected_detectors=["video_blur"],
+            session_id="session-api-http-recover-404-complete",
+        )
+
+    snapshot = read_session_snapshot(metadata.session_id)
+
+    assert metadata.status == "completed"
+    assert snapshot["session"]["status"] == "completed"
+    assert snapshot["progress"]["status"] == "completed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["current_item"] == "segment_001.ts"
+    assert len(snapshot["results"]) == 2
+
+
+def test_run_local_session_http_hls_api_stream_skips_replayed_segment_and_completes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A replayed segment after refresh should not duplicate persisted session work."""
+    _configure_http_hls_runner_test(
+        monkeypatch,
+        tmp_path,
+        session_id="session-api-http-replay-complete",
+    )
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer(
+            {
+                "segment_000.ts": 0.82,
+                "segment_001.ts": 0.79,
+            }
+        ),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (
+                200,
+                _media_playlist(0, "segment_000.ts", endlist=False),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                _media_playlist(0, "segment_000.ts", "segment_001.ts"),
+                "application/vnd.apple.mpegurl",
+            ),
+        ],
+    }
+    routes.update(_segment_routes("segment_000.ts", "segment_001.ts"))
+
+    with _serve_local_hls(routes) as base_url:
+        metadata = run_local_session(
+            mode="api_stream",
+            input_path=f"{base_url}/live/index.m3u8",
+            selected_detectors=["video_blur"],
+            session_id="session-api-http-replay-complete",
+        )
+
+    snapshot = read_session_snapshot(metadata.session_id)
+
+    assert metadata.status == "completed"
+    assert snapshot["session"]["status"] == "completed"
+    assert snapshot["progress"]["status"] == "completed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["current_item"] == "segment_001.ts"
+    assert len(snapshot["results"]) == 2
+
+
+def test_run_local_session_http_hls_api_stream_recovers_from_empty_refresh_then_completes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An empty live refresh should not block later visible segments from completing."""
+    _configure_http_hls_runner_test(
+        monkeypatch,
+        tmp_path,
+        session_id="session-api-http-empty-refresh",
+    )
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer(
+            {
+                "segment_000.ts": 0.82,
+                "segment_001.ts": 0.79,
+            }
+        ),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (
+                200,
+                _media_playlist(0, "segment_000.ts", endlist=False),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                "\n".join(
+                    [
+                        "#EXTM3U",
+                        "#EXT-X-TARGETDURATION:1",
+                        "#EXT-X-MEDIA-SEQUENCE:1",
+                    ]
+                ),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                _media_playlist(1, "segment_001.ts"),
+                "application/vnd.apple.mpegurl",
+            ),
+        ],
+    }
+    routes.update(_segment_routes("segment_000.ts", "segment_001.ts"))
+
+    with _serve_local_hls(routes) as base_url:
+        metadata = run_local_session(
+            mode="api_stream",
+            input_path=f"{base_url}/live/index.m3u8",
+            selected_detectors=["video_blur"],
+            session_id="session-api-http-empty-refresh",
+        )
+
+    snapshot = read_session_snapshot(metadata.session_id)
+
+    assert metadata.status == "completed"
+    assert snapshot["session"]["status"] == "completed"
+    assert snapshot["progress"]["status"] == "completed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["current_item"] == "segment_001.ts"
+    assert len(snapshot["results"]) == 2
+
+
+def test_run_local_session_http_hls_api_stream_recovers_from_malformed_refresh_and_completes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """One malformed playlist refresh should behave like retryable noise at runner level too."""
+    _configure_http_hls_runner_test(
+        monkeypatch,
+        tmp_path,
+        session_id="session-api-http-malformed-refresh",
+    )
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer(
+            {
+                "segment_000.ts": 0.82,
+                "segment_001.ts": 0.79,
+            }
+        ),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (
+                200,
+                _media_playlist(0, "segment_000.ts", endlist=False),
+                "application/vnd.apple.mpegurl",
+            ),
+            (200, "temporary html error", "text/plain"),
+            (
+                200,
+                _media_playlist(1, "segment_001.ts"),
+                "application/vnd.apple.mpegurl",
+            ),
+        ],
+    }
+    routes.update(_segment_routes("segment_000.ts", "segment_001.ts"))
+
+    with _serve_local_hls(routes) as base_url:
+        metadata = run_local_session(
+            mode="api_stream",
+            input_path=f"{base_url}/live/index.m3u8",
+            selected_detectors=["video_blur"],
+            session_id="session-api-http-malformed-refresh",
+        )
+
+    snapshot = read_session_snapshot(metadata.session_id)
+
+    assert metadata.status == "completed"
+    assert snapshot["session"]["status"] == "completed"
+    assert snapshot["progress"]["status"] == "completed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["current_item"] == "segment_001.ts"
+    assert len(snapshot["results"]) == 2
+
+
+def test_run_local_session_http_hls_api_stream_adapts_to_delayed_refresh_and_completes(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Runner-level completion should stay intact even when live poll delays drift mid-run."""
+    sleep_calls: list[float] = []
+    _configure_http_hls_runner_test(
+        monkeypatch,
+        tmp_path,
+        session_id="session-api-http-drift-complete",
+        poll_interval_sec=2.0,
+        sleep=lambda seconds: sleep_calls.append(seconds),
+    )
+
+    _patch_processor_with_analyzer(
+        monkeypatch,
+        analyzer_name="video_blur",
+        store_name="blur_metrics",
+        analyzer=_build_blur_analyzer(
+            {
+                "segment_000.ts": 0.82,
+                "segment_001.ts": 0.79,
+            }
+        ),
+        supported_modes=("api_stream",),
+    )
+
+    routes = {
+        "/live/index.m3u8": [
+            (
+                200,
+                _media_playlist(
+                    0,
+                    "segment_000.ts",
+                    target_duration=4,
+                    endlist=False,
+                ),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                _media_playlist(
+                    0,
+                    "segment_000.ts",
+                    target_duration=1,
+                    endlist=False,
+                ),
+                "application/vnd.apple.mpegurl",
+            ),
+            (
+                200,
+                _media_playlist(0, "segment_000.ts", "segment_001.ts", target_duration=1),
+                "application/vnd.apple.mpegurl",
+            ),
+        ],
+    }
+    routes.update(_segment_routes("segment_000.ts", "segment_001.ts"))
+
+    with _serve_local_hls(routes) as base_url:
+        metadata = run_local_session(
+            mode="api_stream",
+            input_path=f"{base_url}/live/index.m3u8",
+            selected_detectors=["video_blur"],
+            session_id="session-api-http-drift-complete",
+        )
+
+    snapshot = read_session_snapshot(metadata.session_id)
+
+    assert metadata.status == "completed"
+    assert snapshot["session"]["status"] == "completed"
+    assert snapshot["progress"]["status"] == "completed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["current_item"] == "segment_001.ts"
+    assert len(snapshot["results"]) == 2
+    assert sleep_calls == [2.0, 1.0]
+
+
 def test_run_local_session_http_hls_api_stream_retries_http_429_then_completes(
     monkeypatch, tmp_path: Path
 ) -> None:

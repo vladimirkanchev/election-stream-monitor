@@ -1,0 +1,17 @@
+# Large local representative media. Keep metadata in git, not video binaries.
+local_files/**/*.mp4
+
+# Generated local HLS streams.
+local_hls/**/*.m3u8
+local_hls/**/*.ts
+local_hls/**/*.mp4
+
+# Local-only external source notes/assets.
+external/*
+!external/README.md
+
+# Local validation outputs.
+reports/
+runs/
+*.log
+*.tmp

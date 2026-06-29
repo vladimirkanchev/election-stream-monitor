@@ -32,6 +32,16 @@ data/streams/
 data/video_files/
 tests/fixtures/media/election_clips/
 tests/fixtures/media/election_clips/normal_baseline/
+tests/fixtures/media/representative/external/**
+tests/fixtures/media/representative/tmp/**
+tests/fixtures/media/representative/staging/**
+tests/fixtures/media/representative/generated/**
+tests/fixtures/media/representative/review_exports/**
+tests/fixtures/media/representative/**/*.ffconcat
+tests/fixtures/media/representative/**/*.csv
+tests/fixtures/media/representative/**/*.jsonl
+tests/fixtures/media/representative/**/*.tmp
+tests/fixtures/media/representative/**/*.bak
 !data/README.md
 
 # Logs

@@ -368,21 +368,28 @@ class HttpHlsApiStreamLoader:
             self._raise_if_cancel_requested()
             try:
                 payload, resolved_url = self._fetch_url_bytes(url, include_final_url=True)
+                self._state.terminal_failure_reason = None
                 return payload.decode("utf-8"), resolved_url
             except ApiStreamLoaderError as error:
-                if error.failure.kind != "retryable_failure":
+                failure = error.failure
+                if (
+                    failure.kind == "terminal_failure"
+                    and failure.message == "api_stream upstream returned HTTP 404"
+                ):
+                    self._state.terminal_failure_reason = None
+                elif failure.kind != "retryable_failure":
                     raise
                 attempts += 1
                 self._state.reconnect_attempt_count = attempts
                 if attempts > self._runtime_policy.max_reconnect_attempts:
                     self._state.reconnect_budget_exhaustion_count += 1
                     self._state.terminal_failure_reason = (
-                        f"reconnect_budget_exhausted:{error.failure.message}"
+                        f"reconnect_budget_exhausted:{failure.message}"
                     )
                     raise _api_stream_loader_error(
                         "terminal_failure",
-                        f"api_stream reconnect budget exhausted: {error.failure.message}",
-                        source_name=error.failure.source_name,
+                        f"api_stream reconnect budget exhausted: {failure.message}",
+                        source_name=failure.source_name,
                     ) from error
                 time.sleep(config.API_STREAM_RECONNECT_BACKOFF_SEC)
                 self._raise_if_cancel_requested()
