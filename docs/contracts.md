@@ -1181,6 +1181,10 @@ Current implementation note:
 
 - the concrete HTTP/HLS loader retries playlist fetches internally using the
   configured reconnect budget and backoff
+- an upstream HTTP 404 during playlist refresh is currently treated as
+  reconnect-eligible rather than as an immediate terminal stop
+- when a later playlist refresh succeeds, the loader clears any stale terminal
+  failure reason instead of carrying the old 404 into later healthy snapshots
 - accepted live-slice identity keys are persisted session-side so a replayed
   segment can be skipped even after reconnect or repeated loader startup
 - if reconnect or playlist sliding means some missed segments are no longer in
