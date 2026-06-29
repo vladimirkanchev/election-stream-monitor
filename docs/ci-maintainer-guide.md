@@ -416,6 +416,8 @@ It guards:
 - contract-sensitive code moving with `docs/contracts.md`
 - contract gates moving with nearby tests
 - contract gates moving with the owning docs
+- session-store persistence changes moving with focused store tests and
+  session persistence docs
 - fixture and environment policy assumptions in the protected `main` path
 
 It reuses shared manifest groups where the repo already has stable CI target
