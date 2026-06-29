@@ -1,10 +1,9 @@
-"""Finite and live execution loops for `session_runner`.
+"""Run the slice-processing loops used by `session_runner`.
 
-This module owns the repeated "process one slice, persist its outputs, update
-progress" behavior used by both local inputs and `api_stream`.
-
-Keep orchestration decisions in `session_runner.py`.
-Keep terminal persistence and cleanup policy in `session_runner_terminal.py`.
+This module owns the repeated execution pattern shared by local files and
+`api_stream`: run analyzers, persist durable outputs, and refresh latest
+progress. Entry-point orchestration stays in `session_runner.py`; terminal
+state and cleanup stay in `session_runner_terminal.py`.
 """
 
 from __future__ import annotations
@@ -14,19 +13,26 @@ from collections.abc import Callable
 from typing import TypedDict, cast
 
 from analyzer_contract import AnalysisSlice, InputMode
-from session_io import append_alert, append_result, is_session_cancel_requested, write_session_progress
+from session_io import append_alert, is_session_cancel_requested
 from session_models import AlertEvent, EventSeverity, ResultEvent, SessionMetadata, SessionProgress
+from session_store import SessionStore
+from session_store_runtime import get_default_session_store
 import session_runner_progress
 import session_runner_terminal
 from stream_loader import ApiStreamLoader, iter_api_stream_slices
 
+
 class BundleResultEntry(TypedDict):
+    """One analyzer result row emitted by the bundle runner."""
+
     session_id: str
     detector_id: str
     payload: dict[str, object]
 
 
 class BundleAlertEntry(TypedDict):
+    """One alert row emitted by the bundle runner."""
+
     session_id: str
     timestamp_utc: str
     detector_id: str
@@ -58,8 +64,8 @@ def run_analyzers_for_slice(
 ) -> BundlePayload:
     """Run the analyzer bundle for one slice.
 
-    The filtered kwargs keep older tests and simpler doubles working even when
-    they accept only a subset of the full analyzer-bundle call signature.
+    The filtered kwargs keep older tests and simple doubles working even when
+    they accept only part of the full analyzer-bundle call signature.
     """
     kwargs = {
         "file_path": analysis_slice.file_path,
@@ -79,13 +85,18 @@ def run_analyzers_for_slice(
     return bundle_runner(**filtered_kwargs)
 
 
-def persist_bundle_events(bundle: BundlePayload) -> None:
-    """Persist one analyzer bundle into the results and alerts logs."""
+def persist_bundle_events(
+    bundle: BundlePayload,
+    *,
+    session_store: SessionStore | None = None,
+) -> None:
+    """Persist one analyzer bundle through the current durable/runtime stores."""
+    session_store = session_store or get_default_session_store()
     result_payloads = cast(list[BundleResultEntry], bundle["results"])
     alert_payloads = cast(list[BundleAlertEntry], bundle["alerts"])
 
     for result_payload in result_payloads:
-        append_result(ResultEvent(**result_payload))
+        session_store.append_result(ResultEvent(**result_payload))
 
     for alert_payload in alert_payloads:
         append_alert(AlertEvent(**alert_payload))
@@ -102,10 +113,13 @@ def process_discovered_slices(
     bundle_runner: BundleRunner,
     progress_builder: ProgressBuilder | None = None,
     finalizer: Finalizer | None = None,
+    session_store: SessionStore | None = None,
 ) -> tuple[SessionMetadata, SessionProgress]:
-    """Process a finite list of local slices from start to finish."""
+    """Process a finite local input set and persist progress after each slice."""
+    session_store = session_store or get_default_session_store()
     progress_builder = progress_builder or session_runner_progress.build_slice_progress
-    finalizer = finalizer or session_runner_terminal.finalize_session_outcome
+    if finalizer is None:
+        finalizer = _default_finalizer(session_store)
 
     try:
         for processed_count, analysis_slice in enumerate(input_slices, start=1):
@@ -128,7 +142,7 @@ def process_discovered_slices(
                 bundle_runner=bundle_runner,
             )
 
-            persist_bundle_events(bundle)
+            persist_bundle_events(bundle, session_store=session_store)
             progress = progress_builder(
                 current=progress,
                 processed_count=processed_count,
@@ -137,7 +151,7 @@ def process_discovered_slices(
                 bundle=bundle,
                 status=metadata.status,
             )
-            write_session_progress(progress)
+            session_store.write_progress(progress)
 
         return finalizer(
             metadata=metadata,
@@ -176,10 +190,13 @@ def run_api_stream_session(
     api_stream_log_fields_builder: ApiStreamFieldsBuilder | None = None,
     api_stream_outcome_fields_builder: ApiStreamFieldsBuilder | None = None,
     cleanup_recorder: CleanupRecorder | None = None,
+    session_store: SessionStore | None = None,
 ) -> tuple[SessionMetadata, SessionProgress]:
-    """Process live slices incrementally as the loader yields them."""
+    """Process live slices incrementally, including cleanup and terminal state."""
+    session_store = session_store or get_default_session_store()
     progress_builder = progress_builder or session_runner_progress.build_slice_progress
-    finalizer = finalizer or session_runner_terminal.finalize_session_outcome
+    if finalizer is None:
+        finalizer = _default_finalizer(session_store)
     api_stream_log_fields_builder = (
         api_stream_log_fields_builder
         or session_runner_progress.build_api_stream_session_log_fields
@@ -223,7 +240,7 @@ def run_api_stream_session(
                     bundle_runner=bundle_runner,
                 )
                 processed_count += 1
-                persist_bundle_events(bundle)
+                persist_bundle_events(bundle, session_store=session_store)
                 progress = progress_builder(
                     current=progress,
                     processed_count=processed_count,
@@ -232,7 +249,7 @@ def run_api_stream_session(
                     bundle=bundle,
                     status=metadata.status,
                 )
-                write_session_progress(progress)
+                session_store.write_progress(progress)
             finally:
                 cleanup_success_count, cleanup_failure_count = cleanup_recorder(
                     analysis_slice,
@@ -292,4 +309,12 @@ def run_api_stream_session(
             cleanup_success_count=cleanup_success_count,
             cleanup_failure_count=cleanup_failure_count,
         ),
+    )
+
+
+def _default_finalizer(session_store: SessionStore) -> Finalizer:
+    """Bind terminal persistence to the same session store used in the loop."""
+    return lambda **kwargs: session_runner_terminal.finalize_session_outcome(
+        **kwargs,
+        session_store=session_store,
     )

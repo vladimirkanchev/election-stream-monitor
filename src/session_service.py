@@ -1,16 +1,9 @@
-"""Shared start/read/cancel service for session lifecycle operations.
+"""Transport-agnostic service for starting, reading, and cancelling sessions.
 
-Read this module first when you need to change how sessions are started,
-looked up, or cancelled across entrypoints.
-
-It is intentionally transport-agnostic:
-
-- no FastAPI request/response types
-- no argparse or CLI printing
-- no Electron/frontend concerns
-
-FastAPI and the Python CLI both adapt this shared service instead of
-re-implementing session lifecycle mechanics separately.
+FastAPI, CLI, and other entrypoints should use this module instead of
+re-implementing lifecycle mechanics. It owns the shared contract for session
+start/read/cancel while keeping backend-specific diagnostics, such as
+`worker.log`, outside the public session snapshot.
 """
 
 from __future__ import annotations
@@ -22,33 +15,28 @@ import sys
 
 from analyzer_contract import InputMode
 from logger import format_log_context, get_logger
-from session_io import get_worker_log_path, read_session_snapshot, request_session_cancel
+from session_io import get_worker_log_path, request_session_cancel
 from session_models import SessionMetadata
 from session_runner import create_session_id
+from session_store import SessionSnapshotPayload
+from session_store_runtime import get_default_session_store
 from source_validation import validate_source_input
 from stream_loader import build_api_stream_start_session_contract
 
 TERMINAL_SESSION_STATUSES = {"completed", "cancelled", "failed"}
-EMPTY_SESSION_SNAPSHOT: dict[str, object] = {
-    "session": None,
-    "progress": None,
-    "alerts": [],
-    "results": [],
-    "latest_result": None,
-}
 logger = get_logger(__name__)
 
 
 class SessionServiceNotFoundError(ValueError):
-    """Raised when one requested session has no persisted snapshot."""
+    """Raised when the requested session has no readable persisted snapshot."""
 
 
 class SessionServiceStartFailedError(OSError):
-    """Raised when the detached session worker could not be started."""
+    """Raised when the detached worker process cannot be started."""
 
 
 class SessionServiceCancelFailedError(ValueError):
-    """Raised when cancellation is not allowed for the current session state."""
+    """Raised when cancellation is requested for an already terminal session."""
 
     def __init__(self, session_id: str, current_status: str) -> None:
         self.session_id = session_id
@@ -61,12 +49,7 @@ def start_session(
     input_path: str,
     selected_detectors: list[str],
 ) -> SessionMetadata:
-    """Validate, spawn, and return pending metadata for one session.
-
-    Worker diagnostics stay backend-owned in this milestone. The returned
-    metadata intentionally does not surface `worker.log` paths or other
-    observability-only fields through the shared start/read/cancel contract.
-    """
+    """Validate input, spawn the worker, and return pending session metadata."""
     validated_input_path = _validate_start_request(
         mode=mode,
         input_path=input_path,
@@ -94,7 +77,7 @@ def start_session(
 
 
 def read_session_snapshot_or_none(session_id: str) -> dict[str, object] | None:
-    """Return the persisted session snapshot, or ``None`` when missing."""
+    """Return the current session snapshot, or `None` when the session is missing."""
     snapshot = read_session_snapshot(session_id)
     session = snapshot.get("session")
     if not isinstance(session, dict):
@@ -102,8 +85,13 @@ def read_session_snapshot_or_none(session_id: str) -> dict[str, object] | None:
     return snapshot
 
 
+def read_session_snapshot(session_id: str) -> SessionSnapshotPayload:
+    """Read one session snapshot through the current default session store."""
+    return get_default_session_store().read_snapshot(session_id)
+
+
 def cancel_session(session_id: str) -> dict[str, object]:
-    """Request cancellation and return the current cancelling summary."""
+    """Request cancellation for a live session and return a compact summary."""
     snapshot = read_session_snapshot_or_none(session_id)
     if snapshot is None:
         raise SessionServiceNotFoundError(session_id)
@@ -120,7 +108,7 @@ def cancel_session(session_id: str) -> dict[str, object]:
 
 
 def build_empty_session_snapshot() -> dict[str, object]:
-    """Return the stable empty snapshot shape used by tooling paths."""
+    """Return the stable empty snapshot shape used by CLI and API callers."""
     return {
         "session": None,
         "progress": None,
@@ -136,7 +124,7 @@ def _validate_start_request(
     input_path: str,
     selected_detectors: list[str],
 ) -> str:
-    """Validate the source path and run live-mode contract checks when needed."""
+    """Validate one start request, including live-mode contract checks."""
     validated_input_path = validate_source_input(mode, input_path)
     if mode == "api_stream":
         build_api_stream_start_session_contract(
@@ -153,7 +141,7 @@ def _build_run_session_command(
     session_id: str,
     selected_detectors: list[str],
 ) -> list[str]:
-    """Build the detached worker command used for session execution."""
+    """Build the detached worker command for one session run."""
     command = [
         sys.executable,
         str(Path(__file__).resolve().parent / "session_cli.py"),
@@ -171,7 +159,7 @@ def _build_run_session_command(
 
 
 def _open_worker_log_handle(worker_log_path: Path) -> TextIOWrapper:
-    """Open the append-only worker log used by the detached session process."""
+    """Open the append-only log file used by the detached worker process."""
     worker_log_path.parent.mkdir(parents=True, exist_ok=True)
     return worker_log_path.open("a", encoding="utf-8")
 
@@ -181,7 +169,7 @@ def _spawn_detached_session_worker(
     *,
     log_handle: TextIOWrapper,
 ) -> None:
-    """Spawn one detached worker using the stable local session settings."""
+    """Spawn one detached worker process with the local runtime settings."""
     subprocess.Popen(  # noqa: S603
         command,
         cwd=str(Path(__file__).resolve().parent),
@@ -199,7 +187,7 @@ def _spawn_session_worker(
     mode: InputMode,
     input_path: str,
 ) -> None:
-    """Open worker logs and spawn one detached session process."""
+    """Open the worker log and start the detached session process."""
     try:
         worker_log_path = get_worker_log_path(session_id)
         with _open_worker_log_handle(worker_log_path) as log_handle:
@@ -221,7 +209,7 @@ def _log_worker_start(
     input_path: str,
     worker_log_path: Path,
 ) -> None:
-    """Emit one redacted parent-side launch record for the detached worker."""
+    """Emit one parent-side launch log entry for the detached worker."""
     logger.info(
         "Started detached session worker [%s]",
         format_log_context(
@@ -242,9 +230,8 @@ def _build_pending_session_metadata(
 ) -> SessionMetadata:
     """Build pending metadata for one accepted start request.
 
-    Keep this payload limited to the stable session contract. Backend-owned
-    diagnostics such as `worker.log` remain out-of-band unless a later
-    milestone deliberately adds a diagnostics surface.
+    Keep the payload limited to the stable session contract. Worker logs and
+    other backend-owned diagnostics remain out-of-band.
     """
     return SessionMetadata(
         session_id=session_id,
@@ -259,7 +246,7 @@ def _build_cancelling_session_summary(
     session_id: str,
     session: dict[str, object],
 ) -> dict[str, object]:
-    """Build the current frontend/tooling summary for a cancel request."""
+    """Build the lightweight cancel-request summary returned to callers."""
     return {
         "session_id": session_id,
         "mode": session.get("mode"),

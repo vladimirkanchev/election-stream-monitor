@@ -21,8 +21,8 @@ from session_alert_store_postgres_config import (
     get_postgres_alert_store_settings,
     validate_postgres_alert_store_settings,
 )
-from session_io import session_exists
 from session_models import AlertEvent, EventSeverity
+from session_store_runtime import get_default_session_store
 
 
 POSTGRES_ALERT_EVENTS_TABLE_NAME = "session_alert_events"
@@ -216,6 +216,11 @@ def bootstrap_postgres_alert_store(
     if resolved_settings.auto_create_tables:
         initialize_postgres_alert_store(connection)
     return connection
+
+
+def session_exists(session_id: str) -> bool:
+    """Return whether durable session metadata exists for one session."""
+    return get_default_session_store().session_exists(session_id)
 
 
 def _event_insert_params(event: AlertEvent) -> tuple[object, ...]:

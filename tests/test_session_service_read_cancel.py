@@ -13,6 +13,7 @@ import session_service
 from analyzer_contract import InputMode
 from session_alert_store import clear_default_session_alert_store_cache
 from session_models import SessionStatus
+from session_store import SessionSnapshotPayload
 from tests.session_alert_test_support import (
     build_normalized_alert,
     install_runtime_postgres_session_alerts,
@@ -98,6 +99,36 @@ def test_read_session_returns_existing_snapshot(monkeypatch) -> None:
     assert snapshot is not None
     session_data = cast(dict[str, object], snapshot["session"])
     assert session_data["session_id"] == "session-123"
+
+
+def test_read_session_snapshot_uses_default_session_store(monkeypatch) -> None:
+    """Service reads should resolve through the default session-store boundary."""
+
+    class FakeStore:
+        def read_snapshot(self, session_id: str) -> SessionSnapshotPayload:
+            return cast(
+                SessionSnapshotPayload,
+                _snapshot(
+                    _session(
+                        session_id=session_id,
+                        mode="video_files",
+                        input_path="/tmp/store-backed.mp4",
+                        selected_detectors=["video_metrics"],
+                        status="running",
+                    )
+                ),
+            )
+
+    monkeypatch.setattr(
+        session_service,
+        "get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    snapshot = session_service.read_session_snapshot("session-store-read")
+
+    session_data = cast(dict[str, object], snapshot["session"])
+    assert session_data["session_id"] == "session-store-read"
 
 
 def test_read_session_returns_none_when_missing(monkeypatch) -> None:

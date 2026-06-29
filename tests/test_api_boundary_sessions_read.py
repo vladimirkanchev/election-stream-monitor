@@ -9,9 +9,12 @@ import json
 from collections.abc import Iterator
 
 import pytest
+import config
 
 from session_alert_store import AlertEventPayload
 from session_alert_store import clear_default_session_alert_store_cache
+from session_io import append_result, initialize_session, write_session_progress
+from session_models import ResultEvent, SessionMetadata, SessionProgress
 from tests.api_alert_test_support import build_internal_error_payload
 from tests.session_alert_test_support import (
     FailingReadAlertStore,
@@ -139,6 +142,53 @@ def test_get_session_returns_fully_populated_snapshot(monkeypatch) -> None:
     assert payload["latest_result"] == snapshot["latest_result"]
     assert payload["alerts"][0]["detector_id"] == "video_metrics"
     assert payload["alerts"][0]["source_name"] == "segment_001.ts"
+
+
+def test_get_session_reads_real_file_backed_snapshot_through_default_store(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The session route should read the default file-backed snapshot end to end."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    metadata = SessionMetadata(
+        session_id="session-route-file-store",
+        mode="video_files",
+        input_path="/tmp/input.mp4",
+        selected_detectors=["video_metrics"],
+        status="running",
+    )
+    progress = SessionProgress(
+        session_id=metadata.session_id,
+        status="running",
+        processed_count=1,
+        total_count=2,
+        current_item="clip.mp4 @ 00:00",
+        latest_result_detector="video_metrics",
+        alert_count=0,
+        last_updated_utc="2026-06-29 10:00:00",
+        latest_result_detectors=["video_metrics"],
+        status_reason="running",
+        status_detail=None,
+    )
+    result = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_metrics",
+        payload={"source_name": "clip.mp4 @ 00:00", "window_index": 0},
+    )
+    initialize_session(metadata)
+    write_session_progress(progress)
+    append_result(result)
+
+    response = request("GET", f"/sessions/{metadata.session_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session": metadata.to_dict(),
+        "progress": progress.to_dict(),
+        "alerts": [],
+        "results": [result.to_dict()],
+        "latest_result": result.to_dict(),
+    }
 
 
 def test_get_session_validation_failure_returns_structured_error(monkeypatch) -> None:

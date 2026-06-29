@@ -15,6 +15,7 @@ from pathlib import Path
 import config
 import pytest
 import session_runner
+import session_service
 from analyzer_contract import AnalysisSlice
 from session_io import read_session_snapshot
 from session_runner import run_local_session
@@ -179,6 +180,54 @@ def test_run_local_session_persists_runtime_failure_progress_details(
     assert snapshot["progress"]["status"] == "failed"
     assert snapshot["progress"]["status_reason"] == "session_runtime_error"
     assert snapshot["progress"]["status_detail"] == "simulated analyzer failure"
+
+
+def test_run_local_session_snapshot_is_readable_through_shared_service_default_store(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Completed runner output should be readable through the shared service seam."""
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts", "segment_0002.ts")
+
+    def fake_run_enabled_analyzers_bundle(
+        file_path: Path,
+        prefix: str,
+        mode: str,
+        session_id: str,
+        selected_analyzers: set[str] | None = None,
+        persist_to_store: bool = True,
+    ) -> dict[str, list[dict[str, object]]]:
+        _ = (prefix, mode, selected_analyzers, persist_to_store)
+        return {
+            "results": [
+                {
+                    "session_id": session_id,
+                    "detector_id": "video_metrics",
+                    "payload": {"source_name": file_path.name},
+                }
+            ],
+            "alerts": [],
+        }
+
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle)
+
+    metadata = run_local_session(
+        mode="video_segments",
+        input_path=input_dir,
+        selected_detectors=["video_metrics"],
+    )
+
+    snapshot = session_service.read_session_snapshot_or_none(metadata.session_id)
+
+    assert snapshot is not None
+    assert snapshot["session"] == metadata.to_dict()
+    assert snapshot["progress"]["status"] == "completed"
+    assert snapshot["progress"]["processed_count"] == 2
+    assert [result["payload"]["source_name"] for result in snapshot["results"]] == [
+        "segment_0001.ts",
+        "segment_0002.ts",
+    ]
+    assert snapshot["latest_result"] == snapshot["results"][-1]
 
 
 def test_run_local_session_persists_validation_failure_progress_details(

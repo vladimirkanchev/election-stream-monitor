@@ -24,9 +24,10 @@ from session_alert_store_runtime_config import (
     clear_alert_store_runtime_settings_cache,
     get_alert_store_runtime_settings,
 )
-from session_io import get_session_dir, session_exists
+from session_io import get_session_dir
 from session_models import AlertEvent, EventSeverity
 from session_models import parse_alert_event_payload
+from session_store_runtime import get_default_session_store
 
 logger = get_logger(__name__)
 ALERT_LOG_FILENAME = "alerts.jsonl"
@@ -152,6 +153,11 @@ class _DefaultSessionAlertStoreProxy:
 
 
 DEFAULT_SESSION_ALERT_STORE: SessionAlertStore = _DefaultSessionAlertStoreProxy()
+
+
+def session_exists(session_id: str) -> bool:
+    """Return whether durable session metadata exists for one session."""
+    return get_default_session_store().session_exists(session_id)
 
 
 def _get_alerts_file_path(session_id: str, *, require_known_session: bool) -> Path:

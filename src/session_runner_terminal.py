@@ -1,19 +1,17 @@
-"""Terminal persistence, cleanup, and logging helpers for `session_runner`.
+"""Persist terminal session state and related cleanup for `session_runner`.
 
-This module owns what happens when a session ends:
-
-- map the terminal state into persisted progress fields
-- flush detector stores when required
-- delete processed `api_stream` temp files
-- emit one operator-facing terminal log entry
+This module owns the end-of-session work: map terminal state into durable
+metadata and progress, flush metric stores when needed, clean processed
+`api_stream` temp files, and emit the matching operator log.
 """
 
 from __future__ import annotations
 
 from analyzer_contract import AnalysisSlice, InputMode
 from logger import format_log_context, get_logger
-from session_io import update_session_status, write_session_progress
 from session_models import SessionMetadata, SessionProgress, SessionStatus
+from session_store import SessionStore
+from session_store_runtime import get_default_session_store
 import session_runner_progress
 from stores import black_frame_store, blur_metrics_store
 from stream_loader import ApiStreamLoader
@@ -28,8 +26,9 @@ def finalize_validation_failure(
     progress: SessionProgress,
     source_kind: InputMode,
     error: Exception,
+    session_store: SessionStore | None = None,
 ) -> None:
-    """Persist a validation failure before the caller re-raises it."""
+    """Persist a validation failure before the caller re-raises the error."""
     finalize_session_outcome(
         metadata=metadata,
         progress=progress,
@@ -40,6 +39,7 @@ def finalize_validation_failure(
         log_message="Session %s failed: %s [%s]",
         error=error,
         extra_fields={"session_end_reason": "validation_failed"},
+        session_store=session_store,
     )
 
 
@@ -49,7 +49,7 @@ def record_api_stream_cleanup(
     cleanup_success_count: int,
     cleanup_failure_count: int,
 ) -> tuple[int, int]:
-    """Clean one processed live slice and update cleanup summary counters."""
+    """Delete one processed live slice and update cleanup counters."""
     cleanup_result = cleanup_processed_api_stream_slice(analysis_slice)
     cleanup_success_count += 1 if cleanup_result is True else 0
     cleanup_failure_count += 1 if cleanup_result is False else 0
@@ -57,7 +57,7 @@ def record_api_stream_cleanup(
 
 
 def cleanup_processed_api_stream_slice(analysis_slice: AnalysisSlice) -> bool:
-    """Delete one processed `api_stream` temp file after analysis completes."""
+    """Delete one processed `api_stream` temp file after analysis."""
     try:
         if analysis_slice.file_path.exists():
             analysis_slice.file_path.unlink()
@@ -79,7 +79,7 @@ def build_api_stream_outcome_fields(
     cleanup_success_count: int,
     cleanup_failure_count: int,
 ) -> dict[str, object]:
-    """Build the terminal summary payload for an `api_stream` session."""
+    """Build terminal log fields for one `api_stream` outcome."""
     if analysis_slice is not None:
         cleanup_success_count, cleanup_failure_count = record_api_stream_cleanup(
             analysis_slice,
@@ -106,12 +106,15 @@ def finalize_session_outcome(
     log_message: str,
     error: Exception | None = None,
     extra_fields: dict[str, object] | None = None,
+    session_store: SessionStore | None = None,
 ) -> tuple[SessionMetadata, SessionProgress]:
-    """Persist the terminal session outcome and emit the matching log."""
+    """Persist the terminal outcome, then emit the matching log record."""
+    session_store = session_store or get_default_session_store()
     if flush_stores:
         flush_metric_stores()
 
-    updated_metadata = update_session_status(metadata, status)
+    updated_metadata = metadata.transition_to(status)
+    session_store.write_metadata(updated_metadata)
     terminal_status_reason, terminal_status_detail = session_runner_progress.build_terminal_progress_status(
         status=status,
         source_kind=source_kind,
@@ -124,7 +127,7 @@ def finalize_session_outcome(
         status_reason=terminal_status_reason,
         status_detail=terminal_status_detail,
     )
-    write_session_progress(updated_progress)
+    session_store.write_progress(updated_progress)
 
     getattr(logger, log_level)(
         log_message,
@@ -140,7 +143,7 @@ def finalize_session_outcome(
 
 
 def flush_metric_stores() -> None:
-    """Flush the detector metric stores used by the session runner."""
+    """Flush detector metric stores that accumulate session-scoped state."""
     for store in METRIC_STORES:
         store.flush()
 
@@ -153,7 +156,7 @@ def _build_terminal_log_args(
     error: Exception | None,
     extra_fields: dict[str, object] | None,
 ) -> tuple[object, ...]:
-    """Build the logger argument tuple for one terminal outcome."""
+    """Build the logger argument tuple for one terminal session outcome."""
     log_context = session_runner_progress.build_session_log_context(
         metadata,
         progress,

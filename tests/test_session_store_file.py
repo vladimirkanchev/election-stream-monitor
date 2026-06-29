@@ -1,10 +1,12 @@
 """Behavior tests for the file-backed `SessionStore` adapter.
 
-These tests use the store API first, with a few parity checks against
-`session_io` to prove the adapter preserves current behavior.
+These tests stay focused on observable file-backed behavior. They use the store
+API first, then compare selected reads with `session_io` so the adapter keeps
+current parity without coupling the suite to private helper internals.
 """
 
 from dataclasses import replace
+import json
 from pathlib import Path
 
 import config
@@ -174,6 +176,15 @@ def test_file_session_store_matches_existing_snapshot_behavior(
     assert file_store.read_snapshot(metadata.session_id) == read_session_snapshot(metadata.session_id)
 
 
+def test_file_session_store_matches_missing_session_behavior(
+    file_store: FileSessionStore,
+) -> None:
+    """Missing sessions should match the stable file-backed empty contract."""
+    assert file_store.session_exists(MISSING_SESSION_ID) == session_exists(MISSING_SESSION_ID)
+    assert file_store.read_snapshot(MISSING_SESSION_ID) == read_session_snapshot(MISSING_SESSION_ID)
+    assert file_store.read_results(MISSING_SESSION_ID) == read_session_result_events(MISSING_SESSION_ID)
+
+
 def test_file_session_store_matches_existing_result_order_behavior(
     file_store: FileSessionStore,
 ) -> None:
@@ -189,6 +200,103 @@ def test_file_session_store_matches_existing_result_order_behavior(
     assert file_store.read_results(metadata.session_id) == read_session_result_events(
         metadata.session_id
     )
+
+
+def test_file_session_store_matches_invalid_top_level_snapshot_tolerance(
+    file_store: FileSessionStore,
+) -> None:
+    """Malformed metadata or progress should degrade exactly like `session_io`."""
+    session_id = "session-file-invalid-top"
+    session_dir = config.SESSION_OUTPUT_FOLDER / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "mode": "video_segments",
+                "input_path": "/tmp/input",
+                "selected_detectors": ["video_metrics"],
+                "status": "completed",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "progress.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "status": "completed",
+                "processed_count": 1,
+                "total_count": 2,
+                "current_item": "segment_0001.ts",
+                "latest_result_detector": "video_metrics",
+                "alert_count": 0,
+                "last_updated_utc": "2026-04-04 18:00:00",
+                "latest_result_detectors": ["video_metrics"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert file_store.read_snapshot(session_id) == read_session_snapshot(session_id)
+
+
+def test_file_session_store_matches_malformed_result_log_tolerance(
+    file_store: FileSessionStore,
+) -> None:
+    """Malformed result rows should be skipped with the same read shape and order."""
+    session_id = "session-file-corrupt-jsonl"
+    session_dir = config.SESSION_OUTPUT_FOLDER / session_id
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "mode": "video_segments",
+                "input_path": "/tmp/input",
+                "selected_detectors": ["video_metrics"],
+                "status": "running",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "progress.json").write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "status": "running",
+                "processed_count": 1,
+                "total_count": 2,
+                "current_item": "segment_0001.ts",
+                "latest_result_detector": "video_metrics",
+                "alert_count": 0,
+                "last_updated_utc": "2026-04-04 18:00:00",
+                "latest_result_detectors": ["video_metrics"],
+                "status_reason": "running",
+                "status_detail": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (session_dir / "results.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "session_id": session_id,
+                        "detector_id": "video_metrics",
+                        "payload": {"source_name": "segment_0001.ts", "window_index": 0},
+                    }
+                ),
+                "{bad json",
+                json.dumps({"session_id": session_id, "detector_id": ""}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert file_store.read_results(session_id) == read_session_result_events(session_id)
+    assert file_store.read_snapshot(session_id) == read_session_snapshot(session_id)
 
 
 def test_file_session_store_write_methods_delegate_to_existing_helpers(
