@@ -245,6 +245,15 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
     )
 
 
+def read_session_result_events(session_id: str) -> list[dict[str, object]]:
+    """Return validated detector result rows without assembling a full snapshot."""
+    session_dir = get_session_dir(session_id)
+    return _read_jsonl_file(
+        session_dir / "results.jsonl",
+        parser=parse_result_event_payload,
+    )
+
+
 def _read_snapshot_alerts(
     session_id: str,
     *,
