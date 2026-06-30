@@ -167,6 +167,17 @@ storage-neutral even though the default implementation is still file-backed.
 - Runtime default: `src/session_store_runtime.py` still resolves to the
   file-backed store, and `src/session_store_runtime_config.py` keeps missing or
   invalid `ESM_SESSION_STORE_BACKEND` values on that same safe file default.
+- PostgreSQL bootstrap seam: `src/session_store_postgres_config.py` owns the
+  PostgreSQL env surface and `src/session_store_postgres.py` owns driver
+  loading, connection setup, schema bootstrap, and opt-in schema reset helpers.
+- Runtime posture: explicit `ESM_SESSION_STORE_BACKEND=postgres` is recognized
+  early enough to validate URL and driver readiness, but it still does not
+  activate PostgreSQL session reads or writes.
+- Bootstrap posture: session tables do not auto-create by default. Opt in with
+  `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` for explicit local bootstrap or
+  focused smoke checks.
+- Validation posture: PostgreSQL settings matter only in explicit `postgres`
+  mode; file mode ignores stale PostgreSQL bootstrap env.
 - Shared readers: `src/session_service.py`, `src/session_alert_store.py`, and
   `src/session_alert_store_postgres.py` resolve known-session reads through the
   same default store path.

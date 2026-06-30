@@ -115,8 +115,9 @@ It is now:
 12. The frontend polls the session snapshot and updates playback and alerts.
 
 For the current branch stage, that session persistence path is still
-file-backed at runtime. The new `SessionStore` boundary is a migration seam,
-not a signal that PostgreSQL session storage is already enabled.
+file-backed at runtime. The new `SessionStore` boundary and PostgreSQL
+bootstrap code prepare the migration path, but they do not enable PostgreSQL
+session storage in normal runtime flow yet.
 
 The new MCP surface follows the same adapter pattern:
 

@@ -50,6 +50,8 @@ For the current project stage:
   - [`src/session_store_runtime.py`](../src/session_store_runtime.py)
   - [`src/session_store_runtime_config.py`](../src/session_store_runtime_config.py)
   - [`src/session_store_file.py`](../src/session_store_file.py)
+  - [`src/session_store_postgres_config.py`](../src/session_store_postgres_config.py)
+  - [`src/session_store_postgres.py`](../src/session_store_postgres.py)
   - [`src/session_service.py`](../src/session_service.py)
   - [`src/session_io.py`](../src/session_io.py)
   - [`src/session_models.py`](../src/session_models.py)
@@ -80,6 +82,9 @@ Current persistence rollout note:
 
 - the durable session-store seam now exists
 - the active runtime default is still the file-backed session store
+- PostgreSQL session-store config/bootstrap now exists
+- explicit `postgres` runtime selection is recognized, validated, and still
+  fails closed before a concrete PostgreSQL session-store adapter is active
 - PostgreSQL alert storage is opt-in today
 - PostgreSQL session storage is not active yet
 
@@ -1568,12 +1573,44 @@ Current session-storage boundary:
   centralize the current file-backed default and rollback-safe runtime
   selection.
 - `src/session_store_file.py` is the current file-backed implementation.
+- `src/session_store_postgres_config.py` owns the PostgreSQL session env
+  surface:
+  - `ESM_SESSION_STORE_BACKEND`
+  - `ESM_POSTGRES_SESSION_DATABASE_URL`
+  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE`
+- `src/session_store_postgres.py` owns the PostgreSQL bootstrap seam:
+  driver loading, connection creation, schema initialization, and opt-in
+  schema reset helpers for live smoke tests.
+- Default behavior remains intentionally conservative:
+  - `file` stays the active runtime default
+  - invalid or missing backend config falls back to `file`
+  - explicit `postgres` validates config and dependency readiness but does not
+    yet activate PostgreSQL session reads/writes
+- Bootstrap policy is explicit, not automatic:
+  - session tables do not auto-create by default
+  - opt in only with `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+  - normal PR and local validation should not require a live PostgreSQL server
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live smoke lanes
 - `src/session_service.py` and the session runner helpers consume that store
   contract instead of choosing backend details themselves.
 - FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
   route behavior, not file names such as `session.json` or `results.jsonl`.
 - Worker logs, temp media, cancel markers, and HTTP/HLS replay keys are outside
   the durable snapshot unless a new public contract is introduced deliberately.
+
+Current focused validation ownership for this boundary:
+
+- `tests/test_session_store_runtime.py`
+  - runtime backend selection, file fallback, and honest not-yet-wired
+    PostgreSQL behavior
+- `tests/test_session_store_postgres_config.py`
+  - PostgreSQL env parsing, cache behavior, and URL/auto-create validation
+- `tests/test_session_store_postgres.py`
+  - bootstrap/config guards, missing-driver behavior, idempotent schema setup,
+    and opt-in live PostgreSQL smoke isolation
+- `tests/test_session_store_file.py`
+  - file-backed parity for the active runtime default
 
 Update this contract doc when payload meaning or missing-session behavior
 changes.

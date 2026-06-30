@@ -189,7 +189,16 @@ Current focused ownership map:
 - `tests/test_session_store_file.py`
   - file-backed session-store parity with `session_io`
 - `tests/test_session_store_runtime.py`
-  - default store selection, fallback behavior, and rollback-safe runtime config
+  - default store selection, fallback behavior, rollback-safe runtime config,
+    and explicit proof that `postgres` is recognized without pretending the
+    runtime adapter is complete
+- `tests/test_session_store_postgres.py`
+  - PostgreSQL session-store bootstrap, driver failure shaping, and opt-in
+    schema-isolation helpers for live smoke lanes
+  - focused coverage:
+    missing/invalid URL guards, missing-driver failure, no accidental
+    auto-create in default lanes, unit-level idempotency, and one opt-in real
+    PostgreSQL repeatability smoke
 - `tests/test_session_runner_store_writes.py`
   - storage-neutral lifecycle/execution/terminal write behavior
 - `tests/test_export_detector_catalog.py`
@@ -226,6 +235,32 @@ Use two explicit backend modes when validating this branch:
 The fast PR/branch CI workflow now pins the synthetic path to the file-backed
 alert backend. The weekly workflow owns the real Postgres confidence jobs and
 overrides that default in its dedicated live-DB lanes.
+
+Apply the same rule to the in-progress PostgreSQL session-store branch work:
+
+- keep `POSTGRES_SESSION_STORE_REAL_SMOKE` unset or `0` in normal local and PR validation
+- use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
+- reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
+
+The fast CI workflows now make that default explicit too:
+
+- `.github/workflows/ci.yml`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=0`
+- `.github/workflows/branch-ci.yml`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=0`
+
+Use a manual or service-backed run only when you intentionally want live
+PostgreSQL session-store confidence.
+
+Example focused live command:
+
+```bash
+export ESM_SESSION_STORE_BACKEND=postgres
+export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
+export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1
+export POSTGRES_SESSION_STORE_REAL_SMOKE=1
+.venv/bin/pytest -q tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
+```
 
 For the short fixture and environment ownership rules behind those lanes, use
 [fixture-environment-policy.md](./fixture-environment-policy.md).

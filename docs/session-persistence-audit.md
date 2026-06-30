@@ -93,6 +93,59 @@ runtime selection rule for `ESM_SESSION_STORE_BACKEND`. Missing, invalid, or
 explicit `file` config still resolves to `FileSessionStore`, which keeps the
 rollback path obvious for the later PostgreSQL cutover.
 
+That runtime selection is intentionally light for now: explicit `postgres`
+mode is recognized and validated, but it still fails closed before any concrete
+PostgreSQL session-store adapter is claimed to exist.
+
+The PostgreSQL bootstrap surface now has one narrow owner:
+
+- `src/session_store_postgres_config.py`
+  - `ESM_POSTGRES_SESSION_DATABASE_URL`
+  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE`
+- `src/session_store_postgres.py`
+  - driver loading
+  - connection creation
+  - idempotent schema bootstrap
+  - opt-in schema reset helpers for live smoke tests
+
+That keeps runtime backend choice separate from PostgreSQL bootstrap settings
+and test-only real-smoke toggles.
+
+Its schema statements intentionally model the `SessionStore` contract, not the
+old file inventory:
+
+- one metadata table
+- one latest-progress table
+- one append-ordered results table
+
+Alerts, cancel markers, replay keys, logs, and temp media remain outside that
+first durable session schema.
+
+The current bootstrap design stays intentionally small:
+
+- one connection per explicit bootstrap/runtime store build
+- no pooling yet
+- no async DB path yet
+
+That keeps cleanup and focused validation simple while the PostgreSQL
+session-store adapter is still being introduced.
+
+For opt-in live PostgreSQL work, keep isolation explicit: the same bootstrap
+module now supports dropping and recreating only the known session-store
+tables, and test helpers keep those checks out of ordinary local and PR lanes.
+
+The runtime validator now centralizes the branch rule:
+
+- missing or invalid backend env still falls back to `file`
+- explicit `postgres` selection keeps the parsed PostgreSQL settings attached
+- missing or non-PostgreSQL URLs fail only for explicit `postgres` mode
+- missing `psycopg` now fails only for explicit `postgres` mode and surfaces
+  one actionable install message for local and CI environments
+- session-table auto-create is now opt-in; the default is to require an
+  explicit bootstrap helper or migration path rather than silently creating
+  durable tables at runtime
+
 Current callers now split cleanly:
 
 - `session_service.py`, `session_alert_store.py`, and
