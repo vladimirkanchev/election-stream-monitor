@@ -87,15 +87,16 @@ worker helper calls need control. Do not put backend selection into FastAPI
 route modules, CLI command handlers, alert stores, or HTTP/HLS loader code.
 
 The default access path now lives in `src/session_store_runtime.py`.
-`get_default_session_store()` returns the shared file-backed store for the
-current project stage, and `src/session_store_runtime_config.py` owns the
-runtime selection rule for `ESM_SESSION_STORE_BACKEND`. Missing, invalid, or
-explicit `file` config still resolves to `FileSessionStore`, which keeps the
-rollback path obvious for the later PostgreSQL cutover.
+`get_default_session_store()` returns the shared file-backed store by default,
+and `src/session_store_runtime_config.py` owns the runtime selection rule for
+`ESM_SESSION_STORE_BACKEND`. Missing, invalid, or explicit `file` config still
+resolves to `FileSessionStore`, which keeps the rollback path obvious for the
+later PostgreSQL cutover.
 
-That runtime selection is intentionally light for now: explicit `postgres`
-mode is recognized and validated, but it still fails closed before any concrete
-PostgreSQL session-store adapter is claimed to exist.
+That runtime selection is now concrete for explicit PostgreSQL opt-in:
+`ESM_SESSION_STORE_BACKEND=postgres` builds a `PostgresSessionStore` through
+the same narrow bootstrap seam, while ordinary runtime callers still stay on
+the file-backed default unless the backend is deliberately switched.
 
 The PostgreSQL bootstrap surface now has one narrow owner:
 
@@ -107,6 +108,7 @@ The PostgreSQL bootstrap surface now has one narrow owner:
   - driver loading
   - connection creation
   - idempotent schema bootstrap
+  - a small `PostgresSessionStore` adapter over an injected connection
   - opt-in schema reset helpers for live smoke tests
 
 That keeps runtime backend choice separate from PostgreSQL bootstrap settings
@@ -118,9 +120,32 @@ old file inventory:
 - one metadata table
 - one latest-progress table
 - one append-ordered results table
+- `write_metadata` / `session_exists` own `session_metadata`
+- `write_progress` owns `session_progress`
+- `append_result` / `read_results` own `session_result_events`
+- `read_snapshot` assembles the same read model from all three tables
 
 Alerts, cancel markers, replay keys, logs, and temp media remain outside that
 first durable session schema.
+
+That split is deliberate:
+
+- it preserves the current durable session meaning
+- it avoids creating one table per file artifact
+- it keeps runtime-control and diagnostics state out of the first PostgreSQL
+  session-store cut
+
+Current adapter milestone:
+
+- `write_metadata(...)` now upserts the authoritative metadata row
+- `session_exists(...)` now follows metadata-row presence as the known-session
+  marker
+- `write_progress(...)` now upserts one latest-only progress row per session
+- `append_result(...)` now persists ordered detector rows
+- `read_results(...)` now returns detector rows in append order while skipping
+  malformed rows
+- `read_snapshot(...)` assembles metadata, latest progress, and ordered results
+  into the same public shape as the file-backed store
 
 The current bootstrap design stays intentionally small:
 
@@ -303,18 +328,19 @@ The file-backed parity lane now has a clear split:
 
 ## Docs That Mention Session Persistence
 
-Most docs match the current stage: session metadata, progress, and results are
-file-backed today; alerts are file-backed by default with PostgreSQL opt-in. The
-risk is future drift once a session-store backend exists.
+Most docs match the current stage: file-backed session persistence is still the
+default, the PostgreSQL session-store adapter now exists as an explicit opt-in,
+and alerts stay file-backed by default with PostgreSQL opt-in. The risk is
+future drift between the default path and the new backend.
 
 | Doc area | Current claim style | Status now | Migration action |
 | --- | --- | --- | --- |
-| Root `README.md` | User-facing current state: session files stay file-backed; PostgreSQL is optional for alerts | Accurate for the current release stage | Update when PostgreSQL session storage becomes available, but keep README high-level and avoid schema/runbook detail. |
+| Root `README.md` | User-facing current state: session persistence defaults to the file-backed store; PostgreSQL session storage is available as explicit opt-in | Accurate for the current release stage | Keep README high-level and avoid schema/runbook detail. |
 | `docs/session-model.md` | Canonical session semantics plus current file names and JSON/JSONL behavior | Accurate, intentionally file-specific | Keep semantic sections stable; move file-specific wording under "current file backend" once a session-store seam lands. |
 | `docs/contracts.md` | Snapshot contract and route behavior, with some file-backed implementation notes | Mostly storage-independent, with a few file examples | Preserve as the public contract reference. Replace implementation-specific "missing `session.json`" wording when known-session checks move behind a store. |
 | `docs/data-models.md` and `docs/fastapi-boundary.md` | Snapshot/API shape rather than storage implementation | Low drift risk | Keep focused on payload shape. Avoid adding PostgreSQL implementation details here unless the API changes. |
 | `docs/architecture.md` | Current runtime architecture: file-backed session state plus opt-in PostgreSQL alerts | Accurate but implementation-oriented | Update alongside the storage seam so architecture reflects file backend plus PostgreSQL backend rather than only files. |
-| `docs/testing-and-validation.md` | Current lanes and test ownership, including file-backed session tests and live PostgreSQL alert confidence | Accurate but will need the largest validation update | Add session-store parity, backend-mode, and optional live PostgreSQL session-store commands when implementation begins. |
+| `docs/testing-and-validation.md` | Current lanes and test ownership, including session-store parity and optional live PostgreSQL session-store confidence | Accurate with recent adapter/test updates | Keep the fast-versus-live split explicit as coverage grows. |
 | `docs/README.md` | Navigation to session model, contracts, and this audit | Aligned | Keep this audit linked while the migration is active. |
 
 Docs migration rule: keep docs honest about the current default, but avoid
@@ -374,7 +400,7 @@ Recommended implementation order:
 1. Define a small session-store contract around metadata, progress, results, and snapshot reads.
 2. Wrap the current file behavior behind that contract without changing defaults.
 3. Reuse the store-contract tests for the PostgreSQL implementation before changing runtime callers.
-4. Add the PostgreSQL implementation and schema as opt-in configuration.
+4. Keep the PostgreSQL implementation and schema opt-in until parity and operations are proven.
 5. Add file/PostgreSQL parity tests and focused FastAPI boundary tests.
 6. Revisit cancel markers, replay keys, and alert known-session checks after the durable read model is stable.
 

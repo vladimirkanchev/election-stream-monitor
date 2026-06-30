@@ -83,10 +83,21 @@ Current persistence rollout note:
 - the durable session-store seam now exists
 - the active runtime default is still the file-backed session store
 - PostgreSQL session-store config/bootstrap now exists
-- explicit `postgres` runtime selection is recognized, validated, and still
-  fails closed before a concrete PostgreSQL session-store adapter is active
+- the first adapter slice now exists:
+  - metadata upsert
+  - metadata-backed `session_exists`
+  - latest-only progress upsert/read
+  - ordered result append/read
+  - snapshot assembly from metadata, latest progress, and ordered results with
+    the stable empty/full snapshot shape
+- its current schema maps contract concerns, not file names:
+  - `session_metadata` for durable metadata and known-session checks
+  - `session_progress` for latest-only progress
+  - `session_result_events` for append-ordered detector results
+- explicit `postgres` runtime selection is now recognized, validated, and
+  wired to a concrete `PostgresSessionStore`
 - PostgreSQL alert storage is opt-in today
-- PostgreSQL session storage is not active yet
+- PostgreSQL session storage is opt-in today and remains non-default
 
 ## Do Not Drift These Together By Accident
 
@@ -1580,13 +1591,14 @@ Current session-storage boundary:
   - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES`
   - `POSTGRES_SESSION_STORE_REAL_SMOKE`
 - `src/session_store_postgres.py` owns the PostgreSQL bootstrap seam:
-  driver loading, connection creation, schema initialization, and opt-in
-  schema reset helpers for live smoke tests.
+  driver loading, connection creation, schema initialization, the concrete
+  PostgreSQL session-store adapter, and opt-in schema reset helpers for live
+  smoke tests.
 - Default behavior remains intentionally conservative:
   - `file` stays the active runtime default
   - invalid or missing backend config falls back to `file`
-  - explicit `postgres` validates config and dependency readiness but does not
-    yet activate PostgreSQL session reads/writes
+  - explicit `postgres` builds the PostgreSQL-backed `SessionStore`
+  - PostgreSQL session storage is available now, but only on deliberate opt-in
 - Bootstrap policy is explicit, not automatic:
   - session tables do not auto-create by default
   - opt in only with `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
@@ -1602,13 +1614,13 @@ Current session-storage boundary:
 Current focused validation ownership for this boundary:
 
 - `tests/test_session_store_runtime.py`
-  - runtime backend selection, file fallback, and honest not-yet-wired
-    PostgreSQL behavior
+  - runtime backend selection, file fallback, rollback safety, and explicit
+    proof that PostgreSQL is built only on deliberate opt-in
 - `tests/test_session_store_postgres_config.py`
   - PostgreSQL env parsing, cache behavior, and URL/auto-create validation
 - `tests/test_session_store_postgres.py`
   - bootstrap/config guards, missing-driver behavior, idempotent schema setup,
-    and opt-in live PostgreSQL smoke isolation
+    adapter behavior/parity coverage, and opt-in live PostgreSQL smoke isolation
 - `tests/test_session_store_file.py`
   - file-backed parity for the active runtime default
 

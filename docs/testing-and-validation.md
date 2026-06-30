@@ -190,15 +190,16 @@ Current focused ownership map:
   - file-backed session-store parity with `session_io`
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
-    and explicit proof that `postgres` is recognized without pretending the
-    runtime adapter is complete
+    and explicit proof that `postgres` is built only on deliberate opt-in
 - `tests/test_session_store_postgres.py`
-  - PostgreSQL session-store bootstrap, driver failure shaping, and opt-in
-    schema-isolation helpers for live smoke lanes
+  - PostgreSQL session-store adapter behavior, bootstrap, driver failure
+    shaping, and opt-in schema-isolation helpers for live smoke lanes
   - focused coverage:
-    missing/invalid URL guards, missing-driver failure, no accidental
-    auto-create in default lanes, unit-level idempotency, and one opt-in real
-    PostgreSQL repeatability smoke
+    metadata/progress/results persistence, snapshot assembly, malformed-row
+    tolerance, missing/invalid URL guards, missing-driver failure, no
+    accidental auto-create in default lanes, unit-level idempotency, and one
+    opt-in real PostgreSQL bootstrap smoke plus one opt-in adapter round-trip
+    smoke
 - `tests/test_session_runner_store_writes.py`
   - storage-neutral lifecycle/execution/terminal write behavior
 - `tests/test_export_detector_catalog.py`
@@ -2149,6 +2150,7 @@ Current lifecycle coverage is already spread across the main layers:
     - current default store resolution
     - invalid-backend fallback to file mode
     - rollback-safe runtime selection behavior
+    - explicit proof that PostgreSQL session storage is opt-in, not the default
   - `tests/test_session_runner_store_writes.py`
     - helper-level metadata/progress/result writes through the session-store contract
     - first stop when lifecycle/execution/terminal helpers drift back toward raw file ownership

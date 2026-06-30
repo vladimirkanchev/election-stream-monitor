@@ -21,7 +21,7 @@ migration, see [session-persistence-audit.md](./session-persistence-audit.md).
 - metadata, progress, and results stay file-backed today
 - the durable `SessionStore` seam now exists, but its active runtime default is
   still `FileSessionStore`
-- PostgreSQL session storage is not active yet in the normal runtime path
+- PostgreSQL session storage is now available as an explicit runtime opt-in
 - alert storage stays file-backed by default for this branch phase and can now
   switch to PostgreSQL
 - the snapshot `alerts` field now follows that same alert backend
@@ -169,10 +169,28 @@ storage-neutral even though the default implementation is still file-backed.
   invalid `ESM_SESSION_STORE_BACKEND` values on that same safe file default.
 - PostgreSQL bootstrap seam: `src/session_store_postgres_config.py` owns the
   PostgreSQL env surface and `src/session_store_postgres.py` owns driver
-  loading, connection setup, schema bootstrap, and opt-in schema reset helpers.
-- Runtime posture: explicit `ESM_SESSION_STORE_BACKEND=postgres` is recognized
-  early enough to validate URL and driver readiness, but it still does not
-  activate PostgreSQL session reads or writes.
+  loading, connection setup, schema bootstrap, the concrete
+  `PostgresSessionStore` adapter, and opt-in schema reset helpers.
+- PostgreSQL table mapping:
+  - `session_metadata` stores the durable session row and remains the
+    known-session anchor
+  - `session_progress` stores the latest-only progress read model keyed by
+    `session_id`
+  - `session_result_events` stores append-ordered detector results keyed by
+    `session_id`
+- Current adapter progress:
+  - metadata writes and known-session checks are now implemented on the
+    PostgreSQL adapter
+  - latest-only progress writes and reads are now implemented on the same
+    adapter
+  - ordered result append/read is now implemented on the same adapter
+  - snapshot reads assemble metadata, latest progress, and ordered results into
+    the stable empty/full snapshot shape
+  - focused adapter tests cover malformed rows, runtime opt-in behavior, and
+    optional live PostgreSQL smoke paths
+- Runtime posture: explicit `ESM_SESSION_STORE_BACKEND=postgres` now builds a
+  concrete `PostgresSessionStore`, while missing, invalid, or explicit `file`
+  config still resolves to the file-backed default.
 - Bootstrap posture: session tables do not auto-create by default. Opt in with
   `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` for explicit local bootstrap or
   focused smoke checks.
@@ -184,8 +202,8 @@ storage-neutral even though the default implementation is still file-backed.
 - Worker writes: `src/session_runner_lifecycle.py`,
   `src/session_runner_execution.py`, and `src/session_runner_terminal.py`
   accept an injected store and fall back to that same default runtime store.
-- Current rollout state: PostgreSQL session storage is being prepared, not used
-  by default runtime callers yet.
+- Current rollout state: PostgreSQL session storage is available for explicit
+  runtime opt-in, but the branch default for ordinary callers remains file-backed.
 - Drift guard: change `SessionStore` when durable session meaning changes;
   change only the file backend when the public snapshot behavior stays the
   same.

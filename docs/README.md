@@ -121,8 +121,8 @@ For the current alert-storage rollout state, use:
   - [contracts.md](./contracts.md)
   - [architecture.md](./architecture.md)
   - current rollout note: session persistence still defaults to the file-backed
-    store; PostgreSQL session bootstrap/config exists, but PostgreSQL session
-    storage is not active yet
+    store; PostgreSQL session bootstrap/config exists, and PostgreSQL session
+    storage is now available as an explicit runtime opt-in
   - `src/session_store.py`
   - `src/session_store_runtime.py`
   - `src/session_store_runtime_config.py`
@@ -132,6 +132,7 @@ For the current alert-storage rollout state, use:
   - `tests/test_session_store_contract.py`
   - `tests/test_session_store_file.py`
   - `tests/test_session_store_runtime.py`
+  - `tests/test_session_store_postgres.py`
   - `tests/test_session_runner_store_writes.py`
   - `tests/test_session_io.py`
 - changing frontend bridge normalization or UI transport handling:
