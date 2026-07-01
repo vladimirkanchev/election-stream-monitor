@@ -1,4 +1,4 @@
-"""Session-file helpers for the local monitoring bridge and snapshot contract.
+"""File-backed session-artifact helpers for the default local session store.
 
 The frontend does not read these files directly. Instead, backend helpers write
 and read a small set of session artifacts that together form the current local
@@ -15,7 +15,7 @@ missing, malformed, or only partially written. Alert persistence now has one
 internal seam in `session_alert_store.py`, but this module still owns the
 broader session-artifact contract:
 
-- metadata, progress, and results stay file-backed here
+- metadata, progress, and results stay file-backed here in the default mode
 - snapshot alerts follow the active alert store
 - `append_alert(...)` remains the compatibility write entrypoint for callers
 """
@@ -37,6 +37,7 @@ from session_models import (
     SessionProgress,
     SessionStatus,
 )
+from session_store import build_latest_result_payload
 
 logger = get_logger(__name__)
 EMPTY_SESSION_SNAPSHOT: dict[str, object] = {
@@ -145,6 +146,7 @@ def write_session_progress(progress: SessionProgress) -> None:
 
 def append_result(event: ResultEvent) -> None:
     """Append one validated detector result event to `results.jsonl`."""
+    event.validate()
     _append_jsonl(get_session_dir(event.session_id) / "results.jsonl", event.to_dict())
 
 
@@ -304,7 +306,9 @@ def _build_session_snapshot(
             "progress": progress,
             "alerts": alerts,
             "results": results,
-            "latest_result": results[-1] if results else None,
+            "latest_result": build_latest_result_payload(
+                cast(list[dict[str, object]], results)
+            ),
         }
     )
     return snapshot

@@ -1,4 +1,9 @@
-"""Lightweight session-domain models for the local frontend bridge."""
+"""Shared session-domain models for durable session state.
+
+These dataclasses and payload parsers define the storage-neutral session
+shapes used by the file-backed store, the PostgreSQL store, and the snapshot
+read model consumed by API, CLI, and bridge code.
+"""
 
 from dataclasses import asdict, dataclass, field
 from typing import Literal
@@ -39,6 +44,29 @@ class InvalidSessionProgressError(ValueError):
     """Raised when persisted session progress violates session invariants."""
 
 
+class InvalidResultEventError(ValueError):
+    """Raised when persisted detector-result rows violate shared invariants."""
+
+
+_RESULT_PAYLOAD_HINT_VALIDATORS: tuple[
+    tuple[str, type[object] | tuple[type[object], ...], str],
+    ...,
+] = (
+    ("timestamp_utc", str, "result payload timestamp_utc must be a string when present"),
+    ("detector_name", str, "result payload detector_name must be a string when present"),
+    ("source_name", str, "result payload source_name must be a string when present"),
+    ("window_index", int, "result payload window_index must be an int when present"),
+    (
+        "window_start_sec",
+        (int, float),
+        "result payload window_start_sec must be numeric when present",
+    ),
+    ("title", str, "result payload title must be a string when present"),
+    ("message", str, "result payload message must be a string when present"),
+    ("severity", str, "result payload severity must be a string when present"),
+)
+
+
 @dataclass(frozen=True)
 class SessionMetadata:
     """Summary information about one local monitoring session."""
@@ -72,7 +100,11 @@ class SessionMetadata:
 
 @dataclass(frozen=True)
 class SessionProgress:
-    """Incremental progress written while a session is running."""
+    """Latest-only progress snapshot for one session.
+
+    This is a durable read model for polling and terminal state, not a
+    progress-event history.
+    """
 
     session_id: str
     status: SessionStatus
@@ -141,7 +173,19 @@ class SessionProgress:
 
 @dataclass(frozen=True)
 class ResultEvent:
-    """One analyzer result persisted for the frontend/session layer."""
+    """One append-ordered durable detector result row.
+
+    The outer contract stays intentionally small:
+
+    - `session_id` ties the row to one session
+    - `detector_id` is the stable durable detector identity
+    - `payload` keeps detector-specific facts as raw JSON-shaped data
+
+    Ordering stays a store concern rather than a public payload field, and
+    `latest_result` is derived from the final valid ordered row. Shared timing
+    or source-location hints may appear inside `payload`, but detectors do not
+    need to normalize every internal metric into top-level columns.
+    """
 
     session_id: str
     detector_id: str
@@ -150,6 +194,23 @@ class ResultEvent:
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable dictionary."""
         return asdict(self)
+
+    def validate(self) -> None:
+        """Assert the minimal durable result-event contract before persistence."""
+        if not self.session_id:
+            raise InvalidResultEventError("result event requires a session_id")
+        if not self.detector_id:
+            raise InvalidResultEventError("result event requires a detector_id")
+        if not isinstance(self.payload, dict):
+            raise InvalidResultEventError("result event payload must be a dictionary")
+
+        for field_name, expected_type, error_message in _RESULT_PAYLOAD_HINT_VALIDATORS:
+            _validate_optional_result_payload_field(
+                self.payload,
+                field_name,
+                expected_type,
+                error_message=error_message,
+            )
 
 
 @dataclass(frozen=True)
@@ -255,25 +316,23 @@ def parse_session_progress_payload(
 
 
 def parse_result_event_payload(payload: object) -> dict[str, object] | None:
-    """Return a valid result event payload or ``None`` when corrupted."""
+    """Return a valid result-event payload or ``None`` when corrupted."""
     if not isinstance(payload, dict):
         return None
-    session_id = payload.get("session_id")
-    detector_id = payload.get("detector_id")
-    result_payload = payload.get("payload")
-    if (
-        not isinstance(session_id, str)
-        or not session_id
-        or not isinstance(detector_id, str)
-        or not detector_id
-        or not isinstance(result_payload, dict)
-    ):
+    try:
+        result_event = ResultEvent(
+            session_id=payload["session_id"],
+            detector_id=payload["detector_id"],
+            payload=payload["payload"],
+        )
+    except (KeyError, TypeError, ValueError):
         return None
-    return {
-        "session_id": session_id,
-        "detector_id": detector_id,
-        "payload": result_payload,
-    }
+
+    try:
+        result_event.validate()
+    except InvalidResultEventError:
+        return None
+    return result_event.to_dict()
 
 
 def parse_alert_event_payload(payload: object) -> dict[str, object] | None:
@@ -317,3 +376,16 @@ def _coerce_optional_string(value: object) -> str | None:
     if value is None:
         return None
     return value if isinstance(value, str) else None
+
+
+def _validate_optional_result_payload_field(
+    payload: dict[str, object],
+    field_name: str,
+    expected_type: type[object] | tuple[type[object], ...],
+    *,
+    error_message: str,
+) -> None:
+    """Raise when one optional shared result-payload hint has the wrong type."""
+    value = payload.get(field_name)
+    if value is not None and not isinstance(value, expected_type):
+        raise InvalidResultEventError(error_message)

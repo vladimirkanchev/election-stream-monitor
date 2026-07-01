@@ -14,6 +14,17 @@ from analyzer_contract import InputMode
 from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
 
 SESSION_SNAPSHOT_KEYS = ("session", "progress", "alerts", "results", "latest_result")
+RESULT_EVENT_PUBLIC_KEYS = ("session_id", "detector_id", "payload")
+RESULT_EVENT_SHARED_PAYLOAD_HINT_KEYS = (
+    "timestamp_utc",
+    "detector_name",
+    "source_name",
+    "window_index",
+    "window_start_sec",
+    "title",
+    "message",
+    "severity",
+)
 
 
 class SessionMetadataPayload(TypedDict):
@@ -43,7 +54,15 @@ class SessionProgressPayload(TypedDict):
 
 
 class ResultEventPayload(TypedDict):
-    """Append-ordered detector result row."""
+    """Append-ordered detector result row.
+
+    The durable public row stays compact: stable session id, stable detector
+    id, and raw detector payload JSON. Stores own ordering internally;
+    detectors may optionally include shared timing/source hints inside
+    `payload`, but the contract does not require every detector to populate the
+    same nested keys. `latest_result` is derived from the final valid ordered
+    row rather than stored independently.
+    """
 
     session_id: str
     detector_id: str
@@ -58,6 +77,18 @@ class SessionSnapshotPayload(TypedDict):
     alerts: list[dict[str, object]]
     results: list[ResultEventPayload]
     latest_result: ResultEventPayload | None
+
+
+def build_latest_result_payload(
+    results: list[ResultEventPayload],
+) -> ResultEventPayload | None:
+    """Return the latest result from append-ordered history.
+
+    Result history is append-only: callers pass already ordered rows, and the
+    latest item is always the final valid row rather than a timestamp-derived
+    choice.
+    """
+    return results[-1] if results else None
 
 
 def build_empty_session_snapshot_payload() -> SessionSnapshotPayload:
@@ -96,14 +127,15 @@ def build_session_snapshot_payload(
         "progress": progress,
         "alerts": alerts,
         "results": results,
-        "latest_result": results[-1] if results else None,
+        "latest_result": build_latest_result_payload(results),
     }
 
 
 class SessionStoreReader(Protocol):
     """Read contract for durable session state.
 
-    Readers expose snapshot semantics without leaking backend layout.
+    Readers expose snapshot semantics without leaking backend layout or file
+    names.
     """
 
     def session_exists(self, session_id: str) -> bool:
@@ -131,7 +163,7 @@ class SessionStoreWriter(Protocol):
     """Write contract for durable session lifecycle data.
 
     Lifecycle-specific operations such as start, cancel, and finalize stay in
-    runner/service code.
+    runner/service code, while result ordering remains a backend concern.
     """
 
     def write_metadata(self, metadata: SessionMetadata) -> None:

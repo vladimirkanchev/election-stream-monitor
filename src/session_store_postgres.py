@@ -2,7 +2,9 @@
 
 This module owns the PostgreSQL session persistence path: schema mapping,
 connection/bootstrap helpers, the concrete `SessionStore` adapter, and a small
-set of reset helpers used by opt-in live smoke tests.
+set of reset helpers used by opt-in live smoke tests. Result rows stay compact:
+the store preserves append order, projects a few shared query hints, and keeps
+detector-specific detail in JSON.
 """
 
 from __future__ import annotations
@@ -79,7 +81,9 @@ POSTGRES_SESSION_RESULT_FIELDS: tuple[str, ...] = (
     "id",
     "session_id",
     "detector_id",
-    "payload",
+    "detector_name",
+    "event_timestamp_utc",
+    "payload_json",
 )
 
 POSTGRES_SESSION_STORE_TABLE_SPECS: tuple[PostgresSessionStoreTableSpec, ...] = (
@@ -150,7 +154,9 @@ CREATE TABLE IF NOT EXISTS {POSTGRES_SESSION_RESULTS_TABLE_NAME} (
     id BIGSERIAL PRIMARY KEY,
     session_id TEXT NOT NULL,
     detector_id TEXT NOT NULL,
-    payload JSONB NOT NULL,
+    detector_name TEXT NULL,
+    event_timestamp_utc TEXT NULL,
+    payload_json JSONB NOT NULL,
     FOREIGN KEY (session_id)
         REFERENCES {POSTGRES_SESSION_METADATA_TABLE_NAME} (session_id)
         ON DELETE CASCADE
@@ -165,6 +171,10 @@ POSTGRES_SESSION_SCHEMA_INDEX_STATEMENTS: tuple[str, ...] = (
     f"""
     CREATE INDEX IF NOT EXISTS idx_{POSTGRES_SESSION_RESULTS_TABLE_NAME}_session_id_id
     ON {POSTGRES_SESSION_RESULTS_TABLE_NAME} (session_id, id)
+    """.strip(),
+    f"""
+    CREATE INDEX IF NOT EXISTS idx_{POSTGRES_SESSION_RESULTS_TABLE_NAME}_session_id_detector_id_id
+    ON {POSTGRES_SESSION_RESULTS_TABLE_NAME} (session_id, detector_id, id)
     """.strip(),
 )
 
@@ -249,11 +259,19 @@ ON CONFLICT (session_id) DO UPDATE SET
     status_detail = EXCLUDED.status_detail
 """.strip()
 POSTGRES_SESSION_RESULT_SELECT_FIELDS: tuple[str, ...] = (
+    "id",
     "session_id",
     "detector_id",
     "payload",
 )
-POSTGRES_SESSION_RESULT_SELECT_COLUMN_SQL = ", ".join(POSTGRES_SESSION_RESULT_SELECT_FIELDS)
+POSTGRES_SESSION_RESULT_SELECT_COLUMN_SQL = ", ".join(
+    (
+        "id",
+        "session_id",
+        "detector_id",
+        "payload_json AS payload",
+    )
+)
 POSTGRES_SESSION_RESULTS_SELECT_SQL = f"""
 SELECT {POSTGRES_SESSION_RESULT_SELECT_COLUMN_SQL}
 FROM {POSTGRES_SESSION_RESULTS_TABLE_NAME}
@@ -264,8 +282,10 @@ POSTGRES_SESSION_RESULTS_INSERT_SQL = f"""
 INSERT INTO {POSTGRES_SESSION_RESULTS_TABLE_NAME} (
     session_id,
     detector_id,
-    payload
-) VALUES (%s, %s, %s)
+    detector_name,
+    event_timestamp_utc,
+    payload_json
+) VALUES (%s, %s, %s, %s, %s)
 """.strip()
 
 
@@ -274,7 +294,8 @@ class PostgresSessionStore(SessionStore):
 
     The adapter owns an injected connection plus the stable store-method
     surface. Query details stay close to the shared contract instead of
-    expanding into a larger ORM or repository layer prematurely.
+    expanding into a larger ORM or repository layer prematurely. Ordered result
+    history is preserved by durable row id, not detector timestamp ordering.
     """
 
     def __init__(self, connection: PostgresSessionStoreConnection) -> None:
@@ -308,7 +329,9 @@ class PostgresSessionStore(SessionStore):
 
     def read_results(self, session_id: str) -> list[ResultEventPayload]:
         """Return ordered detector-result payloads for one session."""
-        rows = self._fetch_all(POSTGRES_SESSION_RESULTS_SELECT_SQL, (session_id,))
+        rows = _sort_result_rows_by_append_sequence(
+            self._fetch_all(POSTGRES_SESSION_RESULTS_SELECT_SQL, (session_id,))
+        )
         results: list[ResultEventPayload] = []
         for row in rows:
             payload = parse_result_event_payload(
@@ -354,13 +377,10 @@ class PostgresSessionStore(SessionStore):
 
     def append_result(self, event: ResultEvent) -> None:
         """Append one detector-result row while preserving read order."""
+        event.validate()
         self._execute_and_commit(
             POSTGRES_SESSION_RESULTS_INSERT_SQL,
-            (
-                event.session_id,
-                event.detector_id,
-                event.payload,
-            ),
+            _build_postgres_result_insert_params(event),
         )
 
     def _read_metadata_payload(self, session_id: str) -> SessionMetadataPayload | None:
@@ -459,6 +479,43 @@ def _row_to_payload(columns: tuple[str, ...], row: object) -> dict[str, object]:
     if isinstance(row, tuple):
         return dict(zip(columns, row, strict=True))
     raise TypeError(f"Unsupported PostgreSQL session-store row type: {type(row)!r}")
+
+
+def _sort_result_rows_by_append_sequence(rows: list[object]) -> list[object]:
+    """Return result rows in durable append order.
+
+    The SQL query already orders by `id ASC`; this helper keeps that contract
+    explicit inside the adapter and protects simple doubles from accidentally
+    smuggling timestamp-based or insertion-list ordering into behavior tests.
+    Rows without a usable numeric `id` keep their existing relative order.
+    """
+    indexed_rows = list(enumerate(rows))
+
+    def sort_key(item: tuple[int, object]) -> tuple[int, int]:
+        original_index, row = item
+        payload = _row_to_payload(POSTGRES_SESSION_RESULT_SELECT_FIELDS, row)
+        row_id = payload.get("id")
+        if isinstance(row_id, int):
+            return (0, row_id)
+        return (1, original_index)
+
+    return [row for _, row in sorted(indexed_rows, key=sort_key)]
+
+
+def _build_postgres_result_insert_params(
+    event: ResultEvent,
+) -> tuple[str, str, str | None, str | None, dict[str, object]]:
+    """Project shared query fields while keeping the raw payload intact."""
+    payload = event.payload
+    detector_name = payload.get("detector_name")
+    event_timestamp_utc = payload.get("timestamp_utc")
+    return (
+        event.session_id,
+        event.detector_id,
+        detector_name if isinstance(detector_name, str) else None,
+        event_timestamp_utc if isinstance(event_timestamp_utc, str) else None,
+        payload,
+    )
 
 
 def load_postgres_session_store_driver() -> ModuleType:
