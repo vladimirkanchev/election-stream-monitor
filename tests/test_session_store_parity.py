@@ -1,8 +1,9 @@
-"""Shared backend-equivalence tests for session-store progress behavior.
+"""Shared backend-equivalence tests for session-store persistence behavior.
 
 This suite compares the file-backed store with the PostgreSQL-backed store at
 the durable `SessionStore` boundary. It focuses on progress-state behavior
-that must stay storage-neutral while the PostgreSQL migration is in flight.
+and ordered result behavior that must stay storage-neutral while the
+PostgreSQL migration is in flight.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from typing import Any, cast
 import config
 import pytest
 
-from session_models import SessionMetadata, SessionProgress, SessionStatus
+from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
 from session_store import SessionStore
 from session_store_file import FileSessionStore
 from session_store_postgres import (
@@ -23,13 +24,14 @@ from session_store_postgres import (
     POSTGRES_SESSION_METADATA_UPSERT_SQL,
     POSTGRES_SESSION_PROGRESS_SELECT_SQL,
     POSTGRES_SESSION_PROGRESS_UPSERT_SQL,
+    POSTGRES_SESSION_RESULTS_INSERT_SQL,
     POSTGRES_SESSION_RESULTS_SELECT_SQL,
     PostgresSessionStore,
 )
 
 
 class InMemoryPostgresSessionStoreCursor:
-    """Tiny cursor that simulates the SQL used by progress parity checks."""
+    """Tiny cursor that simulates the SQL used by session-store parity checks."""
 
     def __init__(self, connection: "InMemoryPostgresSessionStoreConnection") -> None:
         self._connection = connection
@@ -120,6 +122,41 @@ class InMemoryPostgresSessionStoreCursor:
             self._fetchone_result = None
             return object()
         if query == POSTGRES_SESSION_RESULTS_SELECT_SQL:
+            session_id = cast(tuple[str], params)[0]
+            self._fetchone_result = None
+            self._fetchall_result = [
+                {
+                    "id": row["id"],
+                    "session_id": row["session_id"],
+                    "detector_id": row["detector_id"],
+                    "payload": row["payload_json"],
+                }
+                for row in self._connection.result_rows
+                if row["session_id"] == session_id
+            ]
+            return object()
+        if query == POSTGRES_SESSION_RESULTS_INSERT_SQL:
+            (
+                session_id,
+                detector_id,
+                detector_name,
+                event_timestamp_utc,
+                payload_json,
+            ) = cast(
+                tuple[object, object, object, object, object],
+                params,
+            )
+            self._connection.result_sequence += 1
+            self._connection.result_rows.append(
+                {
+                    "id": self._connection.result_sequence,
+                    "session_id": str(session_id),
+                    "detector_id": str(detector_id),
+                    "detector_name": detector_name,
+                    "event_timestamp_utc": event_timestamp_utc,
+                    "payload_json": payload_json,
+                }
+            )
             self._fetchone_result = None
             self._fetchall_result = []
             return object()
@@ -138,6 +175,8 @@ class InMemoryPostgresSessionStoreConnection:
     def __init__(self) -> None:
         self.metadata_rows: dict[str, object] = {}
         self.progress_rows: dict[str, object] = {}
+        self.result_rows: list[dict[str, object]] = []
+        self.result_sequence = 0
         self.commit_count = 0
 
     def cursor(self) -> InMemoryPostgresSessionStoreCursor:
@@ -212,6 +251,52 @@ def _terminal_progress(
     )
 
 
+def _result(
+    session_id: str,
+    detector_id: str,
+    *,
+    window_index: int,
+    timestamp_utc: str,
+) -> ResultEvent:
+    """Build one storage-neutral detector result payload."""
+    return ResultEvent(
+        session_id=session_id,
+        detector_id=detector_id,
+        payload={
+            "timestamp_utc": timestamp_utc,
+            "detector_name": detector_id.replace("_", " ").title(),
+            "source_name": f"segment_{window_index:04d}.ts",
+            "window_index": window_index,
+        },
+    )
+
+
+def _rich_result(
+    session_id: str,
+    detector_id: str,
+    *,
+    window_index: int,
+    timestamp_utc: str,
+) -> ResultEvent:
+    """Build one richer detector result payload for backend-parity checks."""
+    return ResultEvent(
+        session_id=session_id,
+        detector_id=detector_id,
+        payload={
+            "timestamp_utc": timestamp_utc,
+            "detector_name": detector_id.replace("_", " ").title(),
+            "source_name": f"segment_{window_index:04d}.ts",
+            "window_index": window_index,
+            "window_start_sec": float(window_index),
+            "title": "Blur warning",
+            "message": "Frame quality degraded in the sampled window.",
+            "severity": "warning",
+            "blur_score": 0.91,
+            "blur_detected": True,
+        },
+    )
+
+
 def _state_payloads(session_id: str) -> dict[str, tuple[SessionMetadata, SessionProgress]]:
     """Return the durable session/progress combinations shared by both backends."""
     return {
@@ -267,6 +352,55 @@ def _persist_session_state(
     return cast(dict[str, object], store.read_snapshot(metadata.session_id))
 
 
+def _persist_results(
+    store: SessionStore,
+    *,
+    metadata: SessionMetadata,
+    results: list[ResultEvent],
+) -> dict[str, object]:
+    """Write one metadata row plus ordered results and return the snapshot."""
+    store.write_metadata(metadata)
+    for result in results:
+        store.append_result(result)
+    return cast(dict[str, object], store.read_snapshot(metadata.session_id))
+
+
+def _assert_snapshot_latest_result_matches_ordered_history(
+    store: SessionStore,
+    *,
+    session_id: str,
+    snapshot: dict[str, object],
+) -> None:
+    """Assert the public latest-result invariant shared by both backends."""
+    ordered_results = cast(list[dict[str, object]], store.read_results(session_id))
+    snapshot_results = cast(list[dict[str, object]], snapshot["results"])
+
+    assert snapshot_results == ordered_results
+    if not ordered_results:
+        assert snapshot["latest_result"] is None
+        return
+    assert snapshot["latest_result"] == ordered_results[-1]
+    assert snapshot["latest_result"] == snapshot_results[-1]
+
+
+def _assert_store_results_match(
+    store: SessionStore,
+    *,
+    session_id: str,
+    snapshot: dict[str, object],
+    results: list[ResultEvent],
+) -> None:
+    """Assert the result-history contract for one backend."""
+    expected_results = [result.to_dict() for result in results]
+
+    assert store.read_results(session_id) == expected_results
+    _assert_snapshot_latest_result_matches_ordered_history(
+        store,
+        session_id=session_id,
+        snapshot=snapshot,
+    )
+
+
 def test_session_store_progress_parity_keeps_missing_session_contract(
     file_store: FileSessionStore,
     postgres_store: PostgresSessionStore,
@@ -299,4 +433,138 @@ def test_session_store_progress_parity_matches_file_backed_behavior_across_lifec
     assert postgres_store.session_exists(session_id) is True
     assert file_snapshot["session"] == metadata.to_dict()
     assert file_snapshot["progress"] == progress.to_dict()
+    assert postgres_snapshot == file_snapshot
+
+
+def test_session_store_result_append_parity_matches_file_backed_behavior(
+    file_store: FileSessionStore,
+    postgres_store: PostgresSessionStore,
+) -> None:
+    """Ordered result appends should read back the same across both backends."""
+    session_id = "session-parity-results"
+    metadata = _metadata(session_id, status="running")
+    results = [
+        _result(
+            session_id,
+            "video_metrics",
+            window_index=0,
+            timestamp_utc="2026-07-01 10:00:00",
+        ),
+        _result(
+            session_id,
+            "video_blur",
+            window_index=1,
+            timestamp_utc="2026-07-01 10:00:01",
+        ),
+    ]
+
+    file_snapshot = _persist_results(file_store, metadata=metadata, results=results)
+    postgres_snapshot = _persist_results(
+        postgres_store,
+        metadata=metadata,
+        results=results,
+    )
+
+    _assert_store_results_match(
+        file_store,
+        session_id=session_id,
+        snapshot=file_snapshot,
+        results=results,
+    )
+    _assert_store_results_match(
+        postgres_store,
+        session_id=session_id,
+        snapshot=postgres_snapshot,
+        results=results,
+    )
+    assert postgres_snapshot == file_snapshot
+
+
+def test_session_store_result_append_parity_keeps_latest_result_on_equal_timestamps(
+    file_store: FileSessionStore,
+    postgres_store: PostgresSessionStore,
+) -> None:
+    """Append order, not timestamp sorting, should define `latest_result` for both backends."""
+    session_id = "session-parity-results-same-timestamp"
+    metadata = _metadata(session_id, status="running")
+    results = [
+        _result(
+            session_id,
+            "video_metrics",
+            window_index=0,
+            timestamp_utc="2026-07-01 10:00:00",
+        ),
+        _result(
+            session_id,
+            "video_blur",
+            window_index=1,
+            timestamp_utc="2026-07-01 10:00:00",
+        ),
+    ]
+
+    file_snapshot = _persist_results(file_store, metadata=metadata, results=results)
+    postgres_snapshot = _persist_results(
+        postgres_store,
+        metadata=metadata,
+        results=results,
+    )
+
+    _assert_store_results_match(
+        file_store,
+        session_id=session_id,
+        snapshot=file_snapshot,
+        results=results,
+    )
+    _assert_store_results_match(
+        postgres_store,
+        session_id=session_id,
+        snapshot=postgres_snapshot,
+        results=results,
+    )
+    assert postgres_snapshot == file_snapshot
+
+
+def test_session_store_result_parity_preserves_rich_payload_shape(
+    file_store: FileSessionStore,
+    postgres_store: PostgresSessionStore,
+) -> None:
+    """Both backends should preserve shared hints and detector-specific payload detail."""
+    session_id = "session-parity-results-rich-payload"
+    metadata = _metadata(session_id, status="running")
+    results = [
+        _rich_result(
+            session_id,
+            "video_blur",
+            window_index=7,
+            timestamp_utc="2026-07-01 10:00:07",
+        ),
+        _rich_result(
+            session_id,
+            "video_metrics",
+            window_index=8,
+            timestamp_utc="2026-07-01 10:00:08",
+        ),
+    ]
+
+    file_snapshot = _persist_results(file_store, metadata=metadata, results=results)
+    postgres_snapshot = _persist_results(
+        postgres_store,
+        metadata=metadata,
+        results=results,
+    )
+
+    _assert_store_results_match(
+        file_store,
+        session_id=session_id,
+        snapshot=file_snapshot,
+        results=results,
+    )
+    _assert_store_results_match(
+        postgres_store,
+        session_id=session_id,
+        snapshot=postgres_snapshot,
+        results=results,
+    )
+    assert file_snapshot["results"][0]["payload"]["blur_score"] == 0.91
+    assert file_snapshot["results"][0]["payload"]["severity"] == "warning"
     assert postgres_snapshot == file_snapshot

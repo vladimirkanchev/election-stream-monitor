@@ -4,6 +4,8 @@ These tests keep the PostgreSQL migration boundary small and storage-neutral.
 """
 
 from session_store import (
+    RESULT_EVENT_PUBLIC_KEYS,
+    RESULT_EVENT_SHARED_PAYLOAD_HINT_KEYS,
     SESSION_SNAPSHOT_KEYS,
     ResultEventPayload,
     SessionMetadataPayload,
@@ -11,6 +13,7 @@ from session_store import (
     SessionStoreReader,
     SessionStoreWriter,
     build_empty_session_snapshot_payload,
+    build_latest_result_payload,
     build_session_snapshot_payload,
     is_missing_session_snapshot,
 )
@@ -58,7 +61,15 @@ def _result_payload(session_id: str, detector_id: str, window_index: int) -> Res
     return {
         "session_id": session_id,
         "detector_id": detector_id,
-        "payload": {"window_index": window_index},
+        "payload": {
+            "timestamp_utc": "2026-07-01 10:00:00",
+            "source_name": "segment_0001.ts",
+            "window_index": window_index,
+            "window_start_sec": float(window_index),
+            "severity": "warning",
+            "title": "Detector signal",
+            "message": "Representative detector note",
+        },
     }
 
 
@@ -133,6 +144,35 @@ def test_session_snapshot_payload_derives_latest_result_from_append_order() -> N
 
     assert snapshot["results"] == [first, second]
     assert snapshot["latest_result"] == second
+
+
+def test_result_event_contract_stays_compact_while_allowing_shared_payload_hints() -> None:
+    """The public result row stays small while shared nested hint keys remain available."""
+    result = _result_payload("session-contract-result", "video_blur", 7)
+
+    assert tuple(result.keys()) == RESULT_EVENT_PUBLIC_KEYS
+    assert RESULT_EVENT_SHARED_PAYLOAD_HINT_KEYS == (
+        "timestamp_utc",
+        "detector_name",
+        "source_name",
+        "window_index",
+        "window_start_sec",
+        "title",
+        "message",
+        "severity",
+    )
+    assert result["payload"]["source_name"] == "segment_0001.ts"
+    assert result["payload"]["window_index"] == 7
+
+
+def test_latest_result_payload_uses_append_order_not_timestamp_preference() -> None:
+    """The latest result should come from history order even when timestamps collide."""
+    first = _result_payload("session-order", "video_metrics", 0)
+    second = _result_payload("session-order", "video_blur", 1)
+    first["payload"]["timestamp_utc"] = "2026-07-01 10:00:00"
+    second["payload"]["timestamp_utc"] = "2026-07-01 10:00:00"
+
+    assert build_latest_result_payload([first, second]) == second
 
 
 def test_session_snapshot_payload_treats_progress_as_latest_only() -> None:

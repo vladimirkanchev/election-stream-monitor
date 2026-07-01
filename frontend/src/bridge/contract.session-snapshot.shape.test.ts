@@ -2,8 +2,8 @@
  * Session-snapshot compatibility tests for the bridge normalization contract.
  *
  * The suite keeps the required top-level shape stable and verifies that
- * lifecycle and progress fields survive normalization without overfitting
- * timestamp formatting details.
+ * lifecycle fields, latest-only progress, and ordered result history survive
+ * normalization without overfitting timestamp formatting details.
  */
 
 import { describe, expect, it } from "vitest";
@@ -40,6 +40,81 @@ describe("bridge contract session snapshot shape compatibility", () => {
       alerts: [],
       results: [],
       latest_result: null,
+    });
+  });
+
+  it("keeps the frontend-visible snapshot shape stable when ordered results come from the store seam", () => {
+    const normalized = normalizeSessionSnapshot({
+      session: {
+        session_id: "session-store-results",
+        mode: "video_segments",
+        input_path: "/tmp/segments",
+        selected_detectors: ["video_metrics", "video_blur"],
+        status: "running",
+      },
+      progress: {
+        session_id: "session-store-results",
+        status: "running",
+        processed_count: 2,
+        total_count: 8,
+        current_item: "segment_0001.ts",
+        latest_result_detector: "video_blur",
+        latest_result_detectors: ["video_metrics", "video_blur"],
+        alert_count: 1,
+        last_updated_utc: "2026-07-01 10:00:05",
+        status_reason: "running",
+        status_detail: null,
+      },
+      alerts: [],
+      results: [
+        {
+          session_id: "session-store-results",
+          detector_id: "video_metrics",
+          payload: {
+            timestamp_utc: "2026-07-01 10:00:00",
+            source_name: "segment_0000.ts",
+            window_index: 0,
+            black_ratio: 0.12,
+          },
+        },
+        {
+          session_id: "session-store-results",
+          detector_id: "video_blur",
+          payload: {
+            timestamp_utc: "2026-07-01 10:00:00",
+            source_name: "segment_0001.ts",
+            window_index: 1,
+            blur_score: 0.91,
+          },
+        },
+      ],
+      latest_result: {
+        session_id: "session-store-results",
+        detector_id: "video_blur",
+        payload: {
+          timestamp_utc: "2026-07-01 10:00:00",
+          source_name: "segment_0001.ts",
+          window_index: 1,
+          blur_score: 0.91,
+        },
+      },
+    });
+
+    expect(Object.keys(normalized)).toEqual([
+      "session",
+      "progress",
+      "alerts",
+      "results",
+      "latest_result",
+    ]);
+    expect(normalized.results.map((row) => row.detector_id)).toEqual([
+      "video_metrics",
+      "video_blur",
+    ]);
+    expect(normalized.latest_result).toEqual(normalized.results.at(-1) ?? null);
+    expect(normalized.latest_result?.payload).toMatchObject({
+      source_name: "segment_0001.ts",
+      blur_score: 0.91,
     });
   });
 

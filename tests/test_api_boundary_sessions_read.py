@@ -1,7 +1,8 @@
-"""Focused FastAPI tests for session read routes, snapshot parity, and polling progress.
+"""Focused FastAPI tests for session read routes and snapshot contract stability.
 
 This file covers the HTTP-facing snapshot contract used by the desktop polling
-path, including Task 6 progress-read behavior through the default session store.
+path, including store-backed progress reads, ordered result history, and
+derived `latest_result` behavior.
 """
 
 import json
@@ -254,6 +255,58 @@ def test_get_session_reads_progress_through_default_session_store(monkeypatch) -
 
     assert response.status_code == 200
     assert response.json()["progress"] == expected_progress
+
+
+def test_get_session_keeps_store_backed_ordered_results_and_latest_result(monkeypatch) -> None:
+    """The session route should preserve ordered results from the active store snapshot."""
+    session_id = "session-route-store-results"
+    expected_results = [
+        {
+            "session_id": session_id,
+            "detector_id": "video_metrics",
+            "payload": {
+                "timestamp_utc": "2026-07-01 10:00:00",
+                "source_name": "segment_0000.ts",
+                "window_index": 0,
+            },
+        },
+        {
+            "session_id": session_id,
+            "detector_id": "video_blur",
+            "payload": {
+                "timestamp_utc": "2026-07-01 10:00:00",
+                "source_name": "segment_0001.ts",
+                "window_index": 1,
+            },
+        },
+    ]
+
+    class FakeStore:
+        def read_snapshot(self, read_session_id: str) -> dict[str, object]:
+            return {
+                "session": {
+                    "session_id": read_session_id,
+                    "mode": "video_segments",
+                    "input_path": "/tmp/segments",
+                    "selected_detectors": ["video_metrics", "video_blur"],
+                    "status": "running",
+                },
+                "progress": None,
+                "alerts": [],
+                "results": expected_results,
+                "latest_result": expected_results[-1],
+            }
+
+    monkeypatch.setattr(
+        "session_service.get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    response = request("GET", f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["results"] == expected_results
+    assert response.json()["latest_result"] == expected_results[-1]
 
 
 def test_get_session_keeps_last_committed_progress_during_interleaved_store_update(

@@ -218,6 +218,84 @@ def test_read_session_malformed_alert_and_result_payloads_fail_closed_with_struc
     assert any(fragment in body["status_detail"] for fragment in ("severity", "payload"))
 
 
+def test_read_session_snapshot_contract_keeps_results_and_latest_result_shape_after_store_move(
+    monkeypatch,
+) -> None:
+    """Session reads should keep the public snapshot shape stable above the store seam."""
+
+    def fake_read_session_snapshot_or_none(session_id: str) -> dict[str, object]:
+        ordered_results = [
+            {
+                "session_id": session_id,
+                "detector_id": "video_metrics",
+                "payload": {
+                    "timestamp_utc": "2026-07-01 10:00:00",
+                    "source_name": "segment_0000.ts",
+                    "window_index": 0,
+                    "black_ratio": 0.12,
+                },
+            },
+            {
+                "session_id": session_id,
+                "detector_id": "video_blur",
+                "payload": {
+                    "timestamp_utc": "2026-07-01 10:00:00",
+                    "source_name": "segment_0001.ts",
+                    "window_index": 1,
+                    "blur_score": 0.91,
+                },
+            },
+        ]
+        return {
+            "session": {
+                "session_id": session_id,
+                "mode": "video_segments",
+                "input_path": "/tmp/segments",
+                "selected_detectors": ["video_metrics", "video_blur"],
+                "status": "running",
+            },
+            "progress": {
+                "session_id": session_id,
+                "status": "running",
+                "processed_count": 2,
+                "total_count": 8,
+                "current_item": "segment_0001.ts",
+                "latest_result_detector": "video_blur",
+                "latest_result_detectors": ["video_metrics", "video_blur"],
+                "alert_count": 1,
+                "last_updated_utc": "2026-07-01 10:00:05",
+                "status_reason": "running",
+                "status_detail": None,
+            },
+            "alerts": [],
+            "results": ordered_results,
+            "latest_result": ordered_results[-1],
+        }
+
+    monkeypatch.setattr(
+        "api.routers.sessions.read_session_snapshot_or_none",
+        fake_read_session_snapshot_or_none,
+    )
+
+    response = request("GET", "/sessions/test-session-store-results")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert tuple(body.keys()) == (
+        "session",
+        "progress",
+        "alerts",
+        "results",
+        "latest_result",
+    )
+    assert [row["detector_id"] for row in body["results"]] == [
+        "video_metrics",
+        "video_blur",
+    ]
+    assert body["latest_result"] == body["results"][-1]
+    assert body["latest_result"]["payload"]["blur_score"] == 0.91
+
+
 @pytest.mark.parametrize(
     ("method", "path", "payload", "expected_status"),
     [

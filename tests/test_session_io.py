@@ -27,6 +27,7 @@ from session_io import (
 )
 from session_models import (
     AlertEvent,
+    InvalidResultEventError,
     InvalidSessionProgressError,
     InvalidSessionTransitionError,
     ResultEvent,
@@ -317,6 +318,31 @@ def test_session_snapshot_preserves_result_order_and_latest_result(
     assert [result["payload"]["window_index"] for result in snapshot["results"]] == [0, 1]
     assert snapshot["latest_result"] == snapshot["results"][-1]
     assert snapshot["latest_result"]["payload"]["source_name"] == "clip.mp4 @ 00:01"
+
+
+def test_append_result_rejects_invalid_shared_payload_hint_types(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Result writes should fail closed when shared payload hints use the wrong types."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    metadata = _session_metadata("session-invalid-result")
+    initialize_session(metadata)
+
+    with pytest.raises(
+        InvalidResultEventError,
+        match="window_index must be an int",
+    ):
+        append_result(
+            ResultEvent(
+                session_id="session-invalid-result",
+                detector_id="video_metrics",
+                payload={
+                    "source_name": "segment_0001.ts",
+                    "window_index": "0",
+                },
+            )
+        )
 
 
 def test_session_snapshot_preserves_alert_fields_and_append_order(

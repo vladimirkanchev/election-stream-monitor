@@ -251,14 +251,25 @@ class MetadataStoreCursor:
             session_id = cast(tuple[str], params)[0]
             self._fetchone_result = None
             self._fetchall_result = [
-                row
+                {
+                    "id": row["id"],
+                    "session_id": row["session_id"],
+                    "detector_id": row["detector_id"],
+                    "payload": row.get("payload_json", row.get("payload")),
+                }
                 for row in self._connection.result_rows
                 if row["session_id"] == session_id
             ]
             return object()
         if query == POSTGRES_SESSION_RESULTS_INSERT_SQL:
-            session_id, detector_id, payload = cast(
-                tuple[object, object, object],
+            (
+                session_id,
+                detector_id,
+                detector_name,
+                event_timestamp_utc,
+                payload_json,
+            ) = cast(
+                tuple[object, object, object, object, object],
                 params,
             )
             self._connection.result_sequence += 1
@@ -267,7 +278,9 @@ class MetadataStoreCursor:
                     "id": self._connection.result_sequence,
                     "session_id": str(session_id),
                     "detector_id": str(detector_id),
-                    "payload": payload,
+                    "detector_name": detector_name,
+                    "event_timestamp_utc": event_timestamp_utc,
+                    "payload_json": payload_json,
                 }
             )
             self._fetchone_result = None
@@ -381,10 +394,33 @@ def test_postgres_session_schema_constants_match_current_store_contract() -> Non
     assert POSTGRES_SESSION_RESULTS_TABLE_NAME == "session_result_events"
     assert "selected_detectors JSONB NOT NULL" in POSTGRES_SESSION_METADATA_TABLE_SQL
     assert "latest_result_detectors JSONB NOT NULL" in POSTGRES_SESSION_PROGRESS_TABLE_SQL
-    assert "payload JSONB NOT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
+    assert "detector_name TEXT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
+    assert "event_timestamp_utc TEXT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
+    assert "payload_json JSONB NOT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
     assert "alerts" not in POSTGRES_SESSION_METADATA_TABLE_SQL.lower()
     assert "worker.log" not in POSTGRES_SESSION_PROGRESS_TABLE_SQL.lower()
     assert "cancel_requested" not in POSTGRES_SESSION_RESULTS_TABLE_SQL.lower()
+
+
+def test_postgres_result_event_schema_stays_queryable_without_over_normalizing() -> None:
+    """Result rows should project shared hints while keeping detector detail in JSON."""
+    assert POSTGRES_SESSION_RESULT_FIELDS == (
+        "id",
+        "session_id",
+        "detector_id",
+        "detector_name",
+        "event_timestamp_utc",
+        "payload_json",
+    )
+    assert "payload_json AS payload" in POSTGRES_SESSION_RESULTS_SELECT_SQL
+    assert (
+        "session_id,\n    detector_id,\n    detector_name,\n    event_timestamp_utc,\n    payload_json"
+        in POSTGRES_SESSION_RESULTS_INSERT_SQL
+    )
+    assert any(
+        "session_id, detector_id, id" in statement
+        for statement in POSTGRES_SESSION_STORE_SCHEMA_STATEMENTS
+    )
 
 
 def test_postgres_session_table_specs_follow_contract_concerns_not_file_inventory() -> None:
@@ -557,6 +593,76 @@ def test_postgres_session_store_append_result_preserves_read_order_and_latest_re
     assert store.read_results(metadata.session_id) == [first.to_dict(), second.to_dict()]
     assert snapshot["results"] == [first.to_dict(), second.to_dict()]
     assert snapshot["latest_result"] == second.to_dict()
+
+
+def test_postgres_session_store_append_result_projects_shared_query_fields() -> None:
+    """Stored rows should keep a few queryable hints without flattening the payload."""
+    connection = MetadataStoreConnection()
+    store = PostgresSessionStore(connection)
+    metadata = _metadata("session-postgres-result-columns")
+    result = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_blur",
+        payload={
+            "timestamp_utc": "2026-07-01 10:00:00",
+            "detector_name": "Blur Check",
+            "source_name": "segment_0001.ts",
+            "window_index": 1,
+            "blur_score": 0.91,
+        },
+    )
+
+    store.write_metadata(metadata)
+    store.append_result(result)
+
+    assert connection.result_rows == [
+        {
+            "id": 1,
+            "session_id": metadata.session_id,
+            "detector_id": "video_blur",
+            "detector_name": "Blur Check",
+            "event_timestamp_utc": "2026-07-01 10:00:00",
+            "payload_json": result.payload,
+        }
+    ]
+
+
+def test_postgres_session_store_keeps_append_order_when_timestamps_match_or_rows_arrive_unsorted() -> None:
+    """Append order should come from durable row ids, not timestamp or fetch order."""
+    connection = MetadataStoreConnection()
+    metadata = _metadata("session-postgres-same-timestamp-order")
+    first = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_metrics",
+        payload={
+            "timestamp_utc": "2026-07-01 10:00:00",
+            "source_name": "clip.mp4 @ 00:00",
+            "window_index": 0,
+        },
+    ).to_dict()
+    second = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_blur",
+        payload={
+            "timestamp_utc": "2026-07-01 10:00:00",
+            "source_name": "clip.mp4 @ 00:01",
+            "window_index": 1,
+        },
+    ).to_dict()
+    connection.metadata_rows[metadata.session_id] = metadata.to_dict()
+    connection.result_rows.extend(
+        [
+            {"id": 2, **second},
+            {"id": 1, **first},
+        ]
+    )
+    connection.result_sequence = 2
+    store = PostgresSessionStore(connection)
+
+    results = store.read_results(metadata.session_id)
+
+    assert results == [first, second]
+    assert store.read_snapshot(metadata.session_id)["latest_result"] == second
 
 
 def test_postgres_session_store_assembles_full_snapshot_contract_shape() -> None:

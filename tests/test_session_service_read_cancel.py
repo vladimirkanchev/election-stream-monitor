@@ -1,7 +1,8 @@
-"""Focused tests for session-service reads, cancel behavior, and progress snapshots.
+"""Focused tests for session-service reads, cancel behavior, and snapshot shape.
 
 This file covers the shared service contract used by the API, CLI, and desktop
-polling paths, with extra attention on Task 6 progress-read stability.
+polling paths, with extra attention on store-backed progress reads, ordered
+results, and derived `latest_result`.
 """
 
 from collections.abc import Iterator
@@ -196,6 +197,61 @@ def test_read_session_snapshot_keeps_store_backed_progress_shape(monkeypatch) ->
     snapshot = session_service.read_session_snapshot("session-store-progress")
 
     assert snapshot["progress"] == expected_progress
+
+
+def test_read_session_snapshot_keeps_store_backed_ordered_results_shape(monkeypatch) -> None:
+    """Service reads should preserve ordered result history and derived latest result."""
+    session_id = "session-store-results"
+    expected_results = [
+        {
+            "session_id": session_id,
+            "detector_id": "video_metrics",
+            "payload": {
+                "timestamp_utc": "2026-07-01 10:00:00",
+                "source_name": "segment_0000.ts",
+                "window_index": 0,
+            },
+        },
+        {
+            "session_id": session_id,
+            "detector_id": "video_blur",
+            "payload": {
+                "timestamp_utc": "2026-07-01 10:00:00",
+                "source_name": "segment_0001.ts",
+                "window_index": 1,
+            },
+        },
+    ]
+
+    class FakeStore:
+        def read_snapshot(self, read_session_id: str) -> SessionSnapshotPayload:
+            return cast(
+                SessionSnapshotPayload,
+                {
+                    "session": _session(
+                        session_id=read_session_id,
+                        mode="video_segments",
+                        input_path="/tmp/segments",
+                        selected_detectors=["video_metrics", "video_blur"],
+                        status="running",
+                    ),
+                    "progress": None,
+                    "alerts": [],
+                    "results": expected_results,
+                    "latest_result": expected_results[-1],
+                },
+            )
+
+    monkeypatch.setattr(
+        session_service,
+        "get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    snapshot = session_service.read_session_snapshot(session_id)
+
+    assert snapshot["results"] == expected_results
+    assert snapshot["latest_result"] == expected_results[-1]
 
 
 def test_read_session_snapshot_returns_last_committed_progress_during_interleaved_write(

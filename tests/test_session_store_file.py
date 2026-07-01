@@ -123,6 +123,42 @@ def test_file_session_store_preserves_result_order_and_latest_result(
     assert snapshot["latest_result"] == second.to_dict()
 
 
+def test_file_session_store_keeps_append_order_when_result_timestamps_match(
+    file_store: FileSessionStore,
+) -> None:
+    """Matching payload timestamps should not change append-only result history."""
+    metadata = _metadata("session-contract-results-same-timestamp")
+    first = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_metrics",
+        payload={
+            "timestamp_utc": "2026-07-01 10:00:00",
+            "source_name": "clip.mp4 @ 00:00",
+            "window_index": 0,
+        },
+    )
+    second = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_blur",
+        payload={
+            "timestamp_utc": "2026-07-01 10:00:00",
+            "source_name": "clip.mp4 @ 00:01",
+            "window_index": 1,
+        },
+    )
+
+    file_store.write_metadata(metadata)
+    file_store.append_result(first)
+    file_store.append_result(second)
+
+    snapshot = file_store.read_snapshot(metadata.session_id)
+    assert [row["detector_id"] for row in snapshot["results"]] == [
+        "video_metrics",
+        "video_blur",
+    ]
+    assert snapshot["latest_result"] == second.to_dict()
+
+
 def test_file_session_store_keeps_progress_latest_only(
     file_store: FileSessionStore,
 ) -> None:
