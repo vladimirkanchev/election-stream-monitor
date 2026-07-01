@@ -61,7 +61,8 @@ Most people will use the project through the Electron app. The desktop app talks
 
 Today the runtime is local-first:
 
-- session metadata, progress, and results stay on local disk
+- session metadata, latest progress, and results read through one shared session-store contract
+- the runtime default is still file-backed under `data/sessions/`
 - alerts use one shared backend: file-backed by default, PostgreSQL as an explicit opt-in backend
 - the UI, alert routes, grouped incident routes, and MCP tools all read alerts through that shared backend
 
@@ -166,7 +167,7 @@ center/right, and session state and alerts below.
 This part keeps the session state stable enough for the UI to refresh:
 
 - a session is created when monitoring starts
-- progress and results are written to local JSON / JSONL files
+- progress and results persist through one session-store seam with a file-backed default
 - alerts use one shared alert backend: file by default, PostgreSQL when you opt in
 - the frontend polls session snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
@@ -198,8 +199,9 @@ In practice, the flow looks like this:
 4. FastAPI routes session operations into the shared backend services, which
    spawn and track the detached session worker that runs the monitoring flow.
 5. Detectors and alert rules process the media, while local session state and
-   the shared alert backend keep progress, results, and alerts. File-backed
-   alerts stay the default, with PostgreSQL available as an opt-in backend.
+   the shared alert backend keep progress, results, and alerts. Session data
+   still defaults to the file-backed store, while alerts stay file-backed by
+   default with PostgreSQL available as an opt-in backend.
 
 FastAPI and MCP are separate entry points over the same local alert and session
 data. FastAPI owns the main desktop HTTP path, while MCP remains a local
@@ -215,7 +217,7 @@ The diagram below shows the same flow in one picture.
 - **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, alert/session reads, and the protected alerts routes in `share` mode.
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
-- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session files stay file-backed even when alerts use the opt-in PostgreSQL backend.
+- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session reads and writes now go through the shared session-store contract, but the default backend still writes under `data/sessions/`.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation
@@ -610,7 +612,7 @@ Useful references:
 Outputs are still local-first:
 
 - detector metrics: `data/metrics/`
-- per-session metadata, progress, and results: file-backed under `data/sessions/`
+- per-session metadata, latest progress, and results: session-store contract with a file-backed default under `data/sessions/`
 - alerts: file-backed by default, with PostgreSQL available as an opt-in backend
 
 ## Repo Layout

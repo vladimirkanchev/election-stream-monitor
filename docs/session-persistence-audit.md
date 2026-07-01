@@ -9,7 +9,7 @@ keep [session-model.md](./session-model.md) as the semantic reference.
 | Artifact | Current owner | Write shape | Read path | Migration note |
 | --- | --- | --- | --- | --- |
 | `session.json` | `session_io.write_session_metadata(...)` through `session_runner_lifecycle` and terminal updates | Overwrite JSON | `session_io.read_session_snapshot(...)`, `session_io.session_exists(...)` | Current "known session" marker; alert reads still depend on it. |
-| `progress.json` | `session_io.write_session_progress(...)` through lifecycle, execution, and terminal helpers | Overwrite JSON | `session_io.read_session_snapshot(...)` | Preserve frontend fields and terminal `status_reason` / `status_detail` behavior. |
+| `progress.json` | `FileSessionStore.write_progress(...)` through lifecycle, execution, and terminal helpers | Overwrite JSON | `SessionStore.read_snapshot(...)` through the default file-backed store | Preserve frontend fields, latest-only semantics, and terminal `status_reason` / `status_detail` behavior. |
 | `results.jsonl` | `session_io.append_result(...)` from `session_runner_execution.persist_bundle_events(...)` | Append-only JSONL | `session_io.read_session_snapshot(...)` | Keep append ordering and `latest_result` behavior stable. |
 | `alerts.jsonl` | `session_alert_store.FileSessionAlertStore` through `session_io.append_alert(...)` | Append-only JSONL | Active alert-store seam and snapshot alert reads | Alerts already have file/PostgreSQL store selection, but PostgreSQL alert reads still check file-backed session existence. |
 | `cancel_requested.json` | `session_io.request_session_cancel(...)` from `session_service.cancel_session(...)` and tests | Overwrite JSON marker | `session_io.is_session_cancel_requested(...)` in session execution and HTTP/HLS loader loops | Runtime control state, not historical data. Keep cancellation responsive. |
@@ -24,9 +24,65 @@ keep [session-model.md](./session-model.md) as the semantic reference.
 - `src/session_runner_lifecycle.py` owns pending and running metadata/progress transitions.
 - `src/session_runner_execution.py` owns result/alert append calls and per-slice progress writes.
 - `src/session_runner_terminal.py` owns terminal metadata/progress updates.
-- `src/session_io.py` owns file-backed metadata, progress, results, cancel markers, live de-dup keys, and snapshot assembly.
+- `src/session_io.py` owns the file-backed persistence helpers used by the current default session store.
 - `src/session_alert_store.py` owns the alert persistence seam and default file-backed alert log.
 - `src/session_alert_store_postgres.py` owns the opt-in PostgreSQL alert table, while session metadata still decides whether a session is known.
+
+## Durable Progress Contract
+
+Progress persistence is the latest session read model, not a worker telemetry
+dump and not an append-only history. Both file and PostgreSQL backends should
+store the same stable fields:
+
+- `session_id`
+- `status`
+- `processed_count`
+- `total_count`
+- `current_item`
+- `latest_result_detector`
+- `latest_result_detectors`
+- `alert_count`
+- `last_updated_utc`
+- `status_reason`
+- `status_detail`
+
+These fields are durable because frontend polling, API/CLI reads, terminal
+state, and contract tests depend on them. They are also enough to distinguish
+pending, running, completed, cancelled, failed, and validation-failed states
+without exposing backend internals.
+
+Keep these values outside the progress contract unless a later product surface
+intentionally promotes them:
+
+- worker log paths and verbose log fields
+- HTTP/HLS refresh, reconnect, cleanup, and replay-key telemetry
+- temp media paths and cleanup details
+- per-detector result payloads, which belong in ordered result rows
+- alert payloads, which belong in the alert store
+
+Migration rule: changing storage must preserve latest-only semantics,
+null-vs-empty snapshot behavior, terminal `status_reason`/`status_detail`, and
+the existing frontend polling shape.
+
+Current rollout note:
+
+- progress persistence now goes through the `SessionStore` seam in lifecycle,
+  execution, and terminal helpers
+- the default runtime backend is still file-backed, so ordinary runs still
+  produce `progress.json`
+- explicit `ESM_SESSION_STORE_BACKEND=postgres` switches that same progress
+  contract to PostgreSQL
+- this milestone moves the progress path behind the store boundary; it does not
+  mean every session artifact has moved to PostgreSQL
+- shared service reads, FastAPI reads, and frontend polling now consume that
+  same progress contract through the store-backed snapshot path
+
+Write-churn rule:
+
+- progress writes remain latest-only
+- timestamp-only refreshes should not create a new durable write
+- real lifecycle, count, current-item, detector, or terminal-detail changes
+  must still persist immediately so polling stays fresh
 
 ## Direct `session_io` Caller Inventory
 
@@ -182,6 +238,14 @@ Current callers now split cleanly:
 - `session_runner.run_local_session(...)` resolves the default store once and
   passes it through the worker flow.
 
+That means the migration boundary is now clearer:
+
+- callers no longer need to know whether progress lands in `progress.json` or
+  PostgreSQL
+- backend selection stays in runtime config
+- the remaining migration work is about finishing backend coverage, not about
+  reintroducing direct progress-file ownership into runner code
+
 ## Writer And Reader Map
 
 | Persisted concern | Main writers | Main readers | Current coupling to preserve |
@@ -296,7 +360,7 @@ storage-independent public behavior. Keep both during the migration.
 | File-backed alert read behavior | `tests/test_alert_query_service_read.py`, `tests/test_session_alert_store.py` | Known-session checks through `session.json`, missing `alerts.jsonl` as empty alerts, corrupt-line tolerance | Keep while file alerts remain supported. Revisit known-session checks when PostgreSQL session metadata can answer existence. |
 | PostgreSQL alert parity | `tests/test_session_alert_store_postgres.py`, `tests/test_session_alert_store_parity.py`, runtime alert route tests | Alert rows preserve fields, order, timestamp string shape, and file/PostgreSQL parity | Use as the pattern for the session-store migration: same public contract, different backend. |
 | Shared session service | `tests/test_session_service_read_cancel.py`, `tests/test_session_service.py` | Missing snapshot -> `None`, cancel allowed/rejected states, transient `cancelling` summary, worker-log exclusion from public metadata | Expand around a session-store seam so service behavior does not depend on raw files. |
-| FastAPI session boundary | `tests/test_api_boundary_sessions_read.py`, `tests/test_api_boundary_sessions_start.py`, `tests/test_api_boundary_sessions_cancel.py`, `tests/test_api_boundary_contracts.py` | Stable route payloads, route-level `404`, validation errors, snapshot shape, malformed payload fail-closed behavior | Treat as high-value migration guards because the frontend depends on these shapes rather than storage files. |
+| FastAPI session boundary | `tests/test_api_boundary_sessions_read.py`, `tests/test_api_boundary_sessions_start.py`, `tests/test_api_boundary_sessions_cancel.py`, `tests/test_api_boundary_contracts.py` | Stable route payloads, route-level `404`, validation errors, snapshot shape, malformed payload fail-closed behavior, and store-backed progress reads during in-flight updates | Treat as high-value migration guards because the frontend depends on these shapes rather than storage files. |
 | Runner and live-stream lifecycle | `tests/test_session_runner_lifecycle.py`, `tests/test_session_runner_terminal.py`, `tests/test_session_runner_execution*.py`, `tests/test_session_runner_api_stream*.py` | Pending/running/terminal writes, progress status reasons, cancellation timing, API-stream temp cleanup, de-dup state | Keep broad lifecycle assertions. Split any direct file assumptions from behavior that should work through both stores. |
 | HTTP/HLS de-dup and cancel mechanics | `tests/test_stream_loader_http_hls*.py` | `api_stream` replay-key persistence and cooperative cancellation checks | Keep as runtime-coordination coverage. If replay keys or cancel markers move to DB, add focused parity tests before deleting file assertions. |
 
@@ -325,6 +389,11 @@ The file-backed parity lane now has a clear split:
 - `tests/test_session_runner_store_writes.py` keeps the helper-level write
   contract storage-neutral, so lifecycle/execution/terminal refactors do not
   silently fall back to raw file helpers.
+- `tests/test_session_runner_progress.py` keeps timestamp-only progress
+  refreshes from becoming extra durable writes.
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts` and
+  `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx` keep the
+  frontend polling contract stable above the same store-backed snapshot path.
 
 ## Docs That Mention Session Persistence
 

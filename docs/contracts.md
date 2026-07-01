@@ -96,6 +96,14 @@ Current persistence rollout note:
   - `session_result_events` for append-ordered detector results
 - explicit `postgres` runtime selection is now recognized, validated, and
   wired to a concrete `PostgresSessionStore`
+- session progress persistence now flows through the `SessionStore` seam for
+  lifecycle, execution, terminal, API-read, and frontend-polling behavior
+- file mode still persists that progress contract via `progress.json`
+- PostgreSQL mode persists the same progress contract via the opt-in store
+- timestamp-only progress refreshes are now treated as no-op writes so the
+  durable contract does not churn without a real state change
+- service reads, FastAPI reads, bridge normalization, and frontend polling now
+  all sit above that same latest-progress contract
 - PostgreSQL alert storage is opt-in today
 - PostgreSQL session storage is opt-in today and remains non-default
 
@@ -553,12 +561,15 @@ Notes:
 
 - `session` may be `null` before a session exists
 - `progress` may be `null` before initialization or after lookup failure
+- `progress` is a latest-only read model, not a progress-history stream
 - `alerts` and `results` are append-oriented event views
 - `alerts` represents the backend-raised alert history for the session
 - frontend playback-aware filtering is a presentation concern and must not
   change the persisted snapshot alert list
 - playback state is not part of this contract
 - `api_stream` sessions use the same snapshot contract as local modes
+- timestamp formatting may vary slightly across producers, but the field stays
+  a string and must not change the rest of the progress shape
 
 ### Route failures vs session state
 

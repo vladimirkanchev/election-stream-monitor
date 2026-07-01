@@ -202,6 +202,8 @@ Current focused ownership map:
     smoke
 - `tests/test_session_runner_store_writes.py`
   - storage-neutral lifecycle/execution/terminal write behavior
+- `tests/test_session_runner_progress.py`
+  - latest-progress no-op write guard for timestamp-only refreshes
 - `tests/test_export_detector_catalog.py`
   - exported detector-catalog JSON contract for frontend-facing tooling
 - `tests/test_detector_lab.py`
@@ -1767,7 +1769,7 @@ Frontend contract checks:
   - transport-envelope error normalization
   - bridge error payload fallback and typed metadata preservation
 - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
-  - required session snapshot shape and lifecycle field preservation
+  - required session snapshot shape, lifecycle field preservation, and tolerant progress timestamp handling
 - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
   - fail-closed malformed nested payload handling
 - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
@@ -1782,7 +1784,7 @@ Frontend contract checks:
   - operator-facing error wording
   - `api_stream` status/error interpretation
 - `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
-  - hook behavior for local lifecycle polling, cancel-state transitions, and typed failures
+  - hook behavior for local lifecycle polling, cancel-state transitions, typed failures, and store-backed progress updates
 - `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
   - hook behavior for `api_stream` reconnect, recovery, and terminal polling semantics
 - `frontend/src/hooks/usePlaybackSource.test.tsx`

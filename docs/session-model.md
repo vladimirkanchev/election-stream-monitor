@@ -17,11 +17,9 @@ migration, see [session-persistence-audit.md](./session-persistence-audit.md).
 ## At a glance
 
 - sessions are the persisted contract between backend and frontend
-- session snapshots are still built from local session files
-- metadata, progress, and results stay file-backed today
-- the durable `SessionStore` seam now exists, but its active runtime default is
-  still `FileSessionStore`
-- PostgreSQL session storage is now available as an explicit runtime opt-in
+- session snapshots now read through the storage-neutral `SessionStore` seam
+- file-backed session persistence is still the runtime default
+- PostgreSQL session persistence is available only as an explicit opt-in
 - alert storage stays file-backed by default for this branch phase and can now
   switch to PostgreSQL
 - the snapshot `alerts` field now follows that same alert backend
@@ -67,10 +65,11 @@ Each session currently writes these file-backed artifacts:
 - `api_stream_seen_chunks.jsonl` for `api_stream` de-duplication state
 - `worker.log` as a backend-owned detached worker diagnostic trace
 
-These files live under the configured session output folder in `data/sessions/`.
-They are the current backend implementation, not the long-term semantic
-contract by themselves. The durable contract is the session snapshot plus the
-`SessionStore` boundary described below.
+These files live under the configured session output folder in `data/sessions/`
+when the default file-backed session store is active. They are the current
+backend implementation, not the long-term semantic contract by themselves. The
+durable contract is the session snapshot plus the `SessionStore` boundary
+described below.
 
 ## What each file means
 
@@ -97,6 +96,28 @@ Incremental progress during a run:
 - optional terminal `status_reason`
 - optional terminal `status_detail`
 
+Durable progress is a latest-only read model. Store only the fields needed by
+session polling, terminal diagnostics, and backend/frontend contract tests:
+
+- `session_id`
+- `status`
+- `processed_count`
+- `total_count`
+- `current_item`
+- `latest_result_detector`
+- `latest_result_detectors`
+- `alert_count`
+- `last_updated_utc`
+- `status_reason`
+- `status_detail`
+
+Do not persist worker-only telemetry in this progress payload. Transport
+refresh counters, reconnect counters, cleanup counts, replay keys, temp-file
+paths, and verbose log context belong to worker diagnostics, HTTP/HLS runtime
+state, or explicit result/alert rows. If a value is not needed to rebuild the
+public session snapshot or explain the terminal state, keep it out of
+`SessionProgress`.
+
 Behavior depends a bit on mode:
 
 - for `video_segments`, progress moves naturally segment by segment
@@ -106,6 +127,19 @@ Behavior depends a bit on mode:
 
 So `current_item` and `processed_count` for `video_files` are now slice-based,
 not whole-file based.
+
+Current rollout note:
+
+- progress persistence is now owned by the `SessionStore` seam, not by direct
+  caller use of `session_io.write_session_progress(...)`
+- in the default runtime this still lands in `progress.json` through
+  `FileSessionStore`
+- when `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected, the same
+  progress contract is persisted in PostgreSQL instead
+- this does not mean the whole session migration is finished; it means the
+  progress path now follows the backend-neutral store boundary
+- timestamp-only refreshes are treated as no-op writes so durable progress
+  stays meaningful while polling remains fresh
 
 ### `alerts.jsonl`
 
@@ -201,7 +235,11 @@ storage-neutral even though the default implementation is still file-backed.
   same default store path.
 - Worker writes: `src/session_runner_lifecycle.py`,
   `src/session_runner_execution.py`, and `src/session_runner_terminal.py`
-  accept an injected store and fall back to that same default runtime store.
+  accept an injected store, write progress through that same store path, and
+  fall back to the default runtime store when no explicit backend is injected.
+- Progress-write guard: the runner progress path now skips timestamp-only
+  rewrites so durable updates stay meaningful without making frontend polling
+  stale.
 - Current rollout state: PostgreSQL session storage is available for explicit
   runtime opt-in, but the branch default for ordinary callers remains file-backed.
 - Drift guard: change `SessionStore` when durable session meaning changes;
@@ -220,7 +258,10 @@ Focused coverage for this boundary now lives in:
 - `tests/test_session_store_runtime.py`
 - `tests/test_session_runner_store_writes.py`
 - `tests/test_session_service_read_cancel.py`
+- `tests/test_session_runner_progress.py`
 - `tests/test_api_boundary_sessions_read.py`
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+- `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
 
 ### Session-scoped files
 
