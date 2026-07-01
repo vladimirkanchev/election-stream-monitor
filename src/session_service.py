@@ -1,21 +1,22 @@
-"""Transport-agnostic service for starting, reading, and cancelling sessions.
+"""Shared service for starting, reading, and cancelling monitoring sessions.
 
-FastAPI, CLI, and other entrypoints should use this module instead of
-re-implementing lifecycle mechanics. It owns the shared contract for session
-start/read/cancel while keeping backend-specific diagnostics, such as
-`worker.log`, outside the public session snapshot.
+FastAPI, CLI, and other entrypoints should call this module rather than
+re-implementing lifecycle rules. It owns the public session contract while
+keeping backend diagnostics such as `worker.log` outside the snapshot shape
+returned to callers.
 """
 
 from __future__ import annotations
 
 from io import TextIOWrapper
+import os
 from pathlib import Path
 import subprocess  # nosec B404
 import sys
 
 from analyzer_contract import InputMode
 from logger import format_log_context, get_logger
-from session_io import get_worker_log_path, request_session_cancel
+from session_io import get_worker_log_path
 from session_models import SessionMetadata
 from session_runner import create_session_id
 from session_store import SessionSnapshotPayload
@@ -91,7 +92,12 @@ def read_session_snapshot(session_id: str) -> SessionSnapshotPayload:
 
 
 def cancel_session(session_id: str) -> dict[str, object]:
-    """Request cancellation for a live session and return a compact summary."""
+    """Request cancellation for a live session and return a transient summary.
+
+    The public service layer owns missing-session and terminal-state checks.
+    The active store only records cancel intent; the worker later settles the
+    durable session state to `cancelled` or `failed`.
+    """
     snapshot = read_session_snapshot_or_none(session_id)
     if snapshot is None:
         raise SessionServiceNotFoundError(session_id)
@@ -103,7 +109,7 @@ def cancel_session(session_id: str) -> dict[str, object]:
     if session_status in TERMINAL_SESSION_STATUSES:
         raise SessionServiceCancelFailedError(session_id, str(session_status))
 
-    request_session_cancel(session_id)
+    get_default_session_store().request_cancel(session_id)
     return _build_cancelling_session_summary(session_id, session)
 
 
@@ -169,15 +175,27 @@ def _spawn_detached_session_worker(
     *,
     log_handle: TextIOWrapper,
 ) -> None:
-    """Spawn one detached worker process with the local runtime settings."""
+    """Spawn one detached worker with the current runtime configuration."""
+    worker_env = _build_detached_session_worker_env()
     subprocess.Popen(  # noqa: S603
         command,
         cwd=str(Path(__file__).resolve().parent),
+        env=worker_env,
         stdout=log_handle,
         stderr=log_handle,
         shell=False,
         start_new_session=True,
     )  # nosec B603
+
+
+def _build_detached_session_worker_env() -> dict[str, str]:
+    """Return the parent environment used for detached worker startup.
+
+    Keeping the full environment avoids runtime drift and helps ensure parent
+    process reads/cancels and detached-worker writes resolve the same active
+    session-store backend.
+    """
+    return os.environ.copy()
 
 
 def _spawn_session_worker(
@@ -209,7 +227,7 @@ def _log_worker_start(
     input_path: str,
     worker_log_path: Path,
 ) -> None:
-    """Emit one parent-side launch log entry for the detached worker."""
+    """Emit one parent-process launch log entry for the detached worker."""
     logger.info(
         "Started detached session worker [%s]",
         format_log_context(

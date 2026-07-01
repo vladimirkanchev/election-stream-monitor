@@ -1,12 +1,12 @@
-"""Tests for the tooling/debugging session CLI commands and snapshot wiring.
+"""Tests for session CLI commands, snapshot reads, and worker runtime wiring.
 
 These cases treat the CLI as a thin adapter over `session_service.py`.
 They keep the supported command surface explicit without duplicating the
 shared start/read/cancel business logic tests.
 
-For the worker-observability milestone, this suite also checks that
-`run-session` emits one useful parent-side failure record before an uncaught
-worker exception is re-raised into the redirected worker log path.
+This suite also checks the detached `run-session` path: it should log useful
+startup failures and resolve the same session-store runtime selection as the
+parent process service path.
 """
 
 import json
@@ -16,9 +16,15 @@ from pathlib import Path
 import pytest
 
 import session_cli
+import session_runner
 from detectors.registry import list_available_detectors
+from session_models import SessionMetadata, SessionProgress
 from session_alert_store import clear_default_session_alert_store_cache
-from session_models import SessionMetadata
+from session_store_file import DEFAULT_FILE_SESSION_STORE
+from session_store_postgres import PostgresSessionStoreBootstrapError
+from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
+from session_store_runtime import clear_default_session_store_cache
+from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 from tests.session_alert_test_support import (
     FailingReadAlertStore,
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
@@ -39,10 +45,12 @@ from tests.session_alert_test_support import (
 
 @pytest.fixture(autouse=True)
 def _clear_default_alert_store_cache() -> Iterator[None]:
-    """Keep runtime-selected default-store caching isolated in CLI tests."""
+    """Keep runtime-selected alert and session stores isolated across CLI tests."""
     clear_default_session_alert_store_cache()
+    clear_default_session_store_cache()
     yield
     clear_default_session_alert_store_cache()
+    clear_default_session_store_cache()
 
 
 def _set_argv(monkeypatch, *args: str) -> None:
@@ -67,6 +75,101 @@ def _read_session_payload(
     payload = _run_cli_json(monkeypatch, capsys, "read-session", "--session-id", session_id)
     assert isinstance(payload, dict)
     return payload
+
+
+def _run_session_cli_and_record_resolved_stores(
+    monkeypatch,
+    capsys,
+    *,
+    session_id: str,
+) -> list[object]:
+    """Run the worker CLI path while recording resolved runner stores."""
+    records: list[object] = []
+    _set_argv(
+        monkeypatch,
+        "run-session",
+        "--mode",
+        "video_files",
+        "--input-path",
+        "/tmp/input.mp4",
+        "--session-id",
+        session_id,
+        "--detector",
+        "video_metrics",
+    )
+    monkeypatch.setattr(session_cli, "validate_source_input", lambda mode, input_path: input_path)
+    monkeypatch.setattr(session_runner, "validate_source_input", lambda mode, input_path: input_path)
+    monkeypatch.setattr(session_runner, "reset_session_rule_state", lambda session_id: None)
+    monkeypatch.setattr(session_runner, "_cleanup_session_runtime", lambda **kwargs: None)
+
+    def record_initialize_pending_session(**kwargs):
+        session_store = kwargs["session_store"]
+        records.append(session_store)
+        metadata = SessionMetadata(
+            session_id=kwargs["session_id"],
+            mode=kwargs["mode"],
+            input_path=str(kwargs["input_path"]),
+            selected_detectors=list(kwargs["selected_detectors"]),
+            status="pending",
+        )
+        return metadata, SessionProgress.initial(session_id=metadata.session_id, total_count=0)
+
+    def record_persist_pending_metadata(**kwargs):
+        session_store = kwargs["session_store"]
+        records.append(session_store)
+        return SessionMetadata(
+            session_id=kwargs["session_id"],
+            mode=kwargs["mode"],
+            input_path=str(kwargs["input_path"]),
+            selected_detectors=list(kwargs["selected_detectors"]),
+            status="pending",
+        )
+
+    def record_execution(**kwargs):
+        metadata = kwargs["metadata"]
+        records.append(kwargs["session_store"])
+        return SessionMetadata(
+            session_id=metadata.session_id,
+            mode=metadata.mode,
+            input_path=metadata.input_path,
+            selected_detectors=metadata.selected_detectors,
+            status="completed",
+        )
+
+    monkeypatch.setattr(
+        session_runner.session_runner_lifecycle,
+        "initialize_pending_session",
+        record_initialize_pending_session,
+    )
+    monkeypatch.setattr(
+        session_runner.session_runner_lifecycle,
+        "persist_pending_metadata",
+        record_persist_pending_metadata,
+    )
+    monkeypatch.setattr(
+        session_runner,
+        "_run_validated_local_slice_session",
+        record_execution,
+    )
+
+    session_cli.main()
+    capsys.readouterr()
+    return records
+
+
+def _run_worker_cli_after_store_cache_clear(
+    monkeypatch,
+    capsys,
+    *,
+    session_id: str,
+) -> list[object]:
+    """Run the worker CLI after forcing env-driven store selection to refresh."""
+    clear_default_session_store_cache()
+    return _run_session_cli_and_record_resolved_stores(
+        monkeypatch,
+        capsys,
+        session_id=session_id,
+    )
 
 
 def _cli_snapshot_alert(
@@ -326,7 +429,7 @@ def test_read_session_uses_the_runtime_selected_postgres_alert_store(
     tmp_path: Path,
     capsys,
 ) -> None:
-    """Read-session should print seam-backed alerts when Postgres mode is selected."""
+    """Read-session should print alerts from the explicit PostgreSQL backend."""
     session_id = "session-cli-runtime-postgres"
     alerts = [
         _cli_snapshot_alert(
@@ -374,7 +477,7 @@ def test_read_session_surfaces_runtime_postgres_bootstrap_failures(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """Read-session should fail loudly when explicit Postgres mode cannot bootstrap."""
+    """Read-session should fail loudly when explicit PostgreSQL mode cannot bootstrap."""
     session_id = "session-cli-runtime-postgres-bootstrap-failure"
     session_root = configure_session_alert_test(monkeypatch, tmp_path)
     write_known_session(session_root, session_id)
@@ -431,7 +534,7 @@ def test_live_runtime_postgres_read_session_reads_alerts_from_the_active_backend
             session_id,
             timestamp_utc="2026-05-19 23:45:00",
             title="Live CLI snapshot alert",
-            message="Read through the live runtime-selected Postgres backend.",
+            message="Read through the live runtime-selected PostgreSQL backend.",
             source_name="segment_0001.ts",
         )
     ]
@@ -443,7 +546,7 @@ def test_live_runtime_postgres_read_session_reads_alerts_from_the_active_backend
                 timestamp_utc="2026-05-19 23:45:00",
                 detector_id="video_metrics",
                 title="Live CLI snapshot alert",
-                message="Read through the live runtime-selected Postgres backend.",
+                message="Read through the live runtime-selected PostgreSQL backend.",
                 severity="warning",
                 source_name="segment_0001.ts",
             )
@@ -494,6 +597,111 @@ def test_run_session_logs_useful_failure_context_before_reraising(monkeypatch) -
             "input_path='<path:input.mp4>'",
         )
     ]
+
+
+@pytest.mark.parametrize(
+    ("backend_value", "session_id"),
+    [
+        (None, "session-worker-runtime-file-missing-backend"),
+        ("not-a-real-backend", "session-worker-runtime-file-invalid-backend"),
+    ],
+)
+def test_run_session_worker_path_keeps_file_fallback_for_non_postgres_modes(
+    monkeypatch,
+    capsys,
+    backend_value: str | None,
+    session_id: str,
+) -> None:
+    """The worker CLI should keep file mode for absent or unsupported backend values."""
+    if backend_value is None:
+        monkeypatch.delenv(SESSION_STORE_BACKEND_ENV, raising=False)
+    else:
+        monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, backend_value)
+    monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, "postgresql://stale:stale@db/esm")
+
+    records = _run_worker_cli_after_store_cache_clear(
+        monkeypatch,
+        capsys,
+        session_id=session_id,
+    )
+
+    assert records
+    assert all(store is DEFAULT_FILE_SESSION_STORE for store in records)
+
+
+def test_run_session_worker_path_uses_explicit_postgres_store(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The worker CLI should use PostgreSQL only when that backend is explicitly selected."""
+    postgres_store = object()
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(
+        POSTGRES_SESSION_DATABASE_URL_ENV,
+        "postgresql://session:secret@db.example/esm",
+    )
+    monkeypatch.setattr(
+        "session_store_runtime._build_postgres_default_session_store",
+        lambda: postgres_store,
+    )
+
+    postgres_records = _run_worker_cli_after_store_cache_clear(
+        monkeypatch,
+        capsys,
+        session_id="session-worker-runtime-postgres",
+    )
+
+    assert postgres_records
+    assert all(store is postgres_store for store in postgres_records)
+
+
+def test_run_session_worker_path_fails_clearly_when_postgres_is_selected_without_url(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The worker CLI should fail loudly when PostgreSQL mode is selected without a URL."""
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.delenv(POSTGRES_SESSION_DATABASE_URL_ENV, raising=False)
+
+    with pytest.raises(
+        RuntimeError,
+        match="PostgreSQL session store requires ESM_POSTGRES_SESSION_DATABASE_URL",
+    ):
+        _run_worker_cli_after_store_cache_clear(
+            monkeypatch,
+            capsys,
+            session_id="session-worker-runtime-postgres-missing-url",
+        )
+
+
+def test_run_session_worker_path_fails_clearly_when_postgres_driver_bootstrap_is_missing(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The worker CLI should surface actionable PostgreSQL bootstrap failures."""
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(
+        POSTGRES_SESSION_DATABASE_URL_ENV,
+        "postgresql://session:secret@db.example/esm",
+    )
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        lambda: (_ for _ in ()).throw(
+            PostgresSessionStoreBootstrapError(
+                "Install psycopg to use the PostgreSQL session-store backend"
+            )
+        ),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Install psycopg to use the PostgreSQL session-store backend",
+    ):
+        _run_worker_cli_after_store_cache_clear(
+            monkeypatch,
+            capsys,
+            session_id="session-worker-runtime-postgres-missing-driver",
+        )
 
 
 def test_resolve_playback_source_returns_remote_url_for_api_stream(monkeypatch, capsys) -> None:

@@ -1,9 +1,10 @@
-"""Durable storage contract for monitoring-session state.
+"""Storage contract for monitoring-session state.
 
-`SessionStore` is the boundary for migrating session metadata, latest progress,
-and ordered detector results from files to PostgreSQL. It deliberately excludes
-runtime artifacts such as logs, temp media, cancel markers, and HTTP/HLS replay
-keys.
+`SessionStore` is the storage contract for session metadata, latest progress,
+ordered detector results, and cancel intent. The file-backed implementation is
+still the runtime default; PostgreSQL is available only through explicit
+opt-in. Broader runtime artifacts such as logs, temp media, and HTTP/HLS replay
+keys stay outside this contract.
 """
 
 from __future__ import annotations
@@ -162,7 +163,7 @@ class SessionStoreReader(Protocol):
 class SessionStoreWriter(Protocol):
     """Write contract for durable session lifecycle data.
 
-    Lifecycle-specific operations such as start, cancel, and finalize stay in
+    Lifecycle-specific operations such as start and finalize stay in
     runner/service code, while result ordering remains a backend concern.
     """
 
@@ -183,9 +184,39 @@ class SessionStoreWriter(Protocol):
         ...
 
 
-class SessionStore(SessionStoreReader, SessionStoreWriter, Protocol):
-    """Combined durable session-store contract for concrete backends.
+class SessionStoreCancellationControl(Protocol):
+    """Minimal runtime-control contract for cooperative session cancellation.
 
-    Alert storage, logs, temp media, cancel markers, and HTTP/HLS replay keys
-    remain outside this contract.
+    This stays intentionally small: one idempotent write method and one cheap
+    boolean read method. The contract records current cancel intent without
+    turning cancellation into a broader command or event framework. Public
+    request validation and transient `cancelling` responses stay above this
+    contract in service and route code.
+    """
+
+    def request_cancel(self, session_id: str) -> None:
+        """Persist cancel intent for one session.
+
+        The low-level contract is intentionally tolerant and idempotent. Route
+        and service layers still own lifecycle validation and missing-session
+        behavior.
+        """
+        ...
+
+    def is_cancel_requested(self, session_id: str) -> bool:
+        """Return whether cancel intent currently exists for the session."""
+        ...
+
+
+class SessionStore(
+    SessionStoreReader,
+    SessionStoreWriter,
+    SessionStoreCancellationControl,
+    Protocol,
+):
+    """Combined session-store contract for concrete backends.
+
+    Durable session reads and writes live here together with a narrow cancel
+    signal. Alert storage, logs, temp media, and HTTP/HLS replay keys remain
+    outside this contract.
     """
