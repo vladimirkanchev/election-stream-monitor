@@ -26,6 +26,7 @@ class RecordingSessionStore:
         self.metadata_writes: list[SessionMetadata] = []
         self.progress_writes: list[SessionProgress] = []
         self.result_writes: list[ResultEvent] = []
+        self.cancelled_session_ids: set[str] = set()
 
     def session_exists(self, session_id: str) -> bool:
         """Return whether metadata was written for the requested session."""
@@ -66,6 +67,14 @@ class RecordingSessionStore:
     def append_result(self, event: ResultEvent) -> None:
         """Record one result append."""
         self.result_writes.append(event)
+
+    def request_cancel(self, session_id: str) -> None:
+        """Record current cancel intent for one session."""
+        self.cancelled_session_ids.add(session_id)
+
+    def is_cancel_requested(self, session_id: str) -> bool:
+        """Return whether current cancel intent was recorded for one session."""
+        return session_id in self.cancelled_session_ids
 
     def _latest_metadata(self, session_id: str) -> SessionMetadata | None:
         """Return the latest recorded metadata write for one session."""
@@ -234,6 +243,47 @@ def test_execution_snapshot_keeps_latest_progress_while_results_keep_history() -
     assert snapshot["progress"]["processed_count"] == 2
     assert snapshot["progress"]["status"] == "completed"
     assert updated_metadata.status == "completed"
+
+
+def test_process_discovered_slices_reads_cancel_state_from_passed_session_store() -> None:
+    """Execution should read cooperative cancel intent from the provided store."""
+    store = RecordingSessionStore()
+    metadata = _metadata("session-store-cancel-check", status="running")
+    progress = _running_progress(metadata, total_count=1)
+    input_slices = [_analysis_slice("segment_0001.ts", window_index=0)]
+    store.write_metadata(metadata)
+    store.write_progress(progress)
+    store.request_cancel(metadata.session_id)
+
+    finalizer_calls: list[dict[str, object]] = []
+
+    def fake_finalizer(**kwargs):
+        finalizer_calls.append(kwargs)
+        return kwargs["metadata"], kwargs["progress"]
+
+    bundle_called = {"value": False}
+
+    def bundle_runner(**_: object) -> dict[str, list[dict[str, object]]]:
+        bundle_called["value"] = True
+        return _result_bundle(metadata.session_id, window_index=0)
+
+    updated_metadata, updated_progress = session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_files",
+        session_id=metadata.session_id,
+        selected_detectors=metadata.selected_detectors,
+        input_slices=input_slices,
+        bundle_runner=bundle_runner,
+        progress_builder=lambda **kwargs: progress,
+        finalizer=fake_finalizer,
+        session_store=store,
+    )
+
+    assert updated_metadata is metadata
+    assert updated_progress is progress
+    assert bundle_called["value"] is False
+    assert finalizer_calls[-1]["status"] == "cancelled"
 
 
 def test_execution_skips_timestamp_only_progress_rewrites_during_slice_processing() -> None:

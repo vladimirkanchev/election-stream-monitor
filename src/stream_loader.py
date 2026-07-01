@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from analyzer_contract import AnalysisSlice
 from logger import format_log_context, get_logger
+from session_store import SessionStore
 from stream_loader_contracts import (
     ApiStreamFailure,
     ApiStreamFailureKind,
@@ -47,10 +48,14 @@ from stream_loader_http_hls import HttpHlsApiStreamLoader
 logger = get_logger(__name__)
 
 
-def create_api_stream_loader(session_id: str | None = None) -> ApiStreamLoader:
+def create_api_stream_loader(
+    session_id: str | None = None,
+    *,
+    session_store: SessionStore | None = None,
+) -> ApiStreamLoader:
     """Return the real loader for sessions or an empty deterministic seam loader."""
     if session_id:
-        return HttpHlsApiStreamLoader(session_id=session_id)
+        return HttpHlsApiStreamLoader(session_id=session_id, session_store=session_store)
     return StaticApiStreamLoader()
 
 

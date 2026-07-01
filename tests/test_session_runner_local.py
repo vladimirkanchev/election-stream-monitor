@@ -540,7 +540,7 @@ def test_discover_input_slices_routes_api_streams_through_loader_seam(
     monkeypatch.setattr(
         session_runner,
         "get_api_stream_loader",
-        lambda session_id=None: ObservedLoader([live_slice]),
+        lambda session_id=None, session_store=None: ObservedLoader([live_slice]),
     )
 
     slices = session_runner.discover_input_slices(
@@ -560,8 +560,9 @@ def test_get_api_stream_loader_delegates_to_public_loader_factory(monkeypatch) -
     sentinel_loader = object()
     observed: dict[str, object] = {}
 
-    def fake_create_api_stream_loader(*, session_id=None):
+    def fake_create_api_stream_loader(*, session_id=None, session_store=None):
         observed["session_id"] = session_id
+        observed["session_store"] = session_store
         return sentinel_loader
 
     monkeypatch.setattr(
@@ -574,6 +575,7 @@ def test_get_api_stream_loader_delegates_to_public_loader_factory(monkeypatch) -
 
     assert loader is sentinel_loader
     assert observed["session_id"] == "session-loader-wrapper"
+    assert observed["session_store"] is None
 
 
 def test_create_session_id_keeps_runner_owned_stable_prefix() -> None:

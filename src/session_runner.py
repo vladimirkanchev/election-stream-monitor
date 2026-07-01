@@ -241,7 +241,11 @@ def discover_input_slices(
     )
 
 
-def get_api_stream_loader(session_id: str | None = None) -> ApiStreamLoader:
+def get_api_stream_loader(
+    session_id: str | None = None,
+    *,
+    session_store: SessionStore | None = None,
+) -> ApiStreamLoader:
     """Return the backend loader responsible for future live-stream fetching.
 
     This small factory keeps the session runner independent from the concrete
@@ -251,7 +255,7 @@ def get_api_stream_loader(session_id: str | None = None) -> ApiStreamLoader:
     Keep this public wrapper stable on `session_runner` so tests and callers do
     not need to track the internal loader-module layout.
     """
-    return create_api_stream_loader(session_id=session_id)
+    return create_api_stream_loader(session_id=session_id, session_store=session_store)
 
 
 def _discover_api_stream_slices(
@@ -281,7 +285,7 @@ def _run_api_stream_session(
     model.
     """
     source = build_api_stream_source_contract(str(input_path))
-    loader = get_api_stream_loader(session_id=session_id)
+    loader = get_api_stream_loader(session_id=session_id, session_store=session_store)
     return session_runner_execution.run_api_stream_session(
         metadata=metadata,
         progress=progress,

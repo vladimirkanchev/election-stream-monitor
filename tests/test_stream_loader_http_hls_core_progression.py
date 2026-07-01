@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from session_io import request_session_cancel
+from session_store import build_empty_session_snapshot_payload
 from stream_loader import (
     HttpHlsApiStreamLoader,
     collect_api_stream_slices,
@@ -20,6 +21,39 @@ from tests.http_hls_test_support import (
     playlist,
 )
 from tests.local_hls_test_support import _serve_local_hls
+
+
+class _StoreCancelStub:
+    """Minimal store double that exposes only cancel-state reads."""
+
+    def __init__(self, *, cancelled: bool) -> None:
+        self._cancelled = cancelled
+        self.check_count = 0
+
+    def session_exists(self, session_id: str) -> bool:
+        return False
+
+    def read_snapshot(self, session_id: str) -> dict[str, object]:
+        return build_empty_session_snapshot_payload()
+
+    def read_results(self, session_id: str) -> list[dict[str, object]]:
+        return []
+
+    def write_metadata(self, metadata) -> None:
+        return None
+
+    def write_progress(self, progress) -> None:
+        return None
+
+    def append_result(self, event) -> None:
+        return None
+
+    def request_cancel(self, session_id: str) -> None:
+        self._cancelled = True
+
+    def is_cancel_requested(self, session_id: str) -> bool:
+        self.check_count += 1
+        return self._cancelled
 
 
 def test_http_hls_loader_polls_playlist_and_emits_only_new_segments(
@@ -339,6 +373,58 @@ def test_http_hls_loader_stops_cleanly_when_cancel_is_requested_during_idle_poll
     assert_slice_identity(slices, window_indexes=[81])
     assert len(sleep_calls) == 1
     cleanup_http_hls_session("session-http-cancel-idle")
+
+
+def test_http_hls_loader_reads_cancel_state_from_injected_store(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The live loader should honor store-backed cancel polling without file helpers."""
+    configure_http_hls_loader_test(monkeypatch, tmp_path, sleep=no_sleep)
+    store = _StoreCancelStub(cancelled=False)
+
+    playlist_text = media_playlist(82, "segment_082.ts", endlist=False)
+    routes = {
+        "/live/index.m3u8": [
+            (200, playlist_text, _HLS_CONTENT_TYPE),
+        ],
+        "/live/segment_082.ts": (200, b"082", _TS_CONTENT_TYPE),
+    }
+
+    with _serve_local_hls(routes) as base_url:
+        source = build_http_hls_source(base_url, "/live/index.m3u8")
+        loader = HttpHlsApiStreamLoader(
+            "session-http-cancel-store",
+            session_store=store,
+        )
+        loader.connect(source)
+        store.request_cancel("session-http-cancel-store")
+        slices = list(loader.iter_slices())
+        loader.close()
+
+    assert slices == []
+    cleanup_http_hls_session("session-http-cancel-store")
+
+
+def test_http_hls_loader_throttles_repeated_negative_cancel_reads_but_allows_forced_refresh(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Hot-path negative cancel reads should stay cheap without hiding explicit refreshes."""
+    configure_http_hls_loader_test(monkeypatch, tmp_path, sleep=no_sleep)
+    store = _StoreCancelStub(cancelled=False)
+    loader = HttpHlsApiStreamLoader(
+        "session-http-cancel-cache",
+        session_store=store,
+    )
+
+    assert loader._is_cancel_requested(force_refresh=False) is False
+    assert loader._is_cancel_requested(force_refresh=False) is False
+    assert loader._is_cancel_requested(force_refresh=False) is False
+    assert store.check_count == 1
+
+    assert loader._is_cancel_requested(force_refresh=True) is False
+    assert store.check_count == 2
 
 
 def test_http_hls_loader_prunes_replay_cache_when_playlist_window_slides(

@@ -2,7 +2,8 @@
 
 This file covers the shared service contract used by the API, CLI, and desktop
 polling paths, with extra attention on store-backed progress reads, ordered
-results, and derived `latest_result`.
+results, derived `latest_result`, and the transient cancel response that
+precedes worker settlement.
 """
 
 from collections.abc import Iterator
@@ -10,6 +11,7 @@ from threading import Event, Thread
 from typing import cast
 
 import pytest
+import config
 
 import session_service
 from analyzer_contract import InputMode
@@ -19,6 +21,12 @@ from session_store import SessionSnapshotPayload
 from tests.session_alert_test_support import (
     build_normalized_alert,
     install_runtime_postgres_session_alerts,
+)
+from tests.session_runner_execution_test_support import (
+    build_metadata,
+    build_progress,
+    persist_session_state,
+    settle_cancelled_local_session_once,
 )
 
 
@@ -106,6 +114,16 @@ def _cancel_summary(
         "selected_detectors": selected_detectors or [],
         "status": "cancelling",
     }
+
+
+class _CancelRecordingStore:
+    """Minimal store double for service-level cancel intent write tests."""
+
+    def __init__(self) -> None:
+        self.cancelled: list[str] = []
+
+    def request_cancel(self, session_id: str) -> None:
+        self.cancelled.append(session_id)
 
 
 def test_read_session_returns_existing_snapshot(monkeypatch) -> None:
@@ -409,7 +427,7 @@ def test_build_empty_session_snapshot_returns_fresh_lists() -> None:
 
 def test_cancel_session_running_happy_path(monkeypatch) -> None:
     """Cancel should allow active sessions and return the cancelling summary."""
-    cancelled: list[str] = []
+    store = _CancelRecordingStore()
 
     monkeypatch.setattr(
         session_service,
@@ -426,13 +444,13 @@ def test_cancel_session_running_happy_path(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         session_service,
-        "request_session_cancel",
-        lambda session_id: cancelled.append(session_id),
+        "get_default_session_store",
+        lambda: store,
     )
 
     summary = session_service.cancel_session("session-running")
 
-    assert cancelled == ["session-running"]
+    assert store.cancelled == ["session-running"]
     assert summary == _cancel_summary(
         session_id="session-running",
         mode="video_files",
@@ -443,7 +461,7 @@ def test_cancel_session_running_happy_path(monkeypatch) -> None:
 
 def test_cancel_session_allows_already_cancelling(monkeypatch) -> None:
     """Cancel should preserve the existing behavior for already-cancelling runs."""
-    cancelled: list[str] = []
+    store = _CancelRecordingStore()
 
     monkeypatch.setattr(
         session_service,
@@ -460,13 +478,13 @@ def test_cancel_session_allows_already_cancelling(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         session_service,
-        "request_session_cancel",
-        lambda session_id: cancelled.append(session_id),
+        "get_default_session_store",
+        lambda: store,
     )
 
     summary = session_service.cancel_session("session-cancelling")
 
-    assert cancelled == ["session-cancelling"]
+    assert store.cancelled == ["session-cancelling"]
     assert summary == _cancel_summary(
         session_id="session-cancelling",
         mode="api_stream",
@@ -514,6 +532,7 @@ def test_cancel_session_defaults_missing_selected_detectors_to_empty_list(
     monkeypatch,
 ) -> None:
     """Cancel summaries should stay stable even when older snapshots miss the field."""
+    store = _CancelRecordingStore()
     monkeypatch.setattr(
         session_service,
         "read_session_snapshot",
@@ -529,15 +548,66 @@ def test_cancel_session_defaults_missing_selected_detectors_to_empty_list(
     )
     monkeypatch.setattr(
         session_service,
-        "request_session_cancel",
-        lambda session_id: None,
+        "get_default_session_store",
+        lambda: store,
     )
 
     summary = session_service.cancel_session("session-missing-detectors")
 
+    assert store.cancelled == ["session-missing-detectors"]
     assert summary == _cancel_summary(
         session_id="session-missing-detectors",
         mode="video_files",
         input_path="/tmp/input.mp4",
         selected_detectors=None,
     )
+
+
+def test_cancel_session_keeps_snapshot_honest_until_worker_settles_terminal_state(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Cancel should return `cancelling` first, then reads turn `cancelled` after worker settlement."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path / "sessions")
+    metadata = build_metadata(
+        session_id="session-service-cancel-runtime",
+        mode="video_files",
+    )
+    progress = build_progress(
+        session_id=metadata.session_id,
+        status="running",
+        processed_count=0,
+        total_count=1,
+    )
+    persist_session_state(metadata, progress)
+
+    summary = session_service.cancel_session(metadata.session_id)
+    immediate_snapshot = session_service.read_session_snapshot_or_none(metadata.session_id)
+
+    assert summary == _cancel_summary(
+        session_id=metadata.session_id,
+        mode="video_files",
+        input_path="input-path",
+        selected_detectors=["video_metrics"],
+    )
+    assert immediate_snapshot is not None
+    immediate_session = cast(dict[str, object], immediate_snapshot["session"])
+    immediate_progress = cast(dict[str, object], immediate_snapshot["progress"])
+    assert immediate_session["status"] == "running"
+    assert immediate_progress["status"] == "running"
+
+    bundle_called = settle_cancelled_local_session_once(
+        tmp_path=tmp_path,
+        metadata=metadata,
+        progress=progress,
+    )
+
+    settled_snapshot = session_service.read_session_snapshot_or_none(metadata.session_id)
+
+    assert bundle_called is False
+    assert settled_snapshot is not None
+    settled_session = cast(dict[str, object], settled_snapshot["session"])
+    settled_progress = cast(dict[str, object], settled_snapshot["progress"])
+    assert settled_session["status"] == "cancelled"
+    assert settled_progress["status"] == "cancelled"
+    assert settled_progress["status_reason"] == "cancel_requested"

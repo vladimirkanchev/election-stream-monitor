@@ -1,4 +1,8 @@
-"""Shared fixtures and stubs for the split session_runner_execution test suites."""
+"""Shared fixtures and helpers for the split session-runner execution suites.
+
+These helpers keep cancellation tests focused on runner behavior rather than
+repeating file setup and synthetic slice construction in each suite.
+"""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +13,9 @@ from analyzer_contract import AnalysisSlice, InputMode
 from session_io import initialize_session, write_session_progress
 from session_models import SessionMetadata, SessionProgress
 from session_models import SessionStatus
+from session_store import SessionStore
+from session_store_file import FileSessionStore
+import session_runner_execution
 from stream_loader_contracts import ApiStreamSourceContract, ApiStreamTelemetrySnapshot
 
 DEFAULT_TIMESTAMP_UTC = "2026-04-28 12:00:00"
@@ -117,6 +124,38 @@ def build_slice(tmp_path: Path, name: str) -> AnalysisSlice:
     return analysis_slice
 
 
+def settle_cancelled_local_session_once(
+    *,
+    tmp_path: Path,
+    metadata: SessionMetadata,
+    progress: SessionProgress,
+    session_store: SessionStore | None = None,
+) -> bool:
+    """Run one local slice after cancel intent and report whether work still ran.
+
+    This keeps runtime tests focused on the public contract: once cancel intent
+    is visible to the worker, bundle execution should stop before the next
+    slice while normal terminal settlement still happens.
+    """
+    bundle_called = {"value": False}
+
+    def fake_bundle_runner(**_: object) -> dict[str, list[dict[str, object]]]:
+        bundle_called["value"] = True
+        return {"results": [], "alerts": []}
+
+    session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode=metadata.mode,
+        session_id=metadata.session_id,
+        selected_detectors=metadata.selected_detectors,
+        input_slices=[build_slice(tmp_path, "segment_0001.ts")],
+        bundle_runner=fake_bundle_runner,
+        session_store=session_store or FileSessionStore(),
+    )
+    return bundle_called["value"]
+
+
 def build_live_slice(
     tmp_path: Path,
     name: str,
@@ -169,4 +208,5 @@ __all__ = [
     "build_slice",
     "configure_session_output",
     "persist_session_state",
+    "settle_cancelled_local_session_once",
 ]

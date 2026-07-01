@@ -250,7 +250,7 @@ def test_process_discovered_slices_cancels_before_processing_next_slice(
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: session_id == metadata.session_id,
+        lambda session_id, session_store=None: session_id == metadata.session_id,
     )
 
     finalizer_calls: list[dict[str, object]] = []
@@ -295,7 +295,7 @@ def test_process_discovered_slices_completes_and_writes_slice_progress(
     persist_session_state(metadata, progress)
 
     slices = [build_slice(tmp_path, "segment_0001.ts")]
-    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: False)
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id, session_store=None: False)
 
     finalizer_calls: list[dict[str, object]] = []
 
@@ -361,7 +361,7 @@ def test_process_discovered_slices_persists_alerts_through_the_shared_alert_seam
     persist_session_state(metadata, progress)
 
     slices = [build_slice(tmp_path, "segment_0001.ts")]
-    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: False)
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id, session_store=None: False)
 
     def fake_finalizer(**kwargs):
         return kwargs["metadata"], kwargs["progress"]
@@ -428,7 +428,7 @@ def test_process_discovered_slices_runner_written_alert_is_visible_through_fasta
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: False,
+        lambda session_id, session_store=None: False,
     )
 
     def fake_bundle_runner(**kwargs):
@@ -500,7 +500,7 @@ def test_process_discovered_slices_runner_written_alert_is_visible_through_runti
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: False,
+        lambda session_id, session_store=None: False,
     )
 
     def fake_bundle_runner(**kwargs):
@@ -572,7 +572,7 @@ def test_process_discovered_slices_runtime_postgres_alerts_keep_fastapi_list_and
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: False,
+        lambda session_id, session_store=None: False,
     )
 
     alert_rows = (
@@ -647,7 +647,7 @@ def test_live_runtime_postgres_runner_written_alerts_stay_aligned_across_snapsho
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: False,
+        lambda session_id, session_store=None: False,
     )
 
     alert_rows = (
@@ -745,7 +745,7 @@ def test_process_discovered_slices_preserves_alert_append_order_in_raw_reads(
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: False,
+        lambda session_id, session_store=None: False,
     )
 
     def fake_bundle_runner(**kwargs):
@@ -825,7 +825,7 @@ def test_process_discovered_slices_stops_persisting_alerts_after_cancel(
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: next(cancel_checks),
+        lambda session_id, session_store=None: next(cancel_checks),
     )
 
     finalizer_calls: list[dict[str, object]] = []
@@ -888,7 +888,7 @@ def test_process_discovered_slices_uses_default_progress_and_finalizer_helpers(
     persist_session_state(metadata, progress)
     slices = [build_slice(tmp_path, "segment_0001.ts")]
 
-    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: False)
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id, session_store=None: False)
 
     progress_builder_calls: list[dict[str, object]] = []
     finalizer_calls: list[dict[str, object]] = []

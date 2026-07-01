@@ -39,7 +39,7 @@ def test_run_api_stream_session_surfaces_terminal_failure_with_cleanup_counts(
         "iter_api_stream_slices",
         lambda loader, source: iter([live_slice]),
     )
-    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: False)
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id, session_store=None: False)
 
     finalizer_calls: list[dict[str, object]] = []
 
@@ -106,7 +106,7 @@ def test_run_api_stream_session_uses_default_helper_wiring(
         "iter_api_stream_slices",
         lambda loader, source: iter([live_slice]),
     )
-    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: False)
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id, session_store=None: False)
 
     progress_builder_calls: list[dict[str, object]] = []
     log_field_calls: list[dict[str, object]] = []
@@ -186,7 +186,7 @@ def test_run_api_stream_session_cancel_during_processing_cleans_current_slice(
         "iter_api_stream_slices",
         lambda loader, source: iter([live_slice]),
     )
-    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id: True)
+    monkeypatch.setattr(session_runner_execution, "is_session_cancel_requested", lambda session_id, session_store=None: True)
 
     finalizer_calls: list[dict[str, object]] = []
 
@@ -233,7 +233,7 @@ def test_run_api_stream_session_cancels_after_iteration_uses_log_fields_builder(
     monkeypatch.setattr(
         session_runner_execution,
         "is_session_cancel_requested",
-        lambda session_id: next(events),
+        lambda session_id, session_store=None: next(events),
     )
     monkeypatch.setattr(
         session_runner_execution,

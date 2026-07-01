@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import TypedDict, cast
 
 from analyzer_contract import AnalysisSlice, InputMode
-from session_io import append_alert, is_session_cancel_requested
+from session_io import append_alert
 from session_models import AlertEvent, EventSeverity, ResultEvent, SessionMetadata, SessionProgress
 from session_store import SessionStore
 from session_store_runtime import get_default_session_store
@@ -102,6 +102,19 @@ def persist_bundle_events(
         append_alert(AlertEvent(**alert_payload))
 
 
+def is_session_cancel_requested(
+    session_id: str,
+    session_store: SessionStore | None = None,
+) -> bool:
+    """Return whether cooperative cancel intent exists for one session.
+
+    The public helper name stays stable for existing tests, while runtime code
+    now resolves cancellation through the shared `SessionStore` boundary rather
+    than direct file helpers.
+    """
+    return (session_store or get_default_session_store()).is_cancel_requested(session_id)
+
+
 def process_discovered_slices(
     *,
     metadata: SessionMetadata,
@@ -123,7 +136,7 @@ def process_discovered_slices(
 
     try:
         for processed_count, analysis_slice in enumerate(input_slices, start=1):
-            if is_session_cancel_requested(session_id):
+            if is_session_cancel_requested(session_id, session_store):
                 return finalizer(
                     metadata=metadata,
                     progress=progress,
@@ -216,7 +229,7 @@ def run_api_stream_session(
     cleanup_failure_count = 0
     try:
         for analysis_slice in iter_api_stream_slices(loader, source):
-            if is_session_cancel_requested(session_id):
+            if is_session_cancel_requested(session_id, session_store):
                 return finalizer(
                     metadata=metadata,
                     progress=progress,
@@ -284,7 +297,7 @@ def run_api_stream_session(
         )
         raise
 
-    if is_session_cancel_requested(session_id):
+    if is_session_cancel_requested(session_id, session_store):
         return finalizer(
             metadata=metadata,
             progress=progress,

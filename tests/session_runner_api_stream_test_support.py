@@ -95,8 +95,9 @@ def _configure_http_hls_runner_test(
     monkeypatch.setattr(
         session_runner,
         "get_api_stream_loader",
-        lambda session_id=None: HttpHlsApiStreamLoader(
-            session_id or default_session_id
+        lambda session_id=None, session_store=None: HttpHlsApiStreamLoader(
+            session_id or default_session_id,
+            session_store=session_store,
         ),
     )
     monkeypatch.setattr(
@@ -111,7 +112,7 @@ def _install_api_stream_loader(monkeypatch, loader) -> None:
     monkeypatch.setattr(
         session_runner,
         "get_api_stream_loader",
-        lambda session_id=None: loader,
+        lambda session_id=None, session_store=None: loader,
     )
 
 
