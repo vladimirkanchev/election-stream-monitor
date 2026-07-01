@@ -100,10 +100,18 @@ Current persistence rollout note:
   lifecycle, execution, terminal, API-read, and frontend-polling behavior
 - file mode still persists that progress contract via `progress.json`
 - PostgreSQL mode persists the same progress contract via the opt-in store
+- detector result events now also flow through the `SessionStore` seam:
+  - file mode still appends the durable contract to `results.jsonl`
+  - PostgreSQL mode appends the same contract to `session_result_events`
+  - snapshot `results` and derived `latest_result` stay tied to append order,
+    not detector timestamp ordering
 - timestamp-only progress refreshes are now treated as no-op writes so the
   durable contract does not churn without a real state change
 - service reads, FastAPI reads, bridge normalization, and frontend polling now
   all sit above that same latest-progress contract
+- this does not mean the whole session migration is complete:
+  alerts, cancel markers, replay keys, worker logs, and temp media still keep
+  their current separate ownership
 - PostgreSQL alert storage is opt-in today
 - PostgreSQL session storage is opt-in today and remains non-default
 
@@ -683,6 +691,78 @@ consumer rules:
 - once the UI has already settled into terminal `completed`, the app suppresses
   a late extra stop request instead of issuing a cancel action that can no
   longer change the session outcome
+
+## Result Event v1
+
+Purpose:
+
+- represent one durable detector output row for a session
+- preserve append order for snapshot reads and `latest_result`
+- keep detector-specific metrics flexible without changing the outer row shape
+
+Current durable row shape:
+
+```json
+{
+  "session_id": "session-20260402-abc123",
+  "detector_id": "video_blur",
+  "payload": {
+    "timestamp_utc": "2026-04-02 12:35:02",
+    "source_name": "segment_0206.ts",
+    "window_index": 206,
+    "window_start_sec": 206.0,
+    "blur_score": 0.91,
+    "blur_detected": true
+  }
+}
+```
+
+Notes:
+
+- the outer durable contract is intentionally small:
+  - `session_id`
+  - `detector_id`
+  - raw `payload` JSON
+- append order is a store contract, not a public payload field:
+  - file mode uses JSONL append order
+  - PostgreSQL mode must use a monotonic row/sequence order
+- equal or out-of-order `timestamp_utc` values must not reorder durable result
+  history; timestamps are detector hints, not the storage tie-breaker
+- `latest_result` is derived from the final valid ordered row rather than
+  persisted separately
+- shared timing/source hints may appear inside `payload` when they are useful:
+  - `timestamp_utc`
+  - `detector_name`
+  - `source_name`
+  - `window_index`
+  - `window_start_sec`
+- when these shared hints are present, they should keep simple scalar types so
+  file-backed and PostgreSQL-backed validation stays aligned
+- alert-like context may also appear inside `payload` when a detector exposes
+  it for later rule/debug interpretation:
+  - `title`
+  - `message`
+  - `severity`
+- detector display naming is not required as a separate durable top-level
+  field; the stable durable identity is `detector_id`
+- detector-specific metrics stay inside `payload` so the contract does not need
+  a schema change every time a detector gains a new measurement
+- the PostgreSQL storage row may project a few nullable query fields for
+  durability and future filtering:
+  - monotonic `id` as the append-order key
+  - `detector_name`
+  - `event_timestamp_utc`
+  - `payload_json` for the raw detector payload
+- that projection is a storage detail, not a wider public payload contract:
+  reads still return the compact `session_id` / `detector_id` / `payload`
+  shape above
+- rollout note:
+  - result append/read and snapshot assembly are now store-backed
+  - the file-backed session store remains the runtime default
+  - broader session persistence migration is still in progress
+
+This keeps the row stable for storage and parity testing without freezing the
+internal detector payload catalog too early.
 
 ## Alert Event v1
 

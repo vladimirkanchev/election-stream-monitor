@@ -188,9 +188,23 @@ Current focused ownership map:
   - durable session-store contract shape and excluded runtime concerns
 - `tests/test_session_store_file.py`
   - file-backed session-store parity with `session_io`
+- `tests/test_session_store_parity.py`
+  - shared file-store versus PostgreSQL-store parity for result append/read,
+  ordered history, `latest_result` derivation, and rich payload survival
+- `tests/test_api_boundary_contracts.py`
+  - HTTP-visible session snapshot regression coverage so outer keys, ordered
+  `results`, and derived `latest_result` stay stable when result storage
+  moves behind the store seam
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - bridge normalization coverage so ordered `results`, derived
+  `latest_result`, and latest-only progress fields stay stable for desktop
+  polling consumers
+- current migration reading:
+  these lanes prove result-event storage is now store-backed, but they do not
+  by themselves prove the full session PostgreSQL migration is complete
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
-    and explicit proof that `postgres` is built only on deliberate opt-in
+  and explicit proof that `postgres` is built only on deliberate opt-in
 - `tests/test_session_store_postgres.py`
   - PostgreSQL session-store adapter behavior, bootstrap, driver failure
     shaping, and opt-in schema-isolation helpers for live smoke lanes

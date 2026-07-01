@@ -252,7 +252,7 @@ That means the migration boundary is now clearer:
 | --- | --- | --- | --- |
 | Session metadata | `session_runner_lifecycle.initialize_pending_session(...)`, `session_runner_lifecycle.persist_pending_metadata(...)`, `session_runner_terminal.finalize_session_outcome(...)` | `session_io.read_session_snapshot(...)`, `session_service.read_session_snapshot_or_none(...)`, alert-store known-session checks | Public summary and current existence check. |
 | Session progress | `session_runner_lifecycle.initialize_pending_session(...)`, `session_runner_lifecycle.start_running_session(...)`, `session_runner_execution.process_discovered_slices(...)`, `session_runner_execution.run_api_stream_session(...)`, `session_runner_terminal.finalize_session_outcome(...)` | `session_io.read_session_snapshot(...)`, FastAPI session reads, CLI session reads, frontend polling through the bridge | Progress is the latest snapshot, not a full history. Terminal reason/detail fields must survive storage changes. |
-| Detector results | `session_runner_execution.persist_bundle_events(...)` through `session_io.append_result(...)` | `session_io.read_session_snapshot(...)`, frontend/debug snapshot users | Append order matters because `latest_result` is derived from the last valid row. |
+| Detector results | `session_runner_execution.persist_bundle_events(...)` through `SessionStore.append_result(...)`; file mode delegates to `session_io.append_result(...)` | `SessionStore.read_results(...)`, `SessionStore.read_snapshot(...)`, FastAPI/session-service reads, frontend/debug snapshot users | Append order matters because `latest_result` is derived from the last valid row. |
 | Alerts | `session_runner_execution.persist_bundle_events(...)` through `session_io.append_alert(...)` and the active alert store | `session_io.read_session_snapshot(...)`, `session_alerts.py`, FastAPI alert routes, MCP alert tools | Snapshot alerts and dedicated alert surfaces must agree on the active backend. |
 | Cancellation | `session_service.cancel_session(...)`, CLI cancel adapter, test helpers | `session_runner_execution` loops and `HttpHlsApiStreamLoader` runtime checks | Live stop signal; polling must stay cheap for local slices and live-stream loops. |
 | API-stream replay keys | `HttpHlsApiStreamLoader.persist_identity_key(...)` | `HttpHlsApiStreamLoader.connect(...)`, reconnect/restart tests | These keys prevent replayed live chunks after reconnect or rerun. Ordering is less important than identity stability. |
@@ -395,6 +395,49 @@ The file-backed parity lane now has a clear split:
   `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx` keep the
   frontend polling contract stable above the same store-backed snapshot path.
 
+## Result Event Writer And Reader Audit
+
+Task 7 moves detector result events fully behind the session-store boundary.
+The current code already has the right shape: runtime writers call
+`SessionStore.append_result(...)`, file mode keeps the legacy `results.jsonl`
+behavior through `FileSessionStore`, and PostgreSQL mode stores ordered rows in
+`session_result_events`.
+
+| Concern | Current owner | Migration risk |
+| --- | --- | --- |
+| Result production | `processor.run_enabled_analyzers_bundle(...)` returns bundle `results` rows | Detector payloads are intentionally JSON-shaped. Storage should not normalize every detector-specific key yet. |
+| Runtime append | `session_runner_execution.persist_bundle_events(...)` converts bundle rows to `ResultEvent` and calls `SessionStore.append_result(...)` | This is the main write path. Keep alert writes separate on the alert-store path. |
+| File-backed append | `FileSessionStore.append_result(...)` delegates to `session_io.append_result(...)` and `results.jsonl` | Keep JSONL tests as file-backend compatibility tests, not public API requirements. |
+| PostgreSQL append | `PostgresSessionStore.append_result(...)` inserts into `session_result_events` | Ordering must come from a monotonic row id or sequence, not timestamp sorting. Project only shared query hints such as `detector_name` or `event_timestamp_utc`; keep detector-specific detail inside JSON. |
+| Result reads | `SessionStore.read_results(...)` and `read_snapshot(...)` | Results must return only valid rows in append order and tolerate malformed backend rows where the file backend already does. |
+| Latest result | `build_session_snapshot_payload(...)` and `session_io._build_session_snapshot(...)` derive `latest_result` from the final valid result row | Do not persist `latest_result` as an independent source of truth unless a later cache/invalidation design is added. |
+| API/frontend shape | `session_service.read_session_snapshot(...)`, FastAPI reads, and bridge polling consume the snapshot | Keep `results` as a list and `latest_result` as either the final row or `null`; storage changes should not alter the payload shape. |
+
+The important implicit dependency is append order. Existing tests assert that
+`latest_result` is the last valid result row, not the newest timestamp. The
+PostgreSQL path should therefore keep ordering explicit and deterministic, and
+the parity tests should compare behavior rather than SQL internals. Equal or
+reversed detector timestamps are not a durable tie-breaker; append sequence is.
+
+Current migration note:
+
+- result events are now store-backed on the main runtime path
+- file mode remains the default and still materializes `results.jsonl`
+- explicit PostgreSQL mode persists the same contract in
+  `session_result_events`
+- this is one session-store slice, not the end of the broader session
+  persistence migration
+
+For the current migration stage, the PostgreSQL row design should stay small:
+
+- one monotonic durable row id for append order
+- one stable `session_id`
+- one stable `detector_id`
+- optional projected shared hints for lightweight querying
+- one raw JSON payload column for detector-specific structure
+
+Do not normalize every detector metric into separate relational columns yet.
+
 ## Docs That Mention Session Persistence
 
 Most docs match the current stage: file-backed session persistence is still the
@@ -436,6 +479,18 @@ The guard tests are split by purpose:
 - `tests/test_session_store_file.py` protects behavior through the store API:
   missing-session reads, snapshot round trips, ordered results, latest-only
   progress, and terminal progress.
+- `tests/test_session_store_parity.py` compares file-backed and PostgreSQL-backed
+  behavior for missing-session reads, lifecycle progress states, ordered result
+  appends, and `latest_result` derivation.
+  The explicit invariant is `latest_result == results[-1]` whenever ordered
+  results are present.
+- `tests/test_session_service_read_cancel.py` and
+  `tests/test_api_boundary_sessions_read.py` protect the shared service and
+  route consumers so ordered `results` and derived `latest_result` stay stable
+  above the store layer.
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts` protects the
+  bridge-normalized snapshot shape so desktop polling consumers keep the same
+  ordered `results`, derived `latest_result`, and latest-only progress fields.
 
 Missing or malformed durable session data must keep the low-level empty
 snapshot shape: `session = null`, `progress = null`, `alerts = []`,

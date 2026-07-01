@@ -154,7 +154,34 @@ the PostgreSQL alert backend when explicitly selected.
 
 Append-only detector result events for the session.
 
-These are the structured outputs of detectors before or alongside alert interpretation.
+These are the durable detector outputs that later snapshot reads expose through
+`results` and the derived `latest_result` field.
+
+The durable row contract stays intentionally compact:
+
+- top-level required fields:
+  - `session_id`
+  - `detector_id`
+  - `payload`
+- ordering is durable behavior, not a public row field:
+  - file mode preserves JSONL append order
+  - PostgreSQL mode must preserve monotonic row order
+- matching or reversed detector timestamps do not change that history order
+- `latest_result` remains a derived convenience value from the final valid row
+- shared source/timing hints may appear inside `payload` when available:
+  - `timestamp_utc`
+  - `detector_name`
+  - `source_name`
+  - `window_index`
+  - `window_start_sec`
+- alert-like context may also appear inside `payload` when detectors expose it
+  for later rule/debug interpretation:
+  - `title`
+  - `message`
+  - `severity`
+
+Detector-specific metrics still belong in `payload`, so detector evolution does
+not require a schema change for every new measurement.
 
 ### `worker.log`
 
@@ -212,6 +239,10 @@ storage-neutral even though the default implementation is still file-backed.
     `session_id`
   - `session_result_events` stores append-ordered detector results keyed by
     `session_id`
+    - durable append order comes from the monotonic row id
+    - a few shared hints may be projected into nullable row columns such as
+      `detector_name` and `event_timestamp_utc`
+    - detector-specific structure still stays in `payload_json`
 - Current adapter progress:
   - metadata writes and known-session checks are now implemented on the
     PostgreSQL adapter
@@ -222,12 +253,22 @@ storage-neutral even though the default implementation is still file-backed.
     the stable empty/full snapshot shape
   - focused adapter tests cover malformed rows, runtime opt-in behavior, and
     optional live PostgreSQL smoke paths
+- current result-event rollout:
+  - runtime writes now append through `SessionStore.append_result(...)`
+  - file mode still writes `results.jsonl`
+  - PostgreSQL mode writes `session_result_events`
+  - `latest_result` remains derived from the final valid ordered row
+  - shared hint validation stays aligned across both backends
 - Runtime posture: explicit `ESM_SESSION_STORE_BACKEND=postgres` now builds a
   concrete `PostgresSessionStore`, while missing, invalid, or explicit `file`
   config still resolves to the file-backed default.
 - Bootstrap posture: session tables do not auto-create by default. Opt in with
   `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` for explicit local bootstrap or
   focused smoke checks.
+- migration honesty rule:
+  moving result persistence behind the store seam does not mean alerts,
+  cancellation markers, replay keys, worker diagnostics, or temp runtime media
+  have already moved into PostgreSQL.
 - Validation posture: PostgreSQL settings matter only in explicit `postgres`
   mode; file mode ignores stale PostgreSQL bootstrap env.
 - Shared readers: `src/session_service.py`, `src/session_alert_store.py`, and
