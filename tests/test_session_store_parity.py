@@ -1,9 +1,9 @@
 """Shared backend-equivalence tests for session-store persistence behavior.
 
 This suite compares the file-backed store with the PostgreSQL-backed store at
-the durable `SessionStore` boundary. It focuses on progress-state behavior
-and ordered result behavior that must stay storage-neutral while the
-PostgreSQL migration is in flight.
+the `SessionStore` boundary. It focuses on progress-state behavior, ordered
+result behavior, and the narrow cancel-request signal that must stay
+storage-neutral while the PostgreSQL migration is in flight.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from session_models import ResultEvent, SessionMetadata, SessionProgress, Sessio
 from session_store import SessionStore
 from session_store_file import FileSessionStore
 from session_store_postgres import (
+    POSTGRES_SESSION_CANCEL_EXISTS_SQL,
+    POSTGRES_SESSION_CANCEL_UPSERT_SQL,
     POSTGRES_SESSION_METADATA_EXISTS_SQL,
     POSTGRES_SESSION_METADATA_SELECT_SQL,
     POSTGRES_SESSION_METADATA_UPSERT_SQL,
@@ -121,6 +123,19 @@ class InMemoryPostgresSessionStoreCursor:
             }
             self._fetchone_result = None
             return object()
+        if query == POSTGRES_SESSION_CANCEL_EXISTS_SQL:
+            session_id = cast(tuple[str], params)[0]
+            self._fetchone_result = (
+                (1,)
+                if self._connection.cancel_rows.get(session_id) is True
+                else None
+            )
+            return object()
+        if query == POSTGRES_SESSION_CANCEL_UPSERT_SQL:
+            session_id, cancel_requested = cast(tuple[object, object], params)
+            self._connection.cancel_rows[str(session_id)] = bool(cancel_requested)
+            self._fetchone_result = None
+            return object()
         if query == POSTGRES_SESSION_RESULTS_SELECT_SQL:
             session_id = cast(tuple[str], params)[0]
             self._fetchone_result = None
@@ -175,6 +190,7 @@ class InMemoryPostgresSessionStoreConnection:
     def __init__(self) -> None:
         self.metadata_rows: dict[str, object] = {}
         self.progress_rows: dict[str, object] = {}
+        self.cancel_rows: dict[str, bool] = {}
         self.result_rows: list[dict[str, object]] = []
         self.result_sequence = 0
         self.commit_count = 0
@@ -401,6 +417,32 @@ def _assert_store_results_match(
     )
 
 
+def _assert_cancel_state_matches(store: SessionStore, session_id: str, expected: bool) -> None:
+    """Assert the narrow cancel-request contract for one backend."""
+    assert store.is_cancel_requested(session_id) is expected
+
+
+def _prepare_cancel_state(store: SessionStore, *, session_id: str, state: str) -> None:
+    """Prepare one lifecycle state before exercising the cancel signal."""
+    if state == "missing":
+        return
+
+    lifecycle_state = "cancelled" if state == "already_canceled" else state
+    metadata, progress = _state_payloads(session_id)[lifecycle_state]
+    _persist_session_state(store, metadata=metadata, progress=progress)
+
+
+def _exercise_cancel_signal(store: SessionStore, *, session_id: str, state: str) -> dict[str, object]:
+    """Apply one cancel request and return the resulting public snapshot."""
+    _prepare_cancel_state(store, session_id=session_id, state=state)
+    if state == "already_canceled":
+        store.request_cancel(session_id)
+        _assert_cancel_state_matches(store, session_id, True)
+
+    store.request_cancel(session_id)
+    return cast(dict[str, object], store.read_snapshot(session_id))
+
+
 def test_session_store_progress_parity_keeps_missing_session_contract(
     file_store: FileSessionStore,
     postgres_store: PostgresSessionStore,
@@ -413,7 +455,62 @@ def test_session_store_progress_parity_keeps_missing_session_contract(
 
     assert file_store.session_exists(session_id) is False
     assert postgres_store.session_exists(session_id) is False
+    _assert_cancel_state_matches(file_store, session_id, False)
+    _assert_cancel_state_matches(postgres_store, session_id, False)
     assert postgres_snapshot == file_snapshot
+
+
+@pytest.mark.parametrize(
+    ("state", "expected_exists"),
+    [
+        ("missing", False),
+        ("running", True),
+        ("already_canceled", True),
+        ("completed", True),
+    ],
+)
+def test_session_store_cancel_parity_matches_file_backed_behavior_across_lifecycle_states(
+    state: str,
+    expected_exists: bool,
+    file_store: FileSessionStore,
+    postgres_store: PostgresSessionStore,
+) -> None:
+    """Cancel intent should stay backend-neutral across key lifecycle states.
+
+    The store-level contract is intentionally narrow: writing cancel intent must
+    not mutate the public snapshot shape or session existence semantics, even
+    though higher-level service code may reject cancel for terminal sessions.
+    """
+    session_id = f"session-parity-cancel-{state}"
+
+    file_snapshot_before = _exercise_cancel_signal(
+        file_store,
+        session_id=session_id,
+        state=state,
+    )
+    postgres_snapshot_before = _exercise_cancel_signal(
+        postgres_store,
+        session_id=session_id,
+        state=state,
+    )
+
+    assert file_store.session_exists(session_id) is expected_exists
+    assert postgres_store.session_exists(session_id) is expected_exists
+    _assert_cancel_state_matches(file_store, session_id, True)
+    _assert_cancel_state_matches(postgres_store, session_id, True)
+    assert postgres_snapshot_before == file_snapshot_before
+
+    file_store.request_cancel(session_id)
+    postgres_store.request_cancel(session_id)
+
+    file_snapshot_after_repeat = cast(dict[str, object], file_store.read_snapshot(session_id))
+    postgres_snapshot_after_repeat = cast(
+        dict[str, object],
+        postgres_store.read_snapshot(session_id),
+    )
+
+    assert file_snapshot_after_repeat == file_snapshot_before
+    assert postgres_snapshot_after_repeat == postgres_snapshot_before
 
 
 @pytest.mark.parametrize("state", ["running", "completed", "failed", "cancelled"])

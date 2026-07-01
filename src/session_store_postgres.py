@@ -4,7 +4,8 @@ This module owns the PostgreSQL session persistence path: schema mapping,
 connection/bootstrap helpers, the concrete `SessionStore` adapter, and a small
 set of reset helpers used by opt-in live smoke tests. Result rows stay compact:
 the store preserves append order, projects a few shared query hints, and keeps
-detector-specific detail in JSON.
+detector-specific detail in JSON. Cancel intent stays intentionally smaller:
+one current-state row per session rather than a broader command/event history.
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from session_store_postgres_config import (
 POSTGRES_SESSION_METADATA_TABLE_NAME = "session_metadata"
 POSTGRES_SESSION_PROGRESS_TABLE_NAME = "session_progress"
 POSTGRES_SESSION_RESULTS_TABLE_NAME = "session_result_events"
+POSTGRES_SESSION_CANCEL_TABLE_NAME = "session_cancel_requests"
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,10 @@ POSTGRES_SESSION_RESULT_FIELDS: tuple[str, ...] = (
     "event_timestamp_utc",
     "payload_json",
 )
+POSTGRES_SESSION_CANCEL_FIELDS: tuple[str, ...] = (
+    "session_id",
+    "cancel_requested",
+)
 
 POSTGRES_SESSION_STORE_TABLE_SPECS: tuple[PostgresSessionStoreTableSpec, ...] = (
     PostgresSessionStoreTableSpec(
@@ -105,6 +111,12 @@ POSTGRES_SESSION_STORE_TABLE_SPECS: tuple[PostgresSessionStoreTableSpec, ...] = 
         payload_fields=POSTGRES_SESSION_RESULT_FIELDS,
         purpose="Append-ordered detector result history keyed by session id.",
     ),
+    PostgresSessionStoreTableSpec(
+        table_name=POSTGRES_SESSION_CANCEL_TABLE_NAME,
+        contract_methods=("request_cancel", "is_cancel_requested"),
+        payload_fields=POSTGRES_SESSION_CANCEL_FIELDS,
+        purpose="One current-state cancel row per session for cooperative runtime polling.",
+    ),
 )
 
 POSTGRES_SESSION_STORE_METHOD_TABLE_MAP: dict[str, tuple[str, ...]] = {
@@ -113,6 +125,8 @@ POSTGRES_SESSION_STORE_METHOD_TABLE_MAP: dict[str, tuple[str, ...]] = {
     "write_progress": (POSTGRES_SESSION_PROGRESS_TABLE_NAME,),
     "append_result": (POSTGRES_SESSION_RESULTS_TABLE_NAME,),
     "read_results": (POSTGRES_SESSION_RESULTS_TABLE_NAME,),
+    "request_cancel": (POSTGRES_SESSION_CANCEL_TABLE_NAME,),
+    "is_cancel_requested": (POSTGRES_SESSION_CANCEL_TABLE_NAME,),
     "read_snapshot": (
         POSTGRES_SESSION_METADATA_TABLE_NAME,
         POSTGRES_SESSION_PROGRESS_TABLE_NAME,
@@ -163,6 +177,13 @@ CREATE TABLE IF NOT EXISTS {POSTGRES_SESSION_RESULTS_TABLE_NAME} (
 )
 """.strip()
 
+POSTGRES_SESSION_CANCEL_TABLE_SQL = f"""
+CREATE TABLE IF NOT EXISTS {POSTGRES_SESSION_CANCEL_TABLE_NAME} (
+    session_id TEXT PRIMARY KEY,
+    cancel_requested BOOLEAN NOT NULL
+)
+""".strip()
+
 POSTGRES_SESSION_SCHEMA_INDEX_STATEMENTS: tuple[str, ...] = (
     f"""
     CREATE INDEX IF NOT EXISTS idx_{POSTGRES_SESSION_PROGRESS_TABLE_NAME}_status
@@ -182,9 +203,11 @@ POSTGRES_SESSION_STORE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     POSTGRES_SESSION_METADATA_TABLE_SQL,
     POSTGRES_SESSION_PROGRESS_TABLE_SQL,
     POSTGRES_SESSION_RESULTS_TABLE_SQL,
+    POSTGRES_SESSION_CANCEL_TABLE_SQL,
     *POSTGRES_SESSION_SCHEMA_INDEX_STATEMENTS,
 )
 POSTGRES_SESSION_STORE_SCHEMA_DROP_STATEMENTS: tuple[str, ...] = (
+    f"DROP TABLE IF EXISTS {POSTGRES_SESSION_CANCEL_TABLE_NAME}",
     f"DROP TABLE IF EXISTS {POSTGRES_SESSION_RESULTS_TABLE_NAME}",
     f"DROP TABLE IF EXISTS {POSTGRES_SESSION_PROGRESS_TABLE_NAME}",
     f"DROP TABLE IF EXISTS {POSTGRES_SESSION_METADATA_TABLE_NAME}",
@@ -287,6 +310,19 @@ INSERT INTO {POSTGRES_SESSION_RESULTS_TABLE_NAME} (
     payload_json
 ) VALUES (%s, %s, %s, %s, %s)
 """.strip()
+POSTGRES_SESSION_CANCEL_EXISTS_SQL = f"""
+SELECT 1
+FROM {POSTGRES_SESSION_CANCEL_TABLE_NAME}
+WHERE session_id = %s AND cancel_requested = TRUE
+""".strip()
+POSTGRES_SESSION_CANCEL_UPSERT_SQL = f"""
+INSERT INTO {POSTGRES_SESSION_CANCEL_TABLE_NAME} (
+    session_id,
+    cancel_requested
+) VALUES (%s, %s)
+ON CONFLICT (session_id) DO UPDATE SET
+    cancel_requested = EXCLUDED.cancel_requested
+""".strip()
 
 
 class PostgresSessionStore(SessionStore):
@@ -382,6 +418,20 @@ class PostgresSessionStore(SessionStore):
             POSTGRES_SESSION_RESULTS_INSERT_SQL,
             _build_postgres_result_insert_params(event),
         )
+
+    def request_cancel(self, session_id: str) -> None:
+        """Persist current cancel intent for one session."""
+        self._execute_and_commit(
+            POSTGRES_SESSION_CANCEL_UPSERT_SQL,
+            (session_id, True),
+        )
+
+    def is_cancel_requested(self, session_id: str) -> bool:
+        """Return whether current cancel intent exists for one session."""
+        return self._fetch_one(
+            POSTGRES_SESSION_CANCEL_EXISTS_SQL,
+            (session_id,),
+        ) is not None
 
     def _read_metadata_payload(self, session_id: str) -> SessionMetadataPayload | None:
         """Return parsed metadata or `None` when the row is missing or invalid."""

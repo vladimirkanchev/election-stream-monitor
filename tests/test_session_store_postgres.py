@@ -10,6 +10,11 @@ import pytest
 from session_models import ResultEvent, SessionMetadata, SessionProgress
 from session_store import SESSION_SNAPSHOT_KEYS, SessionStore, build_session_snapshot_payload
 from session_store_postgres import (
+    POSTGRES_SESSION_CANCEL_EXISTS_SQL,
+    POSTGRES_SESSION_CANCEL_FIELDS,
+    POSTGRES_SESSION_CANCEL_TABLE_NAME,
+    POSTGRES_SESSION_CANCEL_TABLE_SQL,
+    POSTGRES_SESSION_CANCEL_UPSERT_SQL,
     POSTGRES_SESSION_METADATA_FIELDS,
     POSTGRES_SESSION_METADATA_TABLE_NAME,
     POSTGRES_SESSION_METADATA_TABLE_SQL,
@@ -247,6 +252,19 @@ class MetadataStoreCursor:
             }
             self._fetchone_result = None
             return object()
+        if query == POSTGRES_SESSION_CANCEL_EXISTS_SQL:
+            session_id = cast(tuple[str], params)[0]
+            self._fetchone_result = (
+                (1,)
+                if self._connection.cancel_rows.get(session_id) is True
+                else None
+            )
+            return object()
+        if query == POSTGRES_SESSION_CANCEL_UPSERT_SQL:
+            session_id, cancel_requested = cast(tuple[object, object], params)
+            self._connection.cancel_rows[str(session_id)] = bool(cancel_requested)
+            self._fetchone_result = None
+            return object()
         if query == POSTGRES_SESSION_RESULTS_SELECT_SQL:
             session_id = cast(tuple[str], params)[0]
             self._fetchone_result = None
@@ -301,6 +319,7 @@ class MetadataStoreConnection:
     def __init__(self) -> None:
         self.metadata_rows: dict[str, object] = {}
         self.progress_rows: dict[str, object] = {}
+        self.cancel_rows: dict[str, bool] = {}
         self.result_rows: list[dict[str, object]] = []
         self.result_sequence = 0
         self.executed_statements: list[tuple[str, object | None]] = []
@@ -388,15 +407,17 @@ def _postgres_settings(
 
 
 def test_postgres_session_schema_constants_match_current_store_contract() -> None:
-    """The schema should model metadata, latest progress, and ordered results."""
+    """The schema should model metadata, latest progress, results, and cancel state."""
     assert POSTGRES_SESSION_METADATA_TABLE_NAME == "session_metadata"
     assert POSTGRES_SESSION_PROGRESS_TABLE_NAME == "session_progress"
     assert POSTGRES_SESSION_RESULTS_TABLE_NAME == "session_result_events"
+    assert POSTGRES_SESSION_CANCEL_TABLE_NAME == "session_cancel_requests"
     assert "selected_detectors JSONB NOT NULL" in POSTGRES_SESSION_METADATA_TABLE_SQL
     assert "latest_result_detectors JSONB NOT NULL" in POSTGRES_SESSION_PROGRESS_TABLE_SQL
     assert "detector_name TEXT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
     assert "event_timestamp_utc TEXT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
     assert "payload_json JSONB NOT NULL" in POSTGRES_SESSION_RESULTS_TABLE_SQL
+    assert "cancel_requested BOOLEAN NOT NULL" in POSTGRES_SESSION_CANCEL_TABLE_SQL
     assert "alerts" not in POSTGRES_SESSION_METADATA_TABLE_SQL.lower()
     assert "worker.log" not in POSTGRES_SESSION_PROGRESS_TABLE_SQL.lower()
     assert "cancel_requested" not in POSTGRES_SESSION_RESULTS_TABLE_SQL.lower()
@@ -424,20 +445,21 @@ def test_postgres_result_event_schema_stays_queryable_without_over_normalizing()
 
 
 def test_postgres_session_table_specs_follow_contract_concerns_not_file_inventory() -> None:
-    """Table specs should model durable session concerns rather than file names."""
-    assert len(POSTGRES_SESSION_STORE_TABLE_SPECS) == 3
+    """Table specs should model store concerns rather than raw file names."""
+    assert len(POSTGRES_SESSION_STORE_TABLE_SPECS) == 4
     assert [
         spec.table_name for spec in POSTGRES_SESSION_STORE_TABLE_SPECS
     ] == [
         POSTGRES_SESSION_METADATA_TABLE_NAME,
         POSTGRES_SESSION_PROGRESS_TABLE_NAME,
         POSTGRES_SESSION_RESULTS_TABLE_NAME,
+        POSTGRES_SESSION_CANCEL_TABLE_NAME,
     ]
     assert POSTGRES_SESSION_STORE_TABLE_SPECS[0].payload_fields == POSTGRES_SESSION_METADATA_FIELDS
     assert POSTGRES_SESSION_STORE_TABLE_SPECS[1].payload_fields == POSTGRES_SESSION_PROGRESS_FIELDS
     assert POSTGRES_SESSION_STORE_TABLE_SPECS[2].payload_fields == POSTGRES_SESSION_RESULT_FIELDS
+    assert POSTGRES_SESSION_STORE_TABLE_SPECS[3].payload_fields == POSTGRES_SESSION_CANCEL_FIELDS
     assert all("alert" not in spec.table_name for spec in POSTGRES_SESSION_STORE_TABLE_SPECS)
-    assert all("cancel" not in spec.table_name for spec in POSTGRES_SESSION_STORE_TABLE_SPECS)
     assert all("worker" not in spec.table_name for spec in POSTGRES_SESSION_STORE_TABLE_SPECS)
 
 
@@ -449,6 +471,8 @@ def test_postgres_session_method_table_map_stays_small_and_explicit() -> None:
         "write_progress": (POSTGRES_SESSION_PROGRESS_TABLE_NAME,),
         "append_result": (POSTGRES_SESSION_RESULTS_TABLE_NAME,),
         "read_results": (POSTGRES_SESSION_RESULTS_TABLE_NAME,),
+        "request_cancel": (POSTGRES_SESSION_CANCEL_TABLE_NAME,),
+        "is_cancel_requested": (POSTGRES_SESSION_CANCEL_TABLE_NAME,),
         "read_snapshot": (
             POSTGRES_SESSION_METADATA_TABLE_NAME,
             POSTGRES_SESSION_PROGRESS_TABLE_NAME,
@@ -486,6 +510,7 @@ def test_postgres_session_store_missing_metadata_keeps_empty_snapshot_contract()
     store = PostgresSessionStore(MetadataStoreConnection())
 
     assert store.session_exists("session-missing") is False
+    assert store.is_cancel_requested("session-missing") is False
     assert store.read_results("session-missing") == []
     assert store.read_snapshot("session-missing") == {
         "session": None,
@@ -501,6 +526,44 @@ def test_postgres_session_store_preserves_storage_neutral_round_trip_contract() 
     store = PostgresSessionStore(MetadataStoreConnection())
 
     _assert_store_round_trip_contract(store, "session-postgres-contract-parity")
+
+
+def test_postgres_session_store_round_trips_cancel_intent() -> None:
+    """Cancel writes should read back as current-state runtime control."""
+    connection = MetadataStoreConnection()
+    store = PostgresSessionStore(connection)
+
+    assert store.is_cancel_requested("session-postgres-cancel") is False
+
+    store.request_cancel("session-postgres-cancel")
+
+    assert connection.commit_count == 1
+    assert store.is_cancel_requested("session-postgres-cancel") is True
+
+
+def test_postgres_session_store_request_cancel_stays_tolerant_without_metadata() -> None:
+    """Low-level cancel intent should not require a durable metadata row."""
+    connection = MetadataStoreConnection()
+    store = PostgresSessionStore(connection)
+
+    store.request_cancel("session-postgres-missing-metadata")
+
+    assert connection.cancel_rows == {"session-postgres-missing-metadata": True}
+    assert store.is_cancel_requested("session-postgres-missing-metadata") is True
+
+
+def test_postgres_session_store_request_cancel_is_idempotent_current_state() -> None:
+    """Repeated cancel writes should keep one stable current-state signal."""
+    connection = MetadataStoreConnection()
+    store = PostgresSessionStore(connection)
+    session_id = "session-postgres-cancel-repeat"
+
+    store.request_cancel(session_id)
+    store.request_cancel(session_id)
+
+    assert connection.cancel_rows == {session_id: True}
+    assert connection.commit_count == 2
+    assert store.is_cancel_requested(session_id) is True
 
 
 def test_postgres_session_store_metadata_round_trip_preserves_snapshot_shape() -> None:

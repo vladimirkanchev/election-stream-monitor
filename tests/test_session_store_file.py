@@ -13,8 +13,10 @@ import config
 import pytest
 from session_io import (
     append_result,
+    is_session_cancel_requested,
     read_session_result_events,
     read_session_snapshot,
+    request_session_cancel,
     session_exists,
     write_session_metadata,
     write_session_progress,
@@ -236,6 +238,57 @@ def test_file_session_store_matches_existing_result_order_behavior(
     assert file_store.read_results(metadata.session_id) == read_session_result_events(
         metadata.session_id
     )
+
+
+def test_file_session_store_round_trips_cancel_intent(
+    file_store: FileSessionStore,
+) -> None:
+    """The file store should expose the current cancel-request signal."""
+    session_id = "session-file-cancel-round-trip"
+
+    assert file_store.is_cancel_requested(session_id) is False
+
+    file_store.request_cancel(session_id)
+
+    assert file_store.is_cancel_requested(session_id) is True
+
+
+def test_file_session_store_matches_existing_cancel_helper_behavior(
+    file_store: FileSessionStore,
+) -> None:
+    """Cancel methods should stay aligned with the legacy file helpers."""
+    session_id = "session-file-cancel-parity"
+
+    request_session_cancel(session_id)
+
+    assert file_store.is_cancel_requested(session_id) == is_session_cancel_requested(session_id)
+
+
+def test_file_session_store_request_cancel_delegates_to_existing_helper(
+    file_store: FileSessionStore,
+) -> None:
+    """Store cancel writes should create the same file-backed marker."""
+    session_id = "session-file-cancel-write"
+
+    file_store.request_cancel(session_id)
+
+    assert is_session_cancel_requested(session_id) is True
+
+
+def test_file_session_store_request_cancel_preserves_marker_file_shape(
+    file_store: FileSessionStore,
+) -> None:
+    """Store cancel writes should preserve the legacy marker payload on disk."""
+    session_id = "session-file-cancel-marker-shape"
+
+    file_store.request_cancel(session_id)
+
+    marker_path = config.SESSION_OUTPUT_FOLDER / session_id / "cancel_requested.json"
+    assert marker_path.exists()
+    assert json.loads(marker_path.read_text(encoding="utf-8")) == {
+        "session_id": session_id,
+        "cancel_requested": True,
+    }
 
 
 def test_file_session_store_matches_invalid_top_level_snapshot_tolerance(

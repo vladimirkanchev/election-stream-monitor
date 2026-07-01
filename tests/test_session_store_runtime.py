@@ -389,6 +389,32 @@ def test_default_session_store_cache_requires_explicit_clear_before_backend_swit
     assert rebuilt.connection is switched_connection
 
 
+def test_clear_default_session_store_cache_also_refreshes_cached_runtime_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Clearing the default store cache should also drop cached runtime settings."""
+    monkeypatch.delenv(SESSION_STORE_BACKEND_ENV, raising=False)
+    cached_file_settings = get_session_store_runtime_settings()
+
+    switched_connection = object()
+    _set_valid_postgres_runtime_env(monkeypatch)
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        lambda: switched_connection,
+    )
+
+    still_cached_settings = get_session_store_runtime_settings()
+    clear_default_session_store_cache()
+    refreshed_settings = get_session_store_runtime_settings()
+    rebuilt_store = get_default_session_store()
+
+    assert cached_file_settings.backend == "file"
+    assert still_cached_settings is cached_file_settings
+    assert refreshed_settings.backend == "postgres"
+    assert isinstance(rebuilt_store, PostgresSessionStore)
+    assert rebuilt_store.connection is switched_connection
+
+
 def test_default_session_store_cache_recovers_cleanly_after_failed_postgres_bootstrap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

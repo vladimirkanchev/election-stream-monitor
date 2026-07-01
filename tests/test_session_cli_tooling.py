@@ -674,6 +674,28 @@ def test_run_session_worker_path_fails_clearly_when_postgres_is_selected_without
         )
 
 
+def test_run_session_worker_path_fails_clearly_when_postgres_url_shape_is_invalid(
+    monkeypatch,
+    capsys,
+) -> None:
+    """The worker CLI should reject a bad PostgreSQL URL instead of falling back."""
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, "sqlite:///tmp/sessions.db")
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "ESM_POSTGRES_SESSION_DATABASE_URL must use a postgres or "
+            "postgresql URL"
+        ),
+    ):
+        _run_worker_cli_after_store_cache_clear(
+            monkeypatch,
+            capsys,
+            session_id="session-worker-runtime-postgres-invalid-url",
+        )
+
+
 def test_run_session_worker_path_fails_clearly_when_postgres_driver_bootstrap_is_missing(
     monkeypatch,
     capsys,

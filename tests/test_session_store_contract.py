@@ -3,6 +3,8 @@
 These tests keep the PostgreSQL migration boundary small and storage-neutral.
 """
 
+from typing import Protocol
+
 from session_store import (
     RESULT_EVENT_PUBLIC_KEYS,
     RESULT_EVENT_SHARED_PAYLOAD_HINT_KEYS,
@@ -10,6 +12,8 @@ from session_store import (
     ResultEventPayload,
     SessionMetadataPayload,
     SessionProgressPayload,
+    SessionStore,
+    SessionStoreCancellationControl,
     SessionStoreReader,
     SessionStoreWriter,
     build_empty_session_snapshot_payload,
@@ -20,15 +24,13 @@ from session_store import (
 
 EXPECTED_READER_METHODS = {"session_exists", "read_snapshot", "read_results"}
 EXPECTED_WRITER_METHODS = {"write_metadata", "write_progress", "append_result"}
+EXPECTED_CANCELLATION_METHODS = {"request_cancel", "is_cancel_requested"}
 
 NON_DURABLE_METHOD_NAMES = {
     "append_alert",
     "get_session_dir",
     "get_worker_log_path",
-    "request_cancel",
     "request_session_cancel",
-    "is_cancel_requested",
-    "read_cancel_request",
     "append_seen_chunk_key",
     "read_seen_chunk_keys",
     "append_api_stream_seen_chunk_key",
@@ -83,11 +85,26 @@ def test_session_store_writer_keeps_minimal_lifecycle_write_contract() -> None:
     assert _protocol_methods(SessionStoreWriter) == EXPECTED_WRITER_METHODS
 
 
-def test_session_store_contract_excludes_non_durable_concerns() -> None:
-    """Runtime control, paths, diagnostics, and alerts stay outside the store."""
+def test_session_store_cancellation_control_keeps_runtime_signal_minimal() -> None:
+    """Cancel control should stay limited to one write and one boolean read."""
+    assert _protocol_methods(SessionStoreCancellationControl) == EXPECTED_CANCELLATION_METHODS
+
+
+def test_session_store_contract_excludes_unrelated_runtime_concerns() -> None:
+    """Paths, replay keys, diagnostics, and alerts should stay outside the store."""
     method_names = _protocol_methods(SessionStoreReader) | _protocol_methods(SessionStoreWriter)
 
     assert method_names.isdisjoint(NON_DURABLE_METHOD_NAMES)
+
+
+def test_session_store_combines_durable_reads_writes_and_cancel_signal() -> None:
+    """The combined store should expose the narrow runtime cancel methods too."""
+    assert SessionStore.__bases__ == (
+        SessionStoreReader,
+        SessionStoreWriter,
+        SessionStoreCancellationControl,
+        Protocol,
+    )
 
 
 def test_empty_session_snapshot_payload_preserves_missing_session_shape() -> None:
