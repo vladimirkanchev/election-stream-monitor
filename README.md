@@ -167,7 +167,7 @@ center/right, and session state and alerts below.
 This part keeps the session state stable enough for the UI to refresh:
 
 - a session is created when monitoring starts
-- progress and results persist through one session-store seam with a file-backed default
+- progress and results persist through `SessionStore` with a file default
 - alerts use one shared alert backend: file by default, PostgreSQL when you opt in
 - the frontend polls session snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
@@ -612,7 +612,7 @@ Useful references:
 Outputs are still local-first:
 
 - detector metrics: `data/metrics/`
-- per-session metadata, latest progress, and results: session-store contract with a file-backed default under `data/sessions/`
+- per-session metadata, latest progress, and results: `SessionStore` with a file default under `data/sessions/`
 - alerts: file-backed by default, with PostgreSQL available as an opt-in backend
 
 ## Repo Layout

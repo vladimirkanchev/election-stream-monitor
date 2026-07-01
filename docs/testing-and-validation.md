@@ -194,7 +194,7 @@ Current focused ownership map:
 - `tests/test_api_boundary_contracts.py`
   - HTTP-visible session snapshot regression coverage so outer keys, ordered
   `results`, and derived `latest_result` stay stable when result storage
-  moves behind the store seam
+  moves behind `SessionStore`
 - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
   - bridge normalization coverage so ordered `results`, derived
   `latest_result`, and latest-only progress fields stay stable for desktop
@@ -462,9 +462,9 @@ The split between `Branch CI` and `CI` is intentional:
 - only the PR workflow emits the required `main-gate` context, which
   avoids duplicate-status merge confusion on the same commit SHA
 
-## Task-4 Workflow Contract Checks
+## Workflow Contract Checks
 
-Task 4 adds one narrow regression layer around the protected `main` PR CI
+This adds one narrow regression layer around the protected `main` PR CI
 contract. Read it as a maintainer safeguard, not as a second workflow
 implementation.
 
@@ -853,7 +853,7 @@ Ownership summary:
   - docs expectations
   - policy-only test expectations that are intentionally narrower than the
     shared CI groups
-  - the session-store seam now lives under that same backend-contract policy,
+  - the `SessionStore` contract now lives under that same backend-contract policy,
     so persistence-contract changes should move with focused store tests and
     session persistence docs
 
@@ -1081,7 +1081,7 @@ Use the live smokes when you need confidence in the real database path:
 
 - connection/bootstrap behavior
 - real SQL insert/read behavior
-- snapshot/API/CLI behavior over the active Postgres backend
+- snapshot/API/CLI behavior over the active PostgreSQL backend
 
 For this branch, the smallest useful live checks are:
 
@@ -1137,7 +1137,7 @@ focused bundles:
   - raw/grouped FastAPI route checks
   - grouped MCP agreement over the active backend
 - runtime/operator-flow confidence
-  - runner-written alerts through the live Postgres backend
+  - runner-written alerts through the live PostgreSQL backend
   - session snapshot reads over the active backend
   - CLI `read-session` behavior over the active backend
 
@@ -1169,7 +1169,7 @@ Use the backend bundle when:
 
 Use the runtime/operator-flow bundle when:
 
-- you want confidence in runner-written alerts under real Postgres mode
+- you want confidence in runner-written alerts under real PostgreSQL mode
 - you want to sanity-check snapshot and CLI behavior before a rollout or demo
 
 For a quick human-readable view of one persisted session during a manual check,
@@ -1233,12 +1233,12 @@ The current functionality under that slice is:
 
 Current alert persistence contract to preserve:
 
-- seam owner:
+- contract owner:
   - `src/session_alert_store.py`
     - defines the narrow storage contract for append/read raw alert rows only
     - owns the runtime-selected default alert store and still defaults to the
       file-backed alert backend in this branch phase
-    - filtering, summaries, and grouped incidents stay outside the store seam
+    - filtering, summaries, and grouped incidents stay outside the store contract
   - `src/session_alert_store_runtime_config.py`
     - owns explicit `file` versus `postgres` backend selection for that default
       store through `ESM_ALERT_STORE_BACKEND`
@@ -1248,7 +1248,7 @@ Current alert persistence contract to preserve:
   - `src/session_alert_store_postgres_config.py`
     - owns the narrow env/config parsing for the PostgreSQL bootstrap path
   - `src/session_alerts.py` and `src/session_alert_incidents.py`
-    - public read-model entrypoints accept the store seam explicitly while still
+    - public read-model entrypoints accept the store contract explicitly while still
       defaulting to the runtime-selected store implementation
 - write entrypoint:
   - `src/session_io.py`
@@ -1322,7 +1322,7 @@ The current test split is:
     coverage
 - `tests/test_session_io.py`
   - compatibility write-entry coverage showing `append_alert(...)` delegates to
-    the default alert-store seam without widening into broader session
+    the default alert-store contract without widening into broader session
     persistence changes
   - also covers write-to-read seam integration plus the hybrid snapshot path
     where metadata/progress/results remain file-backed and alerts follow the
@@ -1729,17 +1729,30 @@ Backend/API contract checks:
 - `tests/test_api_boundary_sessions_start.py`
   - session start-route behavior
 - `tests/test_api_boundary_sessions_cancel.py`
-  - session cancel-route behavior
+  - session cancel-route status mapping
+  - transient `cancelling` response before worker settlement
 - `tests/test_session_service_start.py`
   - shared start-session service behavior
 - `tests/test_session_service_worker.py`
   - detached worker launch and log-handle behavior
 - `tests/test_session_service_read_cancel.py`
   - shared read/cancel service behavior
+  - store-backed snapshot/result/progress passthrough
+  - transient cancel summary before durable settlement
+- `tests/test_session_store_contract.py`
+  - backend-neutral session-store cancel contract
+- `tests/test_session_store_file.py`
+  - file-backed cancel marker compatibility behind `SessionStore`
+- `tests/test_session_store_postgres.py`
+  - PostgreSQL cancel current-state behavior
+- `tests/test_session_store_parity.py`
+  - file/PostgreSQL parity for cancel semantics
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
   - detector-catalog CLI output parity with the canonical registry
   - runtime-selected alert-backend behavior for `read-session`
+  - worker-path backend selection, cache refresh, and explicit postgres
+    failure behavior for `run-session`
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - detector-catalog route parity with the canonical registry
@@ -1834,6 +1847,7 @@ Use these focused checks when changing:
 
 - shared session start/read/cancel mechanics
 - detached worker launch, `worker.log` capture, or parent/worker observability
+- worker/backend runtime selection or env inheritance
 - FastAPI request/response schemas
 - session snapshot fields
 - bridge error payloads
@@ -2190,7 +2204,7 @@ Current lifecycle coverage is already spread across the main layers:
   - `tests/test_api_boundary_sessions_start.py`
     - start success and shared error mapping
   - `tests/test_api_boundary_sessions_cancel.py`
-    - cancel success, missing-session cancel failure, and current terminal cancel behavior
+    - cancel success, missing-session cancel failure, terminal cancel rejection, and transient-to-terminal cancel flow
   - `tests/test_api_boundary_contracts.py`
     - structured error envelopes
     - malformed nested payload fail-closed behavior
@@ -2226,7 +2240,6 @@ Current lifecycle coverage is already spread across the main layers:
 Current high-value gaps:
 
 - no explicit backend truth-table style test for repeated cancel requests
-- no explicit backend/API test for canceling an already terminal session as a final intended rule
 - no focused Electron test for read-session missing-session bridge mapping
 - no frontend app-flow coverage for cancel-after-completion
 

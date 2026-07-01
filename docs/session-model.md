@@ -11,15 +11,15 @@ Do not use it as the main architecture overview or as the complete bridge
 payload catalog; see [architecture.md](./architecture.md) and
 [contracts.md](./contracts.md) for those.
 
-For the current storage inventory before the PostgreSQL session-store
+For the current storage inventory during the PostgreSQL session-store
 migration, see [session-persistence-audit.md](./session-persistence-audit.md).
 
 ## At a glance
 
 - sessions are the persisted contract between backend and frontend
-- session snapshots now read through the storage-neutral `SessionStore` seam
-- file-backed session persistence is still the runtime default
-- PostgreSQL session persistence is available only as an explicit opt-in
+- session snapshots now read through the storage-neutral `SessionStore`
+- file-backed session persistence is still the file default
+- PostgreSQL session persistence is available only through explicit opt-in
 - alert storage stays file-backed by default for this branch phase and can now
   switch to PostgreSQL
 - the snapshot `alerts` field now follows that same alert backend
@@ -30,11 +30,11 @@ migration, see [session-persistence-audit.md](./session-persistence-audit.md).
 
 The frontend and backend do not talk through a full web service yet.
 
-Instead, the backend writes session data to disk and the frontend reads it
+Instead, the backend persists session state locally and the frontend reads it
 through the local bridge. That keeps the current project simple while still
 giving a clear session lifecycle and a stable read model.
 
-For start/read/cancel ownership, the shared application-service seam now lives
+For start/read/cancel ownership, the shared application service now lives
 in [`src/session_service.py`](../src/session_service.py).
 
 In practice:
@@ -51,8 +51,8 @@ Recommended reading order for start/read/cancel work:
 3. [`src/session_cli.py`](../src/session_cli.py)
 4. [`src/session_runner.py`](../src/session_runner.py)
 
-That order separates request ownership from the worker-side session execution
-that actually produces the persisted session artifacts described below.
+That order separates request ownership from the worker execution path that
+actually produces the persisted session artifacts described below.
 
 ## Session files
 
@@ -128,16 +128,13 @@ Behavior depends a bit on mode:
 So `current_item` and `processed_count` for `video_files` are now slice-based,
 not whole-file based.
 
-Current rollout note:
+Current progress behavior:
 
-- progress persistence is now owned by the `SessionStore` seam, not by direct
-  caller use of `session_io.write_session_progress(...)`
-- in the default runtime this still lands in `progress.json` through
+- progress writes now go through `SessionStore`
+- the file default still persists them to `progress.json` through
   `FileSessionStore`
-- when `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected, the same
-  progress contract is persisted in PostgreSQL instead
-- this does not mean the whole session migration is finished; it means the
-  progress path now follows the backend-neutral store boundary
+- explicit `ESM_SESSION_STORE_BACKEND=postgres` persists the same contract in
+  PostgreSQL
 - timestamp-only refreshes are treated as no-op writes so durable progress
   stays meaningful while polling remains fresh
 
@@ -201,7 +198,7 @@ That means the current session payload contract intentionally excludes
 diagnostics, add that through a deliberate diagnostics field or endpoint
 rather than growing the core session snapshot ad hoc.
 
-For this milestone, keep the file after success, failure, or cancel.
+For the current runtime, keep the file after success, failure, or cancel.
 Do not auto-delete it as part of normal session cleanup.
 
 The current runtime split is:
@@ -211,15 +208,34 @@ The current runtime split is:
 - `worker.log` is the per-session backend trace left by that worker-side
   execution path
 
+Worker storage invariant for this split:
+
+- the parent process may accept the request first, but parent process reads and
+  cancel writes must still target the same session-store backend that the
+  detached worker uses for durable metadata, progress, and result writes
+- the contract is backend agreement, not a requirement to pass settings in one
+  specific way
+- if parent and worker drift onto different backends, accepted sessions can
+  later look missing or stale even though both processes are individually
+  working
+
+Current runtime note:
+
+- the detached worker inherits the same session-store runtime configuration as
+  the parent process
+- file-backed session storage remains the default runtime path
+- PostgreSQL session storage is still explicit opt-in
+
 ## Persistence contract
 
 The current persistence layer is intentionally simple, but it still has a
 useful contract.
 
-### Durable session-store boundary
+### Durable SessionStore contract
 
 For the PostgreSQL migration path, treat durable session meaning as
-storage-neutral even though the default implementation is still file-backed.
+storage-neutral even though the file-backed implementation is still the runtime
+default.
 
 - Contract: `src/session_store.py` owns durable metadata, latest progress, ordered
   detector results, snapshot reads, and known-session checks.
@@ -227,8 +243,8 @@ storage-neutral even though the default implementation is still file-backed.
   helpers without changing snapshot shape.
 - Runtime default: `src/session_store_runtime.py` still resolves to the
   file-backed store, and `src/session_store_runtime_config.py` keeps missing or
-  invalid `ESM_SESSION_STORE_BACKEND` values on that same safe file default.
-- PostgreSQL bootstrap seam: `src/session_store_postgres_config.py` owns the
+  invalid `ESM_SESSION_STORE_BACKEND` values on that same file default.
+- PostgreSQL bootstrap: `src/session_store_postgres_config.py` owns the
   PostgreSQL env surface and `src/session_store_postgres.py` owns driver
   loading, connection setup, schema bootstrap, the concrete
   `PostgresSessionStore` adapter, and opt-in schema reset helpers.
@@ -253,22 +269,28 @@ storage-neutral even though the default implementation is still file-backed.
     the stable empty/full snapshot shape
   - focused adapter tests cover malformed rows, runtime opt-in behavior, and
     optional live PostgreSQL smoke paths
-- current result-event rollout:
+- current result-event behavior:
   - runtime writes now append through `SessionStore.append_result(...)`
   - file mode still writes `results.jsonl`
   - PostgreSQL mode writes `session_result_events`
   - `latest_result` remains derived from the final valid ordered row
+- current cancellation behavior:
+  - public cancel requests still validate through `session_service.cancel_session(...)`
+  - cancel intent now writes through `SessionStore.request_cancel(...)`
+  - worker and live-loader polling now read through
+    `SessionStore.is_cancel_requested(...)`
+  - the immediate public `cancelling` response is transient; durable snapshot
+    settlement still happens later in worker execution
   - shared hint validation stays aligned across both backends
 - Runtime posture: explicit `ESM_SESSION_STORE_BACKEND=postgres` now builds a
   concrete `PostgresSessionStore`, while missing, invalid, or explicit `file`
-  config still resolves to the file-backed default.
+  config still resolves to the file default.
 - Bootstrap posture: session tables do not auto-create by default. Opt in with
   `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` for explicit local bootstrap or
   focused smoke checks.
 - migration honesty rule:
-  moving result persistence behind the store seam does not mean alerts,
-  cancellation markers, replay keys, worker diagnostics, or temp runtime media
-  have already moved into PostgreSQL.
+  moving result persistence behind `SessionStore` does not mean alerts, replay
+  keys, worker diagnostics, or temp runtime media have moved into PostgreSQL.
 - Validation posture: PostgreSQL settings matter only in explicit `postgres`
   mode; file mode ignores stale PostgreSQL bootstrap env.
 - Shared readers: `src/session_service.py`, `src/session_alert_store.py`, and
@@ -281,13 +303,28 @@ storage-neutral even though the default implementation is still file-backed.
 - Progress-write guard: the runner progress path now skips timestamp-only
   rewrites so durable updates stay meaningful without making frontend polling
   stale.
-- Current rollout state: PostgreSQL session storage is available for explicit
-  runtime opt-in, but the branch default for ordinary callers remains file-backed.
+- Current runtime state: PostgreSQL session storage is available through
+  explicit opt-in, but ordinary callers still use the file default.
 - Drift guard: change `SessionStore` when durable session meaning changes;
   change only the file backend when the public snapshot behavior stays the
   same.
-- Out of scope: logs, temporary media, cancel markers, and HTTP/HLS replay keys
-  stay outside the durable store unless a separate contract is added.
+- Out of scope: logs, temporary media, and HTTP/HLS replay keys stay outside
+  the durable store unless a separate contract is added. Cancel intent is a
+  narrow runtime-control signal, not part of the public snapshot read model.
+
+For the current migration stage, cancel-request state should be treated as
+runtime coordination with bounded durability:
+
+- runtime coordination because the worker and live loader poll it as an active
+  stop signal
+- bounded durability because cancel intent must cross the parent process /
+  detached-worker boundary reliably
+- the active contract is now `SessionStore.request_cancel(...)` and
+  `SessionStore.is_cancel_requested(...)`
+- file-backed storage remains the file default unless
+  `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected
+- not part of the durable session snapshot read model and not ordinary
+  append-only session history
 
 This boundary gives engineers and coding agents one stable place to check before
 changing session storage behavior.
@@ -490,7 +527,7 @@ operator-safe frontend wording.
 ### Current validation baseline
 
 At the end of this branch, the lifecycle behavior above is treated as settled
-because it is covered by the current milestone checks:
+because it is covered by the current validation checks:
 
 - frontend package:
   - `npm run test:electron-bridge`

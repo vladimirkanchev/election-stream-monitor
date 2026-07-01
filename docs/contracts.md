@@ -78,42 +78,28 @@ For the current project stage:
   - [`src/alert_rules.py`](../src/alert_rules.py)
   - [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
 
-Current persistence rollout note:
+Current persistence note:
 
-- the durable session-store seam now exists
-- the active runtime default is still the file-backed session store
-- PostgreSQL session-store config/bootstrap now exists
-- the first adapter slice now exists:
-  - metadata upsert
-  - metadata-backed `session_exists`
-  - latest-only progress upsert/read
-  - ordered result append/read
-  - snapshot assembly from metadata, latest progress, and ordered results with
-    the stable empty/full snapshot shape
-- its current schema maps contract concerns, not file names:
+- `SessionStore` now owns durable session metadata, latest progress, ordered
+  result history, snapshot reads, and cancel intent writes.
+- The runtime default is still the file-backed store.
+- Explicit `ESM_SESSION_STORE_BACKEND=postgres` now resolves to a concrete
+  `PostgresSessionStore`.
+- The current PostgreSQL schema follows contract concerns rather than file
+  names:
   - `session_metadata` for durable metadata and known-session checks
   - `session_progress` for latest-only progress
   - `session_result_events` for append-ordered detector results
-- explicit `postgres` runtime selection is now recognized, validated, and
-  wired to a concrete `PostgresSessionStore`
-- session progress persistence now flows through the `SessionStore` seam for
-  lifecycle, execution, terminal, API-read, and frontend-polling behavior
-- file mode still persists that progress contract via `progress.json`
-- PostgreSQL mode persists the same progress contract via the opt-in store
-- detector result events now also flow through the `SessionStore` seam:
-  - file mode still appends the durable contract to `results.jsonl`
-  - PostgreSQL mode appends the same contract to `session_result_events`
-  - snapshot `results` and derived `latest_result` stay tied to append order,
-    not detector timestamp ordering
-- timestamp-only progress refreshes are now treated as no-op writes so the
-  durable contract does not churn without a real state change
-- service reads, FastAPI reads, bridge normalization, and frontend polling now
-  all sit above that same latest-progress contract
-- this does not mean the whole session migration is complete:
-  alerts, cancel markers, replay keys, worker logs, and temp media still keep
-  their current separate ownership
-- PostgreSQL alert storage is opt-in today
-- PostgreSQL session storage is opt-in today and remains non-default
+- Progress, results, and cancel intent now flow through the same `SessionStore` contract in
+  both file and PostgreSQL modes.
+- Snapshot `results` and derived `latest_result` still follow append order,
+  not detector timestamp ordering.
+- Timestamp-only progress refreshes are treated as no-op writes so durable
+  progress does not churn without a real state change.
+- The detached `run-session` worker must use the same session-store runtime
+  selection as the parent process that starts, reads, and cancels sessions.
+- This is still an in-progress migration. Alerts, replay keys, worker logs,
+  and temp media keep their current separate ownership.
 
 ## Do Not Drift These Together By Accident
 
@@ -692,6 +678,72 @@ consumer rules:
   a late extra stop request instead of issuing a cancel action that can no
   longer change the session outcome
 
+### Cancellation Contract v1
+
+Purpose:
+
+- define cancellation as cooperative runtime control, not durable session
+  history
+- keep public cancel behavior stable while the storage backend evolves
+- make later PostgreSQL-backed cancellation possible without forcing the worker
+  into heavy database chatter
+
+Current semantics are intentionally split between the public request boundary
+and the low-level runtime-control helper:
+
+- public cancel request
+  - `cancel-session` for a known non-terminal session is accepted
+  - the immediate response is a transient `cancelling` summary or `null`
+  - the public request path rejects missing sessions and already-terminal
+    sessions as structured failures
+- low-level cancel intent write
+  - the helper records stop intent only
+  - it is idempotent for repeated requests on the same session
+  - it does not own lifecycle validation or missing-session errors
+- low-level cancel intent read
+  - readers need only a boolean answer: cancel requested or not
+  - no marker or no known runtime-control row reads as `false`
+  - worker and loader polling should not need to parse full session snapshots
+- clear/reset behavior
+  - there is no ordinary public "uncancel" operation
+  - for one session run, cancel intent is write-once and remains set until the
+    worker settles the session
+  - reset belongs to test cleanup, fixture setup, or a fresh session id, not to
+    the normal runtime control flow
+
+Current design rule:
+
+- keep durable terminal truth in session metadata/progress
+- keep cancel-request state on the same small `SessionStore` contract as runtime control,
+  while leaving it outside the durable snapshot read model
+- route cancel writes and reads through `SessionStore.request_cancel(...)` and
+  `SessionStore.is_cancel_requested(...)`
+- keep the file-backed store as the active default until PostgreSQL is
+  explicitly selected
+- treat cancel intent as bounded durable coordination
+  - durable enough to survive the parent process, detached worker, and short
+    runtime gaps
+  - not durable session history and not part of the public snapshot payload
+- in file mode, preserve the existing `cancel_requested.json` marker shape
+  behind `SessionStore`
+- in PostgreSQL mode, preserve the same semantics with one lightweight
+  current-state record rather than append-only cancel history
+- if a backend-specific reset helper is ever added, keep it test/bootstrap
+  scoped and out of the public API contract
+
+Current coverage emphasis:
+
+- `tests/test_session_store_contract.py`, `tests/test_session_store_file.py`,
+  `tests/test_session_store_postgres.py`, and
+  `tests/test_session_store_parity.py` protect backend-level cancel semantics
+- `tests/test_session_service.py` and
+  `tests/test_session_service_read_cancel.py` protect shared-service allow,
+  reject, and transient-summary behavior
+- `tests/test_api_boundary_sessions_cancel.py`,
+  `tests/test_session_runner_execution*.py`, and
+  `tests/test_stream_loader_http_hls*.py` protect route mapping, worker
+  settlement, and live-loader polling behavior
+
 ## Result Event v1
 
 Purpose:
@@ -756,9 +808,9 @@ Notes:
 - that projection is a storage detail, not a wider public payload contract:
   reads still return the compact `session_id` / `detector_id` / `payload`
   shape above
-- rollout note:
+- current behavior:
   - result append/read and snapshot assembly are now store-backed
-  - the file-backed session store remains the runtime default
+  - the file default remains the runtime default
   - broader session persistence migration is still in progress
 
 This keeps the row stable for storage and parity testing without freezing the
@@ -1039,6 +1091,9 @@ Current decided contract:
   - direct media playlist URLs
   - master playlist URLs
 - the default polling cadence is `API_STREAM_POLL_INTERVAL_SEC`
+- repeated negative cancel checks inside the live HTTP/HLS hot path are
+  throttled by `API_STREAM_CANCEL_CHECK_SKIP_COUNT`, while reconnect/sleep
+  boundaries still force a fresh cancel read
 
 Current master-playlist policy:
 
@@ -1672,7 +1727,7 @@ Current session-storage boundary:
 - `src/session_store.py` owns durable metadata, latest progress, ordered
   results, snapshot reads, and known-session checks.
 - `src/session_store_runtime.py` and `src/session_store_runtime_config.py`
-  centralize the current file-backed default and rollback-safe runtime
+  centralize the current file default and rollback-safe runtime
   selection.
 - `src/session_store_file.py` is the current file-backed implementation.
 - `src/session_store_postgres_config.py` owns the PostgreSQL session env
@@ -1699,8 +1754,16 @@ Current session-storage boundary:
   contract instead of choosing backend details themselves.
 - FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
   route behavior, not file names such as `session.json` or `results.jsonl`.
-- Worker logs, temp media, cancel markers, and HTTP/HLS replay keys are outside
-  the durable snapshot unless a new public contract is introduced deliberately.
+- Worker storage invariant:
+  - parent process session reads and cancel writes, and detached-worker lifecycle
+    writes, must resolve the same `SessionStore` backend for one session run
+  - this is a behavior rule, not a transport rule; env inheritance, explicit
+    worker env, or another future mechanism are all acceptable if they keep
+    parent and worker on the same backend
+- Worker logs, temp media, and HTTP/HLS replay keys are outside the durable
+  snapshot unless a new public contract is introduced deliberately. Cancel
+  intent is store-backed runtime control and is still not part of the public
+  snapshot.
 
 Current focused validation ownership for this boundary:
 
