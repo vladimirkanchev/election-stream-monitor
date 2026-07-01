@@ -1,10 +1,11 @@
-"""Focused tests for shared session read/cancel helpers and snapshot semantics.
+"""Focused tests for session-service reads, cancel behavior, and progress snapshots.
 
-The Task-3 additions in this file keep the shared session service aligned with
-the runtime-selected alert seam used by the snapshot, API, and CLI layers.
+This file covers the shared service contract used by the API, CLI, and desktop
+polling paths, with extra attention on Task 6 progress-read stability.
 """
 
 from collections.abc import Iterator
+from threading import Event, Thread
 from typing import cast
 
 import pytest
@@ -12,7 +13,7 @@ import pytest
 import session_service
 from analyzer_contract import InputMode
 from session_alert_store import clear_default_session_alert_store_cache
-from session_models import SessionStatus
+from session_models import SessionProgress, SessionStatus
 from session_store import SessionSnapshotPayload
 from tests.session_alert_test_support import (
     build_normalized_alert,
@@ -22,7 +23,7 @@ from tests.session_alert_test_support import (
 
 @pytest.fixture(autouse=True)
 def _clear_default_alert_store_cache() -> Iterator[None]:
-    """Keep runtime-selected default-store caching isolated in service tests."""
+    """Keep runtime-selected default-store caching isolated across service tests."""
     clear_default_session_alert_store_cache()
     yield
     clear_default_session_alert_store_cache()
@@ -36,7 +37,7 @@ def _session(
     status: SessionStatus,
     selected_detectors: list[str] | None = None,
 ) -> dict[str, object]:
-    """Build the persisted session section used by service read/cancel tests."""
+    """Build the session section used by service read and cancel tests."""
     session_data: dict[str, object] = {
         "session_id": session_id,
         "mode": mode,
@@ -50,15 +51,43 @@ def _session(
 
 def _snapshot(
     session: dict[str, object] | None,
+    *,
+    progress: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Wrap one session section in the minimal snapshot shape the service expects."""
+    """Build the minimal snapshot shape expected by the shared service helpers."""
     return {
         "session": session,
-        "progress": None,
+        "progress": progress,
         "alerts": [],
         "results": [],
         "latest_result": None,
     }
+
+
+def _progress(
+    *,
+    session_id: str,
+    processed_count: int,
+    total_count: int = 5,
+    current_item: str | None = None,
+    alert_count: int | None = None,
+    last_updated_utc: str | None = None,
+    status: SessionStatus = "running",
+) -> dict[str, object]:
+    """Build one stable progress payload for shared service read-path tests."""
+    return SessionProgress(
+        session_id=session_id,
+        status=status,
+        processed_count=processed_count,
+        total_count=total_count,
+        current_item=current_item or f"segment_{processed_count:04d}.ts",
+        latest_result_detector="video_metrics",
+        alert_count=processed_count if alert_count is None else alert_count,
+        last_updated_utc=last_updated_utc or f"2026-06-30 10:00:0{processed_count}",
+        latest_result_detectors=["video_metrics"],
+        status_reason=status,
+        status_detail=None,
+    ).to_dict()
 
 
 def _cancel_summary(
@@ -68,7 +97,7 @@ def _cancel_summary(
     input_path: str,
     selected_detectors: list[str] | None,
 ) -> dict[str, object]:
-    """Build the service-level cancel summary expected after a valid cancel request."""
+    """Build the cancel summary returned by the service after a valid request."""
     return {
         "session_id": session_id,
         "mode": mode,
@@ -129,6 +158,124 @@ def test_read_session_snapshot_uses_default_session_store(monkeypatch) -> None:
 
     session_data = cast(dict[str, object], snapshot["session"])
     assert session_data["session_id"] == "session-store-read"
+
+
+def test_read_session_snapshot_keeps_store_backed_progress_shape(monkeypatch) -> None:
+    """Service reads should return progress exactly as exposed by the active store."""
+    expected_progress = _progress(
+        session_id="session-store-progress",
+        processed_count=3,
+        total_count=5,
+        current_item="live-window-003.ts",
+        alert_count=1,
+        last_updated_utc="2026-06-30 09:00:00",
+    )
+
+    class FakeStore:
+        def read_snapshot(self, session_id: str) -> SessionSnapshotPayload:
+            return cast(
+                SessionSnapshotPayload,
+                _snapshot(
+                    _session(
+                        session_id=session_id,
+                        mode="api_stream",
+                        input_path="https://example.com/live/index.m3u8",
+                        selected_detectors=["video_metrics"],
+                        status="running",
+                    ),
+                    progress=expected_progress,
+                ),
+            )
+
+    monkeypatch.setattr(
+        session_service,
+        "get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    snapshot = session_service.read_session_snapshot("session-store-progress")
+
+    assert snapshot["progress"] == expected_progress
+
+
+def test_read_session_snapshot_returns_last_committed_progress_during_interleaved_write(
+    monkeypatch,
+) -> None:
+    """Service reads should stay on the last committed progress during an in-flight update."""
+    session_id = "session-store-progress-race"
+    session_payload = _session(
+        session_id=session_id,
+        mode="video_segments",
+        input_path="/tmp/segments",
+        selected_detectors=["video_metrics"],
+        status="running",
+    )
+    first_progress = _progress(session_id=session_id, processed_count=1)
+    second_progress = _progress(session_id=session_id, processed_count=2)
+    write_errors: list[BaseException] = []
+
+    class CoordinatedStore:
+        def __init__(self) -> None:
+            self._committed_progress = first_progress
+            self.write_started = Event()
+            self.allow_commit = Event()
+
+        def read_snapshot(self, read_session_id: str) -> SessionSnapshotPayload:
+            return cast(
+                SessionSnapshotPayload,
+                _snapshot(
+                    session_payload if read_session_id == session_id else None,
+                    progress=self._committed_progress if read_session_id == session_id else None,
+                ),
+            )
+
+        def write_progress(self, progress: SessionProgress) -> None:
+            self.write_started.set()
+            assert self.allow_commit.wait(timeout=1.0)
+            self._committed_progress = progress.to_dict()
+
+    store = CoordinatedStore()
+
+    monkeypatch.setattr(
+        session_service,
+        "get_default_session_store",
+        lambda: store,
+    )
+
+    def write_second_progress() -> None:
+        try:
+            store.write_progress(
+                SessionProgress(
+                    session_id=session_id,
+                    status="running",
+                    processed_count=2,
+                    total_count=5,
+                    current_item="segment_0002.ts",
+                    latest_result_detector="video_metrics",
+                    alert_count=2,
+                    last_updated_utc="2026-06-30 10:00:02",
+                    latest_result_detectors=["video_metrics"],
+                    status_reason="running",
+                    status_detail=None,
+                )
+            )
+        except BaseException as error:
+            write_errors.append(error)
+
+    writer = Thread(target=write_second_progress)
+    writer.start()
+    assert store.write_started.wait(timeout=1.0)
+
+    snapshot_during_write = session_service.read_session_snapshot(session_id)
+    assert snapshot_during_write["progress"] == first_progress
+
+    store.allow_commit.set()
+    writer.join(timeout=1.0)
+    assert not writer.is_alive()
+    assert write_errors == []
+
+    snapshot_after_write = session_service.read_session_snapshot(session_id)
+    assert snapshot_after_write["progress"] == second_progress
 
 
 def test_read_session_returns_none_when_missing(monkeypatch) -> None:

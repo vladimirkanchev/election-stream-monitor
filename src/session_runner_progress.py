@@ -1,21 +1,21 @@
-"""Progress and terminal-status helpers for `session_runner`.
+"""Progress-state helpers shared by session-runner lifecycle, execution, and terminal paths.
 
-This module keeps progress snapshots and operator-facing terminal status/log
-fields consistent across local and `api_stream` runs. It owns:
-
-- progress snapshot updates for running and per-slice execution
-- stable terminal `status_reason` and `status_detail` mapping
-- compact session log context for completion, cancel, and failure outcomes
+This module keeps the latest persisted progress contract consistent across local
+and `api_stream` sessions. It also owns the stable status-reason/detail values
+and log-context helpers used when a session completes, fails, or is cancelled.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from time import gmtime, strftime
 
 from analyzer_contract import InputMode
 from logger import format_log_context
 from session_models import SessionMetadata, SessionProgress, SessionStatus
 from stream_loader import ApiStreamLoader
+
+ProgressWriter = Callable[[SessionProgress], None]
 
 
 def build_progress_update(
@@ -25,7 +25,7 @@ def build_progress_update(
     status_reason: str | None = None,
     status_detail: str | None = None,
 ) -> SessionProgress:
-    """Return a copy of session progress with a validated lifecycle update."""
+    """Return the next latest-progress snapshot for a lifecycle status change."""
     return SessionProgress(
         session_id=current.session_id,
         status=status,
@@ -41,6 +41,33 @@ def build_progress_update(
     )
 
 
+def persist_progress_if_changed(
+    *,
+    current: SessionProgress,
+    next_progress: SessionProgress,
+    write_progress: ProgressWriter,
+) -> SessionProgress:
+    """Persist a progress update only when the durable payload meaningfully changed.
+
+    The guard intentionally ignores `last_updated_utc` when deciding whether to
+    write. That avoids churn from timestamp-only refreshes while still allowing
+    real lifecycle, count, item, and detector changes through immediately.
+    """
+    if not progress_payload_changed(current=current, next_progress=next_progress):
+        return current
+    write_progress(next_progress)
+    return next_progress
+
+
+def progress_payload_changed(
+    *,
+    current: SessionProgress,
+    next_progress: SessionProgress,
+) -> bool:
+    """Return whether two progress snapshots differ in persisted session meaning."""
+    return _durable_progress_signature(current) != _durable_progress_signature(next_progress)
+
+
 def build_slice_progress(
     *,
     current: SessionProgress,
@@ -50,7 +77,7 @@ def build_slice_progress(
     bundle: dict[str, list[dict[str, object]]],
     status: SessionStatus,
 ) -> SessionProgress:
-    """Build the next progress payload after processing one input slice."""
+    """Build the next latest-progress snapshot after one processed input slice."""
     latest_result_detectors = [
         str(result_payload["detector_id"])
         for result_payload in bundle["results"]
@@ -80,7 +107,7 @@ def build_session_log_context(
     *,
     extra_fields: dict[str, object] | None = None,
 ) -> str:
-    """Build consistent lifecycle context for session outcome logs."""
+    """Build the compact context string shared by terminal session logs."""
     fields: dict[str, object] = {
         "session_id": metadata.session_id,
         "source_kind": source_kind,
@@ -99,7 +126,7 @@ def build_api_stream_session_log_fields(
     cleanup_success_count: int,
     cleanup_failure_count: int,
 ) -> dict[str, object]:
-    """Return one compact transport/session summary for api_stream end logs."""
+    """Return the transport summary attached to `api_stream` terminal logs."""
     telemetry = loader.telemetry_snapshot()
     return {
         "session_end_reason": session_end_reason,
@@ -197,3 +224,19 @@ def _coerce_optional_string(value: object) -> str | None:
 def _current_utc_timestamp() -> str:
     """Return the persisted UTC timestamp format used by session progress."""
     return strftime("%Y-%m-%d %H:%M:%S", gmtime())
+
+
+def _durable_progress_signature(progress: SessionProgress) -> tuple[object, ...]:
+    """Return the persisted progress fields that should trigger a fresh write."""
+    return (
+        progress.session_id,
+        progress.status,
+        progress.processed_count,
+        progress.total_count,
+        progress.current_item,
+        progress.latest_result_detector,
+        tuple(progress.latest_result_detectors),
+        progress.alert_count,
+        progress.status_reason,
+        progress.status_detail,
+    )

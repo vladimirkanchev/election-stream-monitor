@@ -141,7 +141,8 @@ class SessionStoreWriter(Protocol):
     def write_progress(self, progress: SessionProgress) -> None:
         """Persist the latest progress payload for one session.
 
-        This replaces the previous progress read model.
+        This replaces the previous progress read model for the same session id
+        instead of appending a progress-history stream.
         """
         ...
 

@@ -101,5 +101,9 @@ def start_running_session(
         initialized_progress,
         status=updated_metadata.status,
     )
-    session_store.write_progress(updated_progress)
+    updated_progress = session_runner_progress.persist_progress_if_changed(
+        current=initialized_progress,
+        next_progress=updated_progress,
+        write_progress=session_store.write_progress,
+    )
     return updated_metadata, updated_progress

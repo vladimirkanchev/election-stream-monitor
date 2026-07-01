@@ -143,7 +143,7 @@ def process_discovered_slices(
             )
 
             persist_bundle_events(bundle, session_store=session_store)
-            progress = progress_builder(
+            next_progress = progress_builder(
                 current=progress,
                 processed_count=processed_count,
                 total_count=len(input_slices),
@@ -151,7 +151,11 @@ def process_discovered_slices(
                 bundle=bundle,
                 status=metadata.status,
             )
-            session_store.write_progress(progress)
+            progress = session_runner_progress.persist_progress_if_changed(
+                current=progress,
+                next_progress=next_progress,
+                write_progress=session_store.write_progress,
+            )
 
         return finalizer(
             metadata=metadata,
@@ -241,7 +245,7 @@ def run_api_stream_session(
                 )
                 processed_count += 1
                 persist_bundle_events(bundle, session_store=session_store)
-                progress = progress_builder(
+                next_progress = progress_builder(
                     current=progress,
                     processed_count=processed_count,
                     total_count=max(loader.accepted_slice_count(), processed_count),
@@ -249,7 +253,11 @@ def run_api_stream_session(
                     bundle=bundle,
                     status=metadata.status,
                 )
-                session_store.write_progress(progress)
+                progress = session_runner_progress.persist_progress_if_changed(
+                    current=progress,
+                    next_progress=next_progress,
+                    write_progress=session_store.write_progress,
+                )
             finally:
                 cleanup_success_count, cleanup_failure_count = cleanup_recorder(
                     analysis_slice,

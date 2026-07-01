@@ -127,7 +127,11 @@ def finalize_session_outcome(
         status_reason=terminal_status_reason,
         status_detail=terminal_status_detail,
     )
-    session_store.write_progress(updated_progress)
+    updated_progress = session_runner_progress.persist_progress_if_changed(
+        current=progress,
+        next_progress=updated_progress,
+        write_progress=session_store.write_progress,
+    )
 
     getattr(logger, log_level)(
         log_message,

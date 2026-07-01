@@ -1,11 +1,13 @@
-"""Storage-neutral write-path tests for session runner helpers."""
+"""Storage-neutral runner-write tests for latest progress, metadata, and results."""
 
 from dataclasses import replace
+from pathlib import Path
 from typing import cast
 
 import session_runner_execution
 import session_runner_lifecycle
 import session_runner_terminal
+from analyzer_contract import AnalysisSlice
 from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
 from session_store import (
     ResultEventPayload,
@@ -18,7 +20,7 @@ from session_store import (
 
 
 class RecordingSessionStore:
-    """Small in-memory store that records write ordering for runner tests."""
+    """Small in-memory store that records runner writes in contract order."""
 
     def __init__(self) -> None:
         self.metadata_writes: list[SessionMetadata] = []
@@ -30,7 +32,7 @@ class RecordingSessionStore:
         return self._latest_metadata(session_id) is not None
 
     def read_snapshot(self, session_id: str) -> SessionSnapshotPayload:
-        """Return a compact snapshot from recorded writes."""
+        """Assemble one public snapshot from the latest recorded writes."""
         metadata = self._latest_metadata(session_id)
         progress = self._latest_progress(session_id)
         results = self.read_results(session_id)
@@ -89,7 +91,7 @@ class RecordingSessionStore:
 
 
 def _metadata(session_id: str, *, status: str = "pending") -> SessionMetadata:
-    """Build one runner-owned metadata payload."""
+    """Build one runner-owned session metadata payload."""
     return SessionMetadata(
         session_id=session_id,
         mode="video_files",
@@ -99,8 +101,49 @@ def _metadata(session_id: str, *, status: str = "pending") -> SessionMetadata:
     )
 
 
+def _analysis_slice(source_name: str, *, window_index: int) -> AnalysisSlice:
+    """Build one local segment slice for runner execution tests."""
+    return AnalysisSlice(
+        file_path=Path(f"/tmp/{source_name}"),
+        source_group="local_segments",
+        source_name=source_name,
+        window_index=window_index,
+    )
+
+
+def _result_bundle(session_id: str, *, window_index: int) -> dict[str, list[dict[str, object]]]:
+    """Return one analyzer bundle with a single metrics result and no alerts."""
+    return {
+        "results": [
+            {
+                "session_id": session_id,
+                "detector_id": "video_metrics",
+                "payload": {"window_index": window_index},
+            }
+        ],
+        "alerts": [],
+    }
+
+
+def _running_progress(
+    metadata: SessionMetadata,
+    *,
+    total_count: int,
+    processed_count: int = 0,
+    current_item: str | None = None,
+) -> SessionProgress:
+    """Build a running latest-progress snapshot for storage-neutral runner tests."""
+    return replace(
+        SessionProgress.initial(session_id=metadata.session_id, total_count=total_count),
+        status="running",
+        processed_count=processed_count,
+        current_item=current_item,
+        status_reason="running",
+    )
+
+
 def test_lifecycle_writes_metadata_and_latest_progress_through_store() -> None:
-    """Lifecycle transitions should write through the injected session store."""
+    """Lifecycle transitions should persist metadata and latest progress through the store."""
     store = RecordingSessionStore()
 
     metadata, progress = session_runner_lifecycle.initialize_pending_session(
@@ -157,8 +200,83 @@ def test_bundle_results_append_through_store_in_order() -> None:
     }
 
 
+def test_execution_snapshot_keeps_latest_progress_while_results_keep_history() -> None:
+    """Execution should keep one latest progress snapshot while results remain ordered history."""
+    store = RecordingSessionStore()
+    metadata = _metadata("session-store-execution", status="running")
+    progress = _running_progress(metadata, total_count=2)
+    input_slices = [
+        _analysis_slice("segment_0001.ts", window_index=0),
+        _analysis_slice("segment_0002.ts", window_index=1),
+    ]
+
+    def bundle_runner(
+        *, analysis_slice: AnalysisSlice, **_: object
+    ) -> dict[str, list[dict[str, object]]]:
+        return _result_bundle(metadata.session_id, window_index=analysis_slice.window_index)
+
+    updated_metadata, updated_progress = session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=metadata.selected_detectors,
+        input_slices=input_slices,
+        bundle_runner=bundle_runner,
+        session_store=store,
+    )
+
+    snapshot = store.read_snapshot(metadata.session_id)
+
+    assert len(store.progress_writes) == 3
+    assert [result["payload"]["window_index"] for result in snapshot["results"]] == [0, 1]
+    assert snapshot["progress"] == updated_progress.to_dict()
+    assert snapshot["progress"]["processed_count"] == 2
+    assert snapshot["progress"]["status"] == "completed"
+    assert updated_metadata.status == "completed"
+
+
+def test_execution_skips_timestamp_only_progress_rewrites_during_slice_processing() -> None:
+    """Execution should skip redundant progress writes when only the timestamp changes."""
+    store = RecordingSessionStore()
+    metadata = _metadata("session-store-noop-progress", status="running")
+    progress = replace(
+        _running_progress(
+            metadata,
+            total_count=1,
+            processed_count=1,
+            current_item="segment_0001.ts",
+        ),
+        latest_result_detector="video_metrics",
+        latest_result_detectors=["video_metrics"],
+        last_updated_utc="2026-06-30 10:00:01",
+    )
+    input_slices = [_analysis_slice("segment_0001.ts", window_index=0)]
+
+    def bundle_runner(**_: object) -> dict[str, list[dict[str, object]]]:
+        return _result_bundle(metadata.session_id, window_index=0)
+
+    def no_op_progress_builder(**_: object) -> SessionProgress:
+        return replace(progress, last_updated_utc="2026-06-30 10:00:02")
+
+    _, updated_progress = session_runner_execution.process_discovered_slices(
+        metadata=metadata,
+        progress=progress,
+        mode="video_segments",
+        session_id=metadata.session_id,
+        selected_detectors=metadata.selected_detectors,
+        input_slices=input_slices,
+        bundle_runner=bundle_runner,
+        progress_builder=no_op_progress_builder,
+        session_store=store,
+    )
+
+    assert [written.status for written in store.progress_writes] == ["completed"]
+    assert updated_progress.status == "completed"
+
+
 def test_terminal_outcome_writes_terminal_metadata_and_latest_progress_through_store() -> None:
-    """Terminal persistence should update metadata and overwrite progress via the store."""
+    """Terminal persistence should update metadata and replace latest progress via the store."""
     store = RecordingSessionStore()
     metadata = _metadata("session-store-terminal", status="running")
     progress = replace(

@@ -1,12 +1,12 @@
-"""Focused FastAPI adapter tests for session read routes and snapshot parity.
+"""Focused FastAPI tests for session read routes, snapshot parity, and polling progress.
 
-This file now covers the Task-3 runtime wiring outcome: the general session
-snapshot route should expose alerts from the active alert-store seam, not only
-from the legacy local alert log.
+This file covers the HTTP-facing snapshot contract used by the desktop polling
+path, including Task 6 progress-read behavior through the default session store.
 """
 
 import json
 from collections.abc import Iterator
+from threading import Event, Thread
 
 import pytest
 import config
@@ -14,7 +14,8 @@ import config
 from session_alert_store import AlertEventPayload
 from session_alert_store import clear_default_session_alert_store_cache
 from session_io import append_result, initialize_session, write_session_progress
-from session_models import ResultEvent, SessionMetadata, SessionProgress
+from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
+from session_store import SessionSnapshotPayload
 from tests.api_alert_test_support import build_internal_error_payload
 from tests.session_alert_test_support import (
     FailingReadAlertStore,
@@ -38,7 +39,7 @@ from tests.api_boundary_test_support import request
 
 @pytest.fixture(autouse=True)
 def _clear_default_alert_store_cache() -> Iterator[None]:
-    """Keep runtime-selected default-store caching isolated in session-route tests."""
+    """Keep runtime-selected default-store caching isolated across route tests."""
     clear_default_session_alert_store_cache()
     yield
     clear_default_session_alert_store_cache()
@@ -54,7 +55,7 @@ def _snapshot_alert(
     severity: str = "warning",
     source_name: str,
 ) -> AlertEventPayload:
-    """Build one normalized snapshot alert row for session-route runtime tests."""
+    """Build one normalized alert row for session-route snapshot tests."""
     return build_normalized_alert(
         session_id,
         timestamp_utc=timestamp_utc,
@@ -63,6 +64,32 @@ def _snapshot_alert(
         message=message,
         severity=severity,
         source_name=source_name,
+    )
+
+
+def _progress(
+    *,
+    session_id: str,
+    processed_count: int,
+    total_count: int,
+    current_item: str,
+    alert_count: int = 1,
+    last_updated_utc: str | None = None,
+    status: SessionStatus = "running",
+) -> SessionProgress:
+    """Build one route-facing progress payload for polling-contract tests."""
+    return SessionProgress(
+        session_id=session_id,
+        status=status,
+        processed_count=processed_count,
+        total_count=total_count,
+        current_item=current_item,
+        latest_result_detector="video_metrics",
+        alert_count=alert_count,
+        last_updated_utc=last_updated_utc or f"2026-06-30 11:00:0{processed_count}",
+        latest_result_detectors=["video_metrics"],
+        status_reason=status,
+        status_detail=None,
     )
 
 
@@ -189,6 +216,120 @@ def test_get_session_reads_real_file_backed_snapshot_through_default_store(
         "results": [result.to_dict()],
         "latest_result": result.to_dict(),
     }
+
+
+def test_get_session_reads_progress_through_default_session_store(monkeypatch) -> None:
+    """The session route should expose store-backed progress without storage-specific drift."""
+    expected_progress = _progress(
+        session_id="session-route-store-progress",
+        processed_count=7,
+        total_count=9,
+        current_item="live-window-007.ts",
+        alert_count=2,
+        last_updated_utc="2026-06-30 09:15:00",
+    ).to_dict()
+
+    class FakeStore:
+        def read_snapshot(self, session_id: str) -> dict[str, object]:
+            return {
+                "session": {
+                    "session_id": session_id,
+                    "mode": "api_stream",
+                    "input_path": "https://example.com/live/index.m3u8",
+                    "selected_detectors": ["video_metrics"],
+                    "status": "running",
+                },
+                "progress": expected_progress,
+                "alerts": [],
+                "results": [],
+                "latest_result": None,
+            }
+
+    monkeypatch.setattr(
+        "session_service.get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    response = request("GET", "/sessions/session-route-store-progress")
+
+    assert response.status_code == 200
+    assert response.json()["progress"] == expected_progress
+
+
+def test_get_session_keeps_last_committed_progress_during_interleaved_store_update(
+    monkeypatch,
+) -> None:
+    """The route should return a stable progress snapshot while a newer write is in flight."""
+    session_id = "session-route-progress-race"
+    first_progress = _progress(
+        session_id=session_id,
+        processed_count=2,
+        total_count=5,
+        current_item="segment_0002.ts",
+        last_updated_utc="2026-06-30 11:00:02",
+    )
+    second_progress = _progress(
+        session_id=session_id,
+        processed_count=3,
+        total_count=5,
+        current_item="segment_0003.ts",
+        last_updated_utc="2026-06-30 11:00:03",
+    )
+    first_progress_payload = first_progress.to_dict()
+    second_progress_payload = second_progress.to_dict()
+    write_errors: list[BaseException] = []
+
+    class CoordinatedStore:
+        def __init__(self) -> None:
+            self._committed_progress = first_progress_payload
+            self.write_started = Event()
+            self.allow_commit = Event()
+
+        def read_snapshot(self, read_session_id: str) -> SessionSnapshotPayload:
+            return {
+                "session": {
+                    "session_id": read_session_id,
+                    "mode": "video_segments",
+                    "input_path": "/tmp/segments",
+                    "selected_detectors": ["video_metrics"],
+                    "status": "running",
+                },
+                "progress": self._committed_progress,
+                "alerts": [],
+                "results": [],
+                "latest_result": None,
+            }
+
+        def write_progress(self, progress: SessionProgress) -> None:
+            self.write_started.set()
+            assert self.allow_commit.wait(timeout=1.0)
+            self._committed_progress = progress.to_dict()
+
+    store = CoordinatedStore()
+    monkeypatch.setattr("session_service.get_default_session_store", lambda: store)
+
+    def write_second_progress() -> None:
+        try:
+            store.write_progress(second_progress)
+        except BaseException as error:
+            write_errors.append(error)
+
+    writer = Thread(target=write_second_progress)
+    writer.start()
+    assert store.write_started.wait(timeout=1.0)
+
+    response_during_write = request("GET", f"/sessions/{session_id}")
+    assert response_during_write.status_code == 200
+    assert response_during_write.json()["progress"] == first_progress_payload
+
+    store.allow_commit.set()
+    writer.join(timeout=1.0)
+    assert not writer.is_alive()
+    assert write_errors == []
+
+    response_after_write = request("GET", f"/sessions/{session_id}")
+    assert response_after_write.status_code == 200
+    assert response_after_write.json()["progress"] == second_progress_payload
 
 
 def test_get_session_validation_failure_returns_structured_error(monkeypatch) -> None:

@@ -19,6 +19,10 @@ import session_service
 from analyzer_contract import AnalysisSlice
 from session_io import read_session_snapshot
 from session_runner import run_local_session
+from session_store_postgres import PostgresSessionStoreBootstrapError
+from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
+from session_store_runtime import clear_default_session_store_cache
+from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 from stream_loader import StaticApiStreamLoader, build_api_stream_source_contract
 from tests.session_runner_api_stream_test_support import (
     _configure_runner_output_paths,
@@ -228,6 +232,90 @@ def test_run_local_session_snapshot_is_readable_through_shared_service_default_s
         "segment_0002.ts",
     ]
     assert snapshot["latest_result"] == snapshot["results"][-1]
+
+
+def test_run_local_session_ignores_stale_postgres_env_when_runtime_backend_is_unset(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Local runner should stay file-backed unless PostgreSQL mode is explicitly selected."""
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts")
+    monkeypatch.delenv(SESSION_STORE_BACKEND_ENV, raising=False)
+    monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, "sqlite:///tmp/sessions.db")
+    clear_default_session_store_cache()
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        lambda: (_ for _ in ()).throw(AssertionError("postgres bootstrap should not run")),
+    )
+
+    def fake_run_enabled_analyzers_bundle(
+        file_path: Path,
+        prefix: str,
+        mode: str,
+        session_id: str,
+        selected_analyzers: set[str] | None = None,
+        persist_to_store: bool = True,
+    ) -> dict[str, list[dict[str, object]]]:
+        _ = (prefix, mode, selected_analyzers, persist_to_store)
+        return {
+            "results": [
+                {
+                    "session_id": session_id,
+                    "detector_id": "video_metrics",
+                    "payload": {"source_name": file_path.name},
+                }
+            ],
+            "alerts": [],
+        }
+
+    _patch_runner_bundle(monkeypatch, fake_run_enabled_analyzers_bundle)
+
+    try:
+        metadata = run_local_session(
+            mode="video_segments",
+            input_path=input_dir,
+            selected_detectors=["video_metrics"],
+        )
+    finally:
+        clear_default_session_store_cache()
+
+    snapshot = read_session_snapshot(metadata.session_id)
+    assert metadata.status == "completed"
+    assert snapshot["progress"]["processed_count"] == 1
+
+
+def test_run_local_session_fails_fast_when_postgres_mode_is_selected_and_bootstrap_fails(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Explicit PostgreSQL mode should surface bootstrap failure instead of falling back."""
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts")
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(
+        POSTGRES_SESSION_DATABASE_URL_ENV,
+        "postgresql://session:secret@db.example/election_stream_monitor",
+    )
+    clear_default_session_store_cache()
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        lambda: (_ for _ in ()).throw(
+            PostgresSessionStoreBootstrapError("postgres bootstrap failed")
+        ),
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="postgres bootstrap failed"):
+            run_local_session(
+                mode="video_segments",
+                input_path=input_dir,
+                selected_detectors=["video_metrics"],
+                session_id="session-postgres-bootstrap-failure",
+            )
+    finally:
+        clear_default_session_store_cache()
+
+    session_dir = (tmp_path / "sessions") / "session-postgres-bootstrap-failure"
+    assert not session_dir.exists()
 
 
 def test_run_local_session_persists_validation_failure_progress_details(

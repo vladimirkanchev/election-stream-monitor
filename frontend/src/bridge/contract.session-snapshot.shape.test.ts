@@ -1,6 +1,9 @@
 /**
- * Session-snapshot compatibility tests for required top-level shape and valid
- * lifecycle field preservation.
+ * Session-snapshot compatibility tests for the bridge normalization contract.
+ *
+ * The suite keeps the required top-level shape stable and verifies that
+ * lifecycle and progress fields survive normalization without overfitting
+ * timestamp formatting details.
  */
 
 import { describe, expect, it } from "vitest";
@@ -9,6 +12,20 @@ import { normalizeSessionSnapshot } from "./contract";
 import {
   readNormalizedSession,
 } from "./contract.sessionSnapshotTestSupport";
+
+const PROGRESS_CONTRACT_KEYS = [
+  "alert_count",
+  "current_item",
+  "last_updated_utc",
+  "latest_result_detector",
+  "latest_result_detectors",
+  "processed_count",
+  "session_id",
+  "status",
+  "status_detail",
+  "status_reason",
+  "total_count",
+].sort();
 
 describe("bridge contract session snapshot shape compatibility", () => {
   it("normalizes malformed session snapshots into a stable empty shape", () => {
@@ -243,5 +260,55 @@ describe("bridge contract session snapshot shape compatibility", () => {
         status_detail: "Idle poll budget exhausted",
       },
     });
+  });
+
+  it("keeps the polling progress contract stable without depending on timestamp formatting", async () => {
+    const snapshot = await readNormalizedSession(
+      "session-polling-1",
+      {
+        session: {
+          session_id: "session-polling-1",
+          mode: "video_segments",
+          input_path: "/tmp/segments",
+          selected_detectors: ["video_blur", "video_metrics"],
+          status: "running",
+        },
+        progress: {
+          session_id: "session-polling-1",
+          status: "running",
+          processed_count: 7,
+          total_count: 12,
+          current_item: "segment_0007.ts",
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_blur", "video_metrics"],
+          alert_count: 2,
+          last_updated_utc: "2026-06-30T14:15:16.789123+03:00",
+          status_reason: "running",
+          status_detail: null,
+        },
+      },
+    );
+
+    expect(snapshot).toMatchObject({
+      session: {
+        session_id: "session-polling-1",
+        status: "running",
+      },
+      progress: {
+        session_id: "session-polling-1",
+        status: "running",
+        processed_count: 7,
+        total_count: 12,
+        current_item: "segment_0007.ts",
+        latest_result_detector: "video_metrics",
+        latest_result_detectors: ["video_blur", "video_metrics"],
+        alert_count: 2,
+        status_reason: "running",
+        status_detail: null,
+      },
+    });
+    expect(snapshot.progress).not.toBeNull();
+    expect(typeof snapshot.progress?.last_updated_utc).toBe("string");
+    expect(Object.keys(snapshot.progress ?? {}).sort()).toEqual(PROGRESS_CONTRACT_KEYS);
   });
 });
