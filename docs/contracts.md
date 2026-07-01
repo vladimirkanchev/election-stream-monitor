@@ -13,19 +13,20 @@ The goal is:
 - prepare later `api_stream` and service/API evolution
 
 Use this doc for stable payload and seam contracts.
-Do not use it as the main architecture narrative or as the detailed explanation
-of persisted session files; see [architecture.md](./architecture.md) and
-[session-model.md](./session-model.md) for those.
+Do not use it as the main architecture narrative, the session semantics guide,
+or the migration inventory; see [architecture.md](./architecture.md),
+[session-model.md](./session-model.md), and
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 ## At a glance
 
-This is the document to use when you need to know:
+Use this document when you need to know:
 
 - what the frontend is allowed to send
 - what the backend promises to return
 - which fields should be treated as stable by tests, tools, and UI code
 
-For code-level truth, the closest sources are:
+The closest code-level sources are:
 
 - [`src/analyzer_contract.py`](../src/analyzer_contract.py)
 - [`src/detectors/registry.py`](../src/detectors/registry.py)
@@ -45,21 +46,11 @@ For code-level truth, the closest sources are:
 
 For the current project stage:
 
-- backend session snapshot source of truth:
+- backend session snapshot contract:
   - [`src/session_store.py`](../src/session_store.py)
   - [`src/session_store_runtime.py`](../src/session_store_runtime.py)
-  - [`src/session_store_runtime_config.py`](../src/session_store_runtime_config.py)
-  - [`src/session_store_file.py`](../src/session_store_file.py)
-  - [`src/session_store_postgres_config.py`](../src/session_store_postgres_config.py)
-  - [`src/session_store_postgres.py`](../src/session_store_postgres.py)
   - [`src/session_service.py`](../src/session_service.py)
-  - [`src/session_io.py`](../src/session_io.py)
   - [`src/session_models.py`](../src/session_models.py)
-  - [`src/session_runner.py`](../src/session_runner.py)
-  - [`src/session_runner_lifecycle.py`](../src/session_runner_lifecycle.py)
-  - [`src/session_runner_execution.py`](../src/session_runner_execution.py)
-  - [`src/session_runner_terminal.py`](../src/session_runner_terminal.py)
-  - [`src/session_runner_progress.py`](../src/session_runner_progress.py)
 - frontend bridge normalization source of truth:
   - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
   - [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
@@ -78,28 +69,24 @@ For the current project stage:
   - [`src/alert_rules.py`](../src/alert_rules.py)
   - [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
 
-Current persistence note:
+Current persistence contract, kept short here:
 
-- `SessionStore` now owns durable session metadata, latest progress, ordered
-  result history, snapshot reads, and cancel intent writes.
-- The runtime default is still the file-backed store.
-- Explicit `ESM_SESSION_STORE_BACKEND=postgres` now resolves to a concrete
-  `PostgresSessionStore`.
-- The current PostgreSQL schema follows contract concerns rather than file
-  names:
-  - `session_metadata` for durable metadata and known-session checks
-  - `session_progress` for latest-only progress
-  - `session_result_events` for append-ordered detector results
-- Progress, results, and cancel intent now flow through the same `SessionStore` contract in
-  both file and PostgreSQL modes.
-- Snapshot `results` and derived `latest_result` still follow append order,
-  not detector timestamp ordering.
-- Timestamp-only progress refreshes are treated as no-op writes so durable
-  progress does not churn without a real state change.
-- The detached `run-session` worker must use the same session-store runtime
-  selection as the parent process that starts, reads, and cancels sessions.
-- This is still an in-progress migration. Alerts, replay keys, worker logs,
-  and temp media keep their current separate ownership.
+- `SessionStore` owns durable session metadata, latest progress, ordered
+  detector results, snapshot reads, known-session checks, and cancel intent.
+- File-backed session storage is still the runtime default.
+- PostgreSQL session storage is explicit opt-in through
+  `ESM_SESSION_STORE_BACKEND=postgres`.
+- Missing or invalid PostgreSQL bootstrap config should fail clearly only
+  after explicit PostgreSQL selection; it should not poison the file default.
+- `results` and derived `latest_result` follow append order, not detector
+  timestamp ordering.
+- The detached worker and the parent process must resolve the same session
+  store backend.
+- Alerts, replay keys, worker logs, and temp media are still separate seams.
+
+For table mapping, bootstrap policy, caller ownership, and migration notes, use
+[session-persistence-audit.md](./session-persistence-audit.md). For field
+meaning and lifecycle semantics, use [session-model.md](./session-model.md).
 
 ## Do Not Drift These Together By Accident
 

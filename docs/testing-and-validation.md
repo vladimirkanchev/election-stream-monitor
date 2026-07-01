@@ -205,6 +205,8 @@ Current focused ownership map:
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
   and explicit proof that `postgres` is built only on deliberate opt-in
+  - explicit proof that missing URL, invalid URL shape, and missing driver
+    fail clearly only after explicit PostgreSQL selection
 - `tests/test_session_store_postgres.py`
   - PostgreSQL session-store adapter behavior, bootstrap, driver failure
     shaping, and opt-in schema-isolation helpers for live smoke lanes
@@ -322,9 +324,71 @@ For the representative-media detector-lab lane specifically, keep one extra
 boundary in mind:
 
 - repeated compression fixtures are currently review-only calibration samples
-- they may prove score shape, false-positive resistance, or burst consistency
-- they should not be promoted into exact alert truth until a reviewed runtime
-  lane proves a stable subset worth promoting
+  - they may prove score shape, false-positive resistance, or burst consistency
+  - they should not be promoted into exact alert truth until a reviewed runtime
+    lane proves a stable subset worth promoting
+
+For current session-store migration work, use these as the smallest useful
+focused lanes before you reach for `just test-fast` or `just ci-local`:
+
+- session-store contract and file-default behavior:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_session_store_contract.py \
+tests/test_session_store_file.py \
+tests/test_session_store_runtime.py -q
+```
+
+- detached worker plus runtime-selection behavior:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_session_service_worker.py \
+tests/test_session_cli_tooling.py \
+tests/test_session_store_runtime.py -q
+```
+
+  This focused lane is the first stop when you need to prove three things at
+  once:
+
+  - file-backed session storage is still the default
+  - PostgreSQL session storage is still explicit opt-in
+  - explicit bad PostgreSQL config fails clearly instead of silently falling
+    back in the worker path
+
+- cancel behavior across store, service, and route seams:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_session_store_parity.py \
+tests/test_session_service_read_cancel.py \
+tests/test_api_boundary_sessions_cancel.py -q
+```
+
+- opt-in live PostgreSQL session-store smoke:
+  - keep this out of normal local and PR validation
+  - use it only when you intentionally want real database confidence
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+export ESM_SESSION_STORE_BACKEND=postgres && \
+export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor' && \
+export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 && \
+export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
+.venv/bin/pytest -q \
+tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
+```
+
+There is not yet one dedicated `just` recipe for each of those seams. Until
+the repo grows those wrappers on purpose, prefer these direct focused commands
+over inventing a broader lane.
 
 Useful focused examples:
 

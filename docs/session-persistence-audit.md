@@ -1,8 +1,17 @@
 # Session Persistence Audit
 
 This audit captures the current session persistence surface for the ongoing
-session-store migration. Use it as the storage inventory and migration map;
-keep [session-model.md](./session-model.md) as the semantic reference.
+session-store migration. Use it as the detailed storage inventory, ownership
+map, and migration notebook.
+
+Document split:
+
+- keep [contracts.md](./contracts.md) short and focused on stable payload and
+  seam contracts
+- keep [session-model.md](./session-model.md) focused on session meaning and
+  lifecycle semantics
+- keep this file detailed, especially for module ownership, table mapping,
+  runtime selection, and migration watchpoints
 
 ## Current Artifacts
 
