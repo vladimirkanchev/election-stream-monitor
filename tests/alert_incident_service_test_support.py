@@ -1,15 +1,13 @@
-"""Shared support helpers for split grouped-incident service tests.
+"""Shared helpers for grouped-incident service tests.
 
-The task-5 suite is intentionally split across timeline grouping, timeline
-filters, summary contracts, and summary filters. This module owns only the
-small seams that are genuinely shared across those files:
-
+This module keeps only the seams reused across the timeline and summary
+service suites:
 - typed accessors for grouped timeline and summary payloads
-- stable empty-result assertions for grouped service contracts
-- tiny wrappers for parametrized time-filter validation tests
-- one-row grouped-session setup reused by filter-oriented suites
+- stable empty-result assertions
+- small wrappers for time-filter validation
+- one-row grouped-session setup reused by filter-focused tests
 
-The actual service behavior still lives in the surrounding test modules.
+The service behavior itself stays in the surrounding test modules.
 """
 
 from __future__ import annotations
@@ -115,12 +113,7 @@ def write_single_grouped_alert_session(
     severity: str = "warning",
     source_name: str = "segment_0001.ts",
 ) -> None:
-    """Write one known session with a single valid grouped-alert row.
-
-    The filter-oriented suites reuse the same baseline persisted alert shape in
-    several places. Keeping that setup here trims low-value fixture repetition
-    without hiding the grouped behavior each test is asserting.
-    """
+    """Write one known session with a single valid grouped-alert row."""
     write_known_session(
         session_root,
         session_id,
@@ -146,7 +139,7 @@ def build_incident_summary_with_time_filters(
     detector_id: str | None = None,
     severity: str | None = None,
 ) -> IncidentSummaryPayload:
-    """Call the grouped summary service through the shared filter-validation seam."""
+    """Call the grouped summary service with only filter inputs exposed."""
     return build_session_incident_summary(
         session_id,
         start_time_utc=start_time_utc,

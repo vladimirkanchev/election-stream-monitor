@@ -330,6 +330,29 @@ def test_get_session_alert_summary_reads_the_real_file_backed_seam(
     )
 
 
+@pytest.mark.parametrize(
+    "route_path",
+    [
+        "/sessions/missing-real-alert-session/alerts",
+        "/sessions/missing-real-alert-session/alerts/summary",
+    ],
+)
+def test_raw_alert_routes_return_404_for_real_missing_sessions(
+    monkeypatch,
+    tmp_path,
+    route_path: str,
+) -> None:
+    """Raw alert routes should map real missing sessions to the public 404 shape."""
+    configure_session_alert_test(monkeypatch, tmp_path)
+
+    response = request("GET", route_path)
+
+    assert response.status_code == 404
+    assert response.json() == build_session_not_found_payload(
+        "missing-real-alert-session"
+    )
+
+
 def test_get_session_alerts_uses_runtime_selected_postgres_backend(
     monkeypatch,
 ) -> None:

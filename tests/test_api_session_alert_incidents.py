@@ -579,6 +579,29 @@ def test_get_session_alert_incident_summary_reads_the_real_file_backed_seam(
 
 
 @pytest.mark.parametrize(
+    "route_path",
+    [
+        "/sessions/missing-real-grouped-alert-session/alerts/timeline",
+        "/sessions/missing-real-grouped-alert-session/alerts/incident-summary",
+    ],
+)
+def test_grouped_alert_routes_return_404_for_real_missing_sessions(
+    monkeypatch,
+    tmp_path,
+    route_path: str,
+) -> None:
+    """Grouped alert routes should map real missing sessions to the public 404 shape."""
+    configure_session_alert_test(monkeypatch, tmp_path)
+
+    response = request("GET", route_path)
+
+    assert response.status_code == 404
+    assert response.json() == build_session_not_found_payload(
+        "missing-real-grouped-alert-session"
+    )
+
+
+@pytest.mark.parametrize(
     ("session_id", "route_path", "expected_kind"),
     [
         (

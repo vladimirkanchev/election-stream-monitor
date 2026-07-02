@@ -1,23 +1,9 @@
-"""File-backed session-artifact helpers for the default local session store.
+"""File-backed helpers for the default session-artifact contract.
 
-The frontend does not read these files directly. Instead, backend helpers write
-and read a small set of session artifacts that together form the current local
-session contract:
-
-- `session.json` for stable session metadata
-- `progress.json` for the latest progress snapshot
-- `alerts.jsonl` for append-only alert events
-- `results.jsonl` for append-only detector result events
-- optional `worker.log` for backend-owned detached worker diagnostics
-
-These helpers keep the snapshot shape stable even when persisted files are
-missing, malformed, or only partially written. Alert persistence now has one
-internal seam in `session_alert_store.py`, but this module still owns the
-broader session-artifact contract:
-
-- metadata, progress, and results stay file-backed here in the default mode
-- snapshot alerts follow the active alert store
-- `append_alert(...)` remains the compatibility write entrypoint for callers
+This module owns file persistence for session metadata, latest progress,
+detector results, cancel markers, and a few session-local diagnostics. Alert
+writes and reads flow through `session_alert_store`, but `append_alert(...)`
+stays here as the compatibility entrypoint for existing callers.
 """
 
 import json
@@ -58,12 +44,7 @@ def get_session_dir(session_id: str) -> Path:
 
 
 def session_exists(session_id: str) -> bool:
-    """Return whether one session has persisted metadata ownership on disk.
-
-    This helper is intentionally narrow: a session becomes "known" once
-    `session.json` exists, even if some append-only artifacts such as
-    `alerts.jsonl` or `results.jsonl` have not been written yet.
-    """
+    """Return whether durable file-backed metadata exists for a session."""
     return (get_session_dir(session_id) / "session.json").exists()
 
 
@@ -113,12 +94,7 @@ def update_session_status(metadata: SessionMetadata, status: SessionStatus) -> S
 
 
 def request_session_cancel(session_id: str) -> Path:
-    """Persist a cancel request that can be picked up by the session runner.
-
-    This helper is intentionally file-oriented and tolerant. Higher-level API
-    routes and runner logic decide whether cancellation is valid for the
-    current lifecycle state; this helper only records cancel intent.
-    """
+    """Persist file-backed cancel intent for the session runner to observe."""
     request_path = get_cancel_request_path(session_id)
     request_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_file(
@@ -163,12 +139,7 @@ def append_alert(event: AlertEvent) -> None:
 
 
 def read_api_stream_seen_chunk_keys(session_id: str) -> set[tuple[str, int, str]]:
-    """Return persisted reconnect de-dup keys for one live session.
-
-    The loader uses this file-backed set to avoid replaying already accepted
-    live chunks after reconnect or repeated startup against the same session.
-    Malformed lines are ignored so de-dup state degrades safely.
-    """
+    """Return persisted reconnect de-dup keys for one live session."""
     file_path = get_api_stream_seen_chunk_keys_path(session_id)
     if not file_path.exists():
         return set()

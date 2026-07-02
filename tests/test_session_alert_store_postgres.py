@@ -242,16 +242,39 @@ class FakePsycopgModule:
         return self.connection
 
 
+class KnownOnlySessionStore:
+    """Minimal session store stub for alert/session existence checks."""
+
+    def __init__(self, *known_session_ids: str) -> None:
+        self._known_session_ids = set(known_session_ids)
+        self.checked_session_ids: list[str] = []
+
+    def session_exists(self, session_id: str) -> bool:
+        """Return whether the test session id is known to this store."""
+        self.checked_session_ids.append(session_id)
+        return session_id in self._known_session_ids
+
+
 def _mark_known_sessions(
     monkeypatch: pytest.MonkeyPatch,
     *session_ids: str,
 ) -> None:
-    """Patch the shared session-existence seam for one Postgres store test."""
+    """Patch the shared known-session adapter for one Postgres store test."""
     known_sessions = set(session_ids)
+
+    def _require_known_session(candidate_session_id: str) -> None:
+        if candidate_session_id not in known_sessions:
+            raise SessionAlertsNotFoundError(candidate_session_id)
+
     monkeypatch.setattr(
-        "session_alert_store_postgres.session_exists",
-        lambda candidate_session_id: candidate_session_id in known_sessions,
+        "session_alert_store_postgres.require_known_session",
+        _require_known_session,
     )
+
+
+def _raise_unknown_session(session_id: str) -> None:
+    """Raise the shared unknown-session error for one patched store test."""
+    raise SessionAlertsNotFoundError(session_id)
 
 
 def _postgres_store(
@@ -747,14 +770,36 @@ def test_postgres_session_alert_store_rejects_unknown_session_before_read(
     """The PostgreSQL store should preserve current unknown-session semantics."""
     store, connection = _postgres_store()
     monkeypatch.setattr(
-        "session_alert_store_postgres.session_exists",
-        lambda session_id: False,
+        "session_alert_store_postgres.require_known_session",
+        _raise_unknown_session,
     )
 
     with pytest.raises(SessionAlertsNotFoundError, match="session-unknown"):
         store.read_session_alert_events("session-unknown")
 
     assert connection.executed_statements == []
+
+
+def test_postgres_session_alert_store_uses_active_session_store_for_known_session_check(
+    monkeypatch,
+) -> None:
+    """Postgres alert reads should not require file-backed session metadata."""
+    session_store = KnownOnlySessionStore("postgres-session-123")
+    monkeypatch.setattr(
+        "session_alert_store.get_default_session_store",
+        lambda: session_store,
+    )
+    store, connection = _postgres_store(
+        rows=[_sample_alert_row(session_id="postgres-session-123")]
+    )
+
+    alerts = store.read_session_alert_events("postgres-session-123")
+
+    assert session_store.checked_session_ids == ["postgres-session-123"]
+    assert connection.executed_statements == [
+        (POSTGRES_ALERT_EVENTS_READ_SQL, ("postgres-session-123",))
+    ]
+    assert alerts == [_sample_normalized_alert(session_id="postgres-session-123")]
 
 
 def test_postgres_session_alert_store_returns_empty_list_for_known_session_without_rows(

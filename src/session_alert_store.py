@@ -37,6 +37,7 @@ __all__ = [
     "clear_default_session_alert_store_cache",
     "DEFAULT_SESSION_ALERT_STORE",
     "FileSessionAlertStore",
+    "require_known_session",
     "SessionAlertsNotFoundError",
     "SessionAlertStore",
     "get_default_session_alert_store",
@@ -79,13 +80,15 @@ class FileSessionAlertStore:
     def append_alert(self, event: AlertEvent) -> None:
         """Append one validated alert event to the file-backed alert log."""
         _append_jsonl(
-            _get_alerts_file_path(event.session_id, require_known_session=False),
+            _get_alerts_file_path(event.session_id, require_known_session_check=False),
             event.to_dict(),
         )
 
     def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
         """Return file-backed validated raw alert rows for one known session."""
-        return _read_alert_jsonl(_get_alerts_file_path(session_id, require_known_session=True))
+        return _read_alert_jsonl(
+            _get_alerts_file_path(session_id, require_known_session_check=True)
+        )
 
 
 _FILE_SESSION_ALERT_STORE = FileSessionAlertStore()
@@ -160,10 +163,16 @@ def session_exists(session_id: str) -> bool:
     return get_default_session_store().session_exists(session_id)
 
 
-def _get_alerts_file_path(session_id: str, *, require_known_session: bool) -> Path:
-    """Return the alert-log path for one file-store operation."""
-    if require_known_session and not session_exists(session_id):
+def require_known_session(session_id: str) -> None:
+    """Raise the shared not-found error when durable session metadata is absent."""
+    if not session_exists(session_id):
         raise SessionAlertsNotFoundError(session_id)
+
+
+def _get_alerts_file_path(session_id: str, *, require_known_session_check: bool) -> Path:
+    """Return the alert-log path for one file-store operation."""
+    if require_known_session_check:
+        require_known_session(session_id)
     return get_session_dir(session_id) / ALERT_LOG_FILENAME
 
 

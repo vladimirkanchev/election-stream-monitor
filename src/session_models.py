@@ -1,8 +1,8 @@
 """Shared session-domain models for durable session state.
 
-These dataclasses and payload parsers define the storage-neutral session
-shapes used by the file-backed store, the PostgreSQL store, and the snapshot
-read model consumed by API, CLI, and bridge code.
+These dataclasses and parsers define the storage-neutral session shapes used
+by the file-backed store, the PostgreSQL store, and the snapshot read model
+consumed by API, CLI, and bridge code.
 """
 
 from dataclasses import asdict, dataclass, field
@@ -69,7 +69,7 @@ _RESULT_PAYLOAD_HINT_VALIDATORS: tuple[
 
 @dataclass(frozen=True)
 class SessionMetadata:
-    """Summary information about one local monitoring session."""
+    """Stable metadata persisted for one monitoring session."""
 
     session_id: str
     mode: InputMode
@@ -102,8 +102,7 @@ class SessionMetadata:
 class SessionProgress:
     """Latest-only progress snapshot for one session.
 
-    This is a durable read model for polling and terminal state, not a
-    progress-event history.
+    This is a durable polling read model, not a progress-event history.
     """
 
     session_id: str
@@ -175,16 +174,9 @@ class SessionProgress:
 class ResultEvent:
     """One append-ordered durable detector result row.
 
-    The outer contract stays intentionally small:
-
-    - `session_id` ties the row to one session
-    - `detector_id` is the stable durable detector identity
-    - `payload` keeps detector-specific facts as raw JSON-shaped data
-
-    Ordering stays a store concern rather than a public payload field, and
-    `latest_result` is derived from the final valid ordered row. Shared timing
-    or source-location hints may appear inside `payload`, but detectors do not
-    need to normalize every internal metric into top-level columns.
+    The contract stays intentionally small: `session_id` ties the row to a
+    session, `detector_id` names the detector, and `payload` holds detector
+    facts plus any shared timing or source hints.
     """
 
     session_id: str
@@ -215,7 +207,7 @@ class ResultEvent:
 
 @dataclass(frozen=True)
 class AlertEvent:
-    """One alert event derived from analyzer output."""
+    """One persisted alert event derived from detector output and rule policy."""
 
     session_id: str
     timestamp_utc: str
