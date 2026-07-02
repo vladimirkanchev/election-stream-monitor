@@ -1,8 +1,8 @@
 /**
  * Session snapshot normalization for the frontend bridge contract.
  *
- * The normalizers here fail closed on malformed nested payloads while keeping
- * the outer session snapshot shape stable for hooks and UI code.
+ * These helpers keep the public snapshot shape stable for hooks and UI code,
+ * even when nested payloads are missing or malformed.
  */
 
 import type {
@@ -33,12 +33,16 @@ export function normalizeSessionSnapshot(value: unknown): SessionSnapshot {
     return EMPTY_SNAPSHOT;
   }
 
+  const results = Array.isArray(value["results"])
+    ? value["results"].filter(isResultEvent)
+    : [];
+
   return {
     session: normalizeSessionSummary(value["session"]),
     progress: normalizeSessionProgress(value["progress"]),
     alerts: Array.isArray(value["alerts"]) ? value["alerts"].filter(isAlertEvent) : [],
-    results: Array.isArray(value["results"]) ? value["results"].filter(isResultEvent) : [],
-    latest_result: isResultEvent(value["latest_result"]) ? value["latest_result"] : null,
+    results,
+    latest_result: results.at(-1) ?? null,
   };
 }
 
