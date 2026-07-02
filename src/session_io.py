@@ -9,7 +9,7 @@ stays here as the compatibility entrypoint for existing callers.
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import cast
+from typing import Callable, TypeVar, cast
 
 import config
 from logger import get_logger
@@ -23,16 +23,18 @@ from session_models import (
     SessionProgress,
     SessionStatus,
 )
-from session_store import build_latest_result_payload
+from session_store import (
+    ResultEventPayload,
+    SessionMetadataPayload,
+    SessionProgressPayload,
+    SessionSnapshotPayload,
+    build_latest_result_payload,
+)
+
+JsonObject = dict[str, object]
+ParsedJsonObject = TypeVar("ParsedJsonObject", bound=JsonObject)
 
 logger = get_logger(__name__)
-EMPTY_SESSION_SNAPSHOT: dict[str, object] = {
-    "session": None,
-    "progress": None,
-    "alerts": [],
-    "results": [],
-    "latest_result": None,
-}
 
 
 def get_session_dir(session_id: str) -> Path:
@@ -194,7 +196,7 @@ def append_api_stream_seen_chunk_key(
     )
 
 
-def read_session_snapshot(session_id: str) -> dict[str, object]:
+def read_session_snapshot(session_id: str) -> SessionSnapshotPayload:
     """Read one stable frontend snapshot from the current hybrid persistence path.
 
     Metadata, progress, and results still come from the file-backed session
@@ -206,10 +208,19 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
     than surfacing partially parsed internal state.
     """
     session_dir = get_session_dir(session_id)
-    metadata = parse_session_metadata_payload(_read_json_file(session_dir / "session.json"))
-    progress = parse_session_progress_payload(_read_json_file(session_dir / "progress.json"))
+    metadata = cast(
+        SessionMetadataPayload | None,
+        parse_session_metadata_payload(_read_json_file(session_dir / "session.json")),
+    )
+    progress = cast(
+        SessionProgressPayload | None,
+        parse_session_progress_payload(_read_json_file(session_dir / "progress.json")),
+    )
     alerts = _read_snapshot_alerts(session_id, metadata=metadata)
-    results = _read_jsonl_file(session_dir / "results.jsonl", parser=parse_result_event_payload)
+    results = cast(
+        list[ResultEventPayload],
+        _read_jsonl_file(session_dir / "results.jsonl", parser=parse_result_event_payload),
+    )
     return _build_session_snapshot(
         metadata=metadata,
         progress=progress,
@@ -218,19 +229,22 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
     )
 
 
-def read_session_result_events(session_id: str) -> list[dict[str, object]]:
+def read_session_result_events(session_id: str) -> list[ResultEventPayload]:
     """Return validated detector result rows without assembling a full snapshot."""
     session_dir = get_session_dir(session_id)
-    return _read_jsonl_file(
-        session_dir / "results.jsonl",
-        parser=parse_result_event_payload,
+    return cast(
+        list[ResultEventPayload],
+        _read_jsonl_file(
+            session_dir / "results.jsonl",
+            parser=parse_result_event_payload,
+        ),
     )
 
 
 def _read_snapshot_alerts(
     session_id: str,
     *,
-    metadata: dict[str, object] | None,
+    metadata: SessionMetadataPayload | None,
 ) -> list[dict[str, object]]:
     """Read snapshot alerts through the shared alert seam when the session is known.
 
@@ -264,25 +278,19 @@ def _append_jsonl(file_path: Path, payload: dict[str, object]) -> None:
 
 def _build_session_snapshot(
     *,
-    metadata: dict[str, object] | None,
-    progress: dict[str, object] | None,
+    metadata: SessionMetadataPayload | None,
+    progress: SessionProgressPayload | None,
     alerts: list[dict[str, object]],
-    results: list[dict[str, object]],
-) -> dict[str, object]:
+    results: list[ResultEventPayload],
+) -> SessionSnapshotPayload:
     """Build the stable frontend snapshot shape from persisted session artifacts."""
-    snapshot: dict[str, object] = dict(EMPTY_SESSION_SNAPSHOT)
-    snapshot.update(
-        {
-            "session": metadata,
-            "progress": progress,
-            "alerts": alerts,
-            "results": results,
-            "latest_result": build_latest_result_payload(
-                cast(list[dict[str, object]], results)
-            ),
-        }
-    )
-    return snapshot
+    return {
+        "session": metadata,
+        "progress": progress,
+        "alerts": alerts,
+        "results": results,
+        "latest_result": build_latest_result_payload(results),
+    }
 
 
 def _write_json_file(file_path: Path, payload: dict[str, object]) -> None:
@@ -332,12 +340,12 @@ def _read_json_file(file_path: Path) -> dict[str, object] | None:
 def _read_jsonl_file(
     file_path: Path,
     *,
-    parser,
-) -> list[dict[str, object]]:
+    parser: Callable[[object], ParsedJsonObject | None],
+) -> list[ParsedJsonObject]:
     """Read one JSONL event log while skipping malformed or unreadable lines."""
     if not file_path.exists():
         return []
-    payloads: list[dict[str, object]] = []
+    payloads: list[ParsedJsonObject] = []
     try:
         lines = file_path.read_text(encoding="utf-8").splitlines()
     except OSError:

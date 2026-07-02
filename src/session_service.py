@@ -19,7 +19,7 @@ from logger import format_log_context, get_logger
 from session_io import get_worker_log_path
 from session_models import SessionMetadata
 from session_runner import create_session_id
-from session_store import SessionSnapshotPayload
+from session_store import SessionMetadataPayload, SessionSnapshotPayload
 from session_store_runtime import get_default_session_store
 from source_validation import validate_source_input
 from stream_loader import build_api_stream_start_session_contract
@@ -77,7 +77,7 @@ def start_session(
     )
 
 
-def read_session_snapshot_or_none(session_id: str) -> dict[str, object] | None:
+def read_session_snapshot_or_none(session_id: str) -> SessionSnapshotPayload | None:
     """Return the current session snapshot, or `None` when the session is missing."""
     snapshot = read_session_snapshot(session_id)
     session = snapshot.get("session")
@@ -262,7 +262,7 @@ def _build_pending_session_metadata(
 
 def _build_cancelling_session_summary(
     session_id: str,
-    session: dict[str, object],
+    session: SessionMetadataPayload,
 ) -> dict[str, object]:
     """Build the lightweight cancel-request summary returned to callers."""
     return {
