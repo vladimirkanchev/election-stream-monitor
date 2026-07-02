@@ -6,6 +6,10 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+For Python commands in this repo, prefer `./.venv/bin/python` or `just`
+recipes rather than `python3` from `PATH`. The workspace does not force
+virtualenv auto-activation.
+
 For broader doc ownership rules, use [docs/README.md](./README.md#document-ownership).
 
 For branch workflow around those checks, use:
@@ -109,8 +113,8 @@ Recommended local command order for most day-to-day work:
 - `just dependency-check`
   - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
 - `just ci-contract-check`
-  - use when changing `.github/workflows/ci.yml`, the task-4 workflow helpers,
-    or their focused regression tests
+  - use when changing `.github/workflows/ci.yml`, the workflow-contract
+    helpers, or their focused regression tests
 - `just ci-local`
   - use before push or PR when you want the closest fast local CI proxy
 
@@ -448,7 +452,7 @@ commands directly, use the matching `justfile` recipes:
   - keeps broader intent and explanation rules with the PR template and
     merge/readiness checklist
 - `just ci-contract-check`
-  - focused task-4 workflow-contract regression lane
+  - focused workflow-contract regression lane
   - runs `tests/test_ci_workflow.py` and
     `tests/test_ci_test_target_scripts.py`
   - best local check when editing `ci.yml`, workflow-helper scripts, or the
@@ -545,7 +549,7 @@ is:
 - `tests/test_ci_workflow.py`
 - `tests/test_ci_test_target_scripts.py`
 
-Use this focused local command when changing the task-4 helper layer:
+Use this focused local command when changing the workflow-helper layer:
 
 ```bash
 just ci-contract-check

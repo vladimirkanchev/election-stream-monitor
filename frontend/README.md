@@ -1,6 +1,6 @@
-# Frontend Iteration 3
+# Frontend
 
-This frontend is the React shell for the richer local monitoring workflow.
+This frontend is the React/Electron shell for the local monitoring workflow.
 
 ## Current State
 
@@ -15,13 +15,13 @@ This frontend is the React shell for the richer local monitoring workflow.
   - latest result preview
   - session history
   - alert detail drawer
-- The Electron runtime now uses a FastAPI-backed local bridge for the main
-  detector/session/playback flow.
-- The Python backend contract for that local runtime still builds on:
-  - [`../src/analyzer_registry.py`](../src/analyzer_registry.py)
-  - [`../src/session_cli.py`](../src/session_cli.py)
+- The Electron runtime uses a FastAPI-backed local bridge for the main
+  detector, session, and playback flow.
+- The main Python ownership points for that runtime are:
+  - [`../src/detectors/registry.py`](../src/detectors/registry.py)
+  - [`../src/session_service.py`](../src/session_service.py)
   - [`../src/session_runner.py`](../src/session_runner.py)
-  - [`../src/session_io.py`](../src/session_io.py)
+  - [`../src/session_store.py`](../src/session_store.py)
 
 ## Runtime Model
 
@@ -30,7 +30,7 @@ local session files without a host bridge. In the desktop runtime, Electron now
 owns that bridge, starts/waits for the local FastAPI backend as needed, and
 talks to it for normal operation.
 
-The Python CLI is still useful for tooling/debugging tasks, but it is no longer
+The Python CLI is still useful for tooling and debugging, but it is no longer
 the normal frontend runtime transport.
 
 ## Useful Tooling Commands

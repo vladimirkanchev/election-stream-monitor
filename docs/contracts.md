@@ -83,6 +83,10 @@ Current persistence contract, kept short here:
 - The detached worker and the parent process must resolve the same session
   store backend.
 - Alerts, replay keys, worker logs, and temp media are still separate seams.
+- Alert stores may ask the active `SessionStore` whether durable session
+  metadata exists for a session. They should not read session files, session
+  table rows, progress, results, cancel state, worker logs, or temp media
+  directly.
 
 For table mapping, bootstrap policy, caller ownership, and migration notes, use
 [session-persistence-audit.md](./session-persistence-audit.md). For field
@@ -2282,14 +2286,20 @@ Current alert summary response shape:
 
 Current query semantics:
 
-- missing `session.json` means the session is treated as not found
-- missing `alerts.jsonl` for a known session means `[]`
+- missing durable session metadata means the session is treated as not found
+- missing alert rows for a known session means `[]`
 - malformed alert rows are ignored rather than failing the whole query
 - time filters use the existing persisted UTC timestamp format
 - `counts_by_detector` uses stable detector ids such as `video_blur` and
   `video_metrics`, not human-facing alert titles
 - these raw and summary response shapes stay the same regardless of whether
   the active alert backend is the default file store or the PostgreSQL store
+- alert storage may validate known-session state through
+  `SessionStore.session_exists(...)`, but it must not depend on the
+  file-backed session layout or PostgreSQL session schema
+- during migration, the alert backend and the session backend may differ; the
+  stable rule is that session existence still comes from the active
+  `SessionStore`, not from alert rows or storage-specific probing
 
 ### Compact Session Alert Report v1
 

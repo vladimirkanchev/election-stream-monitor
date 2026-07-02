@@ -2,13 +2,17 @@
 
 This folder is the internal reference set for contributors, reviewers, and
 people using AI-assisted tools for coding and development. Use it as the
-intent layer for the current repo state, not as end-user documentation.
+maintainer view of the current repo state, not as end-user documentation.
 
 If you want the gentlest product-level overview first, start with the root
 [`README.md`](../README.md) and come back here for the maintainer view.
 
 If you want the shortest contributor entrypoint for branch flow, local
 commands, and docs ownership, start with [../CONTRIBUTING.md](../CONTRIBUTING.md).
+
+Before running Python commands, prefer the repo-local interpreter or a `just`
+recipe. This repo does not auto-activate `.venv`, so inherited shell state can
+still point at another project's environment.
 
 ## Best First Reads
 
@@ -18,7 +22,7 @@ If you are new to the repo, read these in order:
 2. [architecture.md](./architecture.md)
 3. [contracts.md](./contracts.md)
 4. [session-model.md](./session-model.md)
-5. then the task-specific doc for the subsystem you want to change
+5. then the subsystem-specific doc you need for the change
 
 ## Quick Role Map
 
@@ -122,7 +126,7 @@ For the current alert-storage rollout state, use:
   - [architecture.md](./architecture.md)
   - current runtime note: session persistence still defaults to the file-backed
     store; PostgreSQL session bootstrap/config exists, and PostgreSQL session
-    storage is now available as an explicit runtime opt-in
+    storage is available as an explicit runtime opt-in
   - `src/session_store.py`
   - `src/session_store_runtime.py`
   - `src/session_store_runtime_config.py`

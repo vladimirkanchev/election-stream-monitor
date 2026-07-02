@@ -1,6 +1,6 @@
-"""Regression tests for task-4 CI helper scripts and ownership rules.
+"""Regression tests for CI helper scripts and ownership rules.
 
-This file covers the helper layer around the protected workflow contract:
+This module covers the helper layer around the protected workflow contract:
 - manifest-backed target ownership
 - CI-owned path existence guards
 - protected-lane drift checks

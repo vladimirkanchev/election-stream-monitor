@@ -1,4 +1,4 @@
-# API Stream Election Policy Task List
+# API Stream Election Policy Decisions
 
 This note turns the current `api_stream` inventory and election-profile
 comparison into a concrete decision list for future policy work.
@@ -35,7 +35,7 @@ Why this checkpoint matters:
 - it narrows later implementation work to the one area that still appears
   meaningfully questionable for election streams: idle exhaustion semantics
 
-## Decision Task 1: Idle Exhaustion Semantics
+## Idle Exhaustion Semantics
 
 ### Question
 
@@ -108,7 +108,7 @@ Cons:
   classes need different idle semantics beyond this clarification
 - avoid a broader generic semantic rewrite until profile work is ready
 
-## Decision Task 2: Which Budgets Become Profile-Driven First
+## Which Budgets Should Become Profile-Driven First
 
 ### Question
 
@@ -156,7 +156,7 @@ These are the best first profile-driven candidates:
 These should likely remain global safety rails until a stronger operational need
 appears.
 
-## Decision Task 3: Whether To Add A Richer Interrupted/Degraded Concept
+## Whether To Add A Richer Interrupted/Degraded Concept
 
 ### Question
 

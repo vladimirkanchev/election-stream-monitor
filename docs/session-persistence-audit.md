@@ -20,7 +20,7 @@ Document split:
 | `session.json` | `session_io.write_session_metadata(...)` through `session_runner_lifecycle` and terminal updates | Overwrite JSON | `session_io.read_session_snapshot(...)`, `session_io.session_exists(...)` | Current "known session" marker; alert reads still depend on it. |
 | `progress.json` | `FileSessionStore.write_progress(...)` through lifecycle, execution, and terminal helpers | Overwrite JSON | `SessionStore.read_snapshot(...)` through the default file-backed store | Preserve frontend fields, latest-only semantics, and terminal `status_reason` / `status_detail` behavior. |
 | `results.jsonl` | `session_io.append_result(...)` from `session_runner_execution.persist_bundle_events(...)` | Append-only JSONL | `session_io.read_session_snapshot(...)` | Keep append ordering and `latest_result` behavior stable. |
-| `alerts.jsonl` | `session_alert_store.FileSessionAlertStore` through `session_io.append_alert(...)` | Append-only JSONL | Active alert-store contract and snapshot alert reads | Alerts already have file/PostgreSQL store selection, but PostgreSQL alert reads still check file-backed session existence. |
+| `alerts.jsonl` | `session_alert_store.FileSessionAlertStore` through `session_io.append_alert(...)` | Append-only JSONL | Active alert-store contract and snapshot alert reads | Alerts already have file/PostgreSQL store selection. Known-session checks now route through the shared alert-side adapter backed by `SessionStore.session_exists(...)`. |
 | `cancel_requested.json` | `FileSessionStore.request_cancel(...)` through `session_service.cancel_session(...)` and tests | Overwrite JSON marker | `SessionStore.is_cancel_requested(...)` in session execution and HTTP/HLS loader loops | Store-backed runtime control state, not historical data. Keep cancellation responsive. |
 | `api_stream_seen_chunks.jsonl` | `session_io.append_api_stream_seen_chunk_key(...)` from `HttpHlsApiStreamLoader.persist_identity_key(...)` | Append-only JSONL | `session_io.read_api_stream_seen_chunk_keys(...)` during HTTP/HLS connect/restart | Live-stream replay/de-dup state; include in design, but do not treat as user-facing history. |
 | `worker.log` | `session_service._spawn_session_worker(...)` | Append log file | Not part of the public snapshot; used for diagnostics | Keep file-backed for now unless a deliberate diagnostics surface is added. |
@@ -160,7 +160,7 @@ session metadata, progress, results, or snapshot reads directly.
 | `src/session_runner_terminal.py` | `update_session_status(...)`, `write_session_progress(...)` | Terminal metadata/progress writes | High | none in this module; terminal persistence is part of the durable session read model. |
 | `src/session_store_file.py` | file-backed adapter over `session_exists(...)`, `read_session_snapshot(...)`, `read_session_result_events(...)`, `write_session_metadata(...)`, `write_session_progress(...)` | Compatibility backend for the `SessionStore` contract | High | none; this adapter is the intentional bridge for parity and rollback. |
 | `src/session_alert_store.py` | `get_session_dir(...)`, `session_exists(...)` | Alert-store known-session coupling | Medium | Alert rows stay on the alert-store contract; only the known-session check matters to the session-store migration. |
-| `src/session_alert_store_postgres.py` | `session_exists(...)` | PostgreSQL alert reads still depend on file-backed session existence | Medium | Do not migrate alert persistence in this phase; only remove this coupling after session metadata has a backend-neutral existence check. |
+| `src/session_alert_store_postgres.py` | shared `require_known_session(...)` adapter | PostgreSQL alert reads now use the shared alert-side known-session adapter backed by `SessionStore.session_exists(...)` | Medium | Do not migrate alert persistence in this phase; keep the dependency limited to the known-session question. |
 | `src/stream_loader_http_hls.py` | `append_api_stream_seen_chunk_key(...)`, `read_api_stream_seen_chunk_keys(...)`, `is_session_cancel_requested(...)` | Replay-key persistence and cooperative cancellation | Low for this phase | These are runtime coordination paths, not the first durable session-store surface. Keep them separate until the main session read model is stable. |
 
 Practical migration rule:
@@ -171,6 +171,92 @@ Practical migration rule:
 - Keep `session_alert_store*.py` on the alert seam and
   `stream_loader_http_hls.py` on the runtime-coordination seam until the
   durable session store has file/PostgreSQL parity.
+
+## Alert / Session Coupling Audit
+
+This inventory tracks how alert reads relate to the session-store migration
+without letting alert behavior drift.
+
+### Production coupling today
+
+| Layer | Main files | Current coupling | Migration note |
+| --- | --- | --- | --- |
+| Raw alert file store | `src/session_alert_store.py` | Uses `get_default_session_store().session_exists(...)` to preserve unknown-session behavior, then resolves `alerts.jsonl` through `get_session_dir(...)` | The file backend is expected to stay file-shaped. The important rule is that "known session" should come from the session-store seam, not from alert-specific folder probing. |
+| PostgreSQL alert store | `src/session_alert_store_postgres.py` | Calls the shared `require_known_session(...)` adapter before reading PostgreSQL alert rows | This is the most important coupling for the migration. PostgreSQL alert reads now validate against the active `SessionStore`, so explicit PostgreSQL session mode can answer the known-session question without a file-backed `session.json`. |
+| Raw alert read model | `src/session_alerts.py` | No direct session-folder reads; depends only on `SessionAlertStore.read_session_alert_events(...)` and `SessionAlertsNotFoundError` | This layer is already in good shape. It should not need storage-aware changes beyond whatever the alert store does underneath. |
+| Incident read model | `src/session_alert_incidents.py` | No direct session coupling; reuses the raw alert read model | Keep it storage-agnostic. |
+| FastAPI alert routes | `src/api/routers/alerts.py` | No direct file/session coupling; maps shared service errors into HTTP responses | Route behavior should stay stable while storage changes below it. |
+
+### Indirect coupling through tests and helpers
+
+| Test surface | Main files | What is currently encoded |
+| --- | --- | --- |
+| File-backed alert-store tests | `tests/test_session_alert_store.py`, `tests/test_alert_query_service_read.py` | "Known session" still means persisted session metadata exists, while missing `alerts.jsonl` means empty alert history. |
+| PostgreSQL alert-store tests | `tests/test_session_alert_store_postgres.py`, `tests/test_session_alert_store_parity.py` | PostgreSQL alert reads still perform a known-session pre-check before returning rows; several tests patch or compare that behavior explicitly. |
+| API and MCP alert boundary tests | `tests/test_api_session_alerts.py`, `tests/test_api_session_alert_incidents.py`, `tests/test_mcp_server_alerts_behavior.py`, `tests/test_mcp_server_alerts_errors.py` | Public behavior depends on stable `SessionAlertsNotFoundError` mapping, not on storage details. |
+| Alert test support | `tests/session_alert_test_support.py`, `tests/api_alert_test_support.py` | Helper builders still create file-backed session metadata plus `alerts.jsonl`, which is fine for file mode but should not become the only truth for PostgreSQL-backed alert/session combinations. |
+
+### Audit conclusion
+
+The coupling is real but fairly concentrated:
+
+- the alert query services and FastAPI/MCP adapters are already backend-neutral
+- the file-backed alert store is allowed to stay file-aware because that is its
+  job
+- the critical migration point is still the PostgreSQL alert-store known-session
+  check, even after routing it through the shared adapter, because it assumes
+  the active session-store backend describes the same session universe as the
+  alert backend
+
+### Ownership boundary decision
+
+Alert storage owns alert events only. Session storage owns whether a session is
+known.
+
+Allowed dependency from alert storage to session storage:
+
+- call `SessionStore.session_exists(session_id)` to preserve the public
+  missing-session contract
+- later, read a deliberately exposed session-metadata summary only if a real
+  alert use case needs it and the contract is added explicitly
+
+Disallowed dependencies:
+
+- do not inspect `session.json`, `progress.json`, `results.jsonl`, cancel
+  markers, worker logs, temp media, or PostgreSQL session tables from alert
+  code
+- do not infer known-session state from `alerts.jsonl` or PostgreSQL alert
+  rows
+- do not push storage-specific session fields into raw alert filtering,
+  incident grouping, HTTP routes, or MCP tools
+
+This keeps alert code allowed to answer "can this session have alerts?" while
+keeping all session lifecycle, progress, result, and runtime-control details
+inside the session-store contract.
+
+Migration watchpoints:
+
+- PostgreSQL alert reads must not stay tied to the old file-backed session
+  marker. During migration, the active session store is the source of truth
+  for "known session"; in PostgreSQL session mode that source of truth is
+  PostgreSQL metadata, while file mode still preserves legacy behavior.
+- File-backed alert storage remains the default runtime mode and the immediate
+  rollback path. PostgreSQL-focused alert changes should not change legacy
+  file behavior for missing sessions, empty `alerts.jsonl`, or append/read
+  ordering through the default store.
+
+### Watchpoints
+
+- Keep the public rule stable:
+  unknown session raises `SessionAlertsNotFoundError`, known session with no
+  persisted alerts returns an empty list.
+- Keep mixed-backend behavior explicit:
+  PostgreSQL alerts with file-backed sessions are currently supported during
+  migration, but only through the shared `SessionStore.session_exists(...)`
+  check. Alert rows alone must never make a session look known.
+- Update parity tests around behavior, not file paths or SQL details.
+- Keep alert read models and HTTP/MCP adapters storage-agnostic while moving
+  the existence check to the right shared seam.
 
 ## Session Store Injection Point Decision
 

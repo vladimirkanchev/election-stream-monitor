@@ -2,9 +2,11 @@
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-Election Stream Monitor is a local-first AI video monitoring system for election-related media sources.
+Election Stream Monitor is a local-first AI video monitoring system for
+election-related media sources.
 
-It watches polling-station streams, archived recordings, or segmented video feeds and surfaces the quality problems that matter during monitoring.
+It watches polling-station streams, archived recordings, and segmented video
+feeds, then surfaces the quality problems that matter during monitoring.
 
 Today it is an advanced desktop-first prototype with:
 
@@ -21,8 +23,8 @@ monitoring runs.
 **Quick try:** run `npm run dev`, choose `video_files`, and test with a local
 `.mp4`.
 
-The project is intentionally small. I want it to stay readable, useful, and
-easy to extend without turning into a much heavier platform too early.
+The project is intentionally small. The current goal is a readable, useful,
+easy-to-extend desktop runtime rather than a heavier platform.
 
 For contributor and maintainer workflows, start with [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/README.md](./docs/README.md).
 
@@ -35,11 +37,12 @@ If a stream goes black, blurry, broken, or becomes too low quality, that is
 not only a technical issue. It can make real-time observation harder and
 reduce public oversight when it matters most.
 
-Today the project is a small desktop-first prototype for exploring that workflow in practice and for extending it with new video detectors as the monitoring needs become clearer.
+Today the project is a desktop-first prototype for exploring that workflow in
+practice and extending it with new video detectors as monitoring needs become
+clearer.
 
-With an AI-assisted coding agent, they can describe the
-monitoring problem they want to catch in plain language instead of needing
-strong manual coding skills or deep video-processing knowledge.
+AI-assisted coding tools can help contributors describe the monitoring problem
+in plain language instead of starting from low-level video-processing code.
 
 ## Where To Start
 
@@ -57,14 +60,17 @@ Start here if you are:
 
 ## Desktop Runtime Summary
 
-Most people will use the project through the Electron app. The desktop app talks to a local FastAPI backend that manages sessions, detector execution, playback-source handling, and alert/session reads.
+Most people will use the project through the Electron app. The desktop app
+talks to a local FastAPI backend that manages sessions, detector execution,
+playback-source handling, and alert/session reads.
 
 Today the runtime is local-first:
 
 - session metadata, latest progress, and results read through one shared session-store contract
 - the runtime default is still file-backed under `data/sessions/`
 - alerts use one shared backend: file-backed by default, PostgreSQL as an explicit opt-in backend
-- the UI, alert routes, grouped incident routes, and MCP tools all read alerts through that shared backend
+- the UI, alert routes, grouped incident routes, and MCP tools all read alerts
+  through that shared backend
 
 FastAPI auth and rate limiting are available for shared access modes. MCP remains a separate local `stdio` tool surface.
 
@@ -172,7 +178,7 @@ This part keeps the session state stable enough for the UI to refresh:
 - the frontend polls session snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
-The current feature set is still narrow, but easy to extend.
+The feature set is still narrow, but the extension points are explicit.
 
 ## Input Modes
 
@@ -241,6 +247,17 @@ cd frontend
 npm install
 ```
 
+For repo commands after setup, prefer the repo-local interpreter explicitly:
+
+```bash
+./.venv/bin/python -m pytest
+./.venv/bin/python your_script.py
+```
+
+Do not assume `python3`, `pip`, or `pytest` from `PATH` point at this repo's
+virtualenv. This is especially important for AI-assisted tools launched from a
+different project shell.
+
 If you use `uv`, the Python part can look like this:
 
 ```bash
@@ -249,7 +266,8 @@ uv venv
 uv pip install -e .
 ```
 
-If you also want backend test tooling locally, install the `test` extra:
+If you also want the fuller backend test toolchain locally, install the `test`
+extra:
 
 ```bash
 pip install -e .[test]

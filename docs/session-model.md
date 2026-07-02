@@ -333,6 +333,19 @@ Alert persistence now has one explicit internal boundary:
 - `src/session_alert_incidents.py`
   - owns grouped incident timelines and grouped incident summaries
 
+Alert storage may depend on the session model only for the known-session
+question:
+
+- allowed:
+  - ask `SessionStore.session_exists(session_id)` before returning alert rows
+  - treat a known session with no alert rows as empty alert history
+- not allowed:
+  - read session files or PostgreSQL session tables directly from alert code
+  - infer session existence from an alert folder, alert table row, progress row,
+    result row, cancel marker, worker log, or temp media file
+  - depend on backend-specific session metadata shape inside alert filtering,
+    grouping, or HTTP/MCP adapters
+
 Practical effect:
 
 - writes and reads now go through the same alert seam
@@ -342,6 +355,9 @@ Practical effect:
   unchanged
 - the PostgreSQL alert store can be enabled without moving filtering or
   grouping into the storage layer
+- mixed runtime selection is still possible during migration; when alert and
+  session backends differ, the alert side must keep treating the active
+  `SessionStore` as the source of truth for whether a session is known
 - the current rollout state is simple:
   - file is still the default backend
   - PostgreSQL is the supported opt-in backend

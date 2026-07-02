@@ -104,7 +104,7 @@ Try to keep rules:
 
 ## How to add one
 
-### Step 1: decide what detector output you need
+### Decide what detector output you need
 
 Before writing a rule, make sure the detector already returns the right fields.
 
@@ -118,13 +118,13 @@ Examples:
 
 If the detector output is not good enough, fix the detector first.
 
-### Step 2: decide whether the rule is stateless or rolling
+### Decide whether the rule is stateless or rolling
 
 Use stateless if possible.
 
 Use rolling state only when the alert really depends on recent history and not just one file or segment.
 
-### Step 3: add the rule
+### Add the rule
 
 In [`src/alert_rules.py`](../src/alert_rules.py):
 
@@ -149,7 +149,7 @@ should update:
   metadata or rule linkage changes
 - runtime docs such as [architecture.md](./architecture.md)
 
-### Step 4: if it uses rolling state, keep that state local
+### Keep rolling state local when needed
 
 If a rule needs memory:
 
@@ -160,7 +160,7 @@ If a rule needs memory:
 
 That reset currently happens from [`src/session_runner.py`](../src/session_runner.py).
 
-### Step 5: test it
+### Test it
 
 At minimum, add:
 
