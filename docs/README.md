@@ -116,9 +116,9 @@ For the current alert-storage rollout state, use:
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
 
 - changing session snapshot or polling behavior:
+  - [contracts.md](./contracts.md)
   - [session-model.md](./session-model.md)
   - [session-persistence-audit.md](./session-persistence-audit.md)
-  - [contracts.md](./contracts.md)
   - [architecture.md](./architecture.md)
   - current runtime note: session persistence still defaults to the file-backed
     store; PostgreSQL session bootstrap/config exists, and PostgreSQL session
@@ -127,14 +127,17 @@ For the current alert-storage rollout state, use:
   - `src/session_store_runtime.py`
   - `src/session_store_runtime_config.py`
   - `src/session_store_file.py`
+  - `src/session_store_postgres.py`
   - `src/session_service.py`
-  - `src/session_io.py`
   - `tests/test_session_store_contract.py`
   - `tests/test_session_store_file.py`
+  - `tests/test_session_store_parity.py`
   - `tests/test_session_store_runtime.py`
   - `tests/test_session_store_postgres.py`
-  - `tests/test_session_runner_store_writes.py`
-  - `tests/test_session_io.py`
+  - `tests/test_api_boundary_sessions_read.py`
+  - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
 - changing frontend bridge normalization or UI transport handling:
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)

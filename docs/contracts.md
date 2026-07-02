@@ -552,6 +552,247 @@ Notes:
 - timestamp formatting may vary slightly across producers, but the field stays
   a string and must not change the rest of the progress shape
 
+### Stable backend promise
+
+The storage backend may change, but the public session snapshot should keep
+the same outer shape and lifecycle meaning unless the project deliberately
+versions the contract.
+
+For the current migration stage, snapshot parity is the promise. That means
+file-backed and PostgreSQL-backed session storage must produce the same
+frontend-facing snapshot shape and field relationships for the same durable
+session state. It does not mean the wider session-storage migration is
+finished or that every backend-owned runtime artifact has moved behind the
+same store.
+
+Outer keys are stable:
+
+- `session`
+- `progress`
+- `alerts`
+- `results`
+- `latest_result`
+
+Null-vs-empty behavior is stable:
+
+- `session` is `null` only when durable session metadata is missing or cannot
+  be returned as a valid session payload
+- `progress` is `null` when no valid latest-progress payload is currently
+  available
+- `alerts` is always a list and falls back to `[]`
+- `results` is always a list and falls back to `[]`
+- `latest_result` is either the final valid ordered result row or `null`
+
+Field relationship rules are stable:
+
+- `results` is append-ordered history, not timestamp-sorted history
+- `latest_result` is derived from the final valid row in `results`
+- `progress` is latest-only state, not progress history
+- snapshot `alerts` follow the active alert-read backend, but they still keep
+  the same public snapshot field
+- tolerant degraded reads may drop malformed `progress` or malformed result
+  rows, but they must still preserve the same outer snapshot shape and keep
+  `latest_result` aligned with the final valid ordered result row
+
+### State-specific snapshot promise
+
+| Session state | Backend promise |
+| --- | --- |
+| Missing session | Route/service layers treat it as missing-session behavior. At the low-level store/helper layer, the stable empty snapshot shape remains: `session = null`, `progress = null`, `alerts = []`, `results = []`, `latest_result = null`. |
+| Running session | `session` is present, `progress` should usually be present, `results` keeps all committed ordered rows so far, `latest_result` matches the last committed result or `null`, and `alerts` is the alert history currently visible through the active alert backend. |
+| Completed session | The snapshot remains readable after work stops. `session.status` and usually `progress.status` are `completed`; ordered `results`, derived `latest_result`, and `alerts` remain available for later reads. |
+| Failed session | The snapshot remains readable after failure. `session.status` and usually `progress.status` are `failed`; `progress.status_reason` stays compact, `progress.status_detail` may carry the more specific cause, and committed `results` / `alerts` remain readable. |
+| Cancelled session | The snapshot remains readable after terminal cancellation. `session.status` and usually `progress.status` are `cancelled`; `progress.status_reason` may explain the terminal settlement, and committed `results` / `alerts` remain readable. |
+| Partially populated session | This is valid during startup, recovery, or tolerant degraded reads. `session` may be present while `progress` is `null`; `alerts` and `results` still stay list-shaped; `latest_result` stays aligned with committed ordered `results`, not inferred from progress fields. |
+
+Storage-backend freedom is still intentionally preserved:
+
+- the contract does not freeze file names, table names, SQL layout, or worker
+  implementation details
+- it does freeze the public payload shape, list/null behavior, lifecycle
+  meaning, result ordering, and `latest_result` derivation
+
+### Compact snapshot examples
+
+These examples are intentionally small. They are meant to catch contract drift
+in the public payload shape, not to mirror every detector or backend detail.
+
+Missing session:
+
+```json
+{
+  "session": null,
+  "progress": null,
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Running session:
+
+```json
+{
+  "session": {
+    "session_id": "session-running-1",
+    "mode": "video_files",
+    "input_path": "/tmp/input.mp4",
+    "selected_detectors": ["video_metrics"],
+    "status": "running"
+  },
+  "progress": {
+    "session_id": "session-running-1",
+    "status": "running",
+    "processed_count": 2,
+    "total_count": 10,
+    "current_item": "clip.mp4 @ 00:02",
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 0,
+    "last_updated_utc": "2026-07-02 10:00:00",
+    "status_reason": "running",
+    "status_detail": null
+  },
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Completed session:
+
+```json
+{
+  "session": {
+    "session_id": "session-completed-1",
+    "mode": "video_segments",
+    "input_path": "/data/segments",
+    "selected_detectors": ["video_metrics"],
+    "status": "completed"
+  },
+  "progress": {
+    "session_id": "session-completed-1",
+    "status": "completed",
+    "processed_count": 4,
+    "total_count": 4,
+    "current_item": null,
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 1,
+    "last_updated_utc": "2026-07-02 10:05:00",
+    "status_reason": "completed",
+    "status_detail": null
+  },
+  "alerts": [
+    {
+      "session_id": "session-completed-1",
+      "timestamp_utc": "2026-07-02 10:04:59",
+      "detector_id": "video_metrics",
+      "title": "Black screen detected",
+      "message": "Black segment exceeded threshold.",
+      "severity": "warning",
+      "source_name": "segment_004.ts"
+    }
+  ],
+  "results": [
+    {
+      "session_id": "session-completed-1",
+      "detector_id": "video_metrics",
+      "payload": {
+        "source_name": "segment_004.ts",
+        "window_index": 3
+      }
+    }
+  ],
+  "latest_result": {
+    "session_id": "session-completed-1",
+    "detector_id": "video_metrics",
+    "payload": {
+      "source_name": "segment_004.ts",
+      "window_index": 3
+    }
+  }
+}
+```
+
+Failed session:
+
+```json
+{
+  "session": {
+    "session_id": "session-failed-1",
+    "mode": "api_stream",
+    "input_path": "https://example.test/live.m3u8",
+    "selected_detectors": ["video_metrics"],
+    "status": "failed"
+  },
+  "progress": {
+    "session_id": "session-failed-1",
+    "status": "failed",
+    "processed_count": 3,
+    "total_count": 3,
+    "current_item": null,
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 0,
+    "last_updated_utc": "2026-07-02 10:08:00",
+    "status_reason": "source_unreachable",
+    "status_detail": "Retry budget exhausted while refreshing playlist."
+  },
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Cancelled session:
+
+```json
+{
+  "session": {
+    "session_id": "session-cancelled-1",
+    "mode": "video_files",
+    "input_path": "/tmp/input.mp4",
+    "selected_detectors": ["video_metrics"],
+    "status": "cancelled"
+  },
+  "progress": {
+    "session_id": "session-cancelled-1",
+    "status": "cancelled",
+    "processed_count": 1,
+    "total_count": 10,
+    "current_item": null,
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 0,
+    "last_updated_utc": "2026-07-02 10:09:00",
+    "status_reason": "cancel_requested",
+    "status_detail": null
+  },
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Partially populated session:
+
+```json
+{
+  "session": {
+    "session_id": "session-partial-1",
+    "mode": "video_files",
+    "input_path": "/tmp/input.mp4",
+    "selected_detectors": ["video_metrics"],
+    "status": "pending"
+  },
+  "progress": null,
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
 ### Route failures vs session state
 
 The current project intentionally uses two different failure channels:
@@ -1708,6 +1949,11 @@ Current bridge normalization:
 - missing or malformed `alerts` / `results` become `[]`
 - malformed top-level payloads become the stable empty snapshot shape
 - explicit transport failures are raised with `SESSION_READ_FAILED`
+
+This normalization is intentionally compatible with the backend snapshot
+promise above. Storage can move, but the bridge should not need a different
+session-shape contract just because the backend changed from files to
+PostgreSQL.
 
 Current session-storage boundary:
 

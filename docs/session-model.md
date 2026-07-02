@@ -524,10 +524,34 @@ responses, Electron bridge mapping, and frontend session UX.
 - Frontend stop behavior should suppress duplicate in-flight cancel requests and prefer a stable ending/terminal state over repeated stop churn.
 - Once the UI has already settled into `completed`, the app suppresses another stop request rather than surfacing a late cancel-state failure from a request it no longer needs to send.
 
+### Snapshot population rules
+
+For the current project stage, these population rules are part of the session
+meaning, not only of one backend implementation:
+
+- a missing session is not the same thing as an empty but valid active session
+- `session` is the anchor for "this session is known"
+- `progress` may legitimately be `null` during startup, after tolerant
+  degraded reads, or before a valid latest-progress payload exists
+- `alerts` and `results` should stay list-shaped even when empty
+- `latest_result` should always match the last valid ordered row in `results`
+  when one exists
+- committed `results` and `alerts` remain readable after terminal
+  `completed`, `failed`, or `cancelled` settlement
+
+This is a stable read-model promise across backends. File-backed storage is
+still the default runtime path, and PostgreSQL remains explicit opt-in, but
+the same session state should still yield the same public snapshot shape and
+the same `results` / `latest_result` relationship.
+
 At the backend persistence-helper layer, missing session snapshot reads still
 degrade to the stable empty snapshot shape. Structured missing-session failures
 are introduced later at the API boundary when that empty snapshot means
 "session not found" for a route-level request.
+
+That parity promise is narrower than "migration complete." It covers the
+public session snapshot contract while storage ownership is still moving
+behind `SessionStore`.
 
 ## Route Failures Vs Session State
 

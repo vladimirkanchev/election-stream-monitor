@@ -37,6 +37,61 @@ Document split:
 - `src/session_alert_store.py` owns the alert persistence seam and default file-backed alert log.
 - `src/session_alert_store_postgres.py` owns the opt-in PostgreSQL alert table, while session metadata still decides whether a session is known.
 
+## Session Snapshot Consumer Map
+
+This is the current read-contract map for the public session snapshot:
+
+- `session`
+- `progress`
+- `alerts`
+- `results`
+- `latest_result`
+
+The main snapshot migration rule is simple: storage can change, but these
+frontend-visible fields and their null-vs-empty behavior should stay stable
+unless the project deliberately versions the contract.
+
+### Primary runtime consumers
+
+| Consumer layer | Main files | Snapshot dependency today | Migration watchpoint |
+| --- | --- | --- | --- |
+| Shared backend read service | `src/session_service.py`, `src/session_store.py`, `src/session_store_file.py`, `src/session_store_postgres.py` | Reads and returns the full public snapshot shape through `read_snapshot(...)` | The service layer is the canonical backend read boundary. Storage changes must preserve the same outer keys and missing-session shape. |
+| FastAPI session route | `src/api/routers/sessions.py`, `src/api/schemas.py` | Exposes `session`, `progress`, `alerts`, `results`, and `latest_result` directly over `GET /sessions/{session_id}` | Pydantic validation will catch some drift, but route tests still matter because schema compatibility alone does not prove ordering or tolerant degradation. |
+| Frontend bridge normalizer | `frontend/src/bridge/contractSessionSnapshot.ts` | Normalizes the full snapshot and fails closed on malformed nested payloads while keeping the outer shape stable | This is the most important frontend shape dependency. If nested payloads change, the UI may silently degrade to `null` or `[]` even when the backend still "works". |
+| Frontend session hook | `frontend/src/hooks/useMonitoringSession.ts` | Polls snapshots, merges fallback `session`, preserves the last good snapshot on transient failures, and reads `progress.status_reason` / `status_detail` | Polling behavior depends on stable `session` and `progress` semantics, not only on type compatibility. |
+| Frontend presentation layer | `frontend/src/components/SessionStatusPanel.tsx`, `frontend/src/components/SessionStatus.tsx`, `frontend/src/components/AlertFeed.tsx` | Reads session lifecycle, progress counts, latest detector fields, and alert collections for operator-facing UI | Small payload drift can change wording, counts, diagnostics, or empty-state behavior without breaking the backend route outright. |
+
+### Contract-focused test consumers
+
+| Test layer | Main files | What they currently protect |
+| --- | --- | --- |
+| API boundary regression | `tests/test_api_boundary_sessions_read.py`, `tests/test_session_service_read_cancel.py` | Populated/missing snapshot shape, ordered `results`, derived `latest_result`, and honest read/cancel behavior through the service and route layers |
+| Store parity and backend-read tests | `tests/test_session_store_file.py`, `tests/test_session_store_postgres.py`, `tests/test_session_store_parity.py` | Missing-session shape, latest-only `progress`, append-ordered `results`, and `latest_result` derivation across file and PostgreSQL backends |
+| Frontend bridge contract tests | `frontend/src/bridge/contract.session-snapshot.shape.test.ts`, `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`, `frontend/src/bridge/contract.session-snapshot.collections.test.ts` | Outer snapshot keys, nested payload normalization, malformed-row tolerance, ordered `results`, and `latest_result` stability |
+| Frontend polling and UI tests | `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`, `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`, `frontend/src/components/SessionStatusPanel.test.tsx` | Polling tolerance, lifecycle wording, progress/status detail handling, and user-visible consequences of snapshot changes |
+
+### Consumer-specific notes
+
+- `latest_result` is a frontend-visible derived field, not an independent store.
+  Tests and consumers expect it to follow the last valid row in ordered
+  `results`, not a timestamp sort.
+- `progress.latest_result_detector` and
+  `progress.latest_result_detectors` are not a replacement for `latest_result`.
+  The UI and bridge use both surfaces for different purposes.
+- `alerts` are part of the session snapshot contract even though they come from
+  the alert-store seam rather than the main session store.
+- Missing-session behavior is a real contract:
+  `session` and `progress` should degrade to `null`, while `alerts` and
+  `results` should degrade to empty arrays and `latest_result` should degrade
+  to `null`.
+
+Snapshot migration rule:
+
+- change storage behind `read_snapshot(...)`
+- keep snapshot keys, null-vs-empty behavior, and ordered `results` stable
+- keep bridge normalization and polling/UI assumptions true
+- version the contract explicitly before changing any of those guarantees
+
 ## Durable Progress Contract
 
 Progress persistence is the latest session read model, not a worker telemetry
@@ -97,7 +152,7 @@ This is the practical migration map for the current branch. The main
 PostgreSQL session-store work should focus on callers that touch durable
 session metadata, progress, results, or snapshot reads directly.
 
-| Module | Direct `session_io` usage today | Durable-session concern | Migration priority | Keep out of this task |
+| Module | Direct `session_io` usage today | Durable-session concern | Migration priority | Keep out of this phase |
 | --- | --- | --- | --- | --- |
 | `src/session_service.py` | `read_session_snapshot(...)`, `SessionStore.request_cancel(...)` | Session snapshot read used by FastAPI and CLI read/cancel flows, plus cancel-intent writes | High | `get_worker_log_path(...)` is worker diagnostics, not part of the durable store. |
 | `src/session_runner_lifecycle.py` | `initialize_session(...)`, `update_session_status(...)`, `write_session_progress(...)` | Pending and running metadata/progress writes | High | none in this module; these are core durable lifecycle writes. |
@@ -105,8 +160,8 @@ session metadata, progress, results, or snapshot reads directly.
 | `src/session_runner_terminal.py` | `update_session_status(...)`, `write_session_progress(...)` | Terminal metadata/progress writes | High | none in this module; terminal persistence is part of the durable session read model. |
 | `src/session_store_file.py` | file-backed adapter over `session_exists(...)`, `read_session_snapshot(...)`, `read_session_result_events(...)`, `write_session_metadata(...)`, `write_session_progress(...)` | Compatibility backend for the `SessionStore` contract | High | none; this adapter is the intentional bridge for parity and rollback. |
 | `src/session_alert_store.py` | `get_session_dir(...)`, `session_exists(...)` | Alert-store known-session coupling | Medium | Alert rows stay on the alert-store contract; only the known-session check matters to the session-store migration. |
-| `src/session_alert_store_postgres.py` | `session_exists(...)` | PostgreSQL alert reads still depend on file-backed session existence | Medium | Do not migrate alert persistence in this task; only remove this coupling after session metadata has a backend-neutral existence check. |
-| `src/stream_loader_http_hls.py` | `append_api_stream_seen_chunk_key(...)`, `read_api_stream_seen_chunk_keys(...)`, `is_session_cancel_requested(...)` | Replay-key persistence and cooperative cancellation | Low for this task | These are runtime coordination paths, not the first durable session-store surface. Keep them separate until the main session read model is stable. |
+| `src/session_alert_store_postgres.py` | `session_exists(...)` | PostgreSQL alert reads still depend on file-backed session existence | Medium | Do not migrate alert persistence in this phase; only remove this coupling after session metadata has a backend-neutral existence check. |
+| `src/stream_loader_http_hls.py` | `append_api_stream_seen_chunk_key(...)`, `read_api_stream_seen_chunk_keys(...)`, `is_session_cancel_requested(...)` | Replay-key persistence and cooperative cancellation | Low for this phase | These are runtime coordination paths, not the first durable session-store surface. Keep them separate until the main session read model is stable. |
 
 Practical migration rule:
 
@@ -520,7 +575,7 @@ storage-independent public behavior. Keep both during the migration.
 | File-backed alert read behavior | `tests/test_alert_query_service_read.py`, `tests/test_session_alert_store.py` | Known-session checks through `session.json`, missing `alerts.jsonl` as empty alerts, corrupt-line tolerance | Keep while file alerts remain supported. Revisit known-session checks when PostgreSQL session metadata can answer existence. |
 | PostgreSQL alert parity | `tests/test_session_alert_store_postgres.py`, `tests/test_session_alert_store_parity.py`, runtime alert route tests | Alert rows preserve fields, order, timestamp string shape, and file/PostgreSQL parity | Use as the pattern for the session-store migration: same public contract, different backend. |
 | Shared session service | `tests/test_session_service_read_cancel.py`, `tests/test_session_service.py` | Missing snapshot -> `None`, cancel allowed/rejected states, transient `cancelling` summary, worker-log exclusion from public metadata | Expand around `SessionStore` so service behavior does not depend on raw files. |
-| FastAPI session boundary | `tests/test_api_boundary_sessions_read.py`, `tests/test_api_boundary_sessions_start.py`, `tests/test_api_boundary_sessions_cancel.py`, `tests/test_api_boundary_contracts.py` | Stable route payloads, route-level `404`, validation errors, snapshot shape, malformed payload fail-closed behavior, and store-backed progress reads during in-flight updates | Treat as high-value migration guards because the frontend depends on these shapes rather than storage files. |
+| FastAPI session boundary | `tests/test_api_boundary_sessions_read.py`, `tests/test_api_boundary_sessions_start.py`, `tests/test_api_boundary_sessions_cancel.py`, `tests/test_api_boundary_contracts.py` | Stable route payloads, route-level `404`, validation errors, snapshot shape, null-vs-empty behavior, malformed nested payload handling, and store-backed progress reads during in-flight updates | Treat as high-value migration guards because the frontend depends on these shapes rather than storage files. |
 | Runner and live-stream lifecycle | `tests/test_session_runner_lifecycle.py`, `tests/test_session_runner_terminal.py`, `tests/test_session_runner_execution*.py`, `tests/test_session_runner_api_stream*.py` | Pending/running/terminal writes, progress status reasons, cancellation timing, API-stream temp cleanup, de-dup state | Keep broad lifecycle assertions. Split any direct file assumptions from behavior that should work through both stores. |
 | HTTP/HLS de-dup and cancel mechanics | `tests/test_stream_loader_http_hls*.py` | `api_stream` replay-key persistence and cooperative cancellation checks | Keep as runtime-coordination coverage. Cancel checks now read through the store; replay keys remain file-backed runtime state. |
 

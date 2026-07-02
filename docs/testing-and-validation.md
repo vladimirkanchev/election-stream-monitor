@@ -189,19 +189,23 @@ Current focused ownership map:
 - `tests/test_session_store_file.py`
   - file-backed session-store parity with `session_io`
 - `tests/test_session_store_parity.py`
-  - shared file-store versus PostgreSQL-store parity for result append/read,
-  ordered history, `latest_result` derivation, and rich payload survival
-- `tests/test_api_boundary_contracts.py`
-  - HTTP-visible session snapshot regression coverage so outer keys, ordered
-  `results`, and derived `latest_result` stay stable when result storage
-  moves behind `SessionStore`
+  - shared file-store versus PostgreSQL-store parity for snapshot shape,
+  latest-only `progress`, ordered `results`, `latest_result` derivation, and
+  cancel-intent behavior
+- `tests/test_api_boundary_sessions_read.py`
+  - HTTP-visible session snapshot regression coverage so outer keys,
+  null-vs-empty behavior, ordered `results`, and derived `latest_result`
+  stay stable while storage changes underneath
 - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
   - bridge normalization coverage so ordered `results`, derived
   `latest_result`, and latest-only progress fields stay stable for desktop
   polling consumers
+- `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
+  - malformed-row tolerance and proof that bridge reads `latest_result` from
+  the final valid ordered result instead of trusting a stale top-level row
 - current migration reading:
-  these lanes prove result-event storage is now store-backed, but they do not
-  by themselves prove the full session PostgreSQL migration is complete
+  these lanes prove snapshot parity across the current read path, but they do
+  not by themselves prove that the full session-store migration is complete
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
   and explicit proof that `postgres` is built only on deliberate opt-in
@@ -1788,6 +1792,8 @@ Backend/API contract checks:
   - playback-resolution behavior
 - `tests/test_api_boundary_sessions_read.py`
   - session read-route behavior
+  - stable snapshot keys, null-vs-empty defaults, malformed-row tolerance,
+    and alert/result consistency across the current storage split
   - runtime-selected alert-backend parity between the session snapshot route
     and the dedicated alert routes
 - `tests/test_api_boundary_sessions_start.py`
@@ -1820,7 +1826,7 @@ Backend/API contract checks:
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - detector-catalog route parity with the canonical registry
-  - populated session snapshot response shape
+  - shared route-envelope behavior that sits beside the dedicated session-read tests
 - `tests/test_stream_loader_contracts.py`
   - `api_stream` contract-builder consistency
   - loader seam helper invariants
@@ -1865,6 +1871,7 @@ Frontend contract checks:
   - fail-closed malformed nested payload handling
 - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
   - partially corrupt alert/result collection compatibility
+  - `latest_result` recovery from the final valid ordered result row
 - `frontend/src/bridge/transport.test.ts`
   - transport selection and demo fallback behavior
 - `frontend/src/components/SessionStatusPanel.test.tsx`
@@ -2265,13 +2272,14 @@ Current lifecycle coverage is already spread across the main layers:
   - `tests/test_api_boundary_sessions_read.py`
     - missing-session reads
     - populated session snapshot passthrough behavior
+    - stable snapshot shape, null-vs-empty behavior, and ordered `latest_result`
   - `tests/test_api_boundary_sessions_start.py`
     - start success and shared error mapping
   - `tests/test_api_boundary_sessions_cancel.py`
     - cancel success, missing-session cancel failure, terminal cancel rejection, and transient-to-terminal cancel flow
   - `tests/test_api_boundary_contracts.py`
     - structured error envelopes
-    - malformed nested payload fail-closed behavior
+    - detector-catalog and shared route-envelope behavior
 - Electron bridge/runtime tests
   - `frontend/electron/bridgeResponses.test.mjs`
     - start/cancel success mapping
