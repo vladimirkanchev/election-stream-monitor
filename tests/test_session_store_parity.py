@@ -1,9 +1,7 @@
-"""Shared backend-equivalence tests for session-store persistence behavior.
+"""Session-store parity tests across file and PostgreSQL backends.
 
-This suite compares the file-backed store with the PostgreSQL-backed store at
-the `SessionStore` boundary. It focuses on progress-state behavior, ordered
-result behavior, and the narrow cancel-request signal that must stay
-storage-neutral while the PostgreSQL migration is in flight.
+This module checks the storage-neutral contract for progress, ordered results,
+snapshot reads, and cancel intent.
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ import config
 import pytest
 
 from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
-from session_store import SessionStore
+from session_store import SESSION_SNAPSHOT_KEYS, SessionStore
 from session_store_file import FileSessionStore
 from session_store_postgres import (
     POSTGRES_SESSION_CANCEL_EXISTS_SQL,
@@ -33,7 +31,7 @@ from session_store_postgres import (
 
 
 class InMemoryPostgresSessionStoreCursor:
-    """Tiny cursor that simulates the SQL used by session-store parity checks."""
+    """Small cursor double for the SQL exercised in parity tests."""
 
     def __init__(self, connection: "InMemoryPostgresSessionStoreConnection") -> None:
         self._connection = connection
@@ -52,7 +50,7 @@ class InMemoryPostgresSessionStoreCursor:
         return None
 
     def execute(self, query: str, params: object | None = None) -> object:
-        """Handle only the metadata/progress reads and writes used in this suite."""
+        """Handle only the statements covered by this test module."""
         if query == POSTGRES_SESSION_METADATA_EXISTS_SQL:
             session_id = cast(tuple[str], params)[0]
             self._fetchone_result = (1,) if session_id in self._connection.metadata_rows else None
@@ -185,7 +183,7 @@ class InMemoryPostgresSessionStoreCursor:
 
 
 class InMemoryPostgresSessionStoreConnection:
-    """Minimal connection double for storage-neutral session-store parity checks."""
+    """Minimal connection double for storage-neutral parity checks."""
 
     def __init__(self) -> None:
         self.metadata_rows: dict[str, object] = {}
@@ -204,19 +202,19 @@ class InMemoryPostgresSessionStoreConnection:
 
 @pytest.fixture
 def file_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FileSessionStore:
-    """Return an isolated file-backed store rooted under a temporary directory."""
+    """Return an isolated file-backed store."""
     monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
     return FileSessionStore()
 
 
 @pytest.fixture
 def postgres_store() -> PostgresSessionStore:
-    """Return a PostgreSQL store backed by the in-memory parity connection."""
+    """Return a PostgreSQL store backed by the in-memory double."""
     return PostgresSessionStore(InMemoryPostgresSessionStoreConnection())
 
 
 def _metadata(session_id: str, *, status: SessionStatus) -> SessionMetadata:
-    """Build one storage-neutral session metadata payload."""
+    """Build storage-neutral session metadata."""
     return SessionMetadata(
         session_id=session_id,
         mode="video_files",
@@ -227,7 +225,7 @@ def _metadata(session_id: str, *, status: SessionStatus) -> SessionMetadata:
 
 
 def _running_progress(session_id: str) -> SessionProgress:
-    """Build a representative in-flight progress payload."""
+    """Build representative in-flight progress."""
     return SessionProgress(
         session_id=session_id,
         status="running",
@@ -252,7 +250,7 @@ def _terminal_progress(
     status_reason: str,
     status_detail: str | None,
 ) -> SessionProgress:
-    """Build one terminal latest-progress payload with explicit lifecycle detail."""
+    """Build terminal latest-progress state with explicit lifecycle detail."""
     return replace(
         SessionProgress.initial(session_id=session_id, total_count=5),
         status=status,
@@ -274,7 +272,7 @@ def _result(
     window_index: int,
     timestamp_utc: str,
 ) -> ResultEvent:
-    """Build one storage-neutral detector result payload."""
+    """Build a storage-neutral detector result."""
     return ResultEvent(
         session_id=session_id,
         detector_id=detector_id,
@@ -294,7 +292,7 @@ def _rich_result(
     window_index: int,
     timestamp_utc: str,
 ) -> ResultEvent:
-    """Build one richer detector result payload for backend-parity checks."""
+    """Build a richer detector result for parity checks."""
     return ResultEvent(
         session_id=session_id,
         detector_id=detector_id,
@@ -314,7 +312,7 @@ def _rich_result(
 
 
 def _state_payloads(session_id: str) -> dict[str, tuple[SessionMetadata, SessionProgress]]:
-    """Return the durable session/progress combinations shared by both backends."""
+    """Return shared metadata/progress combinations for lifecycle states."""
     return {
         "running": (
             _metadata(session_id, status="running"),
@@ -362,7 +360,7 @@ def _persist_session_state(
     metadata: SessionMetadata,
     progress: SessionProgress,
 ) -> dict[str, object]:
-    """Write one durable session/progress pair and return the public snapshot."""
+    """Write metadata and progress, then read the snapshot."""
     store.write_metadata(metadata)
     store.write_progress(progress)
     return cast(dict[str, object], store.read_snapshot(metadata.session_id))
@@ -374,11 +372,47 @@ def _persist_results(
     metadata: SessionMetadata,
     results: list[ResultEvent],
 ) -> dict[str, object]:
-    """Write one metadata row plus ordered results and return the snapshot."""
+    """Write metadata and ordered results, then read the snapshot."""
     store.write_metadata(metadata)
     for result in results:
         store.append_result(result)
     return cast(dict[str, object], store.read_snapshot(metadata.session_id))
+
+
+def _persist_frontend_visible_snapshot_state(
+    store: SessionStore,
+    *,
+    metadata: SessionMetadata,
+    progress: SessionProgress | None,
+    results: list[ResultEvent],
+    cancel_requested: bool,
+) -> dict[str, object]:
+    """Write one frontend-visible snapshot state."""
+    store.write_metadata(metadata)
+    if progress is not None:
+        store.write_progress(progress)
+    for result in results:
+        store.append_result(result)
+    if cancel_requested:
+        store.request_cancel(metadata.session_id)
+    return cast(dict[str, object], store.read_snapshot(metadata.session_id))
+
+
+def _assert_frontend_visible_snapshot_contract(
+    snapshot: dict[str, object],
+    *,
+    results: list[ResultEvent],
+) -> None:
+    """Assert the public snapshot shape used by API and frontend code."""
+    assert tuple(snapshot.keys()) == SESSION_SNAPSHOT_KEYS
+    assert isinstance(snapshot["alerts"], list)
+    assert isinstance(snapshot["results"], list)
+    assert "cancel_requested" not in snapshot
+    assert "progress_history" not in snapshot
+
+    expected_results = [result.to_dict() for result in results]
+    assert snapshot["results"] == expected_results
+    assert snapshot["latest_result"] == (expected_results[-1] if expected_results else None)
 
 
 def _assert_snapshot_latest_result_matches_ordered_history(
@@ -387,7 +421,7 @@ def _assert_snapshot_latest_result_matches_ordered_history(
     session_id: str,
     snapshot: dict[str, object],
 ) -> None:
-    """Assert the public latest-result invariant shared by both backends."""
+    """Assert the shared latest-result invariant."""
     ordered_results = cast(list[dict[str, object]], store.read_results(session_id))
     snapshot_results = cast(list[dict[str, object]], snapshot["results"])
 
@@ -406,7 +440,7 @@ def _assert_store_results_match(
     snapshot: dict[str, object],
     results: list[ResultEvent],
 ) -> None:
-    """Assert the result-history contract for one backend."""
+    """Assert ordered result-history behavior for one backend."""
     expected_results = [result.to_dict() for result in results]
 
     assert store.read_results(session_id) == expected_results
@@ -418,12 +452,12 @@ def _assert_store_results_match(
 
 
 def _assert_cancel_state_matches(store: SessionStore, session_id: str, expected: bool) -> None:
-    """Assert the narrow cancel-request contract for one backend."""
+    """Assert cancel intent for one backend."""
     assert store.is_cancel_requested(session_id) is expected
 
 
 def _prepare_cancel_state(store: SessionStore, *, session_id: str, state: str) -> None:
-    """Prepare one lifecycle state before exercising the cancel signal."""
+    """Prepare a lifecycle state before exercising cancel intent."""
     if state == "missing":
         return
 
@@ -433,7 +467,7 @@ def _prepare_cancel_state(store: SessionStore, *, session_id: str, state: str) -
 
 
 def _exercise_cancel_signal(store: SessionStore, *, session_id: str, state: str) -> dict[str, object]:
-    """Apply one cancel request and return the resulting public snapshot."""
+    """Apply cancel intent once and return the resulting snapshot."""
     _prepare_cancel_state(store, session_id=session_id, state=state)
     if state == "already_canceled":
         store.request_cancel(session_id)
@@ -530,6 +564,74 @@ def test_session_store_progress_parity_matches_file_backed_behavior_across_lifec
     assert postgres_store.session_exists(session_id) is True
     assert file_snapshot["session"] == metadata.to_dict()
     assert file_snapshot["progress"] == progress.to_dict()
+    assert postgres_snapshot == file_snapshot
+
+
+@pytest.mark.parametrize(
+    ("state", "include_progress", "include_results", "cancel_requested"),
+    [
+        ("running", True, True, False),
+        ("completed", True, True, False),
+        ("failed", True, True, False),
+        ("cancelled", True, True, True),
+        ("running", False, False, False),
+    ],
+)
+def test_session_store_snapshot_parity_preserves_frontend_visible_shape(
+    state: str,
+    include_progress: bool,
+    include_results: bool,
+    cancel_requested: bool,
+    file_store: FileSessionStore,
+    postgres_store: PostgresSessionStore,
+) -> None:
+    """File and PostgreSQL stores should expose the same public snapshot contract.
+
+    Alerts are asserted as a stable list-shaped snapshot field here. Populated
+    alert rows are covered at the alert-store and API-route layers because
+    alerts have their own backend selector rather than belonging to the core
+    session store tables.
+    """
+    session_id = f"session-parity-snapshot-{state}-{'partial' if not include_progress else 'full'}"
+    metadata, progress = _state_payloads(session_id)[state]
+    results = (
+        [
+            _result(
+                session_id,
+                "video_metrics",
+                window_index=1,
+                timestamp_utc="2026-07-01 10:00:01",
+            ),
+            _result(
+                session_id,
+                "video_blur",
+                window_index=2,
+                timestamp_utc="2026-07-01 10:00:02",
+            ),
+        ]
+        if include_results
+        else []
+    )
+
+    file_snapshot = _persist_frontend_visible_snapshot_state(
+        file_store,
+        metadata=metadata,
+        progress=progress if include_progress else None,
+        results=results,
+        cancel_requested=cancel_requested,
+    )
+    postgres_snapshot = _persist_frontend_visible_snapshot_state(
+        postgres_store,
+        metadata=metadata,
+        progress=progress if include_progress else None,
+        results=results,
+        cancel_requested=cancel_requested,
+    )
+
+    _assert_frontend_visible_snapshot_contract(file_snapshot, results=results)
+    _assert_frontend_visible_snapshot_contract(postgres_snapshot, results=results)
+    assert file_store.is_cancel_requested(session_id) is cancel_requested
+    assert postgres_store.is_cancel_requested(session_id) is cancel_requested
     assert postgres_snapshot == file_snapshot
 
 
