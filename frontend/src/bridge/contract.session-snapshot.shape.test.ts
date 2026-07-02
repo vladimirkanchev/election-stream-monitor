@@ -111,7 +111,11 @@ describe("bridge contract session snapshot shape compatibility", () => {
       "video_metrics",
       "video_blur",
     ]);
-    expect(normalized.latest_result).toEqual(normalized.results.at(-1) ?? null);
+    expect(normalized.latest_result).toEqual(
+      normalized.results.length > 0
+        ? normalized.results[normalized.results.length - 1]
+        : null,
+    );
     expect(normalized.latest_result?.payload).toMatchObject({
       source_name: "segment_0001.ts",
       blur_score: 0.91,

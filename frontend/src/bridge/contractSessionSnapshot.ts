@@ -42,7 +42,7 @@ export function normalizeSessionSnapshot(value: unknown): SessionSnapshot {
     progress: normalizeSessionProgress(value["progress"]),
     alerts: Array.isArray(value["alerts"]) ? value["alerts"].filter(isAlertEvent) : [],
     results,
-    latest_result: results.at(-1) ?? null,
+    latest_result: results.length > 0 ? results[results.length - 1] : null,
   };
 }
 
