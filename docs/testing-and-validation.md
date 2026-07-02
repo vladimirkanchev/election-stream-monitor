@@ -1714,6 +1714,8 @@ python -m venv .venv
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback
 without making it the required branch gate yet.
+The repo's `typecheck` dependency group installs `pyright[nodejs]`, so this
+path does not rely on a separately installed system `node` binary.
 
 Focused alert-query pyright slice:
 
