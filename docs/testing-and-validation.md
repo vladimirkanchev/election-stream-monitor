@@ -193,9 +193,11 @@ Current focused ownership map:
 - `tests/test_session_store_file.py`
   - file-backed session-store parity with `session_io`
 - `tests/test_session_store_parity.py`
-  - shared file-store versus PostgreSQL-store parity for snapshot shape,
-  latest-only `progress`, ordered `results`, `latest_result` derivation, and
-  cancel-intent behavior
+  - shared file-store versus PostgreSQL-store parity for missing-session
+    empty-shape reads, metadata-only snapshots, latest-only `progress`,
+    ordered `results`, `latest_result` derivation, and cancel-intent behavior
+  - uses the shared in-memory PostgreSQL-like adapter double by default, so
+    this lane stays fast and storage-neutral
 - `tests/test_api_boundary_sessions_read.py`
   - HTTP-visible session snapshot regression coverage so outer keys,
   null-vs-empty behavior, ordered `results`, and derived `latest_result`
@@ -207,9 +209,8 @@ Current focused ownership map:
 - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
   - malformed-row tolerance and proof that bridge reads `latest_result` from
   the final valid ordered result instead of trusting a stale top-level row
-- current migration reading:
-  these lanes prove snapshot parity across the current read path, but they do
-  not by themselves prove that the full session-store migration is complete
+- these lanes prove snapshot parity across the current read path, but they do
+  not by themselves prove that the full session-store backend evolution is complete
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
   and explicit proof that `postgres` is built only on deliberate opt-in
@@ -1822,7 +1823,7 @@ Backend/API contract checks:
 - `tests/test_session_store_postgres.py`
   - PostgreSQL cancel current-state behavior
 - `tests/test_session_store_parity.py`
-  - file/PostgreSQL parity for cancel semantics
+  - file/PostgreSQL parity for cancel semantics and public snapshot stability
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
   - detector-catalog CLI output parity with the canonical registry

@@ -78,8 +78,13 @@ Current persistence contract, kept short here:
   `ESM_SESSION_STORE_BACKEND=postgres`.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only
   after explicit PostgreSQL selection; it should not poison the file default.
+- `progress` is latest-only state, not progress history.
+- a metadata-only snapshot is valid:
+  `session` may be present while `progress` is still `null`
 - `results` and derived `latest_result` follow append order, not detector
   timestamp ordering.
+- low-level cancel intent stays outside the public snapshot payload even
+  though it is part of the broader `SessionStore` contract.
 - The detached worker and the parent process must resolve the same session
   store backend.
 - Alerts, replay keys, worker logs, and temp media are still separate seams.
@@ -609,6 +614,14 @@ Field relationship rules are stable:
 | Cancelled session | The snapshot remains readable after terminal cancellation. `session.status` and usually `progress.status` are `cancelled`; `progress.status_reason` may explain the terminal settlement, and committed `results` / `alerts` remain readable. |
 | Partially populated session | This is valid during startup, recovery, or tolerant degraded reads. `session` may be present while `progress` is `null`; `alerts` and `results` still stay list-shaped; `latest_result` stays aligned with committed ordered `results`, not inferred from progress fields. |
 
+Practical read-model notes:
+
+- repeated missing-session reads should still produce the same empty snapshot
+  shape
+- tolerant degraded reads may drop malformed progress or result rows, but they
+  should keep `alerts` and `results` list-shaped and `latest_result` aligned
+  with the final valid result row
+
 Storage-backend freedom is still intentionally preserved:
 
 - the contract does not freeze file names, table names, SQL layout, or worker
@@ -968,6 +981,8 @@ Current coverage emphasis:
 - `tests/test_session_store_contract.py`, `tests/test_session_store_file.py`,
   `tests/test_session_store_postgres.py`, and
   `tests/test_session_store_parity.py` protect backend-level cancel semantics
+  plus metadata-only snapshots, latest-only progress, append-ordered results,
+  and storage-neutral snapshot parity
 - `tests/test_session_service.py` and
   `tests/test_session_service_read_cancel.py` protect shared-service allow,
   reject, and transient-summary behavior

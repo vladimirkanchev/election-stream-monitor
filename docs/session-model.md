@@ -243,6 +243,8 @@ default.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only in
   explicit PostgreSQL mode; it should not silently replace or break the file default.
 - Progress is a latest-only read model, not an event history.
+- A metadata-only snapshot is valid: `session` may exist while `progress`
+  remains `null`.
 - Results are append-ordered history, and `latest_result` is derived from the
   final valid ordered row.
 - Cancel intent is bounded durable coordination state:
@@ -293,10 +295,14 @@ Current write behavior is:
   - overwrite-style metadata snapshot
 - `progress.json`
   - overwrite-style latest progress snapshot
+  - repeated writes replace the current durable read model rather than adding
+    progress history
 - `alerts.jsonl`
   - append-only alert event log
 - `results.jsonl`
   - append-only detector result event log
+  - append order stays authoritative even when detector timestamps match or
+    move backward
 
 Alert writes now go through the same narrow seam as alert reads:
 `src/session_io.py::append_alert(...)` remains the compatibility entrypoint,
@@ -552,6 +558,7 @@ meaning, not only of one backend implementation:
 - `alerts` and `results` should stay list-shaped even when empty
 - `latest_result` should always match the last valid ordered row in `results`
   when one exists
+- low-level cancel intent stays outside the public snapshot payload
 - committed `results` and `alerts` remain readable after terminal
   `completed`, `failed`, or `cancelled` settlement
 
