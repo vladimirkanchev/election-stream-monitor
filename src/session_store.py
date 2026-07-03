@@ -1,10 +1,8 @@
-"""Storage contract for monitoring-session state.
+"""Storage contract for durable monitoring-session state.
 
-`SessionStore` is the storage contract for session metadata, latest progress,
-ordered detector results, and cancel intent. The file-backed implementation is
-still the runtime default; PostgreSQL is available only through explicit
-opt-in. Broader runtime artifacts such as logs, temp media, and HTTP/HLS replay
-keys stay outside this contract.
+`SessionStore` covers session metadata, latest progress, ordered detector
+results, and cancel intent. It does not own alerts, logs, temp media, or
+HTTP/HLS replay state.
 """
 
 from __future__ import annotations
@@ -55,15 +53,7 @@ class SessionProgressPayload(TypedDict):
 
 
 class ResultEventPayload(TypedDict):
-    """Append-ordered detector result row.
-
-    The durable public row stays compact: stable session id, stable detector
-    id, and raw detector payload JSON. Stores own ordering internally;
-    detectors may optionally include shared timing/source hints inside
-    `payload`, but the contract does not require every detector to populate the
-    same nested keys. `latest_result` is derived from the final valid ordered
-    row rather than stored independently.
-    """
+    """Stored detector result row exposed through snapshot and history reads."""
 
     session_id: str
     detector_id: str
@@ -71,7 +61,7 @@ class ResultEventPayload(TypedDict):
 
 
 class SessionSnapshotPayload(TypedDict):
-    """Stable session read model consumed by API, CLI, bridge, and tests."""
+    """Stable session read model shared by API, CLI, bridge, and tests."""
 
     session: SessionMetadataPayload | None
     progress: SessionProgressPayload | None
@@ -83,20 +73,12 @@ class SessionSnapshotPayload(TypedDict):
 def build_latest_result_payload(
     results: list[ResultEventPayload],
 ) -> ResultEventPayload | None:
-    """Return the latest result from append-ordered history.
-
-    Result history is append-only: callers pass already ordered rows, and the
-    latest item is always the final valid row rather than a timestamp-derived
-    choice.
-    """
+    """Return the last valid row from append-ordered result history."""
     return results[-1] if results else None
 
 
 def build_empty_session_snapshot_payload() -> SessionSnapshotPayload:
-    """Return the low-level snapshot shape for missing or unreadable sessions.
-
-    Services translate `session is None` into user-facing not-found behavior.
-    """
+    """Return the canonical empty snapshot shape."""
     return {
         "session": None,
         "progress": None,
@@ -107,7 +89,7 @@ def build_empty_session_snapshot_payload() -> SessionSnapshotPayload:
 
 
 def is_missing_session_snapshot(snapshot: SessionSnapshotPayload) -> bool:
-    """Return whether the snapshot has no durable session metadata."""
+    """Return whether a snapshot has no durable session metadata."""
     return snapshot["session"] is None
 
 
@@ -118,10 +100,9 @@ def build_session_snapshot_payload(
     alerts: list[dict[str, object]],
     results: list[ResultEventPayload],
 ) -> SessionSnapshotPayload:
-    """Build a snapshot from validated durable session rows.
+    """Build a snapshot from validated durable rows.
 
-    Results must already be in append order. `latest_result` is derived from
-    the final result row; progress is the latest payload, not history.
+    Results must already be in append order, and progress is latest-state only.
     """
     return {
         "session": session,
@@ -133,11 +114,7 @@ def build_session_snapshot_payload(
 
 
 class SessionStoreReader(Protocol):
-    """Read contract for durable session state.
-
-    Readers expose snapshot semantics without leaking backend layout or file
-    names.
-    """
+    """Read contract for durable session state."""
 
     def session_exists(self, session_id: str) -> bool:
         """Return whether durable metadata exists for the session."""
@@ -146,26 +123,17 @@ class SessionStoreReader(Protocol):
     def read_snapshot(self, session_id: str) -> SessionSnapshotPayload:
         """Return the stable snapshot shape for one session.
 
-        Implementations return the empty snapshot shape for missing or
-        malformed durable data. Unexpected backend failures may still surface.
+        Missing or unreadable durable data should degrade to the empty shape.
         """
         ...
 
     def read_results(self, session_id: str) -> list[ResultEventPayload]:
-        """Return validated detector results in append order.
-
-        PostgreSQL implementations should order by a monotonic field, not only
-        by timestamp.
-        """
+        """Return validated detector results in append order."""
         ...
 
 
 class SessionStoreWriter(Protocol):
-    """Write contract for durable session lifecycle data.
-
-    Lifecycle-specific operations such as start and finalize stay in
-    runner/service code, while result ordering remains a backend concern.
-    """
+    """Write contract for durable session state."""
 
     def write_metadata(self, metadata: SessionMetadata) -> None:
         """Persist the authoritative session metadata payload."""
@@ -174,8 +142,8 @@ class SessionStoreWriter(Protocol):
     def write_progress(self, progress: SessionProgress) -> None:
         """Persist the latest progress payload for one session.
 
-        This replaces the previous progress read model for the same session id
-        instead of appending a progress-history stream.
+        Stores replace the current read model rather than appending progress
+        history. Freshness checks stay above the storage layer.
         """
         ...
 
@@ -185,22 +153,10 @@ class SessionStoreWriter(Protocol):
 
 
 class SessionStoreCancellationControl(Protocol):
-    """Minimal runtime-control contract for cooperative session cancellation.
-
-    This stays intentionally small: one idempotent write method and one cheap
-    boolean read method. The contract records current cancel intent without
-    turning cancellation into a broader command or event framework. Public
-    request validation and transient `cancelling` responses stay above this
-    contract in service and route code.
-    """
+    """Minimal contract for durable cooperative-cancel state."""
 
     def request_cancel(self, session_id: str) -> None:
-        """Persist cancel intent for one session.
-
-        The low-level contract is intentionally tolerant and idempotent. Route
-        and service layers still own lifecycle validation and missing-session
-        behavior.
-        """
+        """Persist cancel intent for one session."""
         ...
 
     def is_cancel_requested(self, session_id: str) -> bool:
@@ -214,9 +170,4 @@ class SessionStore(
     SessionStoreCancellationControl,
     Protocol,
 ):
-    """Combined session-store contract for concrete backends.
-
-    Durable session reads and writes live here together with a narrow cancel
-    signal. Alert storage, logs, temp media, and HTTP/HLS replay keys remain
-    outside this contract.
-    """
+    """Combined contract implemented by concrete session-store backends."""

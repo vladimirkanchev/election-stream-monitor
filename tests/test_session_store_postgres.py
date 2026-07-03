@@ -1,4 +1,4 @@
-"""Focused tests for the PostgreSQL session-store adapter and bootstrap."""
+"""Focused contract and bootstrap tests for the PostgreSQL session-store adapter."""
 
 from __future__ import annotations
 
@@ -10,19 +10,12 @@ import pytest
 from session_models import ResultEvent, SessionMetadata, SessionProgress
 from session_store import SESSION_SNAPSHOT_KEYS, SessionStore, build_session_snapshot_payload
 from session_store_postgres import (
-    POSTGRES_SESSION_CANCEL_EXISTS_SQL,
     POSTGRES_SESSION_CANCEL_FIELDS,
     POSTGRES_SESSION_CANCEL_TABLE_NAME,
     POSTGRES_SESSION_CANCEL_TABLE_SQL,
-    POSTGRES_SESSION_CANCEL_UPSERT_SQL,
     POSTGRES_SESSION_METADATA_FIELDS,
     POSTGRES_SESSION_METADATA_TABLE_NAME,
     POSTGRES_SESSION_METADATA_TABLE_SQL,
-    POSTGRES_SESSION_METADATA_EXISTS_SQL,
-    POSTGRES_SESSION_METADATA_SELECT_SQL,
-    POSTGRES_SESSION_METADATA_UPSERT_SQL,
-    POSTGRES_SESSION_PROGRESS_SELECT_SQL,
-    POSTGRES_SESSION_PROGRESS_UPSERT_SQL,
     POSTGRES_SESSION_RESULTS_INSERT_SQL,
     POSTGRES_SESSION_RESULTS_SELECT_SQL,
     PostgresSessionStore,
@@ -47,6 +40,7 @@ from session_store_postgres import (
 from session_store_postgres_config import PostgresSessionStoreSettings
 from tests import session_store_postgres_test_support
 from tests.session_store_postgres_test_support import (
+    InMemoryPostgresSessionStoreConnection,
     REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED,
     build_isolated_postgres_session_store,
     bootstrap_isolated_postgres_session_store,
@@ -62,7 +56,7 @@ def _metadata(
     status: str = "running",
     input_path: str = "/tmp/clip.mp4",
 ) -> SessionMetadata:
-    """Build a compact metadata object for adapter tests."""
+    """Build representative metadata for adapter tests."""
     return SessionMetadata(
         session_id=session_id,
         mode="video_files",
@@ -73,7 +67,7 @@ def _metadata(
 
 
 def _running_progress(session_id: str, *, processed_count: int) -> SessionProgress:
-    """Build a compact progress object for adapter tests."""
+    """Build representative progress for adapter tests."""
     return SessionProgress(
         session_id=session_id,
         status="running",
@@ -99,13 +93,13 @@ def _result(session_id: str, detector_id: str, window_index: int) -> ResultEvent
 
 
 def _assert_snapshot_contract_shape(snapshot: dict[str, object]) -> None:
-    """Assert the public snapshot key set shared by all store backends."""
+    """Assert the stable public snapshot key set."""
     assert tuple(snapshot.keys()) == SESSION_SNAPSHOT_KEYS
     assert set(snapshot) == set(SESSION_SNAPSHOT_KEYS)
 
 
 def _assert_store_round_trip_contract(store: SessionStore, session_id: str) -> None:
-    """Assert the core store behavior every backend must preserve."""
+    """Assert the core round-trip contract shared by all backends."""
     metadata = _metadata(session_id, status="running")
     progress = _running_progress(session_id, processed_count=2)
     first = _result(session_id, "video_metrics", 1)
@@ -173,165 +167,6 @@ class RecordingConnection:
         self.commit_count = getattr(self, "commit_count", 0) + 1
 
 
-class MetadataStoreCursor:
-    """Cursor double that emulates adapter reads and writes in memory."""
-
-    def __init__(self, connection: "MetadataStoreConnection") -> None:
-        self._connection = connection
-        self._fetchone_result: object | None = None
-        self._fetchall_result: list[object] = []
-
-    def __enter__(self) -> "MetadataStoreCursor":
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: Any,
-    ) -> None:
-        return None
-
-    def execute(self, query: str, params: object | None = None) -> object:
-        self._connection.executed_statements.append((query, params))
-        if query == POSTGRES_SESSION_METADATA_EXISTS_SQL:
-            session_id = cast(tuple[str], params)[0]
-            self._fetchone_result = (1,) if session_id in self._connection.metadata_rows else None
-            return object()
-        if query == POSTGRES_SESSION_METADATA_SELECT_SQL:
-            session_id = cast(tuple[str], params)[0]
-            self._fetchone_result = self._connection.metadata_rows.get(session_id)
-            return object()
-        if query == POSTGRES_SESSION_METADATA_UPSERT_SQL:
-            session_id, mode, input_path, selected_detectors, status = cast(
-                tuple[object, object, object, object, object],
-                params,
-            )
-            self._connection.metadata_rows[str(session_id)] = {
-                "session_id": str(session_id),
-                "mode": mode,
-                "input_path": str(input_path),
-                "selected_detectors": list(cast(list[str], selected_detectors)),
-                "status": status,
-            }
-            self._fetchone_result = None
-            return object()
-        if query == POSTGRES_SESSION_PROGRESS_SELECT_SQL:
-            session_id = cast(tuple[str], params)[0]
-            self._fetchone_result = self._connection.progress_rows.get(session_id)
-            return object()
-        if query == POSTGRES_SESSION_PROGRESS_UPSERT_SQL:
-            (
-                session_id,
-                status,
-                processed_count,
-                total_count,
-                current_item,
-                latest_result_detector,
-                alert_count,
-                last_updated_utc,
-                latest_result_detectors,
-                status_reason,
-                status_detail,
-            ) = cast(
-                tuple[object, object, object, object, object, object, object, object, object, object, object],
-                params,
-            )
-            self._connection.progress_rows[str(session_id)] = {
-                "session_id": str(session_id),
-                "status": status,
-                "processed_count": processed_count,
-                "total_count": total_count,
-                "current_item": current_item,
-                "latest_result_detector": latest_result_detector,
-                "alert_count": alert_count,
-                "last_updated_utc": str(last_updated_utc),
-                "latest_result_detectors": list(cast(list[str], latest_result_detectors)),
-                "status_reason": status_reason,
-                "status_detail": status_detail,
-            }
-            self._fetchone_result = None
-            return object()
-        if query == POSTGRES_SESSION_CANCEL_EXISTS_SQL:
-            session_id = cast(tuple[str], params)[0]
-            self._fetchone_result = (
-                (1,)
-                if self._connection.cancel_rows.get(session_id) is True
-                else None
-            )
-            return object()
-        if query == POSTGRES_SESSION_CANCEL_UPSERT_SQL:
-            session_id, cancel_requested = cast(tuple[object, object], params)
-            self._connection.cancel_rows[str(session_id)] = bool(cancel_requested)
-            self._fetchone_result = None
-            return object()
-        if query == POSTGRES_SESSION_RESULTS_SELECT_SQL:
-            session_id = cast(tuple[str], params)[0]
-            self._fetchone_result = None
-            self._fetchall_result = [
-                {
-                    "id": row["id"],
-                    "session_id": row["session_id"],
-                    "detector_id": row["detector_id"],
-                    "payload": row.get("payload_json", row.get("payload")),
-                }
-                for row in self._connection.result_rows
-                if row["session_id"] == session_id
-            ]
-            return object()
-        if query == POSTGRES_SESSION_RESULTS_INSERT_SQL:
-            (
-                session_id,
-                detector_id,
-                detector_name,
-                event_timestamp_utc,
-                payload_json,
-            ) = cast(
-                tuple[object, object, object, object, object],
-                params,
-            )
-            self._connection.result_sequence += 1
-            self._connection.result_rows.append(
-                {
-                    "id": self._connection.result_sequence,
-                    "session_id": str(session_id),
-                    "detector_id": str(detector_id),
-                    "detector_name": detector_name,
-                    "event_timestamp_utc": event_timestamp_utc,
-                    "payload_json": payload_json,
-                }
-            )
-            self._fetchone_result = None
-            self._fetchall_result = []
-            return object()
-        raise AssertionError(f"Unexpected PostgreSQL adapter query: {query}")
-
-    def fetchone(self) -> object | None:
-        return self._fetchone_result
-
-    def fetchall(self) -> list[object]:
-        return self._fetchall_result
-
-
-class MetadataStoreConnection:
-    """In-memory connection double for PostgreSQL adapter behavior tests."""
-
-    def __init__(self) -> None:
-        self.metadata_rows: dict[str, object] = {}
-        self.progress_rows: dict[str, object] = {}
-        self.cancel_rows: dict[str, bool] = {}
-        self.result_rows: list[dict[str, object]] = []
-        self.result_sequence = 0
-        self.executed_statements: list[tuple[str, object | None]] = []
-        self.commit_count = 0
-
-    def cursor(self) -> MetadataStoreCursor:
-        return MetadataStoreCursor(self)
-
-    def commit(self) -> None:
-        self.commit_count += 1
-
-
 class FakePsycopgModule:
     """Small `psycopg`-shaped double for connection-path tests."""
 
@@ -356,7 +191,7 @@ class FakePsycopgModule:
 
 
 class MidSchemaFailureCursor:
-    """Cursor double that fails mid-bootstrap to prove commit behavior."""
+    """Cursor double that fails during bootstrap to prove commit behavior."""
 
     def __init__(self) -> None:
         self.calls = 0
@@ -380,7 +215,7 @@ class MidSchemaFailureCursor:
 
 
 class MidSchemaFailureConnection:
-    """Connection double that surfaces a mid-bootstrap failure before commit."""
+    """Connection double that surfaces bootstrap failure before commit."""
 
     def __init__(self) -> None:
         self.committed = False
@@ -398,7 +233,7 @@ def _postgres_settings(
     database_url: str | None = VALID_POSTGRES_SESSION_URL,
     auto_create_tables: bool = False,
 ) -> PostgresSessionStoreSettings:
-    """Build compact bootstrap settings for focused PostgreSQL tests."""
+    """Build bootstrap settings for focused PostgreSQL tests."""
     return PostgresSessionStoreSettings(
         database_url=database_url,
         auto_create_tables=auto_create_tables,
@@ -507,7 +342,7 @@ def test_postgres_session_store_skeleton_keeps_only_injected_connection_state() 
 
 def test_postgres_session_store_missing_metadata_keeps_empty_snapshot_contract() -> None:
     """Missing metadata should keep the stable empty snapshot shape."""
-    store = PostgresSessionStore(MetadataStoreConnection())
+    store = PostgresSessionStore(InMemoryPostgresSessionStoreConnection())
 
     assert store.session_exists("session-missing") is False
     assert store.is_cancel_requested("session-missing") is False
@@ -522,15 +357,27 @@ def test_postgres_session_store_missing_metadata_keeps_empty_snapshot_contract()
 
 
 def test_postgres_session_store_preserves_storage_neutral_round_trip_contract() -> None:
-    """The fake DB adapter should satisfy the store contract without SQL assertions."""
-    store = PostgresSessionStore(MetadataStoreConnection())
+    """The shared SQL-aware fake should satisfy the storage-neutral store contract."""
+    store = PostgresSessionStore(InMemoryPostgresSessionStoreConnection())
 
     _assert_store_round_trip_contract(store, "session-postgres-contract-parity")
 
 
+def test_in_memory_postgres_session_store_fake_rejects_unexpected_sql() -> None:
+    """The default fake should fail loudly when adapter SQL drifts unexpectedly."""
+    connection = InMemoryPostgresSessionStoreConnection()
+
+    with connection.cursor() as cursor:
+        with pytest.raises(
+            AssertionError,
+            match="Unexpected PostgreSQL adapter query in test double",
+        ):
+            cursor.execute("SELECT now()")
+
+
 def test_postgres_session_store_round_trips_cancel_intent() -> None:
     """Cancel writes should read back as current-state runtime control."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
 
     assert store.is_cancel_requested("session-postgres-cancel") is False
@@ -543,7 +390,7 @@ def test_postgres_session_store_round_trips_cancel_intent() -> None:
 
 def test_postgres_session_store_request_cancel_stays_tolerant_without_metadata() -> None:
     """Low-level cancel intent should not require a durable metadata row."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
 
     store.request_cancel("session-postgres-missing-metadata")
@@ -554,7 +401,7 @@ def test_postgres_session_store_request_cancel_stays_tolerant_without_metadata()
 
 def test_postgres_session_store_request_cancel_is_idempotent_current_state() -> None:
     """Repeated cancel writes should keep one stable current-state signal."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     session_id = "session-postgres-cancel-repeat"
 
@@ -568,7 +415,7 @@ def test_postgres_session_store_request_cancel_is_idempotent_current_state() -> 
 
 def test_postgres_session_store_metadata_round_trip_preserves_snapshot_shape() -> None:
     """Metadata writes should rebuild the stable snapshot shape."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     metadata = _metadata("session-postgres-round-trip", status="running")
 
@@ -587,7 +434,7 @@ def test_postgres_session_store_metadata_round_trip_preserves_snapshot_shape() -
 
 def test_postgres_session_store_write_metadata_upserts_existing_session_row() -> None:
     """Repeated metadata writes should replace the authoritative session row."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     first = _metadata("session-postgres-upsert", status="pending", input_path="/tmp/first.mp4")
     second = _metadata("session-postgres-upsert", status="running", input_path="/tmp/second.mp4")
@@ -602,7 +449,7 @@ def test_postgres_session_store_write_metadata_upserts_existing_session_row() ->
 
 def test_postgres_session_store_write_progress_persists_latest_progress_snapshot() -> None:
     """Progress writes should populate the latest progress snapshot for one session."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     metadata = _metadata("session-postgres-progress")
     progress = _running_progress(metadata.session_id, processed_count=1)
@@ -622,7 +469,7 @@ def test_postgres_session_store_write_progress_persists_latest_progress_snapshot
 
 def test_postgres_session_store_write_progress_keeps_latest_only_semantics() -> None:
     """Repeated progress writes should replace the latest row instead of appending history."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     metadata = _metadata("session-postgres-progress-latest")
     first = _running_progress(metadata.session_id, processed_count=1)
@@ -641,7 +488,7 @@ def test_postgres_session_store_write_progress_keeps_latest_only_semantics() -> 
 
 def test_postgres_session_store_append_result_preserves_read_order_and_latest_result() -> None:
     """Ordered appends should drive result reads and `latest_result`."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     metadata = _metadata("session-postgres-results")
     first = _result(metadata.session_id, "video_metrics", 0)
@@ -660,7 +507,7 @@ def test_postgres_session_store_append_result_preserves_read_order_and_latest_re
 
 def test_postgres_session_store_append_result_projects_shared_query_fields() -> None:
     """Stored rows should keep a few queryable hints without flattening the payload."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     metadata = _metadata("session-postgres-result-columns")
     result = ResultEvent(
@@ -692,7 +539,7 @@ def test_postgres_session_store_append_result_projects_shared_query_fields() -> 
 
 def test_postgres_session_store_keeps_append_order_when_timestamps_match_or_rows_arrive_unsorted() -> None:
     """Append order should come from durable row ids, not timestamp or fetch order."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     metadata = _metadata("session-postgres-same-timestamp-order")
     first = ResultEvent(
         session_id=metadata.session_id,
@@ -730,7 +577,7 @@ def test_postgres_session_store_keeps_append_order_when_timestamps_match_or_rows
 
 def test_postgres_session_store_assembles_full_snapshot_contract_shape() -> None:
     """Snapshots should match the file-backed public shape from durable rows."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     store = PostgresSessionStore(connection)
     metadata = _metadata("session-postgres-full-snapshot", status="running")
     progress = _running_progress(metadata.session_id, processed_count=2)
@@ -755,7 +602,7 @@ def test_postgres_session_store_assembles_full_snapshot_contract_shape() -> None
 
 def test_postgres_session_store_read_results_tolerates_malformed_rows() -> None:
     """Malformed result rows should be skipped while valid rows keep append order."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     metadata = _metadata("session-postgres-results-malformed")
     valid_first = _result(metadata.session_id, "video_metrics", 0).to_dict()
     valid_second = _result(metadata.session_id, "video_blur", 1).to_dict()
@@ -787,7 +634,7 @@ def test_postgres_session_store_read_results_tolerates_malformed_rows() -> None:
 
 def test_postgres_session_store_session_exists_tracks_metadata_presence_not_validity() -> None:
     """Known-session checks should follow metadata-row presence even if unreadable."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     connection.metadata_rows["session-postgres-malformed"] = {
         "session_id": "session-postgres-malformed",
         "mode": "video_files",
@@ -809,7 +656,7 @@ def test_postgres_session_store_session_exists_tracks_metadata_presence_not_vali
 
 def test_postgres_session_store_snapshot_tolerates_malformed_progress_rows() -> None:
     """Malformed progress rows should degrade to `progress is None` without hiding metadata."""
-    connection = MetadataStoreConnection()
+    connection = InMemoryPostgresSessionStoreConnection()
     metadata = _metadata("session-postgres-progress-malformed")
     connection.metadata_rows[metadata.session_id] = metadata.to_dict()
     connection.progress_rows[metadata.session_id] = {
