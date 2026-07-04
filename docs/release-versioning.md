@@ -2,10 +2,12 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.5.1`
+Current public stage: `0.5.2`
 
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
-- `0.5.1` is the workflow and AI-harness follow-up on top of that stage
+- `0.5.1` was the workflow and AI-harness follow-up on top of that stage
+- `0.5.2` adds session-store hardening and stream/runtime follow-up work on
+  top of that stage
 
 ## Current Approach
 
@@ -70,5 +72,5 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- current `0.5.1` work improves workflow discipline and reviewability more than
-  product surface area
+- current `0.5.2` work improves persistence/runtime confidence and
+  stream-operational hardening without changing the broader product stage
