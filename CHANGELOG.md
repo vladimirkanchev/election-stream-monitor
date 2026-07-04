@@ -7,6 +7,22 @@ stage.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-04
+
+Session-store and stream/runtime hardening follow-up release.
+
+Highlights:
+
+- shared `SessionStore` contract coverage is tighter across file-backed and
+  PostgreSQL-backed session persistence, including latest-only progress,
+  append-ordered results, metadata-only snapshots, and cancel semantics
+- PostgreSQL session-store adapter/bootstrap coverage and the default
+  in-memory PostgreSQL-like test double are clearer and easier to maintain
+- session-store owning docs, contract docs, and validation guidance now align
+  more closely with the tested backend behavior
+- recent `api_stream` and HTTP/HLS hardening work is now reflected as current
+  runtime behavior rather than only older baseline feature notes
+
 ## [0.5.1] - 2026-06-14
 
 Workflow and AI-harness follow-up release.
