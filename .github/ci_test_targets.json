@@ -390,6 +390,7 @@
       "tests/test_api_stream_local_validation.py"
     ],
     "weekly_lifecycle": [
+      "tests/test_api_boundary_sessions_runtime.py",
       "tests/test_session_runner_lifecycle.py",
       "tests/test_session_runner_execution_local.py",
       "tests/test_session_runner_execution_api_stream.py",
