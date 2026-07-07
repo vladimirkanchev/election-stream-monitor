@@ -224,6 +224,9 @@ Current runtime note:
   the parent process
 - file-backed session storage remains the default runtime path
 - PostgreSQL session storage is still explicit opt-in
+- routine runtime integration should prove that agreement through the public
+  FastAPI session routes and detached-worker path, not through backend-specific
+  storage assertions
 
 ## Persistence contract
 
@@ -545,6 +548,11 @@ responses, Electron bridge mapping, and frontend session UX.
 - Frontend polling is intentionally tolerant of one-off read failures and keeps the last good session state instead of clearing the session immediately.
 - Frontend stop behavior should suppress duplicate in-flight cancel requests and prefer a stable ending/terminal state over repeated stop churn.
 - Once the UI has already settled into `completed`, the app suppresses another stop request rather than surfacing a late cancel-state failure from a request it no longer needs to send.
+
+This table is also the semantics owner for the minimum backend runtime
+integration lane: accepted start, first persisted readable snapshot, durable
+cancel delivery, and post-settlement terminal readability should be proven
+end to end without expanding into broad frontend or detector coverage.
 
 ### Snapshot population rules
 

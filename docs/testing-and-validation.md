@@ -85,6 +85,7 @@ Choose the smallest honest lane first.
 | --- | --- | --- | --- |
 | One clear seam such as detectors, alert rules, HLS, or docs/workflow helpers | Matching focused lane such as `just test-detectors`, `just test-alert-rules`, `just test-hls`, or `just docs-check` | Path-aware branch lanes and the protected `main` chain when the change reaches those areas | Focused runs do not prove neighboring seams stayed intact |
 | Multi-seam runtime work that crosses backend plus frontend/operator flow | `just test-fast` | Fast branch-feedback lanes such as `backend-tests`, `frontend-checkpoint`, and aggregate gates | Does not prove packaging smoke, full frontend production validation, or PR-only policy checks |
+| Detached-worker runtime persistence work across FastAPI, `session_service`, and durable session snapshots | `just test-session-runtime` only when the branch really changes that seam | Weekly `lifecycle-deep` lane | Slower and more timing-sensitive than routine fast local loops; still file-backed by design |
 | "Ready to push" confidence for ordinary day-to-day work | `just ci-local` | Required and advisory PR lanes | Still does not reproduce clean-runner setup, editable-install packaging checks, full frontend test/build, or GitHub event/branch-protection behavior |
 | Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk | `weekly-validation` | Too slow and environment-sensitive for routine local or PR use |
 
@@ -108,6 +109,9 @@ Recommended local command order for most day-to-day work:
   - use when the changed seam is already clear and you want the smallest honest lane
 - `just test-fast`
   - best default fast production-runtime lane when you want one honest fast runtime pass
+- `just test-session-runtime`
+  - use only when the branch changes detached-worker startup, FastAPI/session-service agreement, durable session snapshot timing, or backend-selection runtime behavior
+  - not a default edit-refresh loop; keep it for slower runtime-confidence passes
 - `just fixture-check`
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
@@ -123,6 +127,7 @@ Use weekly or manual-depth validation only when the change materially reaches:
 - real media or `ffmpeg` behavior
 - deeper `api_stream` lifecycle and recovery semantics
 - persisted session/lifecycle artifacts that only show up in longer runs
+- detached-worker runtime confidence you want rechecked in CI without promoting it into the protected PR lane
 - dependency or security audit work
 - live PostgreSQL backend or operator-flow confidence
 
@@ -1808,6 +1813,16 @@ Backend/API contract checks:
 - `tests/test_api_boundary_sessions_cancel.py`
   - session cancel-route status mapping
   - transient `cancelling` response before worker settlement
+- `tests/test_api_boundary_sessions_runtime.py`
+  - real FastAPI-to-detached-worker runtime integration over the public session
+    routes
+  - accepted pending metadata, honest early-read `session_not_found`
+    tolerance, first readable snapshot, terminal persistence, and durable
+    cancel settlement through the worker path
+  - routine proof that the parent process and detached worker stay aligned on
+    the default file-backed session-store runtime
+  - owned by the slower local `just test-session-runtime` helper and the
+    weekly `lifecycle-deep` CI lane, not the routine fast PR lanes
 - `tests/test_session_service_start.py`
   - shared start-session service behavior
 - `tests/test_session_service_worker.py`
@@ -1968,6 +1983,61 @@ Use that command first for worker-observability changes. It covers:
 - shared worker-launch behavior in `session_service.py`
 - the current API rule that diagnostics stay backend-owned
 - CLI-side worker failure logging behavior
+
+### Minimum Runtime Integration Contract
+
+Keep the slower runtime integration lane deliberately small and end-to-end. It
+should prove only that:
+
+- FastAPI `start-session` returns accepted pending session metadata
+- the detached worker later persists the first readable snapshot
+- FastAPI `read-session` sees the stable snapshot contract rather than
+  transport-local guesses
+- FastAPI `cancel-session` reaches the worker through durable cancel intent
+- terminal session state stays readable after worker settlement
+
+Keep the suite behavioral and narrow:
+
+- prove the parent-process API seam and detached-worker seam still meet
+- keep routine runtime coverage file-backed
+- treat PostgreSQL-like behavior as store-parity coverage
+- keep any live PostgreSQL runtime confidence as a separate opt-in smoke lane
+- use the slower detached-worker suite only in explicit lanes:
+  local `just test-session-runtime` when that seam changes, and weekly
+  `lifecycle-deep` for recurring CI confidence
+- do not expand the suite into detector, alert-rule, or frontend UX coverage
+- do not repeat store-parity or runner-internal assertions already covered by
+  focused tests
+
+Use this lane when you need proof that the real runtime chain still holds:
+
+- FastAPI accepts the session start request
+- `session_service.py` launches the detached worker with the active runtime
+  backend selection
+- the worker persists a readable snapshot that the parent process can later
+  read through the public session routes
+- durable cancel intent reaches that worker path and later settles to a stable
+  terminal snapshot
+
+Do not use this lane as a substitute for the cheaper focused seams:
+
+- use `tests/test_session_store_parity.py` for file versus PostgreSQL-like
+  store contract parity
+- use the split `tests/test_session_service_*.py` files for service-level
+  start/read/cancel and worker-launch behavior
+- use the split `tests/test_api_boundary_sessions_*.py` files for route
+  payload shape, status mapping, and structured API error behavior
+
+What this runtime lane does not prove:
+
+- real PostgreSQL runtime behavior
+- detector correctness, alert-rule correctness, or frontend UX behavior
+- every runner-internal state transition already covered by runner and store
+  suites
+- GitHub Actions trigger or protected-lane behavior
+
+Use [`session-model.md`](./session-model.md) for the lifecycle meaning behind
+early-read lag, cancel settlement, and durable terminal readability.
 
 ### Legacy Seam Replacement
 
