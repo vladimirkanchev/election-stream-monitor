@@ -345,7 +345,7 @@ boundary in mind:
 For current session-store migration work, use these as the smallest useful
 focused lanes before you reach for `just test-fast` or `just ci-local`:
 
-- session-store contract and file-default behavior:
+- start here for store parity and file-default behavior:
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -353,10 +353,19 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 .venv/bin/pytest -p no:cacheprovider \
 tests/test_session_store_contract.py \
 tests/test_session_store_file.py \
+tests/test_session_store_parity.py \
 tests/test_session_store_runtime.py -q
 ```
 
-- detached worker plus runtime-selection behavior:
+  Use this first when the change is mainly about durable session semantics:
+
+  - file-backed session storage is still the default
+  - PostgreSQL session storage still turns on only after explicit backend
+    selection plus valid PostgreSQL configuration
+  - file and PostgreSQL-like store behavior still agree on the shared contract
+
+- use runtime integration only when the detached worker path or parent/worker
+  backend agreement is part of the risk:
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -364,14 +373,17 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 .venv/bin/pytest -p no:cacheprovider \
 tests/test_session_service_worker.py \
 tests/test_session_cli_tooling.py \
+tests/test_api_boundary_sessions_runtime.py \
 tests/test_session_store_runtime.py -q
 ```
 
-  This focused lane is the first stop when you need to prove three things at
-  once:
+  This slower lane is the right next step when you need to prove three things
+  at once:
 
   - file-backed session storage is still the default
-  - PostgreSQL session storage is still explicit opt-in
+  - PostgreSQL session storage still turns on only after explicit backend
+    selection plus valid PostgreSQL configuration
+  - the detached worker and parent process still agree on the selected backend
   - explicit bad PostgreSQL config fails clearly instead of silently falling
     back in the worker path
 
@@ -388,7 +400,8 @@ tests/test_api_boundary_sessions_cancel.py -q
 
 - opt-in live PostgreSQL session-store smoke:
   - keep this out of normal local and PR validation
-  - use it only when you intentionally want real database confidence
+  - use it only when you intentionally want real database confidence after the
+    faster parity and runtime lanes already say the contract still holds
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -400,9 +413,16 @@ export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
 tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
 ```
 
+Practical lane order for this area:
+
+- use store parity first
+- add detached-worker runtime integration only when that runtime path changed
+- add live PostgreSQL smoke only when you need confidence in the real database
+  path itself
+
 There is not yet one dedicated `just` recipe for each of those seams. Until
 the repo grows those wrappers on purpose, prefer these direct focused commands
-over inventing a broader lane.
+over inventing a broader or slower lane.
 
 Useful focused examples:
 
