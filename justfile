@@ -137,7 +137,10 @@ test-real-media:
 # Slower detached-worker runtime lane for FastAPI/session persistence confidence.
 test-session-runtime:
     {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
-      tests/test_api_boundary_sessions_runtime.py
+      tests/test_session_service_worker.py \
+      tests/test_session_cli_tooling.py \
+      tests/test_api_boundary_sessions_runtime.py \
+      tests/test_session_store_runtime.py
 
 # Focused session-store contract and parity lane.
 test-session-store:

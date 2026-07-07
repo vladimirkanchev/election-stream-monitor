@@ -365,9 +365,9 @@ Current CI coverage audit for this area:
   contract checks for `main` PRs.
 - `tests/test_api_boundary_sessions_runtime.py` is also listed in the weekly
   lifecycle manifest and has a local helper, `just test-session-runtime`.
-  Because it is not marked `slow` or `e2e`, the broad backend PR selector may
-  collect it too; do not add another PR job for it. If the project later wants
-  this lane to be weekly/local only, make that an explicit marker-policy change.
+  It is now marked `slow`, so routine backend PR tests do not collect it.
+  Use `just test-session-runtime` locally or weekly lifecycle when you want
+  that deeper runtime confidence.
 - live PostgreSQL session-store smoke remains opt-in and should not be added
   to routine PR CI without a separate CI-expansion decision.
   Keep it manual or weekly until the project intentionally accepts service

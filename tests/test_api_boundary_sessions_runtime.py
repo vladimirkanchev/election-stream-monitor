@@ -29,6 +29,8 @@ from session_store_runtime import clear_default_session_store_cache
 from tests.api_boundary_sessions_test_support import session_not_found_payload
 from tests.api_boundary_test_support import request
 
+pytestmark = pytest.mark.slow
+
 POLL_INTERVAL_SEC = 0.05
 DEFAULT_SEGMENT_COUNT = 2
 CANCEL_TEST_SEGMENT_COUNT = 4000
