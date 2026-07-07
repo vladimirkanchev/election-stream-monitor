@@ -621,7 +621,7 @@ If a change affects API, CLI, persisted data, or bridge shape, start with
 
 ## Versioning And Releases
 
-- the project is now in an early `0.5.2` stage
+- the project is now in an early `0.6.0` stage
 - expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)

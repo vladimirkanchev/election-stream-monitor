@@ -2,12 +2,15 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.5.2`
+Current public stage: `0.6.0`
 
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
 - `0.5.1` was the workflow and AI-harness follow-up on top of that stage
 - `0.5.2` adds session-store hardening and stream/runtime follow-up work on
   top of that stage
+- `0.6.0` marks dual-backend persistence as a supported project stage: file
+  remains the default runtime path, while PostgreSQL is now a documented
+  supported option for session and alert persistence
 
 ## Current Approach
 
@@ -72,5 +75,5 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- current `0.5.2` work improves persistence/runtime confidence and
-  stream-operational hardening without changing the broader product stage
+- current `0.6.0` work broadens the supported persistence architecture while
+  keeping rollout defaults conservative and local-first
