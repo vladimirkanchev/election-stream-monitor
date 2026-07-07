@@ -131,6 +131,16 @@ Use weekly or manual-depth validation only when the change materially reaches:
 - dependency or security audit work
 - live PostgreSQL backend or operator-flow confidence
 
+For the current session-store branch work, keep that deeper lane modest on
+purpose:
+
+- do not add a nightly-only validation lane yet
+- do not add an OS or Python-version matrix just for this slice
+- do not turn file-backed versus PostgreSQL-backed coverage into a broad PR
+  matrix before the focused parity and runtime lanes stop being enough
+- treat broader CI depth here as later expansion work, not as routine branch
+  polish
+
 Local validation is intentionally incomplete. It cannot prove:
 
 - clean GitHub runner setup and dependency install behavior
@@ -345,16 +355,44 @@ boundary in mind:
 For current session-store migration work, use these as the smallest useful
 focused lanes before you reach for `just test-fast` or `just ci-local`:
 
+Current CI coverage audit for this area:
+
+- `backend-tests` already runs the normal non-`slow`, non-`e2e` Python tests,
+  so the store contract, file-store, parity, runtime-selection, service, CLI,
+  and PostgreSQL adapter unit coverage are already in the routine backend PR
+  lane when backend or contract changes wake it.
+- `test-and-build` owns the protected manifest-backed route/session-service
+  contract checks for `main` PRs.
+- `tests/test_api_boundary_sessions_runtime.py` is also listed in the weekly
+  lifecycle manifest and has a local helper, `just test-session-runtime`.
+  Because it is not marked `slow` or `e2e`, the broad backend PR selector may
+  collect it too; do not add another PR job for it. If the project later wants
+  this lane to be weekly/local only, make that an explicit marker-policy change.
+- live PostgreSQL session-store smoke remains opt-in and should not be added
+  to routine PR CI without a separate CI-expansion decision.
+  Keep it manual or weekly until the project intentionally accepts service
+  startup cost, database bootstrap ownership, and the extra failure surface in
+  ordinary branch feedback. Treat broader live-PostgreSQL automation as
+  follow-up work after the focused parity and runtime lanes stop being enough.
+
+Minimum required focused tests for this branch:
+
+- always keep the store contract and parity lane:
+  `just test-session-store`
+- add detached-worker runtime integration only when the branch changes
+  FastAPI start/read/cancel flow, worker startup timing, or parent/worker
+  backend agreement:
+  `tests/test_session_service_worker.py`,
+  `tests/test_session_cli_tooling.py`,
+  `tests/test_api_boundary_sessions_runtime.py`
+- rely on the existing protected docs and contract checks when the work is
+  docs-only or CI-contract-only; do not add a second session-store-specific CI
+  lane just to restate that confidence
+
 - start here for store parity and file-default behavior:
 
 ```bash
-cd /home/vlad/Projects/election-stream-monitor && \
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-.venv/bin/pytest -p no:cacheprovider \
-tests/test_session_store_contract.py \
-tests/test_session_store_file.py \
-tests/test_session_store_parity.py \
-tests/test_session_store_runtime.py -q
+just test-session-store
 ```
 
   Use this first when the change is mainly about durable session semantics:
@@ -400,6 +438,7 @@ tests/test_api_boundary_sessions_cancel.py -q
 
 - opt-in live PostgreSQL session-store smoke:
   - keep this out of normal local and PR validation
+  - do not promote it into the default protected PR lane in this branch
   - use it only when you intentionally want real database confidence after the
     faster parity and runtime lanes already say the contract still holds
 
@@ -420,9 +459,9 @@ Practical lane order for this area:
 - add live PostgreSQL smoke only when you need confidence in the real database
   path itself
 
-There is not yet one dedicated `just` recipe for each of those seams. Until
-the repo grows those wrappers on purpose, prefer these direct focused commands
-over inventing a broader or slower lane.
+The always-needed store parity lane and the detached-worker runtime lane now
+have dedicated `just` wrappers. Keep the remaining commands direct until the
+repo has a real reason to wrap them too.
 
 Useful focused examples:
 
