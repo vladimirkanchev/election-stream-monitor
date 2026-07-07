@@ -16,8 +16,8 @@ the migration inventory; see [architecture.md](./architecture.md),
 
 - sessions are the persisted contract between backend and frontend
 - session snapshots now read through the storage-neutral `SessionStore`
-- file-backed session persistence is still the file default
-- PostgreSQL session persistence is available only through explicit opt-in
+- session storage stays file-backed by default, with PostgreSQL available only
+  through explicit backend selection plus valid configuration
 - this document explains what session data means, not which module writes it
 - alert storage stays file-backed by default for this branch phase and can now
   switch to PostgreSQL
@@ -69,6 +69,15 @@ when the default file-backed session store is active. They describe the
 current file representation, not the whole contract by themselves. The durable
 contract is the session snapshot plus the `SessionStore` semantics described
 below.
+
+Even with explicit PostgreSQL session mode, some runtime artifacts still stay
+filesystem-backed in the current project stage:
+
+- `worker.log` stays a local detached-worker diagnostic artifact
+- `api_stream_seen_chunks.jsonl` stays a replay/de-dup coordination artifact
+- HTTP/HLS temp media files stay session-scoped processing inputs on disk
+- other temp-file and cleanup artifacts stay runtime-local rather than part of
+  the durable session snapshot
 
 ## What each file means
 
@@ -223,7 +232,8 @@ Current runtime note:
 - the detached worker inherits the same session-store runtime configuration as
   the parent process
 - file-backed session storage remains the default runtime path
-- PostgreSQL session storage is still explicit opt-in
+- PostgreSQL session storage turns on only after deliberate backend selection
+  and valid PostgreSQL bootstrap settings
 - routine runtime integration should prove that agreement through the public
   FastAPI session routes and detached-worker path, not through backend-specific
   storage assertions
@@ -242,7 +252,8 @@ default.
 - `SessionStore` owns durable session metadata, latest progress, ordered
   detector results, snapshot reads, known-session checks, and cancel intent.
 - File-backed session storage is still the runtime default.
-- PostgreSQL session storage is available only through explicit opt-in.
+- PostgreSQL session storage is available only through explicit backend
+  selection plus valid PostgreSQL bootstrap settings.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only in
   explicit PostgreSQL mode; it should not silently replace or break the file default.
 - Progress is a latest-only read model, not an event history.
@@ -510,9 +521,8 @@ for valid lifecycle transitions:
 - terminal states remain terminal and do not transition back into active work
 
 The low-level cancel-request helper is intentionally narrower than the route
-layer. It records cancel intent as a file-backed marker, while higher-level API
-and runner behavior decide whether cancellation is valid for the current
-session state.
+layer. It records store-backed cancel intent, while higher-level API and runner
+behavior decide whether cancellation is valid for the current session state.
 
 ## Lifecycle Truth Table
 
@@ -524,7 +534,7 @@ responses, Electron bridge mapping, and frontend session UX.
 | --- | --- | --- |
 | start-session succeeds | return pending `SessionSummary` | The frontend may transition into active monitoring after later reads/polls. |
 | start-session succeeds but the first read reports `session_not_found` | keep the started session active and retry on the next poll | The detached worker can lag briefly behind the accepted start request before the first persisted snapshot appears. |
-| read/poll for an active session | return current persisted session snapshot | Persisted session files are the source of truth, not inferred frontend state. |
+| read/poll for an active session | return current persisted session snapshot | The persisted session snapshot is the source of truth, not inferred frontend state. |
 | cancel-session for a running session | accept request and return `SessionSummary` or `null` | `null` is still a valid success when no updated summary is returned immediately. |
 | cancel-session for a session already in a terminal state | return a structured failure | Do not silently treat an invalid cancel state as a normal success. |
 | read/poll after a session completes | return terminal snapshot with `completed` status | Terminal state should remain readable after active processing stops. |
@@ -542,7 +552,18 @@ responses, Electron bridge mapping, and frontend session UX.
 
 - Persisted session snapshots are the source of truth for lifecycle state.
 - Route-level request failures and session lifecycle state are different things.
+- Low-level missing-session shape and route-level missing-session errors are
+  both intentional: the store contract keeps one stable empty snapshot shape,
+  while service and route layers decide when that becomes a structured missing
+  session failure.
+- Metadata-only snapshots are valid during startup, recovery, or tolerant
+  degraded reads; `progress` may be `null` without making the session itself
+  invalid.
+- Cancel intent is durable runtime coordination, not part of the public
+  snapshot payload.
 - Terminal states should remain readable after a session stops running.
+- The parent process and detached worker must resolve the same backend so an
+  accepted session does not later read as missing or stale.
 - Invalid cancel requests should fail clearly rather than look like successful cancellation.
 - Frontend transport normalization should preserve these meanings rather than reinterpret them.
 - Frontend polling is intentionally tolerant of one-off read failures and keeps the last good session state instead of clearing the session immediately.

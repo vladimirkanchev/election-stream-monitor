@@ -16,9 +16,15 @@ Today it is an advanced desktop-first prototype with:
 - two built-in production alert rules built on top of those detectors
 - a small local MCP server with read-only alert-query tools
 - selectable alert backend: file by default, PostgreSQL opt-in
+- session persistence stays file-backed by default; PostgreSQL session storage
+  only turns on when you explicitly select and configure it
 
 It works best today for local development, demos, and small desktop-backed
 monitoring runs.
+
+For session semantics and backend-mode details, use
+[`docs/session-model.md`](./docs/session-model.md) and
+[`docs/session-persistence-audit.md`](./docs/session-persistence-audit.md).
 
 **Quick try:** run `npm run dev`, choose `video_files`, and test with a local
 `.mp4`.

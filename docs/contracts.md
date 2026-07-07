@@ -71,27 +71,33 @@ For the current project stage:
 
 Current persistence contract, kept short here:
 
-- `SessionStore` owns durable session metadata, latest progress, ordered
-  detector results, snapshot reads, known-session checks, and cancel intent.
+- `SessionStore` owns the durable session read model used by the API, CLI,
+  bridge, and tests.
+- That durable contract includes:
+  session metadata, latest progress, ordered detector results, snapshot reads,
+  known-session checks, and cancel intent.
+- The public snapshot shape stays:
+  `session`, `progress`, `alerts`, `results`, and derived `latest_result`.
+- A metadata-only snapshot is still valid:
+  `session` may exist while `progress` is `null`.
+- `progress` is latest-state only, not append-only progress history.
+- `results` are append-ordered history, and `latest_result` comes from the
+  final valid ordered row rather than detector timestamp sorting.
+- Low-level cancel intent is part of the broader durable coordination
+  contract, but it stays outside the public snapshot payload.
 - File-backed session storage is still the runtime default.
-- PostgreSQL session storage is explicit opt-in through
-  `ESM_SESSION_STORE_BACKEND=postgres`.
+- PostgreSQL session storage turns on only when
+  `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
+  PostgreSQL bootstrap settings are present.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only
   after explicit PostgreSQL selection; it should not poison the file default.
-- `progress` is latest-only state, not progress history.
-- a metadata-only snapshot is valid:
-  `session` may be present while `progress` is still `null`
-- `results` and derived `latest_result` follow append order, not detector
-  timestamp ordering.
-- low-level cancel intent stays outside the public snapshot payload even
-  though it is part of the broader `SessionStore` contract.
 - The detached worker and the parent process must resolve the same session
   store backend.
-- Alerts, replay keys, worker logs, and temp media are still separate seams.
+- Alerts, replay keys, worker logs, temp media, and other runtime artifacts
+  remain separate seams rather than part of the durable session snapshot.
 - Alert stores may ask the active `SessionStore` whether durable session
-  metadata exists for a session. They should not read session files, session
-  table rows, progress, results, cancel state, worker logs, or temp media
-  directly.
+  metadata exists for a session. They should not read backend-specific storage
+  details directly.
 
 For table mapping, bootstrap policy, caller ownership, and migration notes, use
 [session-persistence-audit.md](./session-persistence-audit.md). For field

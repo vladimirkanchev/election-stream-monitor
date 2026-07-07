@@ -333,6 +333,18 @@ Alerts, replay keys, logs, and temp media remain outside that first durable
 session schema. Cancel intent uses a separate current-state table because it is
 runtime coordination, not snapshot history.
 
+Current PostgreSQL session tables, kept modestly:
+
+| Table | Owns | Main contract use |
+| --- | --- | --- |
+| `session_metadata` | one authoritative metadata row per session | known-session checks, session summary reads, metadata writes |
+| `session_progress` | one latest-only progress row per session | progress writes and snapshot reads |
+| `session_result_events` | append-ordered detector result history | result appends, ordered result reads, derived `latest_result` through snapshot assembly |
+| `session_cancel_requests` | one current-state cancel row per session | cooperative cancel polling through `request_cancel(...)` and `is_cancel_requested(...)` |
+
+Keep this table as orientation, not as a full schema reference. Column-level
+detail and bootstrap behavior stay owned by `src/session_store_postgres.py`.
+
 That split is deliberate:
 
 - it preserves the current durable session meaning
@@ -644,6 +656,10 @@ and some are local diagnostics.
 | Worker diagnostics | Local diagnostic artifact | `worker.log` | Keep file-backed for now. Move only if a separate diagnostics surface is designed. |
 | API-stream temp media | Ephemeral processing artifact | temp `.ts` files under the stream temp directory | Keep filesystem-only. These are detector inputs during processing, not persisted session data. |
 
+PostgreSQL session mode does not mean that every session-scoped artifact moves
+into PostgreSQL. Worker diagnostics, replay/de-dup files, temp media, and
+similar runtime-local artifacts still stay on disk in the current design.
+
 Practical rule: migrate the data needed to rebuild the current snapshot and
 alert/session query surfaces first. Treat cancellation and replay keys as
 runtime coordination contracts with focused tests. Leave logs and temp media
@@ -760,7 +776,25 @@ Docs migration rule: keep docs honest about the current default, but avoid
 timeless phrasing that says "sessions are files" when the real contract is the
 snapshot/read model. During implementation, update docs in this order:
 `session-persistence-audit.md`, `session-model.md`, `contracts.md`,
-`architecture.md`, then `README.md` only for user-visible behavior.
+`testing-and-validation.md`, `architecture.md`, then `README.md` only for
+user-visible behavior.
+
+For the current session-store migration slice, treat doc ownership this way:
+
+- `docs/contracts.md`
+  - public session snapshot contract, backend-selection promises, and what
+    stays outside the public payload
+- `docs/session-model.md`
+  - lifecycle meaning, file-default runtime notes, and which artifacts still
+    remain file-backed in the current local runtime
+- `docs/testing-and-validation.md`
+  - focused test ownership, file-default local lanes, and opt-in live
+    PostgreSQL confidence
+- `docs/session-persistence-audit.md`
+  - PostgreSQL table mapping, migration notes, caller ownership, and
+    implementation inventory
+- `README.md`
+  - short current-state summary only; no schema, table, or migration detail
 
 ## Migration Boundary Notes
 
