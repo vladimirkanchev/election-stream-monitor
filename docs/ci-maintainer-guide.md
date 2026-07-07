@@ -55,6 +55,33 @@ Weekly failures fail the weekly workflow but do not block an ordinary PR
 merge. Local lanes produce no GitHub status and do not reproduce the complete
 protected workflow.
 
+For the current session-store migration work, keep live PostgreSQL session
+confidence in weekly or manual-depth lanes. Do not add a default PR job that
+boots a database service just to restate the focused parity and runtime
+confidence the branch already has.
+
+Also defer broader CI expansion in this branch:
+
+- no nightly-only session-store workflow
+- no OS or Python version matrix for this slice
+- no full file-versus-PostgreSQL backend matrix in ordinary PR CI
+
+Those are reasonable follow-up directions once the focused parity and runtime
+confidence stops being the main branch risk. Treat them as later CI-expansion
+work, not as cleanup that belongs folded back into this branch.
+
+Concrete follow-up branch candidates:
+
+- `ci/live-postgres-session-smoke`
+  - add one opt-in or weekly live PostgreSQL session-store smoke path with
+    explicit service/bootstrap ownership
+- `ci/weekly-session-db-confidence`
+  - extend weekly validation with a small session-store database-confidence
+    bundle once the live smoke path proves stable
+- `ci/session-store-matrix-expansion`
+  - evaluate whether an OS, Python-version, or backend matrix adds enough
+    confidence to justify the extra routine CI cost
+
 ## Important Distinctions
 
 Keep these five distinctions explicit when reviewing or editing CI:
