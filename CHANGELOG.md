@@ -7,6 +7,23 @@ stage.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-08
+
+AI-harness policy refresh release.
+
+Highlights:
+
+- repo-local review skills now cover persistence backend review, FastAPI/MCP
+  security review, real-media validation review, release/version readiness,
+  and PostgreSQL migration rollout more explicitly
+- routing guidance in `AGENTS.md`, maintainer docs, and validation docs is
+  clearer about which skill or harness lane should own a given kind of change
+- deterministic repo-skill tests were refactored and expanded so nearby-skill
+  overlap, hand-off boundaries, and stable snapshot examples drift less
+  quietly over time
+- the broad security-surface review and the branch-scoped FastAPI/MCP security
+  review now have a cleaner separation of purpose
+
 ## [0.6.0] - 2026-07-07
 
 Dual-backend persistence stage release.
