@@ -202,6 +202,17 @@ For the current alert-storage rollout state, use:
     boundaries, visual quality, and current-stage honesty
   - these three stay intentionally separate, and the repo skill tests protect
     that split with paired boundary checks
+  - before heavier PostgreSQL persistence or FastAPI/MCP security branches,
+    start with the nearest review checklist skill instead of writing a broad
+    new plan from scratch:
+    `persistence-backend-review`,
+    `postgres-migration-rollout-review`,
+    `fastapi-mcp-security-review`,
+    `test-strategy-review`,
+    `branch-pr-readiness`
+  - use those skills to sanity-check backend defaults, validation shape, docs
+    ownership, rollout truth, and branch drift before expanding into
+    implementation work
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
@@ -466,11 +477,10 @@ coordinated contract change:
 
 ## Repo-Local Codex Skills
 
-The repo also carries a small local skill set for AI-assisted diagnostic work:
-
-Treat these as lightweight workflow helpers for the current project stage.
-They are intentionally small, text-first, and easy to extend without adding a
-separate automation framework.
+The repo also carries a small local skill set for AI-assisted development
+work. Treat these as lightweight workflow helpers for the current project
+stage: text-first, narrow in scope, and easy to evolve without a separate
+automation framework.
 
 Keep workflow ownership split:
 
@@ -493,6 +503,9 @@ Use the skill set by question type:
   - `./.agents/skills/branch-pr-readiness/`
   - `./.agents/skills/dependency-change-review/`
   - `./.agents/skills/task-planning-evaluation/`
+- decide version or rollout meaning
+  - `./.agents/skills/release-version-readiness/`
+  - `./.agents/skills/postgres-migration-rollout-review/`
 - choose validation or test work
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
@@ -501,7 +514,10 @@ Use the skill set by question type:
 - review a main repo seam
   - `./.agents/skills/detector-rule-review/`
   - `./.agents/skills/frontend-bridge-review/`
+  - `./.agents/skills/persistence-backend-review/`
   - `./.agents/skills/alert-backend-parity-review/`
+  - `./.agents/skills/fastapi-mcp-security-review/`
+  - `./.agents/skills/real-media-validation-review/`
   - `./.agents/skills/security-surface-review/`
   - `./.agents/skills/docs-alignment/`
 
@@ -516,31 +532,33 @@ Most common starting points:
   - `./.agents/skills/test-strategy-review/`
   - if no honest automated lane fits yet, say `manual confidence only for now`
     and name the manual step plainly
+- session or alert persistence drift
+  - `./.agents/skills/persistence-backend-review/`
+  - `./.agents/skills/postgres-migration-rollout-review/`
 - dependency metadata drift
   - `./.agents/skills/dependency-change-review/`
 - detector/rule changes
   - `./.agents/skills/detector-rule-review/`
 - frontend or bridge changes
   - `./.agents/skills/frontend-bridge-review/`
+- FastAPI or MCP security-sensitive changes
+  - `./.agents/skills/fastapi-mcp-security-review/` for branch-scoped hardening review
+  - `./.agents/skills/security-surface-review/` for broader trust-boundary review
 - docs or docstring drift
   - `./.agents/skills/docs-alignment/`
 - API, CLI, persisted-data, or bridge contract drift
   - `./.agents/skills/docs-alignment/`
   - then [contracts.md](./contracts.md)
 
-The deterministic tests for them live in:
+The deterministic harness for this layer lives in:
 
 - `tests/test_repo_skills.py`
+- `tests/repo_skill_expectations.py`
 - `tests/skill_test_support.py`
 - `tests/fixtures/skill_output_snapshots/`
 
-That test slice now checks:
-
-- skill inventory and section structure
-- explicit boundary and handoff wording
-- representative repo scenarios
-- fixed output-shape snapshots
-- merged-skill regression markers where one skill now owns several modes
+Use [testing-and-validation.md](./testing-and-validation.md#repo-local-skill-tests)
+for the actual command and validation-lane expectations.
 
 ## Document Ownership
 

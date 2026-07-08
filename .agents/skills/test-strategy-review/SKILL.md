@@ -17,10 +17,7 @@ workflow-only changes.
 
 ## Default approach
 
-Start from the current change or current test suite, then keep the answer tied
-to the smallest useful test decision.
-
-Work from:
+Start from the current change or current test suite. Work from:
 
 1. changed files, discussed behavior, or current test file
 2. closest owning boundary
@@ -29,8 +26,7 @@ Work from:
 5. runtime cost and environment sensitivity
 6. cheapest honest lane that fits the decision
 
-Use `docs/testing-and-validation.md` to stay aligned with the current
-validation model and local harness lanes.
+Use `docs/testing-and-validation.md` for current validation lanes.
 
 Force the test decision before recommending commands:
 
@@ -55,7 +51,7 @@ Use this validation-lane chooser before recommending commands:
 
 ## Output shape
 
-Choose one mode first, then keep the answer inside that mode.
+Choose one mode first.
 
 For missing coverage:
 
@@ -82,14 +78,8 @@ For local validation choice:
 5. `When to run something broader`
 6. `Next broader option`
 
-Keep the three outputs distinct:
-
-- add
-- trim
-- validate
-
-If two modes are relevant, finish the main mode first and keep the second one
-short.
+Keep add, trim, and validate outputs distinct. If two modes matter, finish the
+main mode first and keep the second short.
 
 ## Project-specific rules
 
@@ -98,17 +88,13 @@ short.
 - Prefer extending existing nearby test files before proposing a new suite.
 - Distinguish slow-but-valuable real-media confidence tests from genuinely low-value repetition.
 - Call out environment-coupled tests separately from redundant tests; they are not the same problem.
-- Place proposed coverage in the cheapest honest lane:
-  - `fast lane`
-  - `slow lane`
-  - `confidence lane`
+- Place proposed coverage in the cheapest honest lane: `fast lane`, `slow lane`, or `confidence lane`.
 - Prefer focused harness lanes such as `just test-detectors`, `just test-processor`, `just test-alert-rules`, `just test-hls`, `just test-frontend`, `just test-detector-lab`, `just test-real-media`, and `just docs-check` before recommending `just ci-local`.
 - Use `just test-fast` when several production runtime seams changed together, not for every small edit.
 - Use `just ci-local` as the main "ready to push?" lane, not as the default first response.
 - For detector-lab work, keep synthetic and real-media lanes distinct.
 - For docs or repo-skill-only changes, prefer `just docs-check` or the focused repo-skill test slice before broader validation.
-- If a behavior is intentionally manual-only for now, say `manual confidence
-  only for now` instead of pretending it should already be fully automated.
+- If a behavior is intentionally manual-only for now, say `manual confidence only for now`.
 - Prefer the cheapest lane that still protects the real risk.
 
 ## Skill boundaries

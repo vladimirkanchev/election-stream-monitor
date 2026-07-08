@@ -19,9 +19,57 @@ If you are adding detectors or rules, also read:
 
 If you are changing repo-local Codex skills or their deterministic tests, also read:
 
+- [`docs/README.md`](./docs/README.md)
 - [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
 - `./.agents/skills/`
 - `tests/test_repo_skills.py`
+
+## Risky Change Routing
+
+Before changing one of these areas, read the owning docs first and use the
+nearest repo-local skill when the task is review, drift, or validation-shape
+heavy.
+
+- session or alert persistence, runtime backend selection, or PostgreSQL migration
+  - docs:
+    [`docs/contracts.md`](./docs/contracts.md),
+    [`docs/session-model.md`](./docs/session-model.md),
+    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
+  - skills:
+    `persistence-backend-review`,
+    `postgres-migration-rollout-review`,
+    `alert-backend-parity-review`,
+    `test-strategy-review`,
+    `branch-pr-readiness`
+- FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries
+  - docs:
+    [`docs/contracts.md`](./docs/contracts.md),
+    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
+  - skills:
+    `fastapi-mcp-security-review` for branch-scoped hardening review,
+    `security-surface-review` for broader trust-boundary review,
+    `ci-failure-triage`,
+    `branch-pr-readiness`
+- real-media, long-running stream, or environment-sensitive validation work
+  - docs:
+    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
+  - skills:
+    `test-strategy-review`,
+    `fixture-environment-safety`,
+    `manual-validation-planner`
+- detector extension, detector-lab growth, or analyzer/rule ownership changes
+  - docs:
+    [`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md),
+    [`docs/adding-an-alert-rule.md`](./docs/adding-an-alert-rule.md),
+    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
+  - skills:
+    `detector-rule-review`,
+    `test-strategy-review`,
+    `branch-pr-readiness`
+
+When a task touches more than one area above, prefer one primary skill for the
+main seam and use the others only when the branch or validation story truly
+widens.
 
 ## Source Of Truth Order
 
