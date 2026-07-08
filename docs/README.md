@@ -202,6 +202,15 @@ For the current alert-storage rollout state, use:
     boundaries, visual quality, and current-stage honesty
   - these three stay intentionally separate, and the repo skill tests protect
     that split with paired boundary checks
+  - before heavier PostgreSQL persistence or FastAPI/MCP security branches,
+    start with the nearest review checklist skill instead of writing a broad
+    new plan from scratch:
+    `persistence-backend-review`,
+    `fastapi-mcp-security-review`,
+    `test-strategy-review`,
+    `branch-pr-readiness`
+  - use those skills to sanity-check backend defaults, validation shape, docs
+    ownership, and branch drift before expanding into implementation work
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)

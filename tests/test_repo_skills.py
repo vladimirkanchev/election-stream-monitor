@@ -14,6 +14,8 @@ skill layer by checking:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from tests.skill_test_support import (
@@ -30,6 +32,8 @@ from tests.skill_test_support import (
     load_skill,
     snapshot_heading_matches_skill_text,
 )
+
+AGENTS_PATH = Path(__file__).resolve().parent.parent / "AGENTS.md"
 
 
 EXPECTED_SKILLS = {
@@ -1117,3 +1121,35 @@ def test_skill_root_stays_small_and_repo_local() -> None:
         SKILLS_ROOT.joinpath("task-planning-evaluation", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("test-strategy-review", "SKILL.md").relative_to(SKILLS_ROOT),
     ]
+
+
+def test_agents_md_risky_change_routing_stays_aligned() -> None:
+    text = AGENTS_PATH.read_text(encoding="utf-8")
+
+    assert_contains_in_order(
+        text,
+        [
+            "## Risky Change Routing",
+            "session or alert persistence, runtime backend selection, or PostgreSQL migration",
+            "`persistence-backend-review`",
+            "`alert-backend-parity-review`",
+            "FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries",
+            "`fastapi-mcp-security-review`",
+            "`security-surface-review`",
+            "real-media, long-running stream, or environment-sensitive validation work",
+            "`fixture-environment-safety`",
+            "`manual-validation-planner`",
+            "detector extension, detector-lab growth, or analyzer/rule ownership changes",
+            "`detector-rule-review`",
+        ],
+    )
+
+    for snippet in (
+        "[`docs/contracts.md`](./docs/contracts.md)",
+        "[`docs/session-model.md`](./docs/session-model.md)",
+        "[`docs/testing-and-validation.md`](./docs/testing-and-validation.md)",
+        "[`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md)",
+        "[`docs/adding-an-alert-rule.md`](./docs/adding-an-alert-rule.md)",
+        "prefer one primary skill",
+    ):
+        assert snippet in text
