@@ -51,6 +51,7 @@ EXPECTED_SKILLS = {
     "incident-timeline",
     "manual-validation-planner",
     "persistence-backend-review",
+    "real-media-validation-review",
     "readme-alignment-review",
     "root-cause-suggestion",
     "security-surface-review",
@@ -160,6 +161,16 @@ SCENARIO_EXPECTATIONS = [
             "Electron",
             "playback",
             "Best follow-up automation",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="real-media-validation-review",
+        required_snippets=(
+            "Fixture reality",
+            "Flaky or environment-sensitive risk",
+            "Best confidence lane",
+            "docs honesty",
+            "`just test-real-media`",
         ),
     ),
     ScenarioExpectation(
@@ -316,6 +327,8 @@ REAL_INCIDENT_REGRESSIONS = [
     ("frontend-bridge-review", "a preload contract change needs review for normalization drift and test gaps"),
     ("manual-validation-planner", "before merge, what should I click locally after touching playback status and alert rendering?"),
     ("manual-validation-planner", "a FastAPI share-mode change needs a small manual smoke plan rather than a full release checklist"),
+    ("real-media-validation-review", "a remote HLS confidence test may now be too flaky for routine PR validation"),
+    ("real-media-validation-review", "a stream/file branch may rely on local-only clips that should not be treated like checked-in fixtures"),
     ("detector-rule-review", "a blur-rule refactor needs review for behavior risk and test gaps"),
     ("detector-rule-review", "`detector_lab` motion-blur work may be drifting toward production responsibilities"),
     ("test-strategy-review", "a blur-rule tweak needs `test-alert-rules` rather than the whole suite"),
@@ -551,6 +564,39 @@ SNAPSHOT_EXPECTATIONS = [
             "Main parity risk:",
             "Current confidence:",
             "Best next check:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="persistence-backend-review",
+        snapshot_name="persistence_backend_review_session_store.md",
+        required_order=(
+            "Persistence surface:",
+            "Default versus opt-in behavior:",
+            "Shared contract risk:",
+            "Current confidence:",
+            "Best next check:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="fastapi-mcp-security-review",
+        snapshot_name="fastapi_mcp_security_review_share_mode.md",
+        required_order=(
+            "Security surface:",
+            "Current protection:",
+            "Checklist gaps:",
+            "Best next hardening step:",
+            "Best validation lane:",
+        ),
+    ),
+    SnapshotExpectation(
+        skill_name="real-media-validation-review",
+        snapshot_name="real_media_validation_review_hls_lane.md",
+        required_order=(
+            "Validation target:",
+            "Fixture reality:",
+            "Flaky or environment-sensitive risk:",
+            "Best confidence lane:",
+            "Best next cleanup:",
         ),
     ),
     SnapshotExpectation(
@@ -960,6 +1006,15 @@ def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
             ],
         ),
         (
+            "real-media-validation-review",
+            [
+                "use `fixture-environment-safety` first",
+                "use `test-strategy-review` first",
+                "use `manual-validation-planner` first",
+                "use `branch-pr-readiness` first",
+            ],
+        ),
+        (
             "frontend-bridge-review",
             [
                 "use `test-strategy-review` first",
@@ -1115,6 +1170,7 @@ def test_skill_root_stays_small_and_repo_local() -> None:
         SKILLS_ROOT.joinpath("manual-validation-planner", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("persistence-backend-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("readme-alignment-review", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("real-media-validation-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("root-cause-suggestion", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("security-surface-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("summarization", "SKILL.md").relative_to(SKILLS_ROOT),
