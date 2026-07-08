@@ -41,10 +41,12 @@ EXPECTED_SKILLS = {
     "detector-rule-review",
     "docs-alignment",
     "docs-drift-check",
+    "fastapi-mcp-security-review",
     "fixture-environment-safety",
     "frontend-bridge-review",
     "incident-timeline",
     "manual-validation-planner",
+    "persistence-backend-review",
     "readme-alignment-review",
     "root-cause-suggestion",
     "security-surface-review",
@@ -70,6 +72,26 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
+        skill_name="persistence-backend-review",
+        required_snippets=(
+            "Persistence surface",
+            "Default versus opt-in behavior",
+            "metadata, latest progress, ordered results, cancel intent",
+            "detached-worker backend agreement",
+            "just test-session-store",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="fastapi-mcp-security-review",
+        required_snippets=(
+            "Checklist gaps",
+            "share mode",
+            "MCP tool exposure",
+            "dependency exposure",
+            "Best validation lane",
+        ),
+    ),
+    ScenarioExpectation(
         skill_name="security-surface-review",
         required_snippets=(
             "Security surface",
@@ -86,6 +108,7 @@ SCENARIO_EXPECTATIONS = [
             "one coherent PR",
             "follow-up extraction hint",
             "commit grouping",
+            "does the branch still have one primary user-visible or maintainer-visible outcome?",
         ),
     ),
     ScenarioExpectation(
@@ -219,6 +242,8 @@ SCENARIO_EXPECTATIONS = [
             "branch-end closure",
             "contract-sensitive work moved with the owning docs and nearby tests",
             "move to a follow-up branch",
+            "Treat these as strong split signals",
+            "the PR description needs \"also\" more than once to justify the branch",
         ),
     ),
     ScenarioExpectation(
@@ -262,6 +287,10 @@ SCENARIO_EXPECTATIONS = [
 REAL_INCIDENT_REGRESSIONS = [
     ("alert-backend-parity-review", "a session-alert store refactor may have changed file versus PostgreSQL grouped-incident behavior"),
     ("alert-backend-parity-review", "an alerts-router auth change needs review for whether it touched store parity or only access policy"),
+    ("persistence-backend-review", "a session-store branch may have changed file versus PostgreSQL snapshot semantics"),
+    ("persistence-backend-review", "a detached worker may no longer inherit the same store backend as the parent"),
+    ("fastapi-mcp-security-review", "a FastAPI route branch may have widened `share` mode beyond the intended boundary"),
+    ("fastapi-mcp-security-review", "an MCP tool update may have drifted outside the read-only local tooling model"),
     ("security-surface-review", "a FastAPI route change may have drifted outside the intended auth or rate-limit boundary"),
     ("security-surface-review", "an `api_stream` trust policy change needs review for boundary clarity rather than full platform redesign"),
     ("branch-pr-readiness", "a harness branch needs to know whether 2 or 3 commits is the cleanest shape"),
@@ -274,6 +303,7 @@ REAL_INCIDENT_REGRESSIONS = [
     ("summarization", "a harness branch needs a PR-ready summary that includes docs and tests but avoids a file-by-file dump"),
     ("branch-pr-readiness", "a workflow branch has passing focused tests but unclear commit, docs, or cleanup readiness"),
     ("branch-pr-readiness", "a stacked PR sequence merged remotely and the final branch needs a clear merge-readiness summary"),
+    ("branch-pr-readiness", "docs and tests changed only because the branch widened and now may need to move with different code"),
     ("docs-alignment", "`practical_alerts.py` docstrings no longer match the newer evaluation-context shape"),
     ("docs-alignment", "a production runtime module docstring still sounds dict-shaped after typed-row refactors"),
     ("fixture-environment-safety", "a detector-lab test unexpectedly depends on local baseline clips that are not committed"),
@@ -835,6 +865,15 @@ def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
             ],
         ),
         (
+            "fastapi-mcp-security-review",
+            [
+                "use `security-surface-review` first",
+                "use `ci-failure-triage` first",
+                "use `docs-alignment` first",
+                "use `branch-pr-readiness` first",
+            ],
+        ),
+        (
             "security-surface-review",
             [
                 "use `ci-failure-triage` first",
@@ -1065,10 +1104,12 @@ def test_skill_root_stays_small_and_repo_local() -> None:
         SKILLS_ROOT.joinpath("detector-rule-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("docs-alignment", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("docs-drift-check", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("fastapi-mcp-security-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("fixture-environment-safety", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("frontend-bridge-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("incident-timeline", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("manual-validation-planner", "SKILL.md").relative_to(SKILLS_ROOT),
+        SKILLS_ROOT.joinpath("persistence-backend-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("readme-alignment-review", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("root-cause-suggestion", "SKILL.md").relative_to(SKILLS_ROOT),
         SKILLS_ROOT.joinpath("security-surface-review", "SKILL.md").relative_to(SKILLS_ROOT),

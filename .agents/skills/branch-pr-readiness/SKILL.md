@@ -34,6 +34,15 @@ When checking drift, explicitly ask:
 2. Should that work stay, become a separate commit, or move to a follow-up branch?
 3. Does the PR description explain why any adjacent work belongs here?
 
+Use this quick drift test before recommending keep versus split:
+
+1. does the branch still have one primary user-visible or maintainer-visible outcome?
+2. do the code, tests, and docs still point at the same changed seam?
+3. does the validation story still fit one review unit?
+4. did dependency metadata, fixtures, or CI changes appear only because they support that same story?
+
+When the answer starts becoming "two stories," prefer a split.
+
 Use this follow-up extraction hint when the branch is still useful but getting
 wider:
 
@@ -42,6 +51,14 @@ wider:
   own
 - move it to a follow-up branch when it is useful but no longer part of the
   branch story
+
+Treat these as strong split signals:
+
+- a second validation lane is needed for a different seam
+- a second owning doc is updated for a different reason than the main branch purpose
+- unrelated dependency metadata or fixture changes appear
+- the PR description needs "also" more than once to justify the branch
+- one part could merge safely even if the other part were reverted
 
 When a follow-up branch is the right answer, prefer a short descriptive name
 such as:
@@ -127,6 +144,8 @@ the user asks for that separately.
 - When a child branch depends on a parent branch, say that plainly and recommend merge order or retargeting.
 - Treat focused passing validation as good evidence, but say plainly when full-suite or environment-specific confidence is still missing.
 - Call out unrelated dependency metadata, local-only assets, or notes that should stay out of the PR.
+- When docs or tests change only because the branch widened, say whether they should move with the matching code or leave in a follow-up branch.
+- Prefer keeping the code, tests, and owning docs together when they describe one seam; split when they describe different seams.
 - Prefer non-destructive checks first, such as `just branch-cleanup`, `git status`, `git diff --stat`, and merged-vs-main checks.
 - Keep this skill about branch/PR structure and merge readiness only, not broader release management.
 - Prefer the smallest workflow decision that unblocks the user:
@@ -152,6 +171,7 @@ the user asks for that separately.
 - a mixed worktree needs to be split into one runtime PR and one detector-lab PR
 - a workflow branch has passing focused tests but unclear commit, docs, or cleanup readiness
 - a stacked PR sequence merged remotely and the final branch needs a clear merge-readiness summary
+- docs and tests changed only because the branch widened and now may need to move with different code
 
 ## Avoid
 
