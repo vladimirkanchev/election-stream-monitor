@@ -96,6 +96,23 @@ a compatibility shim for older imports.
 Use [`../tests/test_analyzer_registry.py`](../tests/test_analyzer_registry.py)
 when you need to confirm registry ownership or detector catalog expectations.
 
+## Future extension note
+
+The project already has a small future-facing manifest and plugin-validation
+shape, but it is still intentionally using explicit built-in registration.
+
+For now, treat future detector extension planning like this:
+
+- add or refine built-in detectors through
+  [`src/detectors/registry.py`](../src/detectors/registry.py)
+- keep detector metadata, supported modes, and default rule linkage explicit
+- use the current contract and registry tests to keep extension work honest
+- postpone dynamic discovery or broader plugin loading until detector count or
+  contributor workflow clearly justifies the extra complexity
+
+That keeps future plugin work grounded in the current runtime contract instead
+of making the production path more abstract before the repo actually needs it.
+
 ## Add alert logic if needed
 
 If the detector should produce alerts, update [`src/alert_rules.py`](../src/alert_rules.py).
