@@ -16,10 +16,8 @@ or helper docstrings that no longer match current responsibilities.
 
 ## Default approach
 
-Check the code and tests first, then update only the owning docs or the closest
-high-signal docstrings.
-
-Work from:
+Check code and tests first, then update only the owning docs or closest
+high-signal docstrings. Work from:
 
 1. changed code, tests, or CI/workflow files
 2. current user-facing docs, maintainer docs, or nearby docstrings
@@ -27,23 +25,15 @@ Work from:
 4. smallest concise update
 5. low-value repetition that can be removed instead of copied
 
-Prefer one owner, not three copies. Use the docs-owner hint below to choose the
-smallest doc surface that actually owns the change.
+Prefer one owner, not three copies. Use this docs-owner hint to choose the
+smallest surface that owns the change.
 
-Use this docs-owner hint before proposing edits:
-
-- project overview or contributor entrypoint
-  - root `README.md`
-- maintainer routing, branch workflow, or skill/doc map
-  - `docs/README.md`
-- validation lanes, CI checks, or harness command guidance
-  - `docs/testing-and-validation.md`
-- branch purpose, execution pattern, or medium-task checklist
-  - `docs/branch-purpose-template.md`
-- subsystem-specific behavior, contracts, or promotion rules
-  - the closest narrower doc under `docs/`
-- code-level responsibility drift
-  - the nearest module, class, or function docstring
+- project overview or contributor entrypoint: root `README.md`
+- maintainer routing, branch workflow, or skill/doc map: `docs/README.md`
+- validation lanes, CI checks, or harness command guidance: `docs/testing-and-validation.md`
+- branch purpose, execution pattern, or medium-task checklist: `docs/branch-purpose-template.md`
+- subsystem behavior, contracts, or promotion rules: closest narrower doc under `docs/`
+- code-level responsibility drift: nearest module, class, or function docstring
 
 Use this public-contract check before concluding that docs updates are local
 only:

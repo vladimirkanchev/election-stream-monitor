@@ -1,6 +1,6 @@
 ---
 name: fastapi-mcp-security-review
-description: Use when the user wants a repo-aware review of FastAPI or MCP security hardening work in Election Stream Monitor. Best for checking auth, share mode, MCP tool boundaries, rate limits, secrets, local-versus-remote trust, and dependency exposure without expanding into a full security program.
+description: Use when the user wants a repo-aware review of FastAPI or MCP security hardening work in Election Stream Monitor. Best for branch-scoped checks of auth, share mode, MCP tool boundaries, rate limits, secrets, local-versus-remote trust, and dependency exposure without expanding into a broad surface map or a full security program.
 ---
 
 # Fastapi Mcp Security Review
@@ -19,7 +19,7 @@ This repo commonly needs FastAPI/MCP security review across:
 ## Default approach
 
 Review the branch against the current security model before suggesting broader
-platform controls.
+platform controls. Keep this skill branch-scoped and checklist-oriented.
 
 Work from:
 
@@ -61,6 +61,8 @@ Keep the review concrete and branch-scoped.
   surfaces even when they touch the same data.
 - Call out when protection exists only in `share` mode versus always-on local
   behavior.
+- Prefer this skill for branch-scoped hardening review, not for broad
+  architecture-wide surface mapping.
 - Prefer practical suggestions such as auth tightening, rate limits, clearer
   config defaults, narrower tool scopes, or docs clarification over broad
   platform redesign.

@@ -66,16 +66,11 @@ Keep the answer concrete and branch-scoped.
 
 ## Skill boundaries
 
-- Use this when the main question is version meaning, milestone readiness, or
-  whether a branch justifies a named project version step.
-- If the main question is merge readiness or commit/PR grouping, use
-  `branch-pr-readiness` first.
-- If the user mainly wants a short PR or release summary, use `summarization`
-  first.
-- If the question is roadmap priority rather than version semantics, use
-  `task-planning-evaluation` first.
-- If dependency metadata changed and it is unclear whether that belongs in the
-  version story, use `dependency-change-review` first.
+- Use this when the main question is version meaning, milestone readiness, or whether a branch justifies a named project version step.
+- If the main question is merge readiness or commit/PR grouping, use `branch-pr-readiness` first.
+- If the user mainly wants a short PR or release summary, use `summarization` first.
+- If the question is roadmap priority rather than version semantics, use `task-planning-evaluation` first.
+- If dependency metadata changed and it is unclear whether that belongs in the version story, use `dependency-change-review` first.
 
 ## Good fit examples
 

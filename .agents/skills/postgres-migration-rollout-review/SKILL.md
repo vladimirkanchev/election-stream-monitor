@@ -66,16 +66,11 @@ Keep the review operational and rollout-scoped.
 
 ## Skill boundaries
 
-- Use this when the main question is PostgreSQL migration rollout readiness,
-  rollback shape, backfill honesty, or live rollout confidence.
-- If the main question is shared backend behavior or parity, use
-  `persistence-backend-review` first.
-- If the main question is whether the branch justifies a new version or named
-  milestone, use `release-version-readiness` first.
-- If the main question is which tests to add or trim, use
-  `test-strategy-review` first.
-- If the main question is merge/readiness workflow, use `branch-pr-readiness`
-  first.
+- Use this when the main question is PostgreSQL migration rollout readiness, rollback shape, backfill honesty, or live rollout confidence.
+- If the main question is shared backend behavior or parity, use `persistence-backend-review` first.
+- If the main question is whether the branch justifies a new version or named milestone, use `release-version-readiness` first.
+- If the main question is which tests to add or trim, use `test-strategy-review` first.
+- If the main question is merge/readiness workflow, use `branch-pr-readiness` first.
 
 ## Good fit examples
 
