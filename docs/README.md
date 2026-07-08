@@ -206,11 +206,13 @@ For the current alert-storage rollout state, use:
     start with the nearest review checklist skill instead of writing a broad
     new plan from scratch:
     `persistence-backend-review`,
+    `postgres-migration-rollout-review`,
     `fastapi-mcp-security-review`,
     `test-strategy-review`,
     `branch-pr-readiness`
   - use those skills to sanity-check backend defaults, validation shape, docs
-    ownership, and branch drift before expanding into implementation work
+    ownership, rollout truth, and branch drift before expanding into
+    implementation work
   - `tests/test_repo_skills.py`
 - changing CI ownership rules, target manifests, or split-suite registration:
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)

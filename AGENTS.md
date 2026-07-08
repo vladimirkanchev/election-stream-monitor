@@ -36,6 +36,7 @@ heavy.
     [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
   - skills:
     `persistence-backend-review`,
+    `postgres-migration-rollout-review`,
     `alert-backend-parity-review`,
     `test-strategy-review`,
     `branch-pr-readiness`

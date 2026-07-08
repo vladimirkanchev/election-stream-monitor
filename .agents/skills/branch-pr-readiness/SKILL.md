@@ -116,12 +116,18 @@ For branch-end closure, reuse the merge checklist and confirm:
    - updated nearby test
    - new focused test
    - or docs/workflow-only check when no runtime behavior changed
-3. docs impact and fixture/environment impact are explicit
-4. contract-sensitive work moved with the owning docs and nearby tests
-5. any `pyproject.toml` or `uv.lock` change belongs to the branch story or is
+3. the PR template is honestly filled before CI has to catch it:
+   - `Validation Run` lists actual commands
+   - `Why these lanes were enough` explains the chosen validation scope
+   - `Fixture / Environment Impact` is explicit
+   - `Docs Impact` is explicit
+   - `Dependency Drift` is explicit when dependency metadata changed
+4. docs impact and fixture/environment impact are explicit
+5. contract-sensitive work moved with the owning docs and nearby tests
+6. any `pyproject.toml` or `uv.lock` change belongs to the branch story or is
    moved out
-6. branch purpose still matches the actual content
-7. unrelated drift is excluded before merge
+7. branch purpose still matches the actual content
+8. unrelated drift is excluded before merge
 
 Keep the answer narrow:
 
@@ -148,6 +154,7 @@ the user asks for that separately.
 - Prefer keeping the code, tests, and owning docs together when they describe one seam; split when they describe different seams.
 - Prefer non-destructive checks first, such as `just branch-cleanup`, `git status`, `git diff --stat`, and merged-vs-main checks.
 - Keep this skill about branch/PR structure and merge readiness only, not broader release management.
+- Before saying a branch is merge-ready, make sure the PR text is complete enough to satisfy the repo's PR-template guard instead of leaving that for CI to discover later.
 - Prefer the smallest workflow decision that unblocks the user:
   - split or keep
   - commit shape
@@ -171,6 +178,8 @@ the user asks for that separately.
 - a mixed worktree needs to be split into one runtime PR and one detector-lab PR
 - a workflow branch has passing focused tests but unclear commit, docs, or cleanup readiness
 - a stacked PR sequence merged remotely and the final branch needs a clear merge-readiness summary
+- a PR is almost merge-ready but CI would fail if `Validation Run`, `Fixture / Environment Impact`, or `Docs Impact` are still missing
+- a PR is technically ready but still missing `Validation Run`, `Fixture / Environment Impact`, or `Docs Impact`
 - docs and tests changed only because the branch widened and now may need to move with different code
 
 ## Avoid

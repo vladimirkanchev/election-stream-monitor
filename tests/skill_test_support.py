@@ -122,6 +122,18 @@ def snapshot_heading_matches_skill_text(skill_text: str, heading: str) -> bool:
     return normalized in skill_text or heading in skill_text
 
 
+def assert_all_snippets_present(text: str, snippets: Sequence[str]) -> None:
+    """Assert that each expected snippet appears in the given text."""
+    for snippet in snippets:
+        assert snippet in text
+
+
+def assert_all_snippets_absent(text: str, snippets: Sequence[str]) -> None:
+    """Assert that each excluded snippet is absent from the given text."""
+    for snippet in snippets:
+        assert snippet not in text
+
+
 def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
     """Parse the minimal YAML frontmatter used by these skill files."""
     lines = text.splitlines()
