@@ -13,19 +13,20 @@ The goal is:
 - prepare later `api_stream` and service/API evolution
 
 Use this doc for stable payload and seam contracts.
-Do not use it as the main architecture narrative or as the detailed explanation
-of persisted session files; see [architecture.md](./architecture.md) and
-[session-model.md](./session-model.md) for those.
+Do not use it as the main architecture narrative, the session semantics guide,
+or the migration inventory; see [architecture.md](./architecture.md),
+[session-model.md](./session-model.md), and
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 ## At a glance
 
-This is the document to use when you need to know:
+Use this document when you need to know:
 
 - what the frontend is allowed to send
 - what the backend promises to return
 - which fields should be treated as stable by tests, tools, and UI code
 
-For code-level truth, the closest sources are:
+The closest code-level sources are:
 
 - [`src/analyzer_contract.py`](../src/analyzer_contract.py)
 - [`src/detectors/registry.py`](../src/detectors/registry.py)
@@ -45,11 +46,11 @@ For code-level truth, the closest sources are:
 
 For the current project stage:
 
-- backend session snapshot source of truth:
-  - [`src/session_io.py`](../src/session_io.py)
+- backend session snapshot contract:
+  - [`src/session_store.py`](../src/session_store.py)
+  - [`src/session_store_runtime.py`](../src/session_store_runtime.py)
+  - [`src/session_service.py`](../src/session_service.py)
   - [`src/session_models.py`](../src/session_models.py)
-  - [`src/session_runner.py`](../src/session_runner.py)
-  - [`src/session_runner_progress.py`](../src/session_runner_progress.py)
 - frontend bridge normalization source of truth:
   - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
   - [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
@@ -67,6 +68,40 @@ For the current project stage:
   - [`src/processor.py`](../src/processor.py)
   - [`src/alert_rules.py`](../src/alert_rules.py)
   - [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
+
+Current persistence contract, kept short here:
+
+- `SessionStore` owns the durable session read model used by the API, CLI,
+  bridge, and tests.
+- That durable contract includes:
+  session metadata, latest progress, ordered detector results, snapshot reads,
+  known-session checks, and cancel intent.
+- The public snapshot shape stays:
+  `session`, `progress`, `alerts`, `results`, and derived `latest_result`.
+- A metadata-only snapshot is still valid:
+  `session` may exist while `progress` is `null`.
+- `progress` is latest-state only, not append-only progress history.
+- `results` are append-ordered history, and `latest_result` comes from the
+  final valid ordered row rather than detector timestamp sorting.
+- Low-level cancel intent is part of the broader durable coordination
+  contract, but it stays outside the public snapshot payload.
+- File-backed session storage is still the runtime default.
+- PostgreSQL session storage turns on only when
+  `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
+  PostgreSQL bootstrap settings are present.
+- Missing or invalid PostgreSQL bootstrap config should fail clearly only
+  after explicit PostgreSQL selection; it should not poison the file default.
+- The detached worker and the parent process must resolve the same session
+  store backend.
+- Alerts, replay keys, worker logs, temp media, and other runtime artifacts
+  remain separate seams rather than part of the durable session snapshot.
+- Alert stores may ask the active `SessionStore` whether durable session
+  metadata exists for a session. They should not read backend-specific storage
+  details directly.
+
+For table mapping, bootstrap policy, caller ownership, and migration notes, use
+[session-persistence-audit.md](./session-persistence-audit.md). For field
+meaning and lifecycle semantics, use [session-model.md](./session-model.md).
 
 ## Do Not Drift These Together By Accident
 
@@ -522,12 +557,264 @@ Notes:
 
 - `session` may be `null` before a session exists
 - `progress` may be `null` before initialization or after lookup failure
+- `progress` is a latest-only read model, not a progress-history stream
 - `alerts` and `results` are append-oriented event views
 - `alerts` represents the backend-raised alert history for the session
 - frontend playback-aware filtering is a presentation concern and must not
   change the persisted snapshot alert list
 - playback state is not part of this contract
 - `api_stream` sessions use the same snapshot contract as local modes
+- timestamp formatting may vary slightly across producers, but the field stays
+  a string and must not change the rest of the progress shape
+
+### Stable backend promise
+
+The storage backend may change, but the public session snapshot should keep
+the same outer shape and lifecycle meaning unless the project deliberately
+versions the contract.
+
+For the current migration stage, snapshot parity is the promise. That means
+file-backed and PostgreSQL-backed session storage must produce the same
+frontend-facing snapshot shape and field relationships for the same durable
+session state. It does not mean the wider session-storage migration is
+finished or that every backend-owned runtime artifact has moved behind the
+same store.
+
+Outer keys are stable:
+
+- `session`
+- `progress`
+- `alerts`
+- `results`
+- `latest_result`
+
+Null-vs-empty behavior is stable:
+
+- `session` is `null` only when durable session metadata is missing or cannot
+  be returned as a valid session payload
+- `progress` is `null` when no valid latest-progress payload is currently
+  available
+- `alerts` is always a list and falls back to `[]`
+- `results` is always a list and falls back to `[]`
+- `latest_result` is either the final valid ordered result row or `null`
+
+Field relationship rules are stable:
+
+- `results` is append-ordered history, not timestamp-sorted history
+- `latest_result` is derived from the final valid row in `results`
+- `progress` is latest-only state, not progress history
+- snapshot `alerts` follow the active alert-read backend, but they still keep
+  the same public snapshot field
+- tolerant degraded reads may drop malformed `progress` or malformed result
+  rows, but they must still preserve the same outer snapshot shape and keep
+  `latest_result` aligned with the final valid ordered result row
+
+### State-specific snapshot promise
+
+| Session state | Backend promise |
+| --- | --- |
+| Missing session | Route/service layers treat it as missing-session behavior. At the low-level store/helper layer, the stable empty snapshot shape remains: `session = null`, `progress = null`, `alerts = []`, `results = []`, `latest_result = null`. |
+| Running session | `session` is present, `progress` should usually be present, `results` keeps all committed ordered rows so far, `latest_result` matches the last committed result or `null`, and `alerts` is the alert history currently visible through the active alert backend. |
+| Completed session | The snapshot remains readable after work stops. `session.status` and usually `progress.status` are `completed`; ordered `results`, derived `latest_result`, and `alerts` remain available for later reads. |
+| Failed session | The snapshot remains readable after failure. `session.status` and usually `progress.status` are `failed`; `progress.status_reason` stays compact, `progress.status_detail` may carry the more specific cause, and committed `results` / `alerts` remain readable. |
+| Cancelled session | The snapshot remains readable after terminal cancellation. `session.status` and usually `progress.status` are `cancelled`; `progress.status_reason` may explain the terminal settlement, and committed `results` / `alerts` remain readable. |
+| Partially populated session | This is valid during startup, recovery, or tolerant degraded reads. `session` may be present while `progress` is `null`; `alerts` and `results` still stay list-shaped; `latest_result` stays aligned with committed ordered `results`, not inferred from progress fields. |
+
+Practical read-model notes:
+
+- repeated missing-session reads should still produce the same empty snapshot
+  shape
+- tolerant degraded reads may drop malformed progress or result rows, but they
+  should keep `alerts` and `results` list-shaped and `latest_result` aligned
+  with the final valid result row
+
+Storage-backend freedom is still intentionally preserved:
+
+- the contract does not freeze file names, table names, SQL layout, or worker
+  implementation details
+- it does freeze the public payload shape, list/null behavior, lifecycle
+  meaning, result ordering, and `latest_result` derivation
+
+### Compact snapshot examples
+
+These examples are intentionally small. They are meant to catch contract drift
+in the public payload shape, not to mirror every detector or backend detail.
+
+Missing session:
+
+```json
+{
+  "session": null,
+  "progress": null,
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Running session:
+
+```json
+{
+  "session": {
+    "session_id": "session-running-1",
+    "mode": "video_files",
+    "input_path": "/tmp/input.mp4",
+    "selected_detectors": ["video_metrics"],
+    "status": "running"
+  },
+  "progress": {
+    "session_id": "session-running-1",
+    "status": "running",
+    "processed_count": 2,
+    "total_count": 10,
+    "current_item": "clip.mp4 @ 00:02",
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 0,
+    "last_updated_utc": "2026-07-02 10:00:00",
+    "status_reason": "running",
+    "status_detail": null
+  },
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Completed session:
+
+```json
+{
+  "session": {
+    "session_id": "session-completed-1",
+    "mode": "video_segments",
+    "input_path": "/data/segments",
+    "selected_detectors": ["video_metrics"],
+    "status": "completed"
+  },
+  "progress": {
+    "session_id": "session-completed-1",
+    "status": "completed",
+    "processed_count": 4,
+    "total_count": 4,
+    "current_item": null,
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 1,
+    "last_updated_utc": "2026-07-02 10:05:00",
+    "status_reason": "completed",
+    "status_detail": null
+  },
+  "alerts": [
+    {
+      "session_id": "session-completed-1",
+      "timestamp_utc": "2026-07-02 10:04:59",
+      "detector_id": "video_metrics",
+      "title": "Black screen detected",
+      "message": "Black segment exceeded threshold.",
+      "severity": "warning",
+      "source_name": "segment_004.ts"
+    }
+  ],
+  "results": [
+    {
+      "session_id": "session-completed-1",
+      "detector_id": "video_metrics",
+      "payload": {
+        "source_name": "segment_004.ts",
+        "window_index": 3
+      }
+    }
+  ],
+  "latest_result": {
+    "session_id": "session-completed-1",
+    "detector_id": "video_metrics",
+    "payload": {
+      "source_name": "segment_004.ts",
+      "window_index": 3
+    }
+  }
+}
+```
+
+Failed session:
+
+```json
+{
+  "session": {
+    "session_id": "session-failed-1",
+    "mode": "api_stream",
+    "input_path": "https://example.test/live.m3u8",
+    "selected_detectors": ["video_metrics"],
+    "status": "failed"
+  },
+  "progress": {
+    "session_id": "session-failed-1",
+    "status": "failed",
+    "processed_count": 3,
+    "total_count": 3,
+    "current_item": null,
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 0,
+    "last_updated_utc": "2026-07-02 10:08:00",
+    "status_reason": "source_unreachable",
+    "status_detail": "Retry budget exhausted while refreshing playlist."
+  },
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Cancelled session:
+
+```json
+{
+  "session": {
+    "session_id": "session-cancelled-1",
+    "mode": "video_files",
+    "input_path": "/tmp/input.mp4",
+    "selected_detectors": ["video_metrics"],
+    "status": "cancelled"
+  },
+  "progress": {
+    "session_id": "session-cancelled-1",
+    "status": "cancelled",
+    "processed_count": 1,
+    "total_count": 10,
+    "current_item": null,
+    "latest_result_detector": "video_metrics",
+    "latest_result_detectors": ["video_metrics"],
+    "alert_count": 0,
+    "last_updated_utc": "2026-07-02 10:09:00",
+    "status_reason": "cancel_requested",
+    "status_detail": null
+  },
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
+
+Partially populated session:
+
+```json
+{
+  "session": {
+    "session_id": "session-partial-1",
+    "mode": "video_files",
+    "input_path": "/tmp/input.mp4",
+    "selected_detectors": ["video_metrics"],
+    "status": "pending"
+  },
+  "progress": null,
+  "alerts": [],
+  "results": [],
+  "latest_result": null
+}
+```
 
 ### Route failures vs session state
 
@@ -641,6 +928,146 @@ consumer rules:
 - once the UI has already settled into terminal `completed`, the app suppresses
   a late extra stop request instead of issuing a cancel action that can no
   longer change the session outcome
+
+### Cancellation Contract v1
+
+Purpose:
+
+- define cancellation as cooperative runtime control, not durable session
+  history
+- keep public cancel behavior stable while the storage backend evolves
+- make later PostgreSQL-backed cancellation possible without forcing the worker
+  into heavy database chatter
+
+Current semantics are intentionally split between the public request boundary
+and the low-level runtime-control helper:
+
+- public cancel request
+  - `cancel-session` for a known non-terminal session is accepted
+  - the immediate response is a transient `cancelling` summary or `null`
+  - the public request path rejects missing sessions and already-terminal
+    sessions as structured failures
+- low-level cancel intent write
+  - the helper records stop intent only
+  - it is idempotent for repeated requests on the same session
+  - it does not own lifecycle validation or missing-session errors
+- low-level cancel intent read
+  - readers need only a boolean answer: cancel requested or not
+  - no marker or no known runtime-control row reads as `false`
+  - worker and loader polling should not need to parse full session snapshots
+- clear/reset behavior
+  - there is no ordinary public "uncancel" operation
+  - for one session run, cancel intent is write-once and remains set until the
+    worker settles the session
+  - reset belongs to test cleanup, fixture setup, or a fresh session id, not to
+    the normal runtime control flow
+
+Current design rule:
+
+- keep durable terminal truth in session metadata/progress
+- keep cancel-request state on the same small `SessionStore` contract as runtime control,
+  while leaving it outside the durable snapshot read model
+- route cancel writes and reads through `SessionStore.request_cancel(...)` and
+  `SessionStore.is_cancel_requested(...)`
+- keep the file-backed store as the active default until PostgreSQL is
+  explicitly selected
+- treat cancel intent as bounded durable coordination
+  - durable enough to survive the parent process, detached worker, and short
+    runtime gaps
+  - not durable session history and not part of the public snapshot payload
+- in file mode, preserve the existing `cancel_requested.json` marker shape
+  behind `SessionStore`
+- in PostgreSQL mode, preserve the same semantics with one lightweight
+  current-state record rather than append-only cancel history
+- if a backend-specific reset helper is ever added, keep it test/bootstrap
+  scoped and out of the public API contract
+
+Current coverage emphasis:
+
+- `tests/test_session_store_contract.py`, `tests/test_session_store_file.py`,
+  `tests/test_session_store_postgres.py`, and
+  `tests/test_session_store_parity.py` protect backend-level cancel semantics
+  plus metadata-only snapshots, latest-only progress, append-ordered results,
+  and storage-neutral snapshot parity
+- `tests/test_session_service.py` and
+  `tests/test_session_service_read_cancel.py` protect shared-service allow,
+  reject, and transient-summary behavior
+- `tests/test_api_boundary_sessions_cancel.py`,
+  `tests/test_session_runner_execution*.py`, and
+  `tests/test_stream_loader_http_hls*.py` protect route mapping, worker
+  settlement, and live-loader polling behavior
+
+## Result Event v1
+
+Purpose:
+
+- represent one durable detector output row for a session
+- preserve append order for snapshot reads and `latest_result`
+- keep detector-specific metrics flexible without changing the outer row shape
+
+Current durable row shape:
+
+```json
+{
+  "session_id": "session-20260402-abc123",
+  "detector_id": "video_blur",
+  "payload": {
+    "timestamp_utc": "2026-04-02 12:35:02",
+    "source_name": "segment_0206.ts",
+    "window_index": 206,
+    "window_start_sec": 206.0,
+    "blur_score": 0.91,
+    "blur_detected": true
+  }
+}
+```
+
+Notes:
+
+- the outer durable contract is intentionally small:
+  - `session_id`
+  - `detector_id`
+  - raw `payload` JSON
+- append order is a store contract, not a public payload field:
+  - file mode uses JSONL append order
+  - PostgreSQL mode must use a monotonic row/sequence order
+- equal or out-of-order `timestamp_utc` values must not reorder durable result
+  history; timestamps are detector hints, not the storage tie-breaker
+- `latest_result` is derived from the final valid ordered row rather than
+  persisted separately
+- shared timing/source hints may appear inside `payload` when they are useful:
+  - `timestamp_utc`
+  - `detector_name`
+  - `source_name`
+  - `window_index`
+  - `window_start_sec`
+- when these shared hints are present, they should keep simple scalar types so
+  file-backed and PostgreSQL-backed validation stays aligned
+- alert-like context may also appear inside `payload` when a detector exposes
+  it for later rule/debug interpretation:
+  - `title`
+  - `message`
+  - `severity`
+- detector display naming is not required as a separate durable top-level
+  field; the stable durable identity is `detector_id`
+- detector-specific metrics stay inside `payload` so the contract does not need
+  a schema change every time a detector gains a new measurement
+- the PostgreSQL storage row may project a few nullable query fields for
+  durability and future filtering:
+  - monotonic `id` as the append-order key
+  - `detector_name`
+  - `event_timestamp_utc`
+  - `payload_json` for the raw detector payload
+- that projection is a storage detail, not a wider public payload contract:
+  reads still return the compact `session_id` / `detector_id` / `payload`
+  shape above
+- current behavior:
+  - result append/read and snapshot assembly are now store-backed
+  - the file default remains the runtime default
+  - broader session persistence migration is still in progress
+
+This keeps the row stable for storage and parity testing without freezing the
+internal detector payload catalog too early.
 
 ## Alert Event v1
 
@@ -917,6 +1344,9 @@ Current decided contract:
   - direct media playlist URLs
   - master playlist URLs
 - the default polling cadence is `API_STREAM_POLL_INTERVAL_SEC`
+- repeated negative cancel checks inside the live HTTP/HLS hot path are
+  throttled by `API_STREAM_CANCEL_CHECK_SKIP_COUNT`, while reconnect/sleep
+  boundaries still force a fresh cancel read
 
 Current master-playlist policy:
 
@@ -1545,6 +1975,70 @@ Current bridge normalization:
 - malformed top-level payloads become the stable empty snapshot shape
 - explicit transport failures are raised with `SESSION_READ_FAILED`
 
+This normalization is intentionally compatible with the backend snapshot
+promise above. Storage can move, but the bridge should not need a different
+session-shape contract just because the backend changed from files to
+PostgreSQL.
+
+Current session-storage boundary:
+
+- `src/session_store.py` owns durable metadata, latest progress, ordered
+  results, snapshot reads, and known-session checks.
+- `src/session_store_runtime.py` and `src/session_store_runtime_config.py`
+  centralize the current file default and rollback-safe runtime
+  selection.
+- `src/session_store_file.py` is the current file-backed implementation.
+- `src/session_store_postgres_config.py` owns the PostgreSQL session env
+  surface:
+  - `ESM_SESSION_STORE_BACKEND`
+  - `ESM_POSTGRES_SESSION_DATABASE_URL`
+  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE`
+- `src/session_store_postgres.py` owns the PostgreSQL bootstrap seam:
+  driver loading, connection creation, schema initialization, the concrete
+  PostgreSQL session-store adapter, and opt-in schema reset helpers for live
+  smoke tests.
+- Default behavior remains intentionally conservative:
+  - `file` stays the active runtime default
+  - invalid or missing backend config falls back to `file`
+  - explicit `postgres` builds the PostgreSQL-backed `SessionStore`
+  - PostgreSQL session storage is available now, but only on deliberate opt-in
+- Bootstrap policy is explicit, not automatic:
+  - session tables do not auto-create by default
+  - opt in only with `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+  - normal PR and local validation should not require a live PostgreSQL server
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live smoke lanes
+- `src/session_service.py` and the session runner helpers consume that store
+  contract instead of choosing backend details themselves.
+- FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
+  route behavior, not file names such as `session.json` or `results.jsonl`.
+- Worker storage invariant:
+  - parent process session reads and cancel writes, and detached-worker lifecycle
+    writes, must resolve the same `SessionStore` backend for one session run
+  - this is a behavior rule, not a transport rule; env inheritance, explicit
+    worker env, or another future mechanism are all acceptable if they keep
+    parent and worker on the same backend
+- Worker logs, temp media, and HTTP/HLS replay keys are outside the durable
+  snapshot unless a new public contract is introduced deliberately. Cancel
+  intent is store-backed runtime control and is still not part of the public
+  snapshot.
+
+Current focused validation ownership for this boundary:
+
+- `tests/test_session_store_runtime.py`
+  - runtime backend selection, file fallback, rollback safety, and explicit
+    proof that PostgreSQL is built only on deliberate opt-in
+- `tests/test_session_store_postgres_config.py`
+  - PostgreSQL env parsing, cache behavior, and URL/auto-create validation
+- `tests/test_session_store_postgres.py`
+  - bootstrap/config guards, missing-driver behavior, idempotent schema setup,
+    adapter behavior/parity coverage, and opt-in live PostgreSQL smoke isolation
+- `tests/test_session_store_file.py`
+  - file-backed parity for the active runtime default
+
+Update this contract doc when payload meaning or missing-session behavior
+changes.
+
 ### Session Alert Query Surfaces
 
 The backend now exposes a read-only, session-scoped alert query surface through
@@ -1813,14 +2307,20 @@ Current alert summary response shape:
 
 Current query semantics:
 
-- missing `session.json` means the session is treated as not found
-- missing `alerts.jsonl` for a known session means `[]`
+- missing durable session metadata means the session is treated as not found
+- missing alert rows for a known session means `[]`
 - malformed alert rows are ignored rather than failing the whole query
 - time filters use the existing persisted UTC timestamp format
 - `counts_by_detector` uses stable detector ids such as `video_blur` and
   `video_metrics`, not human-facing alert titles
 - these raw and summary response shapes stay the same regardless of whether
   the active alert backend is the default file store or the PostgreSQL store
+- alert storage may validate known-session state through
+  `SessionStore.session_exists(...)`, but it must not depend on the
+  file-backed session layout or PostgreSQL session schema
+- during migration, the alert backend and the session backend may differ; the
+  stable rule is that session existence still comes from the active
+  `SessionStore`, not from alert rows or storage-specific probing
 
 ### Compact Session Alert Report v1
 

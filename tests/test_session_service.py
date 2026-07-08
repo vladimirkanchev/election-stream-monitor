@@ -1,16 +1,16 @@
 """Focused tests for the shared session start/read/cancel service.
 
 These tests cover the canonical application seam directly. FastAPI and CLI
-adapter suites stay separate so transport behavior and shared session
-mechanics do not get re-tested in the same place.
+adapter suites stay separate so transport behavior and shared service rules do
+not get re-tested in the same place.
 
-For the worker-observability milestone, this suite also owns the direct checks
-for:
+This suite also owns the direct checks for:
 
 - detached worker command shape
 - session-scoped `worker.log` capture
 - parent-side launch logging with redacted context
 - the rule that diagnostics stay out of public session payloads
+- store-backed cancel intent writes from the shared service seam
 """
 
 from contextlib import contextmanager
@@ -22,6 +22,16 @@ import pytest
 import session_service
 
 DEFAULT_INPUT_PATH = "tests/fixtures/media/video_files/black_trigger.mp4"
+
+
+class _CancelRecordingStore:
+    """Minimal store double for service-level cancel intent write tests."""
+
+    def __init__(self) -> None:
+        self.cancelled: list[str] = []
+
+    def request_cancel(self, session_id: str) -> None:
+        self.cancelled.append(session_id)
 
 
 @contextmanager
@@ -415,6 +425,7 @@ def test_spawn_detached_session_worker_preserves_detached_process_settings(monke
     assert recorded["args"] == (command,)
     assert recorded["kwargs"] == {
         "cwd": str(Path(session_service.__file__).resolve().parent),
+        "env": session_service._build_detached_session_worker_env(),
         "stdout": log_handle,
         "stderr": log_handle,
         "shell": False,
@@ -565,7 +576,7 @@ def test_build_empty_session_snapshot_returns_fresh_lists() -> None:
 
 def test_cancel_session_running_happy_path(monkeypatch) -> None:
     """Cancel should allow active sessions and return the cancelling summary."""
-    cancelled: list[str] = []
+    store = _CancelRecordingStore()
 
     monkeypatch.setattr(
         session_service,
@@ -586,13 +597,13 @@ def test_cancel_session_running_happy_path(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         session_service,
-        "request_session_cancel",
-        lambda session_id: cancelled.append(session_id),
+        "get_default_session_store",
+        lambda: store,
     )
 
     summary = session_service.cancel_session("session-running")
 
-    assert cancelled == ["session-running"]
+    assert store.cancelled == ["session-running"]
     assert summary == {
         "session_id": "session-running",
         "mode": "video_files",
@@ -604,7 +615,7 @@ def test_cancel_session_running_happy_path(monkeypatch) -> None:
 
 def test_cancel_session_allows_already_cancelling(monkeypatch) -> None:
     """Cancel should preserve the existing behavior for already-cancelling runs."""
-    cancelled: list[str] = []
+    store = _CancelRecordingStore()
 
     monkeypatch.setattr(
         session_service,
@@ -625,13 +636,13 @@ def test_cancel_session_allows_already_cancelling(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         session_service,
-        "request_session_cancel",
-        lambda session_id: cancelled.append(session_id),
+        "get_default_session_store",
+        lambda: store,
     )
 
     summary = session_service.cancel_session("session-cancelling")
 
-    assert cancelled == ["session-cancelling"]
+    assert store.cancelled == ["session-cancelling"]
     assert summary == {
         "session_id": "session-cancelling",
         "mode": "api_stream",
@@ -690,6 +701,7 @@ def test_cancel_session_defaults_missing_selected_detectors_to_empty_list(
     monkeypatch,
 ) -> None:
     """Cancel summaries should stay stable even when older snapshots miss the field."""
+    store = _CancelRecordingStore()
     monkeypatch.setattr(
         session_service,
         "read_session_snapshot",
@@ -708,12 +720,13 @@ def test_cancel_session_defaults_missing_selected_detectors_to_empty_list(
     )
     monkeypatch.setattr(
         session_service,
-        "request_session_cancel",
-        lambda session_id: None,
+        "get_default_session_store",
+        lambda: store,
     )
 
     summary = session_service.cancel_session("session-missing-detectors")
 
+    assert store.cancelled == ["session-missing-detectors"]
     assert summary == {
         "session_id": "session-missing-detectors",
         "mode": "video_files",

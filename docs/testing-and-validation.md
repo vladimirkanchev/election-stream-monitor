@@ -6,6 +6,10 @@ confidence still needs to be built.
 Use it for verification commands and validation scope.
 Do not use it as a detailed architecture or contract doc.
 
+For Python commands in this repo, prefer `./.venv/bin/python` or `just`
+recipes rather than `python3` from `PATH`. The workspace does not force
+virtualenv auto-activation.
+
 For broader doc ownership rules, use [docs/README.md](./README.md#document-ownership).
 
 For branch workflow around those checks, use:
@@ -81,6 +85,7 @@ Choose the smallest honest lane first.
 | --- | --- | --- | --- |
 | One clear seam such as detectors, alert rules, HLS, or docs/workflow helpers | Matching focused lane such as `just test-detectors`, `just test-alert-rules`, `just test-hls`, or `just docs-check` | Path-aware branch lanes and the protected `main` chain when the change reaches those areas | Focused runs do not prove neighboring seams stayed intact |
 | Multi-seam runtime work that crosses backend plus frontend/operator flow | `just test-fast` | Fast branch-feedback lanes such as `backend-tests`, `frontend-checkpoint`, and aggregate gates | Does not prove packaging smoke, full frontend production validation, or PR-only policy checks |
+| Detached-worker runtime persistence work across FastAPI, `session_service`, and durable session snapshots | `just test-session-runtime` only when the branch really changes that seam | Weekly `lifecycle-deep` lane | Slower and more timing-sensitive than routine fast local loops; still file-backed by design |
 | "Ready to push" confidence for ordinary day-to-day work | `just ci-local` | Required and advisory PR lanes | Still does not reproduce clean-runner setup, editable-install packaging checks, full frontend test/build, or GitHub event/branch-protection behavior |
 | Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk | `weekly-validation` | Too slow and environment-sensitive for routine local or PR use |
 
@@ -104,13 +109,16 @@ Recommended local command order for most day-to-day work:
   - use when the changed seam is already clear and you want the smallest honest lane
 - `just test-fast`
   - best default fast production-runtime lane when you want one honest fast runtime pass
+- `just test-session-runtime`
+  - use only when the branch changes detached-worker startup, FastAPI/session-service agreement, durable session snapshot timing, or backend-selection runtime behavior
+  - not a default edit-refresh loop; keep it for slower runtime-confidence passes
 - `just fixture-check`
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
   - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
 - `just ci-contract-check`
-  - use when changing `.github/workflows/ci.yml`, the task-4 workflow helpers,
-    or their focused regression tests
+  - use when changing `.github/workflows/ci.yml`, the workflow-contract
+    helpers, or their focused regression tests
 - `just ci-local`
   - use before push or PR when you want the closest fast local CI proxy
 
@@ -119,8 +127,19 @@ Use weekly or manual-depth validation only when the change materially reaches:
 - real media or `ffmpeg` behavior
 - deeper `api_stream` lifecycle and recovery semantics
 - persisted session/lifecycle artifacts that only show up in longer runs
+- detached-worker runtime confidence you want rechecked in CI without promoting it into the protected PR lane
 - dependency or security audit work
 - live PostgreSQL backend or operator-flow confidence
+
+For the current session-store branch work, keep that deeper lane modest on
+purpose:
+
+- do not add a nightly-only validation lane yet
+- do not add an OS or Python-version matrix just for this slice
+- do not turn file-backed versus PostgreSQL-backed coverage into a broad PR
+  matrix before the focused parity and runtime lanes stop being enough
+- treat broader CI depth here as later expansion work, not as routine branch
+  polish
 
 Local validation is intentionally incomplete. It cannot prove:
 
@@ -184,6 +203,47 @@ Current focused ownership map:
   - future-facing plugin manifest ownership and id-boundary rules
 - `tests/test_session_cli_tooling.py`
   - session CLI adapter behavior, detector catalog CLI output, and read-session snapshot wiring
+- `tests/test_session_store_contract.py`
+  - durable session-store contract shape and excluded runtime concerns
+- `tests/test_session_store_file.py`
+  - file-backed session-store parity with `session_io`
+- `tests/test_session_store_parity.py`
+  - shared file-store versus PostgreSQL-store parity for missing-session
+    empty-shape reads, metadata-only snapshots, latest-only `progress`,
+    ordered `results`, `latest_result` derivation, and cancel-intent behavior
+  - uses the shared in-memory PostgreSQL-like adapter double by default, so
+    this lane stays fast and storage-neutral
+- `tests/test_api_boundary_sessions_read.py`
+  - HTTP-visible session snapshot regression coverage so outer keys,
+  null-vs-empty behavior, ordered `results`, and derived `latest_result`
+  stay stable while storage changes underneath
+- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - bridge normalization coverage so ordered `results`, derived
+  `latest_result`, and latest-only progress fields stay stable for desktop
+  polling consumers
+- `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
+  - malformed-row tolerance and proof that bridge reads `latest_result` from
+  the final valid ordered result instead of trusting a stale top-level row
+- these lanes prove snapshot parity across the current read path, but they do
+  not by themselves prove that the full session-store backend evolution is complete
+- `tests/test_session_store_runtime.py`
+  - default store selection, fallback behavior, rollback-safe runtime config,
+  and explicit proof that `postgres` is built only on deliberate opt-in
+  - explicit proof that missing URL, invalid URL shape, and missing driver
+    fail clearly only after explicit PostgreSQL selection
+- `tests/test_session_store_postgres.py`
+  - PostgreSQL session-store adapter behavior, bootstrap, driver failure
+    shaping, and opt-in schema-isolation helpers for live smoke lanes
+  - focused coverage:
+    metadata/progress/results persistence, snapshot assembly, malformed-row
+    tolerance, missing/invalid URL guards, missing-driver failure, no
+    accidental auto-create in default lanes, unit-level idempotency, and one
+    opt-in real PostgreSQL bootstrap smoke plus one opt-in adapter round-trip
+    smoke
+- `tests/test_session_runner_store_writes.py`
+  - storage-neutral lifecycle/execution/terminal write behavior
+- `tests/test_session_runner_progress.py`
+  - latest-progress no-op write guard for timestamp-only refreshes
 - `tests/test_export_detector_catalog.py`
   - exported detector-catalog JSON contract for frontend-facing tooling
 - `tests/test_detector_lab.py`
@@ -218,6 +278,32 @@ Use two explicit backend modes when validating this branch:
 The fast PR/branch CI workflow now pins the synthetic path to the file-backed
 alert backend. The weekly workflow owns the real Postgres confidence jobs and
 overrides that default in its dedicated live-DB lanes.
+
+Apply the same rule to the in-progress PostgreSQL session-store branch work:
+
+- keep `POSTGRES_SESSION_STORE_REAL_SMOKE` unset or `0` in normal local and PR validation
+- use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
+- reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
+
+The fast CI workflows now make that default explicit too:
+
+- `.github/workflows/ci.yml`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=0`
+- `.github/workflows/branch-ci.yml`
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=0`
+
+Use a manual or service-backed run only when you intentionally want live
+PostgreSQL session-store confidence.
+
+Example focused live command:
+
+```bash
+export ESM_SESSION_STORE_BACKEND=postgres
+export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
+export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1
+export POSTGRES_SESSION_STORE_REAL_SMOKE=1
+.venv/bin/pytest -q tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
+```
 
 For the short fixture and environment ownership rules behind those lanes, use
 [fixture-environment-policy.md](./fixture-environment-policy.md).
@@ -262,9 +348,120 @@ For the representative-media detector-lab lane specifically, keep one extra
 boundary in mind:
 
 - repeated compression fixtures are currently review-only calibration samples
-- they may prove score shape, false-positive resistance, or burst consistency
-- they should not be promoted into exact alert truth until a reviewed runtime
-  lane proves a stable subset worth promoting
+  - they may prove score shape, false-positive resistance, or burst consistency
+  - they should not be promoted into exact alert truth until a reviewed runtime
+    lane proves a stable subset worth promoting
+
+For current session-store migration work, use these as the smallest useful
+focused lanes before you reach for `just test-fast` or `just ci-local`:
+
+Current CI coverage audit for this area:
+
+- `backend-tests` already runs the normal non-`slow`, non-`e2e` Python tests,
+  so the store contract, file-store, parity, runtime-selection, service, CLI,
+  and PostgreSQL adapter unit coverage are already in the routine backend PR
+  lane when backend or contract changes wake it.
+- `test-and-build` owns the protected manifest-backed route/session-service
+  contract checks for `main` PRs.
+- `tests/test_api_boundary_sessions_runtime.py` is also listed in the weekly
+  lifecycle manifest and has a local helper, `just test-session-runtime`.
+  It is now marked `slow`, so routine backend PR tests do not collect it.
+  Use `just test-session-runtime` locally or weekly lifecycle when you want
+  that deeper runtime confidence.
+- live PostgreSQL session-store smoke remains opt-in and should not be added
+  to routine PR CI without a separate CI-expansion decision.
+  Keep it manual or weekly until the project intentionally accepts service
+  startup cost, database bootstrap ownership, and the extra failure surface in
+  ordinary branch feedback. Treat broader live-PostgreSQL automation as
+  follow-up work after the focused parity and runtime lanes stop being enough.
+
+Minimum required focused tests for this branch:
+
+- always keep the store contract and parity lane:
+  `just test-session-store`
+- add detached-worker runtime integration only when the branch changes
+  FastAPI start/read/cancel flow, worker startup timing, or parent/worker
+  backend agreement:
+  `tests/test_session_service_worker.py`,
+  `tests/test_session_cli_tooling.py`,
+  `tests/test_api_boundary_sessions_runtime.py`
+- rely on the existing protected docs and contract checks when the work is
+  docs-only or CI-contract-only; do not add a second session-store-specific CI
+  lane just to restate that confidence
+
+- start here for store parity and file-default behavior:
+
+```bash
+just test-session-store
+```
+
+  Use this first when the change is mainly about durable session semantics:
+
+  - file-backed session storage is still the default
+  - PostgreSQL session storage still turns on only after explicit backend
+    selection plus valid PostgreSQL configuration
+  - file and PostgreSQL-like store behavior still agree on the shared contract
+
+- use runtime integration only when the detached worker path or parent/worker
+  backend agreement is part of the risk:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_session_service_worker.py \
+tests/test_session_cli_tooling.py \
+tests/test_api_boundary_sessions_runtime.py \
+tests/test_session_store_runtime.py -q
+```
+
+  This slower lane is the right next step when you need to prove three things
+  at once:
+
+  - file-backed session storage is still the default
+  - PostgreSQL session storage still turns on only after explicit backend
+    selection plus valid PostgreSQL configuration
+  - the detached worker and parent process still agree on the selected backend
+  - explicit bad PostgreSQL config fails clearly instead of silently falling
+    back in the worker path
+
+- cancel behavior across store, service, and route seams:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider \
+tests/test_session_store_parity.py \
+tests/test_session_service_read_cancel.py \
+tests/test_api_boundary_sessions_cancel.py -q
+```
+
+- opt-in live PostgreSQL session-store smoke:
+  - keep this out of normal local and PR validation
+  - do not promote it into the default protected PR lane in this branch
+  - use it only when you intentionally want real database confidence after the
+    faster parity and runtime lanes already say the contract still holds
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+export ESM_SESSION_STORE_BACKEND=postgres && \
+export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor' && \
+export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 && \
+export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
+.venv/bin/pytest -q \
+tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
+```
+
+Practical lane order for this area:
+
+- use store parity first
+- add detached-worker runtime integration only when that runtime path changed
+- add live PostgreSQL smoke only when you need confidence in the real database
+  path itself
+
+The always-needed store parity lane and the detached-worker runtime lane now
+have dedicated `just` wrappers. Keep the remaining commands direct until the
+repo has a real reason to wrap them too.
 
 Useful focused examples:
 
@@ -320,7 +517,7 @@ commands directly, use the matching `justfile` recipes:
   - keeps broader intent and explanation rules with the PR template and
     merge/readiness checklist
 - `just ci-contract-check`
-  - focused task-4 workflow-contract regression lane
+  - focused workflow-contract regression lane
   - runs `tests/test_ci_workflow.py` and
     `tests/test_ci_test_target_scripts.py`
   - best local check when editing `ci.yml`, workflow-helper scripts, or the
@@ -402,9 +599,9 @@ The split between `Branch CI` and `CI` is intentional:
 - only the PR workflow emits the required `main-gate` context, which
   avoids duplicate-status merge confusion on the same commit SHA
 
-## Task-4 Workflow Contract Checks
+## Workflow Contract Checks
 
-Task 4 adds one narrow regression layer around the protected `main` PR CI
+This adds one narrow regression layer around the protected `main` PR CI
 contract. Read it as a maintainer safeguard, not as a second workflow
 implementation.
 
@@ -417,7 +614,7 @@ is:
 - `tests/test_ci_workflow.py`
 - `tests/test_ci_test_target_scripts.py`
 
-Use this focused local command when changing the task-4 helper layer:
+Use this focused local command when changing the workflow-helper layer:
 
 ```bash
 just ci-contract-check
@@ -793,6 +990,9 @@ Ownership summary:
   - docs expectations
   - policy-only test expectations that are intentionally narrower than the
     shared CI groups
+  - the `SessionStore` contract now lives under that same backend-contract policy,
+    so persistence-contract changes should move with focused store tests and
+    session persistence docs
 
 Policy consumer:
 
@@ -1018,7 +1218,7 @@ Use the live smokes when you need confidence in the real database path:
 
 - connection/bootstrap behavior
 - real SQL insert/read behavior
-- snapshot/API/CLI behavior over the active Postgres backend
+- snapshot/API/CLI behavior over the active PostgreSQL backend
 
 For this branch, the smallest useful live checks are:
 
@@ -1074,7 +1274,7 @@ focused bundles:
   - raw/grouped FastAPI route checks
   - grouped MCP agreement over the active backend
 - runtime/operator-flow confidence
-  - runner-written alerts through the live Postgres backend
+  - runner-written alerts through the live PostgreSQL backend
   - session snapshot reads over the active backend
   - CLI `read-session` behavior over the active backend
 
@@ -1106,7 +1306,7 @@ Use the backend bundle when:
 
 Use the runtime/operator-flow bundle when:
 
-- you want confidence in runner-written alerts under real Postgres mode
+- you want confidence in runner-written alerts under real PostgreSQL mode
 - you want to sanity-check snapshot and CLI behavior before a rollout or demo
 
 For a quick human-readable view of one persisted session during a manual check,
@@ -1170,12 +1370,12 @@ The current functionality under that slice is:
 
 Current alert persistence contract to preserve:
 
-- seam owner:
+- contract owner:
   - `src/session_alert_store.py`
     - defines the narrow storage contract for append/read raw alert rows only
     - owns the runtime-selected default alert store and still defaults to the
       file-backed alert backend in this branch phase
-    - filtering, summaries, and grouped incidents stay outside the store seam
+    - filtering, summaries, and grouped incidents stay outside the store contract
   - `src/session_alert_store_runtime_config.py`
     - owns explicit `file` versus `postgres` backend selection for that default
       store through `ESM_ALERT_STORE_BACKEND`
@@ -1185,7 +1385,7 @@ Current alert persistence contract to preserve:
   - `src/session_alert_store_postgres_config.py`
     - owns the narrow env/config parsing for the PostgreSQL bootstrap path
   - `src/session_alerts.py` and `src/session_alert_incidents.py`
-    - public read-model entrypoints accept the store seam explicitly while still
+    - public read-model entrypoints accept the store contract explicitly while still
       defaulting to the runtime-selected store implementation
 - write entrypoint:
   - `src/session_io.py`
@@ -1259,7 +1459,7 @@ The current test split is:
     coverage
 - `tests/test_session_io.py`
   - compatibility write-entry coverage showing `append_alert(...)` delegates to
-    the default alert-store seam without widening into broader session
+    the default alert-store contract without widening into broader session
     persistence changes
   - also covers write-to-read seam integration plus the hybrid snapshot path
     where metadata/progress/results remain file-backed and alerts follow the
@@ -1579,6 +1779,8 @@ python -m venv .venv
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback
 without making it the required branch gate yet.
+The repo's `typecheck` dependency group installs `pyright[nodejs]`, so this
+path does not rely on a separately installed system `node` binary.
 
 Focused alert-query pyright slice:
 
@@ -1661,26 +1863,51 @@ Backend/API contract checks:
   - playback-resolution behavior
 - `tests/test_api_boundary_sessions_read.py`
   - session read-route behavior
+  - stable snapshot keys, null-vs-empty defaults, malformed-row tolerance,
+    and alert/result consistency across the current storage split
   - runtime-selected alert-backend parity between the session snapshot route
     and the dedicated alert routes
 - `tests/test_api_boundary_sessions_start.py`
   - session start-route behavior
 - `tests/test_api_boundary_sessions_cancel.py`
-  - session cancel-route behavior
+  - session cancel-route status mapping
+  - transient `cancelling` response before worker settlement
+- `tests/test_api_boundary_sessions_runtime.py`
+  - real FastAPI-to-detached-worker runtime integration over the public session
+    routes
+  - accepted pending metadata, honest early-read `session_not_found`
+    tolerance, first readable snapshot, terminal persistence, and durable
+    cancel settlement through the worker path
+  - routine proof that the parent process and detached worker stay aligned on
+    the default file-backed session-store runtime
+  - owned by the slower local `just test-session-runtime` helper and the
+    weekly `lifecycle-deep` CI lane, not the routine fast PR lanes
 - `tests/test_session_service_start.py`
   - shared start-session service behavior
 - `tests/test_session_service_worker.py`
   - detached worker launch and log-handle behavior
 - `tests/test_session_service_read_cancel.py`
   - shared read/cancel service behavior
+  - store-backed snapshot/result/progress passthrough
+  - transient cancel summary before durable settlement
+- `tests/test_session_store_contract.py`
+  - backend-neutral session-store cancel contract
+- `tests/test_session_store_file.py`
+  - file-backed cancel marker compatibility behind `SessionStore`
+- `tests/test_session_store_postgres.py`
+  - PostgreSQL cancel current-state behavior
+- `tests/test_session_store_parity.py`
+  - file/PostgreSQL parity for cancel semantics and public snapshot stability
 - `tests/test_session_cli_tooling.py`
   - CLI adapter behavior over the shared session service
   - detector-catalog CLI output parity with the canonical registry
   - runtime-selected alert-backend behavior for `read-session`
+  - worker-path backend selection, cache refresh, and explicit postgres
+    failure behavior for `run-session`
 - `tests/test_api_boundary_contracts.py`
   - structured API error payloads
   - detector-catalog route parity with the canonical registry
-  - populated session snapshot response shape
+  - shared route-envelope behavior that sits beside the dedicated session-read tests
 - `tests/test_stream_loader_contracts.py`
   - `api_stream` contract-builder consistency
   - loader seam helper invariants
@@ -1720,11 +1947,12 @@ Frontend contract checks:
   - transport-envelope error normalization
   - bridge error payload fallback and typed metadata preservation
 - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
-  - required session snapshot shape and lifecycle field preservation
+  - required session snapshot shape, lifecycle field preservation, and tolerant progress timestamp handling
 - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
   - fail-closed malformed nested payload handling
 - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
   - partially corrupt alert/result collection compatibility
+  - `latest_result` recovery from the final valid ordered result row
 - `frontend/src/bridge/transport.test.ts`
   - transport selection and demo fallback behavior
 - `frontend/src/components/SessionStatusPanel.test.tsx`
@@ -1735,7 +1963,7 @@ Frontend contract checks:
   - operator-facing error wording
   - `api_stream` status/error interpretation
 - `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`
-  - hook behavior for local lifecycle polling, cancel-state transitions, and typed failures
+  - hook behavior for local lifecycle polling, cancel-state transitions, typed failures, and store-backed progress updates
 - `frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`
   - hook behavior for `api_stream` reconnect, recovery, and terminal polling semantics
 - `frontend/src/hooks/usePlaybackSource.test.tsx`
@@ -1771,6 +1999,7 @@ Use these focused checks when changing:
 
 - shared session start/read/cancel mechanics
 - detached worker launch, `worker.log` capture, or parent/worker observability
+- worker/backend runtime selection or env inheritance
 - FastAPI request/response schemas
 - session snapshot fields
 - bridge error payloads
@@ -1813,6 +2042,61 @@ Use that command first for worker-observability changes. It covers:
 - shared worker-launch behavior in `session_service.py`
 - the current API rule that diagnostics stay backend-owned
 - CLI-side worker failure logging behavior
+
+### Minimum Runtime Integration Contract
+
+Keep the slower runtime integration lane deliberately small and end-to-end. It
+should prove only that:
+
+- FastAPI `start-session` returns accepted pending session metadata
+- the detached worker later persists the first readable snapshot
+- FastAPI `read-session` sees the stable snapshot contract rather than
+  transport-local guesses
+- FastAPI `cancel-session` reaches the worker through durable cancel intent
+- terminal session state stays readable after worker settlement
+
+Keep the suite behavioral and narrow:
+
+- prove the parent-process API seam and detached-worker seam still meet
+- keep routine runtime coverage file-backed
+- treat PostgreSQL-like behavior as store-parity coverage
+- keep any live PostgreSQL runtime confidence as a separate opt-in smoke lane
+- use the slower detached-worker suite only in explicit lanes:
+  local `just test-session-runtime` when that seam changes, and weekly
+  `lifecycle-deep` for recurring CI confidence
+- do not expand the suite into detector, alert-rule, or frontend UX coverage
+- do not repeat store-parity or runner-internal assertions already covered by
+  focused tests
+
+Use this lane when you need proof that the real runtime chain still holds:
+
+- FastAPI accepts the session start request
+- `session_service.py` launches the detached worker with the active runtime
+  backend selection
+- the worker persists a readable snapshot that the parent process can later
+  read through the public session routes
+- durable cancel intent reaches that worker path and later settles to a stable
+  terminal snapshot
+
+Do not use this lane as a substitute for the cheaper focused seams:
+
+- use `tests/test_session_store_parity.py` for file versus PostgreSQL-like
+  store contract parity
+- use the split `tests/test_session_service_*.py` files for service-level
+  start/read/cancel and worker-launch behavior
+- use the split `tests/test_api_boundary_sessions_*.py` files for route
+  payload shape, status mapping, and structured API error behavior
+
+What this runtime lane does not prove:
+
+- real PostgreSQL runtime behavior
+- detector correctness, alert-rule correctness, or frontend UX behavior
+- every runner-internal state transition already covered by runner and store
+  suites
+- GitHub Actions trigger or protected-lane behavior
+
+Use [`session-model.md`](./session-model.md) for the lifecycle meaning behind
+early-read lag, cancel settlement, and durable terminal readability.
 
 ### Legacy Seam Replacement
 
@@ -2099,6 +2383,14 @@ Current lifecycle coverage is already spread across the main layers:
     - stable black-box local lifecycle coverage
     - local discovery and slice-expansion behavior now owned by
       `session_runner_discovery`
+  - `tests/test_session_store_runtime.py`
+    - current default store resolution
+    - invalid-backend fallback to file mode
+    - rollback-safe runtime selection behavior
+    - explicit proof that PostgreSQL session storage is opt-in, not the default
+  - `tests/test_session_runner_store_writes.py`
+    - helper-level metadata/progress/result writes through the session-store contract
+    - first stop when lifecycle/execution/terminal helpers drift back toward raw file ownership
   - `tests/test_session_runner_api_stream_progress.py`
     - seam-loader `api_stream` progress-shaping, repeated temporary failure
       tolerance, alert re-entry, and multi-detector live coherence
@@ -2116,13 +2408,14 @@ Current lifecycle coverage is already spread across the main layers:
   - `tests/test_api_boundary_sessions_read.py`
     - missing-session reads
     - populated session snapshot passthrough behavior
+    - stable snapshot shape, null-vs-empty behavior, and ordered `latest_result`
   - `tests/test_api_boundary_sessions_start.py`
     - start success and shared error mapping
   - `tests/test_api_boundary_sessions_cancel.py`
-    - cancel success, missing-session cancel failure, and current terminal cancel behavior
+    - cancel success, missing-session cancel failure, terminal cancel rejection, and transient-to-terminal cancel flow
   - `tests/test_api_boundary_contracts.py`
     - structured error envelopes
-    - malformed nested payload fail-closed behavior
+    - detector-catalog and shared route-envelope behavior
 - Electron bridge/runtime tests
   - `frontend/electron/bridgeResponses.test.mjs`
     - start/cancel success mapping
@@ -2155,7 +2448,6 @@ Current lifecycle coverage is already spread across the main layers:
 Current high-value gaps:
 
 - no explicit backend truth-table style test for repeated cancel requests
-- no explicit backend/API test for canceling an already terminal session as a final intended rule
 - no focused Electron test for read-session missing-session bridge mapping
 - no frontend app-flow coverage for cancel-after-completion
 

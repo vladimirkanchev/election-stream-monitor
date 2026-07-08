@@ -14,6 +14,7 @@ import {
 import {
   API_STREAM_MONITOR_SOURCE,
   buildDetectorOption,
+  buildSessionProgress,
   buildSessionSummary,
   createContractBridge,
 } from "./contract.testSupport";
@@ -132,6 +133,35 @@ describe("bridge contract success normalization", () => {
       input_path: "/data/streams/segments",
       selected_detectors: ["video_blur"],
       status: "cancelling",
+    });
+  });
+
+  it("normalizes a sparse readSession success payload into UI-safe collection defaults", async () => {
+    const progress = buildSessionProgress({
+      session_id: "session-sparse-read",
+    });
+    const bridge = createContractBridge({
+      readSession: vi.fn().mockResolvedValue({
+        ok: true,
+        data: {
+          session: buildSessionSummary({
+            session_id: "session-sparse-read",
+            status: "running",
+          }),
+          progress,
+        },
+      }),
+    });
+
+    await expect(bridge.readSession("session-sparse-read")).resolves.toEqual({
+      session: buildSessionSummary({
+        session_id: "session-sparse-read",
+        status: "running",
+      }),
+      progress,
+      alerts: [],
+      results: [],
+      latest_result: null,
     });
   });
 

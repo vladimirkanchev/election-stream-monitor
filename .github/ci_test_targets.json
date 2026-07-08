@@ -159,6 +159,10 @@
       "tests/test_session_runner_api_stream_cancellation.py",
       "tests/test_session_runner_execution_local.py",
       "tests/test_session_runner_execution_api_stream.py",
+      "tests/test_session_store_contract.py",
+      "tests/test_session_store_file.py",
+      "tests/test_session_store_runtime.py",
+      "tests/test_session_runner_store_writes.py",
       "frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx",
       "frontend/src/hooks/useMonitoringSession.apiStream.test.tsx",
       "frontend/src/hooks/usePlaybackSource.test.tsx",
@@ -386,6 +390,7 @@
       "tests/test_api_stream_local_validation.py"
     ],
     "weekly_lifecycle": [
+      "tests/test_api_boundary_sessions_runtime.py",
       "tests/test_session_runner_lifecycle.py",
       "tests/test_session_runner_execution_local.py",
       "tests/test_session_runner_execution_api_stream.py",

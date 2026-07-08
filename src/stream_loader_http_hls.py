@@ -39,9 +39,10 @@ import config
 from logger import format_log_context, get_logger
 from session_io import (
     append_api_stream_seen_chunk_key,
-    is_session_cancel_requested,
     read_api_stream_seen_chunk_keys,
 )
+from session_store import SessionStore
+from session_store_runtime import get_default_session_store
 from stream_loader_contracts import (
     ApiStreamHttpLoaderContract,
     ApiStreamLoaderError,
@@ -112,13 +113,21 @@ class _HttpHlsRuntimeState:
     source_url_class: str | None = None
     session_started_monotonic: float | None = None
     last_seen_max_sequence: int | None = None
+    cached_cancel_requested: bool = False
+    cancel_check_skip_budget: int = 0
 
 
 class HttpHlsApiStreamLoader:
     """Concrete HTTP/HLS loader for bounded local-first live-stream runs."""
 
-    def __init__(self, session_id: str) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        *,
+        session_store: SessionStore | None = None,
+    ) -> None:
         self._session_id = session_id
+        self._session_store = session_store or get_default_session_store()
         self._runtime_policy = build_api_stream_runtime_policy()
         self._http_loader_contract: ApiStreamHttpLoaderContract = (
             build_api_stream_http_loader_contract()
@@ -216,7 +225,7 @@ class HttpHlsApiStreamLoader:
         # advances the live playlist until new work appears or the bounded run ends.
         while True:
             self._enforce_session_runtime_limit()
-            self._raise_if_cancel_requested()
+            self._raise_if_cancel_requested(force_refresh=True)
             if self._state.pending_segments:
                 segment = self._state.pending_segments[0]
                 segment_key = _build_playlist_segment_key(segment)
@@ -267,7 +276,7 @@ class HttpHlsApiStreamLoader:
                 )
 
             time.sleep(self._state.current_poll_interval_sec)
-            self._raise_if_cancel_requested()
+            self._raise_if_cancel_requested(force_refresh=True)
             self._refresh_playlist_from_remote()
 
     def _refresh_playlist_from_text(self, playlist_text: str, playlist_url: str) -> None:
@@ -347,7 +356,7 @@ class HttpHlsApiStreamLoader:
 
         segment_name = Path(urlparse(segment.uri).path).name or f"segment-{segment.sequence:06d}.ts"
         segment_bytes = self._fetch_segment_bytes(segment.uri, segment_name)
-        self._raise_if_cancel_requested()
+        self._raise_if_cancel_requested(force_refresh=True)
         self._enforce_temp_storage_budget(len(segment_bytes))
         temp_path = self._temp_dir / f"{segment.sequence:06d}-{segment_name}"
         _write_api_stream_temp_file(temp_path, segment_bytes)
@@ -365,7 +374,7 @@ class HttpHlsApiStreamLoader:
     def _fetch_playlist_text_with_retries(self, url: str) -> tuple[str, str]:
         attempts = 0
         while True:
-            self._raise_if_cancel_requested()
+            self._raise_if_cancel_requested(force_refresh=True)
             try:
                 payload, resolved_url = self._fetch_url_bytes(url, include_final_url=True)
                 self._state.terminal_failure_reason = None
@@ -392,7 +401,7 @@ class HttpHlsApiStreamLoader:
                         source_name=failure.source_name,
                     ) from error
                 time.sleep(config.API_STREAM_RECONNECT_BACKOFF_SEC)
-                self._raise_if_cancel_requested()
+                self._raise_if_cancel_requested(force_refresh=True)
 
     def _refresh_playlist_from_remote(self) -> None:
         media_playlist_url = self._media_playlist_url
@@ -423,7 +432,7 @@ class HttpHlsApiStreamLoader:
         current_url = playlist_url
         followed_master_depth = 0
         while True:
-            self._raise_if_cancel_requested()
+            self._raise_if_cancel_requested(force_refresh=True)
             playlist_text, resolved_url = self._fetch_playlist_text_with_retries(current_url)
             playlist_kind = _detect_hls_playlist_kind(playlist_text)
 
@@ -532,7 +541,7 @@ class HttpHlsApiStreamLoader:
         *,
         include_final_url: bool = False,
     ) -> bytes | tuple[bytes, str]:
-        self._raise_if_cancel_requested()
+        self._raise_if_cancel_requested(force_refresh=True)
         request = _build_api_stream_request(url)
         try:
             with urlopen(  # nosec B310
@@ -567,8 +576,15 @@ class HttpHlsApiStreamLoader:
             current_poll_interval_sec=self._http_loader_contract.playlist_poll_interval_sec,
         )
 
-    def _raise_if_cancel_requested(self) -> None:
-        if is_session_cancel_requested(self._session_id):
+    def _raise_if_cancel_requested(self, *, force_refresh: bool = False) -> None:
+        """Stop the live loop when cooperative cancel intent becomes visible.
+
+        HTTP/HLS live runs may call this from hot paths such as bounded response
+        reads. A short negative-result cache keeps store-backed polling cheap,
+        while key boundaries still force a fresh read so cancel remains
+        responsive after sleeps, reconnects, and segment downloads.
+        """
+        if self._is_cancel_requested(force_refresh=force_refresh):
             self._stop_iteration(
                 reason="explicit_cancel",
                 message="Stopping api_stream after explicit cancel [%s]",
@@ -576,6 +592,24 @@ class HttpHlsApiStreamLoader:
                 source_url_class=self._state.source_url_class,
                 current_item=None,
             )
+
+    def _is_cancel_requested(self, *, force_refresh: bool = False) -> bool:
+        """Return the current cancel state with a small hot-path read throttle."""
+        if self._state.cached_cancel_requested:
+            return True
+        if (
+            not force_refresh
+            and self._state.cancel_check_skip_budget > 0
+        ):
+            self._state.cancel_check_skip_budget -= 1
+            return False
+
+        cancel_requested = self._session_store.is_cancel_requested(self._session_id)
+        self._state.cached_cancel_requested = cancel_requested
+        self._state.cancel_check_skip_budget = (
+            0 if cancel_requested else config.API_STREAM_CANCEL_CHECK_SKIP_COUNT
+        )
+        return cancel_requested
 
     def _enforce_session_runtime_limit(self) -> None:
         started_at = self._state.session_started_monotonic

@@ -102,7 +102,7 @@ docs while still recording which validation checkpoint the branch closed on.
 
 ## Quick Baseline Table
 
-This table is the shortest summary of what step 1 currently tells us.
+This table is the shortest summary of the current baseline.
 
 | Area | Current behavior | Evidence level | Election-stream note |
 | --- | --- | --- | --- |

@@ -2,9 +2,11 @@
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-Election Stream Monitor is a local-first AI video monitoring system for election-related media sources.
+Election Stream Monitor is a local-first AI video monitoring system for
+election-related media sources.
 
-It watches polling-station streams, archived recordings, or segmented video feeds and surfaces the quality problems that matter during monitoring.
+It watches polling-station streams, archived recordings, and segmented video
+feeds, then surfaces the quality problems that matter during monitoring.
 
 Today it is an advanced desktop-first prototype with:
 
@@ -14,15 +16,21 @@ Today it is an advanced desktop-first prototype with:
 - two built-in production alert rules built on top of those detectors
 - a small local MCP server with read-only alert-query tools
 - selectable alert backend: file by default, PostgreSQL opt-in
+- session persistence stays file-backed by default; PostgreSQL session storage
+  only turns on when you explicitly select and configure it
 
 It works best today for local development, demos, and small desktop-backed
 monitoring runs.
 
+For session semantics and backend-mode details, use
+[`docs/session-model.md`](./docs/session-model.md) and
+[`docs/session-persistence-audit.md`](./docs/session-persistence-audit.md).
+
 **Quick try:** run `npm run dev`, choose `video_files`, and test with a local
 `.mp4`.
 
-The project is intentionally small. I want it to stay readable, useful, and
-easy to extend without turning into a much heavier platform too early.
+The project is intentionally small. The current goal is a readable, useful,
+easy-to-extend desktop runtime rather than a heavier platform.
 
 For contributor and maintainer workflows, start with [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/README.md](./docs/README.md).
 
@@ -35,11 +43,12 @@ If a stream goes black, blurry, broken, or becomes too low quality, that is
 not only a technical issue. It can make real-time observation harder and
 reduce public oversight when it matters most.
 
-Today the project is a small desktop-first prototype for exploring that workflow in practice and for extending it with new video detectors as the monitoring needs become clearer.
+Today the project is a desktop-first prototype for exploring that workflow in
+practice and extending it with new video detectors as monitoring needs become
+clearer.
 
-With an AI-assisted coding agent, they can describe the
-monitoring problem they want to catch in plain language instead of needing
-strong manual coding skills or deep video-processing knowledge.
+AI-assisted coding tools can help contributors describe the monitoring problem
+in plain language instead of starting from low-level video-processing code.
 
 ## Where To Start
 
@@ -57,13 +66,17 @@ Start here if you are:
 
 ## Desktop Runtime Summary
 
-Most people will use the project through the Electron app. The desktop app talks to a local FastAPI backend that manages sessions, detector execution, playback-source handling, and alert/session reads.
+Most people will use the project through the Electron app. The desktop app
+talks to a local FastAPI backend that manages sessions, detector execution,
+playback-source handling, and alert/session reads.
 
 Today the runtime is local-first:
 
-- session metadata, progress, and results stay on local disk
+- session metadata, latest progress, and results read through one shared session-store contract
+- the runtime default is still file-backed under `data/sessions/`
 - alerts use one shared backend: file-backed by default, PostgreSQL as an explicit opt-in backend
-- the UI, alert routes, grouped incident routes, and MCP tools all read alerts through that shared backend
+- the UI, alert routes, grouped incident routes, and MCP tools all read alerts
+  through that shared backend
 
 FastAPI auth and rate limiting are available for shared access modes. MCP remains a separate local `stdio` tool surface.
 
@@ -166,12 +179,12 @@ center/right, and session state and alerts below.
 This part keeps the session state stable enough for the UI to refresh:
 
 - a session is created when monitoring starts
-- progress and results are written to local JSON / JSONL files
+- progress and results persist through `SessionStore` with a file default
 - alerts use one shared alert backend: file by default, PostgreSQL when you opt in
 - the frontend polls session snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
-The current feature set is still narrow, but easy to extend.
+The feature set is still narrow, but the extension points are explicit.
 
 ## Input Modes
 
@@ -198,8 +211,9 @@ In practice, the flow looks like this:
 4. FastAPI routes session operations into the shared backend services, which
    spawn and track the detached session worker that runs the monitoring flow.
 5. Detectors and alert rules process the media, while local session state and
-   the shared alert backend keep progress, results, and alerts. File-backed
-   alerts stay the default, with PostgreSQL available as an opt-in backend.
+   the shared alert backend keep progress, results, and alerts. Session data
+   still defaults to the file-backed store, while alerts stay file-backed by
+   default with PostgreSQL available as an opt-in backend.
 
 FastAPI and MCP are separate entry points over the same local alert and session
 data. FastAPI owns the main desktop HTTP path, while MCP remains a local
@@ -215,7 +229,7 @@ The diagram below shows the same flow in one picture.
 - **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, alert/session reads, and the protected alerts routes in `share` mode.
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
-- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session files stay file-backed even when alerts use the opt-in PostgreSQL backend.
+- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session reads and writes now go through the shared session-store contract, but the default backend still writes under `data/sessions/`.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation
@@ -239,6 +253,17 @@ cd frontend
 npm install
 ```
 
+For repo commands after setup, prefer the repo-local interpreter explicitly:
+
+```bash
+./.venv/bin/python -m pytest
+./.venv/bin/python your_script.py
+```
+
+Do not assume `python3`, `pip`, or `pytest` from `PATH` point at this repo's
+virtualenv. This is especially important for AI-assisted tools launched from a
+different project shell.
+
 If you use `uv`, the Python part can look like this:
 
 ```bash
@@ -247,7 +272,8 @@ uv venv
 uv pip install -e .
 ```
 
-If you also want backend test tooling locally, install the `test` extra:
+If you also want the fuller backend test toolchain locally, install the `test`
+extra:
 
 ```bash
 pip install -e .[test]
@@ -595,7 +621,7 @@ If a change affects API, CLI, persisted data, or bridge shape, start with
 
 ## Versioning And Releases
 
-- the project is now in an early `0.5.2` stage
+- the project is now in an early `0.6.0` stage
 - expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)
@@ -610,7 +636,7 @@ Useful references:
 Outputs are still local-first:
 
 - detector metrics: `data/metrics/`
-- per-session metadata, progress, and results: file-backed under `data/sessions/`
+- per-session metadata, latest progress, and results: `SessionStore` with a file default under `data/sessions/`
 - alerts: file-backed by default, with PostgreSQL available as an opt-in backend
 
 ## Repo Layout

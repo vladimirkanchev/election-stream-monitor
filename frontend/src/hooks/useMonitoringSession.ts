@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useState } from "react";
 
 import { localBridge } from "../bridge";
@@ -174,7 +175,7 @@ function isRunningStatus(status: SessionStatus | undefined): boolean {
 function applySnapshot(
   nextSnapshot: SessionSnapshot,
   fallbackSession: SessionSummary | null,
-  setSnapshot: (snapshot: SessionSnapshot) => void,
+  setSnapshot: Dispatch<SetStateAction<SessionSnapshot>>,
   setSession: (session: SessionSummary | null) => void,
 ): void {
   const mergedSession = nextSnapshot.session ?? fallbackSession;

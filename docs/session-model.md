@@ -7,15 +7,18 @@ It is meant for contributors and coding agents working on the session layer,
 not as end-user documentation.
 
 Use this doc for persisted session meaning and lifecycle semantics.
-Do not use it as the main architecture overview or as the complete bridge
-payload catalog; see [architecture.md](./architecture.md) and
-[contracts.md](./contracts.md) for those.
+Do not use it as the main architecture overview, the full payload catalog, or
+the migration inventory; see [architecture.md](./architecture.md),
+[contracts.md](./contracts.md), and
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 ## At a glance
 
 - sessions are the persisted contract between backend and frontend
-- session snapshots are still built from local session files
-- metadata, progress, and results stay file-backed today
+- session snapshots now read through the storage-neutral `SessionStore`
+- session storage stays file-backed by default, with PostgreSQL available only
+  through explicit backend selection plus valid configuration
+- this document explains what session data means, not which module writes it
 - alert storage stays file-backed by default for this branch phase and can now
   switch to PostgreSQL
 - the snapshot `alerts` field now follows that same alert backend
@@ -26,11 +29,11 @@ payload catalog; see [architecture.md](./architecture.md) and
 
 The frontend and backend do not talk through a full web service yet.
 
-Instead, the backend writes session data to disk and the frontend reads it
+Instead, the backend persists session state locally and the frontend reads it
 through the local bridge. That keeps the current project simple while still
 giving a clear session lifecycle and a stable read model.
 
-For start/read/cancel ownership, the shared application-service seam now lives
+For start/read/cancel ownership, the shared application service now lives
 in [`src/session_service.py`](../src/session_service.py).
 
 In practice:
@@ -47,12 +50,12 @@ Recommended reading order for start/read/cancel work:
 3. [`src/session_cli.py`](../src/session_cli.py)
 4. [`src/session_runner.py`](../src/session_runner.py)
 
-That order separates request ownership from the worker-side session execution
-that actually produces the persisted session artifacts described below.
+That order separates request ownership from the worker execution path that
+actually produces the persisted session artifacts described below.
 
 ## Session files
 
-Each session currently writes:
+Each session currently writes these file-backed artifacts:
 
 - `session.json`
 - `progress.json`
@@ -61,7 +64,20 @@ Each session currently writes:
 - `api_stream_seen_chunks.jsonl` for `api_stream` de-duplication state
 - `worker.log` as a backend-owned detached worker diagnostic trace
 
-These files live under the configured session output folder in `data/sessions/`.
+These files live under the configured session output folder in `data/sessions/`
+when the default file-backed session store is active. They describe the
+current file representation, not the whole contract by themselves. The durable
+contract is the session snapshot plus the `SessionStore` semantics described
+below.
+
+Even with explicit PostgreSQL session mode, some runtime artifacts still stay
+filesystem-backed in the current project stage:
+
+- `worker.log` stays a local detached-worker diagnostic artifact
+- `api_stream_seen_chunks.jsonl` stays a replay/de-dup coordination artifact
+- HTTP/HLS temp media files stay session-scoped processing inputs on disk
+- other temp-file and cleanup artifacts stay runtime-local rather than part of
+  the durable session snapshot
 
 ## What each file means
 
@@ -88,6 +104,28 @@ Incremental progress during a run:
 - optional terminal `status_reason`
 - optional terminal `status_detail`
 
+Durable progress is a latest-only read model. Store only the fields needed by
+session polling, terminal diagnostics, and backend/frontend contract tests:
+
+- `session_id`
+- `status`
+- `processed_count`
+- `total_count`
+- `current_item`
+- `latest_result_detector`
+- `latest_result_detectors`
+- `alert_count`
+- `last_updated_utc`
+- `status_reason`
+- `status_detail`
+
+Do not persist worker-only telemetry in this progress payload. Transport
+refresh counters, reconnect counters, cleanup counts, replay keys, temp-file
+paths, and verbose log context belong to worker diagnostics, HTTP/HLS runtime
+state, or explicit result/alert rows. If a value is not needed to rebuild the
+public session snapshot or explain the terminal state, keep it out of
+`SessionProgress`.
+
 Behavior depends a bit on mode:
 
 - for `video_segments`, progress moves naturally segment by segment
@@ -97,6 +135,16 @@ Behavior depends a bit on mode:
 
 So `current_item` and `processed_count` for `video_files` are now slice-based,
 not whole-file based.
+
+Current progress behavior:
+
+- progress writes now go through `SessionStore`
+- the file default still persists them to `progress.json` through
+  `FileSessionStore`
+- explicit `ESM_SESSION_STORE_BACKEND=postgres` persists the same contract in
+  PostgreSQL
+- timestamp-only refreshes are treated as no-op writes so durable progress
+  stays meaningful while polling remains fresh
 
 ### `alerts.jsonl`
 
@@ -111,7 +159,34 @@ the PostgreSQL alert backend when explicitly selected.
 
 Append-only detector result events for the session.
 
-These are the structured outputs of detectors before or alongside alert interpretation.
+These are the durable detector outputs that later snapshot reads expose through
+`results` and the derived `latest_result` field.
+
+The durable row contract stays intentionally compact:
+
+- top-level required fields:
+  - `session_id`
+  - `detector_id`
+  - `payload`
+- ordering is durable behavior, not a public row field:
+  - file mode preserves JSONL append order
+  - PostgreSQL mode must preserve monotonic row order
+- matching or reversed detector timestamps do not change that history order
+- `latest_result` remains a derived convenience value from the final valid row
+- shared source/timing hints may appear inside `payload` when available:
+  - `timestamp_utc`
+  - `detector_name`
+  - `source_name`
+  - `window_index`
+  - `window_start_sec`
+- alert-like context may also appear inside `payload` when detectors expose it
+  for later rule/debug interpretation:
+  - `title`
+  - `message`
+  - `severity`
+
+Detector-specific metrics still belong in `payload`, so detector evolution does
+not require a schema change for every new measurement.
 
 ### `worker.log`
 
@@ -131,7 +206,7 @@ That means the current session payload contract intentionally excludes
 diagnostics, add that through a deliberate diagnostics field or endpoint
 rather than growing the core session snapshot ad hoc.
 
-For this milestone, keep the file after success, failure, or cancel.
+For the current runtime, keep the file after success, failure, or cancel.
 Do not auto-delete it as part of normal session cleanup.
 
 The current runtime split is:
@@ -141,10 +216,75 @@ The current runtime split is:
 - `worker.log` is the per-session backend trace left by that worker-side
   execution path
 
+Worker storage invariant for this split:
+
+- the parent process may accept the request first, but parent process reads and
+  cancel writes must still target the same session-store backend that the
+  detached worker uses for durable metadata, progress, and result writes
+- the contract is backend agreement, not a requirement to pass settings in one
+  specific way
+- if parent and worker drift onto different backends, accepted sessions can
+  later look missing or stale even though both processes are individually
+  working
+
+Current runtime note:
+
+- the detached worker inherits the same session-store runtime configuration as
+  the parent process
+- file-backed session storage remains the default runtime path
+- PostgreSQL session storage turns on only after deliberate backend selection
+  and valid PostgreSQL bootstrap settings
+- routine runtime integration should prove that agreement through the public
+  FastAPI session routes and detached-worker path, not through backend-specific
+  storage assertions
+
 ## Persistence contract
 
 The current persistence layer is intentionally simple, but it still has a
 useful contract.
+
+### Durable SessionStore contract
+
+For the PostgreSQL migration path, treat durable session meaning as
+storage-neutral even though the file-backed implementation is still the runtime
+default.
+
+- `SessionStore` owns durable session metadata, latest progress, ordered
+  detector results, snapshot reads, known-session checks, and cancel intent.
+- File-backed session storage is still the runtime default.
+- PostgreSQL session storage is available only through explicit backend
+  selection plus valid PostgreSQL bootstrap settings.
+- Missing or invalid PostgreSQL bootstrap config should fail clearly only in
+  explicit PostgreSQL mode; it should not silently replace or break the file default.
+- Progress is a latest-only read model, not an event history.
+- A metadata-only snapshot is valid: `session` may exist while `progress`
+  remains `null`.
+- Results are append-ordered history, and `latest_result` is derived from the
+  final valid ordered row.
+- Cancel intent is bounded durable coordination state:
+  the system must preserve it across the parent process and detached worker,
+  but it is not part of the public session snapshot.
+- Logs, replay keys, temp media, and other runtime artifacts stay outside the
+  durable session contract unless a separate contract is added.
+- The parent process and detached worker must resolve the same backend so
+  accepted sessions do not later look missing or stale.
+
+For the current migration stage, cancel-request state should be treated as
+runtime coordination with bounded durability:
+
+- runtime coordination because the worker and live loader poll it as an active
+  stop signal
+- bounded durability because cancel intent must cross the parent process /
+  detached-worker boundary reliably
+- the active contract is now `SessionStore.request_cancel(...)` and
+  `SessionStore.is_cancel_requested(...)`
+- file-backed storage remains the file default unless
+  `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected
+- not part of the durable session snapshot read model and not ordinary
+  append-only session history
+
+For module ownership, PostgreSQL table mapping, runtime selection, and focused
+validation lanes, use [session-persistence-audit.md](./session-persistence-audit.md).
 
 ### Session-scoped files
 
@@ -157,8 +297,9 @@ These files belong to one session directory:
 - optional `worker.log`
 - optional `api_stream_seen_chunks.jsonl`
 
-That means the frontend and local tooling should treat them as the canonical
-state for one monitoring run.
+That means one session directory still holds the current file-backed runtime
+state for one monitoring run. Frontend and API callers should still treat the
+session snapshot, not raw filenames, as the stable read contract.
 
 ### Write semantics
 
@@ -168,10 +309,14 @@ Current write behavior is:
   - overwrite-style metadata snapshot
 - `progress.json`
   - overwrite-style latest progress snapshot
+  - repeated writes replace the current durable read model rather than adding
+    progress history
 - `alerts.jsonl`
   - append-only alert event log
 - `results.jsonl`
   - append-only detector result event log
+  - append order stays authoritative even when detector timestamps match or
+    move backward
 
 Alert writes now go through the same narrow seam as alert reads:
 `src/session_io.py::append_alert(...)` remains the compatibility entrypoint,
@@ -208,6 +353,19 @@ Alert persistence now has one explicit internal boundary:
 - `src/session_alert_incidents.py`
   - owns grouped incident timelines and grouped incident summaries
 
+Alert storage may depend on the session model only for the known-session
+question:
+
+- allowed:
+  - ask `SessionStore.session_exists(session_id)` before returning alert rows
+  - treat a known session with no alert rows as empty alert history
+- not allowed:
+  - read session files or PostgreSQL session tables directly from alert code
+  - infer session existence from an alert folder, alert table row, progress row,
+    result row, cancel marker, worker log, or temp media file
+  - depend on backend-specific session metadata shape inside alert filtering,
+    grouping, or HTTP/MCP adapters
+
 Practical effect:
 
 - writes and reads now go through the same alert seam
@@ -217,6 +375,9 @@ Practical effect:
   unchanged
 - the PostgreSQL alert store can be enabled without moving filtering or
   grouping into the storage layer
+- mixed runtime selection is still possible during migration; when alert and
+  session backends differ, the alert side must keep treating the active
+  `SessionStore` as the source of truth for whether a session is known
 - the current rollout state is simple:
   - file is still the default backend
   - PostgreSQL is the supported opt-in backend
@@ -331,7 +492,7 @@ operator-safe frontend wording.
 ### Current validation baseline
 
 At the end of this branch, the lifecycle behavior above is treated as settled
-because it is covered by the current milestone checks:
+because it is covered by the current validation checks:
 
 - frontend package:
   - `npm run test:electron-bridge`
@@ -360,9 +521,8 @@ for valid lifecycle transitions:
 - terminal states remain terminal and do not transition back into active work
 
 The low-level cancel-request helper is intentionally narrower than the route
-layer. It records cancel intent as a file-backed marker, while higher-level API
-and runner behavior decide whether cancellation is valid for the current
-session state.
+layer. It records store-backed cancel intent, while higher-level API and runner
+behavior decide whether cancellation is valid for the current session state.
 
 ## Lifecycle Truth Table
 
@@ -374,7 +534,7 @@ responses, Electron bridge mapping, and frontend session UX.
 | --- | --- | --- |
 | start-session succeeds | return pending `SessionSummary` | The frontend may transition into active monitoring after later reads/polls. |
 | start-session succeeds but the first read reports `session_not_found` | keep the started session active and retry on the next poll | The detached worker can lag briefly behind the accepted start request before the first persisted snapshot appears. |
-| read/poll for an active session | return current persisted session snapshot | Persisted session files are the source of truth, not inferred frontend state. |
+| read/poll for an active session | return current persisted session snapshot | The persisted session snapshot is the source of truth, not inferred frontend state. |
 | cancel-session for a running session | accept request and return `SessionSummary` or `null` | `null` is still a valid success when no updated summary is returned immediately. |
 | cancel-session for a session already in a terminal state | return a structured failure | Do not silently treat an invalid cancel state as a normal success. |
 | read/poll after a session completes | return terminal snapshot with `completed` status | Terminal state should remain readable after active processing stops. |
@@ -392,17 +552,58 @@ responses, Electron bridge mapping, and frontend session UX.
 
 - Persisted session snapshots are the source of truth for lifecycle state.
 - Route-level request failures and session lifecycle state are different things.
+- Low-level missing-session shape and route-level missing-session errors are
+  both intentional: the store contract keeps one stable empty snapshot shape,
+  while service and route layers decide when that becomes a structured missing
+  session failure.
+- Metadata-only snapshots are valid during startup, recovery, or tolerant
+  degraded reads; `progress` may be `null` without making the session itself
+  invalid.
+- Cancel intent is durable runtime coordination, not part of the public
+  snapshot payload.
 - Terminal states should remain readable after a session stops running.
+- The parent process and detached worker must resolve the same backend so an
+  accepted session does not later read as missing or stale.
 - Invalid cancel requests should fail clearly rather than look like successful cancellation.
 - Frontend transport normalization should preserve these meanings rather than reinterpret them.
 - Frontend polling is intentionally tolerant of one-off read failures and keeps the last good session state instead of clearing the session immediately.
 - Frontend stop behavior should suppress duplicate in-flight cancel requests and prefer a stable ending/terminal state over repeated stop churn.
 - Once the UI has already settled into `completed`, the app suppresses another stop request rather than surfacing a late cancel-state failure from a request it no longer needs to send.
 
+This table is also the semantics owner for the minimum backend runtime
+integration lane: accepted start, first persisted readable snapshot, durable
+cancel delivery, and post-settlement terminal readability should be proven
+end to end without expanding into broad frontend or detector coverage.
+
+### Snapshot population rules
+
+For the current project stage, these population rules are part of the session
+meaning, not only of one backend implementation:
+
+- a missing session is not the same thing as an empty but valid active session
+- `session` is the anchor for "this session is known"
+- `progress` may legitimately be `null` during startup, after tolerant
+  degraded reads, or before a valid latest-progress payload exists
+- `alerts` and `results` should stay list-shaped even when empty
+- `latest_result` should always match the last valid ordered row in `results`
+  when one exists
+- low-level cancel intent stays outside the public snapshot payload
+- committed `results` and `alerts` remain readable after terminal
+  `completed`, `failed`, or `cancelled` settlement
+
+This is a stable read-model promise across backends. File-backed storage is
+still the default runtime path, and PostgreSQL remains explicit opt-in, but
+the same session state should still yield the same public snapshot shape and
+the same `results` / `latest_result` relationship.
+
 At the backend persistence-helper layer, missing session snapshot reads still
 degrade to the stable empty snapshot shape. Structured missing-session failures
 are introduced later at the API boundary when that empty snapshot means
 "session not found" for a route-level request.
+
+That parity promise is narrower than "migration complete." It covers the
+public session snapshot contract while storage ownership is still moving
+behind `SessionStore`.
 
 ## Route Failures Vs Session State
 
@@ -433,12 +634,19 @@ This contract is intentionally simple:
 
 ## Notes For Agents
 
-- Treat session files as the canonical persisted contract, even if helper code
-  changes around them.
+- Treat `src/session_store.py` as the canonical durable-session boundary.
+- Treat the snapshot shape and field meaning as more stable than the current
+  file layout.
+- Treat session files as the current default backend representation, not as the
+  long-term contract itself.
 - If you change a session field meaning, update:
   - this doc
   - `docs/contracts.md`
+  - `docs/session-persistence-audit.md`
   - the affected frontend readers/tests
+- If you change only file-backend mechanics, keep the public snapshot contract
+  and store behavior tests stable unless the product behavior is intentionally
+  changing.
 
 ## Important design point
 

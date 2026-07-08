@@ -55,6 +55,33 @@ Weekly failures fail the weekly workflow but do not block an ordinary PR
 merge. Local lanes produce no GitHub status and do not reproduce the complete
 protected workflow.
 
+For the current session-store migration work, keep live PostgreSQL session
+confidence in weekly or manual-depth lanes. Do not add a default PR job that
+boots a database service just to restate the focused parity and runtime
+confidence the branch already has.
+
+Also defer broader CI expansion in this branch:
+
+- no nightly-only session-store workflow
+- no OS or Python version matrix for this slice
+- no full file-versus-PostgreSQL backend matrix in ordinary PR CI
+
+Those are reasonable follow-up directions once the focused parity and runtime
+confidence stops being the main branch risk. Treat them as later CI-expansion
+work, not as cleanup that belongs folded back into this branch.
+
+Concrete follow-up branch candidates:
+
+- `ci/live-postgres-session-smoke`
+  - add one opt-in or weekly live PostgreSQL session-store smoke path with
+    explicit service/bootstrap ownership
+- `ci/weekly-session-db-confidence`
+  - extend weekly validation with a small session-store database-confidence
+    bundle once the live smoke path proves stable
+- `ci/session-store-matrix-expansion`
+  - evaluate whether an OS, Python-version, or backend matrix adds enough
+    confidence to justify the extra routine CI cost
+
 ## Important Distinctions
 
 Keep these five distinctions explicit when reviewing or editing CI:
@@ -324,7 +351,7 @@ informational rather than protected by `main-gate`.
   - `tests/test_ci_test_target_scripts.py`
     - owns manifest/helper/ownership drift checks around that workflow
 
-Task-4 workflow regression coverage intentionally stays narrow. The protected
+Workflow regression coverage intentionally stays narrow. The protected
 invariants under test are:
 
 - exact `main-gate` direct dependencies
@@ -338,7 +365,7 @@ The weekly workflow now also owns the live PostgreSQL alert-confidence bundles
 through a disposable GitHub Actions `postgres:16` service container. It does
 not depend on a shared external database secret for the normal weekly path.
 
-Focused local validation for this task-4 surface:
+Focused local validation for this workflow-contract surface:
 
 - `python3 .github/scripts/validate_ci_test_targets.py`
 - `python3 .github/scripts/check_ci_test_paths_exist.py`
@@ -416,6 +443,8 @@ It guards:
 - contract-sensitive code moving with `docs/contracts.md`
 - contract gates moving with nearby tests
 - contract gates moving with the owning docs
+- session-store persistence changes moving with focused store tests and
+  session persistence docs
 - fixture and environment policy assumptions in the protected `main` path
 
 It reuses shared manifest groups where the repo already has stable CI target

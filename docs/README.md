@@ -2,13 +2,17 @@
 
 This folder is the internal reference set for contributors, reviewers, and
 people using AI-assisted tools for coding and development. Use it as the
-intent layer for the current repo state, not as end-user documentation.
+maintainer view of the current repo state, not as end-user documentation.
 
 If you want the gentlest product-level overview first, start with the root
 [`README.md`](../README.md) and come back here for the maintainer view.
 
 If you want the shortest contributor entrypoint for branch flow, local
 commands, and docs ownership, start with [../CONTRIBUTING.md](../CONTRIBUTING.md).
+
+Before running Python commands, prefer the repo-local interpreter or a `just`
+recipe. This repo does not auto-activate `.venv`, so inherited shell state can
+still point at another project's environment.
 
 ## Best First Reads
 
@@ -18,7 +22,7 @@ If you are new to the repo, read these in order:
 2. [architecture.md](./architecture.md)
 3. [contracts.md](./contracts.md)
 4. [session-model.md](./session-model.md)
-5. then the task-specific doc for the subsystem you want to change
+5. then the subsystem-specific doc you need for the change
 
 ## Quick Role Map
 
@@ -116,11 +120,28 @@ For the current alert-storage rollout state, use:
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
 
 - changing session snapshot or polling behavior:
-  - [session-model.md](./session-model.md)
   - [contracts.md](./contracts.md)
+  - [session-model.md](./session-model.md)
+  - [session-persistence-audit.md](./session-persistence-audit.md)
   - [architecture.md](./architecture.md)
-  - `src/session_io.py`
-  - `tests/test_session_io.py`
+  - current runtime note: session persistence still defaults to the file-backed
+    store; PostgreSQL session bootstrap/config exists, and PostgreSQL session
+    storage is available as an explicit runtime opt-in
+  - `src/session_store.py`
+  - `src/session_store_runtime.py`
+  - `src/session_store_runtime_config.py`
+  - `src/session_store_file.py`
+  - `src/session_store_postgres.py`
+  - `src/session_service.py`
+  - `tests/test_session_store_contract.py`
+  - `tests/test_session_store_file.py`
+  - `tests/test_session_store_parity.py`
+  - `tests/test_session_store_runtime.py`
+  - `tests/test_session_store_postgres.py`
+  - `tests/test_api_boundary_sessions_read.py`
+  - `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
+  - `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
 - changing frontend bridge normalization or UI transport handling:
   - [frontend-architecture.md](./frontend-architecture.md)
   - [contracts.md](./contracts.md)
@@ -201,9 +222,15 @@ module families and the matching tests:
   - `src/session_runner_terminal.py`
   - `src/session_runner_discovery.py`
   - `src/session_runner_progress.py`
+  - `src/session_store.py`
+  - `src/session_store_runtime.py`
+  - `src/session_store_file.py`
   - `tests/test_session_service_start.py`
   - `tests/test_session_service_worker.py`
   - `tests/test_session_service_read_cancel.py`
+  - `tests/test_session_store_contract.py`
+  - `tests/test_session_store_file.py`
+  - `tests/test_session_store_runtime.py`
   - `tests/test_api_boundary_sessions_read.py`
   - `tests/test_api_boundary_sessions_start.py`
   - `tests/test_api_boundary_sessions_cancel.py`
@@ -212,6 +239,7 @@ module families and the matching tests:
   - `tests/test_session_runner_execution_local.py`
   - `tests/test_session_runner_execution_api_stream.py`
   - `tests/test_session_runner_terminal.py`
+  - `tests/test_session_runner_store_writes.py`
   - `tests/test_session_runner_local.py`
   - `tests/test_session_runner_api_stream_completion.py`
   - `tests/test_session_runner_api_stream_cancellation.py`
@@ -434,6 +462,7 @@ coordinated contract change:
 - frontend bridge normalization shape
 - FastAPI structured error payload shape
 - detector catalog shape
+- durable session-store boundary in `src/session_store.py`
 
 ## Repo-Local Codex Skills
 

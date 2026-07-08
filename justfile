@@ -134,6 +134,22 @@ test-detector-lab:
 test-real-media:
     {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_detector_lab_real_media.py
 
+# Slower detached-worker runtime lane for FastAPI/session persistence confidence.
+test-session-runtime:
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
+      tests/test_session_service_worker.py \
+      tests/test_session_cli_tooling.py \
+      tests/test_api_boundary_sessions_runtime.py \
+      tests/test_session_store_runtime.py
+
+# Focused session-store contract and parity lane.
+test-session-store:
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
+      tests/test_session_store_contract.py \
+      tests/test_session_store_file.py \
+      tests/test_session_store_parity.py \
+      tests/test_session_store_runtime.py
+
 # Fast synthetic backend lane aligned with the current `backend-tests` CI job.
 _backend-tests-fast:
     {{venv_python}} -c "import api.app, api.routers.sessions, session_service, session_cli, session_alert_report"

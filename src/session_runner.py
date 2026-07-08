@@ -23,6 +23,8 @@ from alert_rules import reset_session_rule_state
 from analyzer_contract import AnalysisSlice, InputMode
 from processor import run_enabled_analyzers_bundle
 from session_models import SessionMetadata, SessionProgress
+from session_store import SessionStore
+from session_store_runtime import get_default_session_store
 import session_runner_discovery
 import session_runner_execution
 import session_runner_lifecycle
@@ -75,11 +77,13 @@ def run_local_session(
     poll a stable session snapshot while the run is still active.
     """
     resolved_session_id = session_id or create_session_id()
+    session_store = get_default_session_store()
     metadata, progress = session_runner_lifecycle.initialize_pending_session(
         mode=mode,
         input_path=input_path,
         selected_detectors=selected_detectors,
         session_id=resolved_session_id,
+        session_store=session_store,
     )
     reset_session_rule_state(resolved_session_id)
     validated_input_path = _validate_source_or_finalize(
@@ -87,6 +91,7 @@ def run_local_session(
         input_path=input_path,
         metadata=metadata,
         progress=progress,
+        session_store=session_store,
     )
 
     metadata = session_runner_lifecycle.persist_pending_metadata(
@@ -94,6 +99,7 @@ def run_local_session(
         mode=mode,
         input_path=validated_input_path,
         selected_detectors=selected_detectors,
+        session_store=session_store,
     )
 
     try:
@@ -104,6 +110,7 @@ def run_local_session(
                 input_path=validated_input_path,
                 session_id=resolved_session_id,
                 selected_detectors=selected_detectors,
+                session_store=session_store,
             )
 
         return _run_validated_local_slice_session(
@@ -112,6 +119,7 @@ def run_local_session(
             input_path=validated_input_path,
             session_id=resolved_session_id,
             selected_detectors=selected_detectors,
+            session_store=session_store,
         )
     finally:
         _cleanup_session_runtime(
@@ -127,12 +135,14 @@ def _run_validated_api_stream_session(
     input_path: str | Path,
     session_id: str,
     selected_detectors: list[str],
+    session_store: SessionStore,
 ) -> SessionMetadata:
     """Run one already-validated `api_stream` session."""
     running_metadata, running_progress = session_runner_lifecycle.start_running_session(
         metadata,
         progress,
         total_count=0,
+        session_store=session_store,
     )
     updated_metadata, _ = _run_api_stream_session(
         metadata=running_metadata,
@@ -140,6 +150,7 @@ def _run_validated_api_stream_session(
         input_path=input_path,
         session_id=session_id,
         selected_detectors=selected_detectors,
+        session_store=session_store,
     )
     return updated_metadata
 
@@ -151,6 +162,7 @@ def _run_validated_local_slice_session(
     input_path: str | Path,
     session_id: str,
     selected_detectors: list[str],
+    session_store: SessionStore,
 ) -> SessionMetadata:
     """Run one already-validated local-file session."""
     input_slices = _discover_local_slices_or_finalize(
@@ -158,12 +170,14 @@ def _run_validated_local_slice_session(
         progress=progress,
         input_path=input_path,
         session_id=session_id,
+        session_store=session_store,
     )
 
     running_metadata, running_progress = session_runner_lifecycle.start_running_session(
         metadata,
         progress,
         total_count=len(input_slices),
+        session_store=session_store,
     )
     updated_metadata, _ = session_runner_execution.process_discovered_slices(
         metadata=running_metadata,
@@ -173,6 +187,7 @@ def _run_validated_local_slice_session(
         selected_detectors=selected_detectors,
         input_slices=input_slices,
         bundle_runner=run_enabled_analyzers_bundle,
+        session_store=session_store,
     )
     return updated_metadata
 
@@ -226,7 +241,11 @@ def discover_input_slices(
     )
 
 
-def get_api_stream_loader(session_id: str | None = None) -> ApiStreamLoader:
+def get_api_stream_loader(
+    session_id: str | None = None,
+    *,
+    session_store: SessionStore | None = None,
+) -> ApiStreamLoader:
     """Return the backend loader responsible for future live-stream fetching.
 
     This small factory keeps the session runner independent from the concrete
@@ -236,7 +255,7 @@ def get_api_stream_loader(session_id: str | None = None) -> ApiStreamLoader:
     Keep this public wrapper stable on `session_runner` so tests and callers do
     not need to track the internal loader-module layout.
     """
-    return create_api_stream_loader(session_id=session_id)
+    return create_api_stream_loader(session_id=session_id, session_store=session_store)
 
 
 def _discover_api_stream_slices(
@@ -256,6 +275,7 @@ def _run_api_stream_session(
     input_path: str | Path,
     session_id: str,
     selected_detectors: list[str],
+    session_store: SessionStore,
 ) -> tuple[SessionMetadata, SessionProgress]:
     """Process live slices incrementally as the loader yields them.
 
@@ -265,7 +285,7 @@ def _run_api_stream_session(
     model.
     """
     source = build_api_stream_source_contract(str(input_path))
-    loader = get_api_stream_loader(session_id=session_id)
+    loader = get_api_stream_loader(session_id=session_id, session_store=session_store)
     return session_runner_execution.run_api_stream_session(
         metadata=metadata,
         progress=progress,
@@ -274,6 +294,7 @@ def _run_api_stream_session(
         source=source,
         loader=loader,
         bundle_runner=run_enabled_analyzers_bundle,
+        session_store=session_store,
     )
 
 
@@ -288,6 +309,7 @@ def _validate_source_or_finalize(
     input_path: str | Path,
     metadata: SessionMetadata,
     progress: SessionProgress,
+    session_store: SessionStore,
 ) -> str | Path:
     """Validate the source and persist a failed pending session on error."""
     try:
@@ -298,6 +320,7 @@ def _validate_source_or_finalize(
             progress=progress,
             source_kind=mode,
             error=error,
+            session_store=session_store,
         )
         raise
 
@@ -308,6 +331,7 @@ def _discover_local_slices_or_finalize(
     progress: SessionProgress,
     input_path: str | Path,
     session_id: str,
+    session_store: SessionStore,
 ) -> list[AnalysisSlice]:
     """Discover local slices and persist a failed pending session on error."""
     try:
@@ -322,6 +346,7 @@ def _discover_local_slices_or_finalize(
             progress=progress,
             source_kind=metadata.mode,
             error=error,
+            session_store=session_store,
         )
         raise
 

@@ -1,7 +1,7 @@
-"""Regression tests for the narrow workflow reader and protected CI contract.
+"""Regression tests for the workflow reader and protected CI contract.
 
-This file keeps two seams honest:
-- the small YAML reader used by task-4 workflow checks
+This module keeps three seams honest:
+- the small YAML reader used by the workflow checks
 - the protected/advisory policy enforced over the live `ci.yml`
 - the workflow split that keeps protected PR statuses separate from branch
   push feedback

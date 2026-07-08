@@ -7,6 +7,24 @@ stage.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-07
+
+Dual-backend persistence stage release.
+
+Highlights:
+
+- session persistence now has a clearer supported contract across file-backed
+  and PostgreSQL-backed stores, with parity coverage around metadata, latest
+  progress, ordered results, cancel intent, and snapshot shape
+- alert persistence and session persistence can both use PostgreSQL as an
+  intentional supported backend option, while file-backed storage remains the
+  default rollout mode
+- detached-worker runtime confidence is stronger across FastAPI start, read,
+  cancel, and early-read behavior, with validation lanes that distinguish fast
+  store/service confidence from slower runtime confidence
+- session-persistence, contracts, and validation docs now describe the current
+  file-default and PostgreSQL-opt-in model more directly
+
 ## [0.5.2] - 2026-07-04
 
 Session-store and stream/runtime hardening follow-up release.

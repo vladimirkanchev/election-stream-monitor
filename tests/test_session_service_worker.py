@@ -1,12 +1,15 @@
-"""Focused tests for direct session worker launching and log-handle behavior."""
+"""Focused tests for detached worker launch, logging, and env inheritance."""
 
 from io import StringIO, TextIOWrapper
+import os
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 import session_service
+from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
+from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 from tests.session_service_test_support import context_managed_handle, spawn_worker
 
 
@@ -54,6 +57,7 @@ def test_spawn_detached_session_worker_preserves_detached_process_settings(
     kwargs = cast(dict[str, object], recorded["kwargs"])
     assert kwargs == {
         "cwd": str(Path(session_service.__file__).resolve().parent),
+        "env": os.environ.copy(),
         "stdout": log_handle,
         "stderr": log_handle,
         "shell": False,
@@ -61,6 +65,67 @@ def test_spawn_detached_session_worker_preserves_detached_process_settings(
     }
     assert kwargs["stdout"] is not session_service.subprocess.DEVNULL
     assert kwargs["stderr"] is not session_service.subprocess.DEVNULL
+
+
+def test_spawn_detached_session_worker_passes_session_store_runtime_env(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The spawned worker should receive the parent's selected session store config."""
+    recorded: dict[str, object] = {}
+    log_path = tmp_path / "worker.log"
+    log_handle = log_path.open("a", encoding="utf-8")
+    command = ["python", "session_cli.py", "run-session", "--session-id", "session-123"]
+
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(
+        POSTGRES_SESSION_DATABASE_URL_ENV,
+        "postgresql://session:secret@db.example/esm",
+    )
+
+    def fake_popen(*args, **kwargs):
+        recorded["args"] = args
+        recorded["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(session_service.subprocess, "Popen", fake_popen)
+
+    try:
+        session_service._spawn_detached_session_worker(
+            command,
+            log_handle=cast(TextIOWrapper, log_handle),
+        )
+    finally:
+        log_handle.close()
+
+    assert recorded["args"] == (command,)
+    env = cast(dict[str, str], cast(dict[str, object], recorded["kwargs"])["env"])
+    assert env[SESSION_STORE_BACKEND_ENV] == "postgres"
+    assert (
+        env[POSTGRES_SESSION_DATABASE_URL_ENV]
+        == "postgresql://session:secret@db.example/esm"
+    )
+
+
+def test_build_detached_session_worker_env_preserves_session_store_runtime_env(
+    monkeypatch,
+) -> None:
+    """Worker env should carry the same session-store backend settings as the parent."""
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(
+        POSTGRES_SESSION_DATABASE_URL_ENV,
+        "postgresql://session:secret@db.example/esm",
+    )
+    monkeypatch.setenv("UNRELATED_PARENT_FLAG", "kept")
+
+    worker_env = session_service._build_detached_session_worker_env()
+
+    assert worker_env[SESSION_STORE_BACKEND_ENV] == "postgres"
+    assert (
+        worker_env[POSTGRES_SESSION_DATABASE_URL_ENV]
+        == "postgresql://session:secret@db.example/esm"
+    )
+    assert worker_env["UNRELATED_PARENT_FLAG"] == "kept"
 
 
 def test_spawn_session_worker_creates_session_scoped_worker_log(

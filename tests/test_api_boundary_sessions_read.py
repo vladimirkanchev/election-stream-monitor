@@ -1,17 +1,23 @@
-"""Focused FastAPI adapter tests for session read routes and snapshot parity.
+"""FastAPI session-read contract tests.
 
-This file now covers the Task-3 runtime wiring outcome: the general session
-snapshot route should expose alerts from the active alert-store seam, not only
-from the legacy local alert log.
+This module keeps the public snapshot shape stable across route reads, sparse
+file-backed state, ordered results, and alert/result composition.
 """
 
 import json
 from collections.abc import Iterator
+from pathlib import Path
+from threading import Event, Thread
 
 import pytest
+import config
 
 from session_alert_store import AlertEventPayload
 from session_alert_store import clear_default_session_alert_store_cache
+from session_io import append_result, initialize_session, write_session_progress
+from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
+from session_store import SESSION_SNAPSHOT_KEYS, SessionSnapshotPayload
+from session_store_runtime import clear_default_session_store_cache
 from tests.api_alert_test_support import build_internal_error_payload
 from tests.session_alert_test_support import (
     FailingReadAlertStore,
@@ -34,10 +40,12 @@ from tests.api_boundary_test_support import request
 
 
 @pytest.fixture(autouse=True)
-def _clear_default_alert_store_cache() -> Iterator[None]:
-    """Keep runtime-selected default-store caching isolated in session-route tests."""
+def _clear_default_store_caches() -> Iterator[None]:
+    """Reset cached default stores between route tests."""
     clear_default_session_alert_store_cache()
+    clear_default_session_store_cache()
     yield
+    clear_default_session_store_cache()
     clear_default_session_alert_store_cache()
 
 
@@ -51,7 +59,7 @@ def _snapshot_alert(
     severity: str = "warning",
     source_name: str,
 ) -> AlertEventPayload:
-    """Build one normalized snapshot alert row for session-route runtime tests."""
+    """Build a normalized alert row for snapshot assertions."""
     return build_normalized_alert(
         session_id,
         timestamp_utc=timestamp_utc,
@@ -61,6 +69,159 @@ def _snapshot_alert(
         severity=severity,
         source_name=source_name,
     )
+
+
+def _progress(
+    *,
+    session_id: str,
+    processed_count: int,
+    total_count: int,
+    current_item: str,
+    alert_count: int = 1,
+    last_updated_utc: str | None = None,
+    status: SessionStatus = "running",
+) -> SessionProgress:
+    """Build a route-facing progress payload."""
+    return SessionProgress(
+        session_id=session_id,
+        status=status,
+        processed_count=processed_count,
+        total_count=total_count,
+        current_item=current_item,
+        latest_result_detector="video_metrics",
+        alert_count=alert_count,
+        last_updated_utc=last_updated_utc or f"2026-06-30 11:00:0{processed_count}",
+        latest_result_detectors=["video_metrics"],
+        status_reason=status,
+        status_detail=None,
+    )
+
+
+def _result_payload(
+    *, source_name: str, window_index: int, timestamp_utc: str | None = None
+) -> dict[str, object]:
+    """Build the shared payload body for result-event fixtures."""
+    payload: dict[str, object] = {
+        "source_name": source_name,
+        "window_index": window_index,
+    }
+    if timestamp_utc is not None:
+        payload["timestamp_utc"] = timestamp_utc
+    return payload
+
+
+def _result_event_dict(
+    session_id: str,
+    detector_id: str,
+    *,
+    source_name: str,
+    window_index: int,
+    timestamp_utc: str | None = None,
+) -> dict[str, object]:
+    """Build a result event in the public snapshot shape."""
+    return {
+        "session_id": session_id,
+        "detector_id": detector_id,
+        "payload": _result_payload(
+            source_name=source_name,
+            window_index=window_index,
+            timestamp_utc=timestamp_utc,
+        ),
+    }
+
+
+def _write_json(path: Path, payload: dict[str, object]) -> None:
+    """Write one JSON fixture row."""
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _snapshot_payload_for_state(
+    session_id: str,
+    *,
+    status: SessionStatus,
+    include_progress: bool,
+    include_results: bool,
+    include_alerts: bool,
+) -> SessionSnapshotPayload:
+    """Build a compact route-facing snapshot fixture."""
+    results = (
+        [
+            _result_event_dict(
+                session_id,
+                "video_metrics",
+                source_name="segment_0000.ts",
+                window_index=0,
+                timestamp_utc="2026-07-02 12:00:00",
+            ),
+            _result_event_dict(
+                session_id,
+                "video_blur",
+                source_name="segment_0001.ts",
+                window_index=1,
+                timestamp_utc="2026-07-02 12:00:01",
+            ),
+        ]
+        if include_results
+        else []
+    )
+    alerts = (
+        [
+            _snapshot_alert(
+                session_id,
+                timestamp_utc="2026-07-02 12:00:01",
+                detector_id="video_blur",
+                title="Representative alert",
+                message="Returned through the snapshot contract.",
+                source_name="segment_0001.ts",
+            )
+        ]
+        if include_alerts
+        else []
+    )
+    return {
+        "session": {
+            "session_id": session_id,
+            "mode": "video_segments",
+            "input_path": "/tmp/segments",
+            "selected_detectors": ["video_metrics", "video_blur"],
+            "status": status,
+        },
+        "progress": (
+            _progress(
+                session_id=session_id,
+                processed_count=2,
+                total_count=4,
+                current_item="segment_0001.ts",
+                alert_count=len(alerts),
+                last_updated_utc="2026-07-02 12:00:01",
+                status=status,
+            ).to_dict()
+            if include_progress
+            else None
+        ),
+        "alerts": alerts,
+        "results": results,
+        "latest_result": results[-1] if results else None,
+    }
+
+
+def _assert_snapshot_response_contract(
+    payload: dict[str, object],
+    expected: SessionSnapshotPayload,
+) -> None:
+    """Assert the shared HTTP snapshot contract."""
+    assert tuple(payload.keys()) == SESSION_SNAPSHOT_KEYS
+    assert payload["session"] == expected["session"]
+    assert payload["progress"] == expected["progress"]
+    assert payload["alerts"] == expected["alerts"]
+    assert payload["results"] == expected["results"]
+    assert payload["latest_result"] == expected["latest_result"]
+    assert isinstance(payload["alerts"], list)
+    assert isinstance(payload["results"], list)
+    if payload["results"]:
+        assert payload["latest_result"] == payload["results"][-1]
+    else:
+        assert payload["latest_result"] is None
 
 
 def test_sessions_missing_id() -> None:
@@ -139,6 +300,346 @@ def test_get_session_returns_fully_populated_snapshot(monkeypatch) -> None:
     assert payload["latest_result"] == snapshot["latest_result"]
     assert payload["alerts"][0]["detector_id"] == "video_metrics"
     assert payload["alerts"][0]["source_name"] == "segment_001.ts"
+
+
+@pytest.mark.parametrize(
+    ("status", "include_progress", "include_results", "include_alerts"),
+    [
+        ("running", True, True, True),
+        ("completed", True, True, False),
+        ("failed", True, True, False),
+        ("cancelled", True, False, False),
+        ("running", False, False, False),
+    ],
+)
+def test_get_session_preserves_stable_snapshot_contract_across_session_states(
+    monkeypatch,
+    status: SessionStatus,
+    include_progress: bool,
+    include_results: bool,
+    include_alerts: bool,
+) -> None:
+    """The session route should keep stable keys, defaults, and result ordering."""
+    session_id = (
+        f"session-route-{status}-"
+        f"{'progress' if include_progress else 'no-progress'}-"
+        f"{'results' if include_results else 'no-results'}"
+    )
+    snapshot = _snapshot_payload_for_state(
+        session_id,
+        status=status,
+        include_progress=include_progress,
+        include_results=include_results,
+        include_alerts=include_alerts,
+    )
+    monkeypatch.setattr(
+        "api.routers.sessions.read_session_snapshot_or_none",
+        lambda _: snapshot,
+    )
+
+    response = request("GET", f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    _assert_snapshot_response_contract(response.json(), snapshot)
+
+
+def test_get_session_reads_real_file_backed_snapshot_through_default_store(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """The session route should read the default file-backed snapshot end to end."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    metadata = SessionMetadata(
+        session_id="session-route-file-store",
+        mode="video_files",
+        input_path="/tmp/input.mp4",
+        selected_detectors=["video_metrics"],
+        status="running",
+    )
+    progress = SessionProgress(
+        session_id=metadata.session_id,
+        status="running",
+        processed_count=1,
+        total_count=2,
+        current_item="clip.mp4 @ 00:00",
+        latest_result_detector="video_metrics",
+        alert_count=0,
+        last_updated_utc="2026-06-29 10:00:00",
+        latest_result_detectors=["video_metrics"],
+        status_reason="running",
+        status_detail=None,
+    )
+    result = ResultEvent(
+        session_id=metadata.session_id,
+        detector_id="video_metrics",
+        payload={"source_name": "clip.mp4 @ 00:00", "window_index": 0},
+    )
+    initialize_session(metadata)
+    write_session_progress(progress)
+    append_result(result)
+
+    response = request("GET", f"/sessions/{metadata.session_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session": metadata.to_dict(),
+        "progress": progress.to_dict(),
+        "alerts": [],
+        "results": [result.to_dict()],
+        "latest_result": result.to_dict(),
+    }
+
+
+def test_get_session_tolerates_missing_progress_empty_results_and_missing_alerts(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Missing optional session artifacts should degrade to stable null and empty fields."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    metadata = SessionMetadata(
+        session_id="session-route-sparse-file-store",
+        mode="video_segments",
+        input_path="/tmp/segments",
+        selected_detectors=["video_metrics"],
+        status="running",
+    )
+    initialize_session(metadata)
+
+    response = request("GET", f"/sessions/{metadata.session_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session": metadata.to_dict(),
+        "progress": None,
+        "alerts": [],
+        "results": [],
+        "latest_result": None,
+    }
+
+
+def test_get_session_tolerates_malformed_progress_and_result_rows_from_file_storage(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Malformed persisted rows should be skipped without hiding the surviving snapshot state."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    session_id = "session-route-corrupt-file-store"
+    session_dir = tmp_path / session_id
+    session_payload = {
+        "session_id": session_id,
+        "mode": "video_segments",
+        "input_path": "/tmp/segments",
+        "selected_detectors": ["video_metrics"],
+        "status": "running",
+    }
+    valid_result = _result_event_dict(
+        session_id,
+        "video_metrics",
+        source_name="segment_0000.ts",
+        window_index=0,
+    )
+    session_dir.mkdir(parents=True)
+    _write_json(session_dir / "session.json", session_payload)
+    _write_json(
+        session_dir / "progress.json",
+        {
+            "session_id": session_id,
+            "status": "running",
+            "processed_count": "two",
+            "total_count": 4,
+            "current_item": "segment_0001.ts",
+            "latest_result_detector": "video_metrics",
+            "alert_count": 1,
+            "last_updated_utc": "2026-07-02 15:00:00",
+            "latest_result_detectors": ["video_metrics"],
+        },
+    )
+    (session_dir / "results.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(valid_result),
+                "{broken json",
+                json.dumps({"session_id": session_id, "detector_id": ""}),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    response = request("GET", f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session"] == session_payload
+    assert payload["progress"] is None
+    assert payload["alerts"] == []
+    assert payload["results"] == [valid_result]
+    assert payload["latest_result"] == payload["results"][-1]
+
+
+def test_get_session_reads_progress_through_default_session_store(monkeypatch) -> None:
+    """The session route should expose store-backed progress without storage-specific drift."""
+    expected_progress = _progress(
+        session_id="session-route-store-progress",
+        processed_count=7,
+        total_count=9,
+        current_item="live-window-007.ts",
+        alert_count=2,
+        last_updated_utc="2026-06-30 09:15:00",
+    ).to_dict()
+
+    class FakeStore:
+        def read_snapshot(self, session_id: str) -> dict[str, object]:
+            return {
+                "session": {
+                    "session_id": session_id,
+                    "mode": "api_stream",
+                    "input_path": "https://example.com/live/index.m3u8",
+                    "selected_detectors": ["video_metrics"],
+                    "status": "running",
+                },
+                "progress": expected_progress,
+                "alerts": [],
+                "results": [],
+                "latest_result": None,
+            }
+
+    monkeypatch.setattr(
+        "session_service.get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    response = request("GET", "/sessions/session-route-store-progress")
+
+    assert response.status_code == 200
+    assert response.json()["progress"] == expected_progress
+
+
+def test_get_session_keeps_store_backed_ordered_results_and_latest_result(monkeypatch) -> None:
+    """The session route should preserve ordered results from the active store snapshot."""
+    session_id = "session-route-store-results"
+    expected_results = [
+        {
+            "session_id": session_id,
+            "detector_id": "video_metrics",
+            "payload": {
+                "timestamp_utc": "2026-07-01 10:00:00",
+                "source_name": "segment_0000.ts",
+                "window_index": 0,
+            },
+        },
+        {
+            "session_id": session_id,
+            "detector_id": "video_blur",
+            "payload": {
+                "timestamp_utc": "2026-07-01 10:00:00",
+                "source_name": "segment_0001.ts",
+                "window_index": 1,
+            },
+        },
+    ]
+
+    class FakeStore:
+        def read_snapshot(self, read_session_id: str) -> dict[str, object]:
+            return {
+                "session": {
+                    "session_id": read_session_id,
+                    "mode": "video_segments",
+                    "input_path": "/tmp/segments",
+                    "selected_detectors": ["video_metrics", "video_blur"],
+                    "status": "running",
+                },
+                "progress": None,
+                "alerts": [],
+                "results": expected_results,
+                "latest_result": expected_results[-1],
+            }
+
+    monkeypatch.setattr(
+        "session_service.get_default_session_store",
+        lambda: FakeStore(),
+    )
+
+    response = request("GET", f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["results"] == expected_results
+    assert response.json()["latest_result"] == expected_results[-1]
+
+
+def test_get_session_keeps_last_committed_progress_during_interleaved_store_update(
+    monkeypatch,
+) -> None:
+    """The route should return a stable progress snapshot while a newer write is in flight."""
+    session_id = "session-route-progress-race"
+    first_progress = _progress(
+        session_id=session_id,
+        processed_count=2,
+        total_count=5,
+        current_item="segment_0002.ts",
+        last_updated_utc="2026-06-30 11:00:02",
+    )
+    second_progress = _progress(
+        session_id=session_id,
+        processed_count=3,
+        total_count=5,
+        current_item="segment_0003.ts",
+        last_updated_utc="2026-06-30 11:00:03",
+    )
+    first_progress_payload = first_progress.to_dict()
+    second_progress_payload = second_progress.to_dict()
+    write_errors: list[BaseException] = []
+
+    class CoordinatedStore:
+        def __init__(self) -> None:
+            self._committed_progress = first_progress_payload
+            self.write_started = Event()
+            self.allow_commit = Event()
+
+        def read_snapshot(self, read_session_id: str) -> SessionSnapshotPayload:
+            return {
+                "session": {
+                    "session_id": read_session_id,
+                    "mode": "video_segments",
+                    "input_path": "/tmp/segments",
+                    "selected_detectors": ["video_metrics"],
+                    "status": "running",
+                },
+                "progress": self._committed_progress,
+                "alerts": [],
+                "results": [],
+                "latest_result": None,
+            }
+
+        def write_progress(self, progress: SessionProgress) -> None:
+            self.write_started.set()
+            assert self.allow_commit.wait(timeout=1.0)
+            self._committed_progress = progress.to_dict()
+
+    store = CoordinatedStore()
+    monkeypatch.setattr("session_service.get_default_session_store", lambda: store)
+
+    def write_second_progress() -> None:
+        try:
+            store.write_progress(second_progress)
+        except BaseException as error:
+            write_errors.append(error)
+
+    writer = Thread(target=write_second_progress)
+    writer.start()
+    assert store.write_started.wait(timeout=1.0)
+
+    response_during_write = request("GET", f"/sessions/{session_id}")
+    assert response_during_write.status_code == 200
+    assert response_during_write.json()["progress"] == first_progress_payload
+
+    store.allow_commit.set()
+    writer.join(timeout=1.0)
+    assert not writer.is_alive()
+    assert write_errors == []
+
+    response_after_write = request("GET", f"/sessions/{session_id}")
+    assert response_after_write.status_code == 200
+    assert response_after_write.json()["progress"] == second_progress_payload
 
 
 def test_get_session_validation_failure_returns_structured_error(monkeypatch) -> None:
@@ -224,6 +725,80 @@ def test_get_session_snapshot_alerts_match_the_dedicated_alert_route_in_postgres
         "session_id": session_id,
         "alerts": alerts,
     }
+
+
+def test_get_session_keeps_alerts_results_and_latest_result_consistent_across_stores(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Snapshots should combine alert-store alerts with session-store result history."""
+    session_id = "session-route-alert-result-hybrid"
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+    metadata = SessionMetadata(
+        session_id=session_id,
+        mode="video_segments",
+        input_path="/tmp/segments",
+        selected_detectors=["video_metrics", "video_blur"],
+        status="running",
+    )
+    progress = _progress(
+        session_id=session_id,
+        processed_count=2,
+        total_count=4,
+        current_item="segment_0001.ts",
+        alert_count=1,
+        last_updated_utc="2026-07-02 14:00:00",
+    )
+    results = [
+        ResultEvent(
+            session_id=session_id,
+            detector_id="video_metrics",
+            payload=_result_payload(
+                source_name="segment_0000.ts",
+                window_index=0,
+            ),
+        ),
+        ResultEvent(
+            session_id=session_id,
+            detector_id="video_blur",
+            payload=_result_payload(
+                source_name="segment_0001.ts",
+                window_index=1,
+            ),
+        ),
+    ]
+    alerts = [
+        _snapshot_alert(
+            session_id,
+            timestamp_utc="2026-07-02 14:00:01",
+            detector_id="video_blur",
+            title="Hybrid route alert",
+            message="Alert storage should not disturb session result ordering.",
+            source_name="segment_0001.ts",
+        )
+    ]
+    initialize_session(metadata)
+    write_session_progress(progress)
+    for result in results:
+        append_result(result)
+    select_runtime_postgres_store(monkeypatch, StaticAlertStore(session_id, alerts))
+
+    response = request("GET", f"/sessions/{session_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    expected_results = [result.to_dict() for result in results]
+    _assert_snapshot_response_contract(
+        payload,
+        {
+            "session": metadata.to_dict(),
+            "progress": progress.to_dict(),
+            "alerts": alerts,
+            "results": expected_results,
+            "latest_result": expected_results[-1],
+        },
+    )
+    assert payload["latest_result"]["detector_id"] == "video_blur"
 
 
 def test_get_session_returns_internal_error_when_runtime_postgres_snapshot_read_fails(

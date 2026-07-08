@@ -2,8 +2,9 @@
  * Hook-level coverage for local monitoring-session lifecycle behavior after
  * bridge-contract normalization.
  *
- * This suite keeps the cheaper local lifecycle and cancel-state matrix close
- * to the hook seam, where fake timers make polling checks stable and fast.
+ * This suite keeps the cheaper local lifecycle, progress polling, and
+ * cancel-state matrix close to the hook seam, where fake timers keep the
+ * checks stable and fast.
  */
 
 // @vitest-environment jsdom
@@ -39,7 +40,7 @@ function mockRunningLocalPolling(...responses: SessionSnapshot[]) {
 }
 
 /**
- * Keeps state-shape assertions compact in this lifecycle suite, where the
+ * Keep state-shape assertions compact in this lifecycle suite, where the
  * contract is about coarse hook transitions rather than every returned field.
  */
 function expectProbeState(expected: {
@@ -52,7 +53,7 @@ function expectProbeState(expected: {
 }
 
 /**
- * Sets the cancel bridge reply to the canonical in-flight cancelling summary
+ * Set the cancel bridge reply to the canonical in-flight cancelling summary
  * used by the local hook tests.
  */
 function mockCancellingSessionSummary() {
@@ -63,7 +64,7 @@ function mockCancellingSessionSummary() {
 }
 
 /**
- * Seeds the initial local polling responses after `startSession` succeeds.
+ * Seed the initial local polling responses after `startSession` succeeds.
  *
  * Unlike `mockRunningLocalPolling`, this helper intentionally leaves the final
  * default read behavior unset so individual tests can append their own steady
@@ -207,6 +208,37 @@ describe("useMonitoringSession local polling stability", () => {
 
     expectProbeState({
       monitoringStatus: "running",
+      snapshotStatus: "running",
+      sessionError: "none",
+    });
+  });
+
+  it("accepts polling snapshots with updated progress values without depending on timestamp formatting", async () => {
+    mockRunningLocalPolling(
+      makeLocalSnapshot(),
+      makeLocalSnapshot({
+        progress: {
+          session_id: LOCAL_RUNNING_SESSION.session_id,
+          status: "running",
+          processed_count: 3,
+          total_count: 9,
+          current_item: "segment_0003.ts",
+          latest_result_detector: "video_metrics",
+          latest_result_detectors: ["video_blur", "video_metrics"],
+          alert_count: 2,
+          last_updated_utc: "2026-06-30T14:15:16.789123+03:00",
+          status_reason: "running",
+          status_detail: null,
+        },
+      }),
+    );
+
+    await startProbeMonitoring();
+    await advancePollingTick();
+
+    expectProbeState({
+      monitoringStatus: "running",
+      sessionStatus: "running",
       snapshotStatus: "running",
       sessionError: "none",
     });

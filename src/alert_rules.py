@@ -1,7 +1,7 @@
-"""Production alert policy for normalized detector rows.
+"""Built-in alert rules for normalized detector rows.
 
-Detectors own signal extraction. This module owns rule decisions, rolling
-state, recovery behavior, and operator-facing message text for the built-in
+Detectors extract signal facts. This module owns rule decisions, rolling
+state, recovery behavior, and operator-facing alert text for the production
 black-screen and blur policies.
 """
 
@@ -71,7 +71,7 @@ class BlurWindowSummary:
 
 @dataclass(frozen=True)
 class BlurEntryDecision:
-    """Blur-rule entry decision for one rolling evaluation step."""
+    """Blur-rule entry decision for the current rolling window."""
 
     should_alert: bool
     state: str
@@ -132,11 +132,10 @@ class BlurRuleFacts:
 
 @dataclass
 class RuleStateStore:
-    """All rolling alert-rule state kept by the production runtime.
+    """Rolling state for the built-in alert rules.
 
-    The state stays module-local and small on purpose. At the current project
-    stage we only need per-session, per-detector, per-source-group memory for
-    the built-in black and blur rules.
+    State stays module-local and is keyed by session, detector, and source
+    group so repeated rows can share bounded history.
     """
 
     black_windows: dict[RuleStateKey, deque[BlackSample]] = field(

@@ -33,7 +33,7 @@ Keep this split:
 
 That separation is already in the project and should stay.
 
-## Step 1: implement detector logic
+## Implement detector logic
 
 Add the detector in the [`src/detectors/`](../src/detectors) package. Prefer
 one focused module per production detector rather than growing one large file.
@@ -49,7 +49,7 @@ A detector should:
 
 Shared metadata fields come from [`src/analyzer_contract.py`](../src/analyzer_contract.py).
 
-## Step 2: decide the result shape
+## Decide the result shape
 
 Prefer result rows that are:
 
@@ -70,7 +70,7 @@ If not:
 - add or update schema columns in [`src/config.py`](../src/config.py)
 - add or reuse the matching store in [`src/stores.py`](../src/stores.py)
 
-## Step 3: register the detector
+## Register the detector
 
 Add the detector in [`src/detectors/registry.py`](../src/detectors/registry.py).
 
@@ -96,7 +96,7 @@ a compatibility shim for older imports.
 Use [`../tests/test_analyzer_registry.py`](../tests/test_analyzer_registry.py)
 when you need to confirm registry ownership or detector catalog expectations.
 
-## Step 4: add alert logic if needed
+## Add alert logic if needed
 
 If the detector should produce alerts, update [`src/alert_rules.py`](../src/alert_rules.py).
 
@@ -151,7 +151,7 @@ support. Promotion means more than “a detector function exists”:
 - production-facing tests cover the supported runtime path
 - runtime docs describe it as supported behavior
 
-## Step 5: think about supported modes honestly
+## Choose supported modes honestly
 
 Do not expose a detector in every mode by default.
 
@@ -163,7 +163,7 @@ Decide whether it really supports:
 
 If a detector is likely to work later for API streams, that is fine, but do not pretend it is ready before the ingestion path exists.
 
-## Step 6: make sure the frontend can use it
+## Make sure the frontend can use it
 
 If registration metadata is correct, the detector should usually appear in the frontend automatically through the current bridge path.
 
@@ -173,7 +173,7 @@ You only need extra frontend work if:
 - the detector needs custom visualization
 - the detector changes playback/session behavior
 
-## Step 7: test it
+## Test it
 
 At minimum, add:
 

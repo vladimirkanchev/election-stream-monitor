@@ -1,6 +1,6 @@
-"""Regression tests for task-4 CI helper scripts and ownership rules.
+"""Regression tests for CI helper scripts and ownership rules.
 
-This file covers the helper layer around the protected workflow contract:
+This module covers the helper layer around the protected workflow contract:
 - manifest-backed target ownership
 - CI-owned path existence guards
 - protected-lane drift checks
@@ -734,6 +734,58 @@ def test_main_pr_consistency_passes_with_matching_tests_and_docs(
         capsys,
         ["check_main_pr_consistency.py", "origin/main...HEAD"],
     )
+    assert exit_code == 0
+    assert err == ""
+    assert out.strip() == "main-pr-consistency check passed"
+
+
+def test_main_pr_consistency_reports_session_store_policy_failures(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Session-store seam changes should require nearby tests and owning docs."""
+    _patch_main_pr_changed_files(
+        monkeypatch,
+        [
+            "src/session_store_runtime.py",
+        ],
+    )
+    exit_code, out, err = _run_cli_main(
+        check_main_pr_consistency,
+        monkeypatch,
+        capsys,
+        ["check_main_pr_consistency.py", "origin/main...HEAD"],
+    )
+
+    assert exit_code == 1
+    assert out == ""
+    assert "Backend contract changed without a matching test update" in err
+    assert "tests/test_session_store_runtime.py" in err
+    assert "Backend contract changed without a matching docs update" in err
+    assert "docs/session-persistence-audit.md" in err
+
+
+def test_main_pr_consistency_passes_for_session_store_change_with_matching_tests_and_docs(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Session-store seam changes should pass when paired ownership moves together."""
+    _patch_main_pr_changed_files(
+        monkeypatch,
+        [
+            "src/session_store_runtime.py",
+            "tests/test_session_store_runtime.py",
+            "docs/contracts.md",
+            "docs/session-persistence-audit.md",
+        ],
+    )
+    exit_code, out, err = _run_cli_main(
+        check_main_pr_consistency,
+        monkeypatch,
+        capsys,
+        ["check_main_pr_consistency.py", "origin/main...HEAD"],
+    )
+
     assert exit_code == 0
     assert err == ""
     assert out.strip() == "main-pr-consistency check passed"

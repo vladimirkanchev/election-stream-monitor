@@ -1,9 +1,8 @@
 """Shared backend-equivalence tests for the alert-store seam.
 
-This file is the main Task-4 parity contract for file-backed and PostgreSQL
-alert storage. It stays deliberately below API/MCP/CLI boundaries and focuses
-on raw, filtered, grouped, and time-bounded read-model behavior that must not
-drift when storage changes.
+This file keeps file-backed and PostgreSQL alert storage aligned below the
+API/MCP/CLI boundaries. The assertions focus on raw, filtered, grouped, and
+time-bounded read-model behavior that must not drift when storage changes.
 """
 
 from __future__ import annotations
@@ -160,6 +159,19 @@ class StorePair:
     postgres_store: SessionAlertStore
 
 
+class KnownSessionExistenceStore:
+    """Small session-store spy for alert/session existence parity checks."""
+
+    def __init__(self, *known_session_ids: str) -> None:
+        self._known_session_ids = set(known_session_ids)
+        self.checked_session_ids: list[str] = []
+
+    def session_exists(self, session_id: str) -> bool:
+        """Record the checked session id and return its configured existence."""
+        self.checked_session_ids.append(session_id)
+        return session_id in self._known_session_ids
+
+
 def _filtered_parity_events(session_id: str) -> list[AlertEvent]:
     """Return one mixed alert set shared by the filtered raw-read and summary checks."""
     return [
@@ -272,11 +284,16 @@ def _mark_known_postgres_sessions(
     monkeypatch: pytest.MonkeyPatch,
     *session_ids: str,
 ) -> None:
-    """Patch Postgres session existence for alert-only parity tests."""
+    """Patch the shared known-session adapter for alert-only parity tests."""
     known_sessions = set(session_ids)
+
+    def _require_known_session(candidate_session_id: str) -> None:
+        if candidate_session_id not in known_sessions:
+            raise SessionAlertsNotFoundError(candidate_session_id)
+
     monkeypatch.setattr(
-        "session_alert_store_postgres.session_exists",
-        lambda candidate_session_id: candidate_session_id in known_sessions,
+        "session_alert_store_postgres.require_known_session",
+        _require_known_session,
     )
 
 
@@ -325,6 +342,19 @@ def _assert_unknown_session_failure(store: SessionAlertStore) -> None:
     """Assert that one store preserves the shared unknown-session read contract."""
     with pytest.raises(SessionAlertsNotFoundError):
         read_session_alert_events("missing-parity-session", store=store)
+
+
+def _install_active_session_store(
+    monkeypatch: pytest.MonkeyPatch,
+    *known_session_ids: str,
+) -> KnownSessionExistenceStore:
+    """Install a session-store spy as the active known-session source."""
+    session_store = KnownSessionExistenceStore(*known_session_ids)
+    monkeypatch.setattr(
+        "session_alert_store.get_default_session_store",
+        lambda: session_store,
+    )
+    return session_store
 
 
 def test_file_and_postgres_alert_stores_match_raw_read_output_and_append_order(
@@ -402,6 +432,85 @@ def test_file_and_postgres_alert_stores_match_unknown_session_behavior(
 
     _assert_unknown_session_failure(file_store)
     _assert_unknown_session_failure(postgres_store)
+
+
+def test_file_and_postgres_alert_services_use_same_known_session_existence(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Known empty sessions should read the same through the active SessionStore."""
+    session_id = "parity-known-empty-via-session-store"
+    configure_session_alert_test(monkeypatch, tmp_path)
+    session_store = _install_active_session_store(monkeypatch, session_id)
+
+    file_store = FileSessionAlertStore()
+    postgres_store = _build_postgres_parity_store()
+
+    assert read_session_alert_events(session_id, store=file_store) == []
+    assert read_session_alert_events(session_id, store=postgres_store) == []
+    assert session_store.checked_session_ids == [session_id, session_id]
+
+
+def test_file_and_postgres_alert_services_use_same_unknown_session_existence(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Unknown sessions should fail the same way across alert backends."""
+    session_id = "parity-unknown-via-session-store"
+    configure_session_alert_test(monkeypatch, tmp_path)
+    session_store = _install_active_session_store(monkeypatch)
+
+    file_store = FileSessionAlertStore()
+    postgres_store = _build_postgres_parity_store()
+
+    for store in (file_store, postgres_store):
+        with pytest.raises(SessionAlertsNotFoundError, match=session_id):
+            read_session_alert_events(session_id, store=store)
+
+    assert session_store.checked_session_ids == [session_id, session_id]
+
+
+def test_file_and_postgres_alert_services_match_known_session_alert_payloads(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Known-session reads should expose the same normalized alert payload."""
+    session_id = "parity-known-alerts-via-session-store"
+    configure_session_alert_test(monkeypatch, tmp_path)
+    session_store = _install_active_session_store(monkeypatch, session_id)
+
+    file_store = FileSessionAlertStore()
+    postgres_store = _build_postgres_parity_store()
+    event = build_alert_event(
+        session_id,
+        timestamp_utc="2026-05-19 12:00:00",
+        detector_id="video_metrics",
+        title="Shared alert payload",
+        message="Both stores should return this alert through the service seam.",
+        severity="warning",
+        source_name="segment_0001.ts",
+    )
+    file_store.append_alert(event)
+    postgres_store.append_alert(event)
+
+    assert read_session_alert_events(
+        session_id,
+        store=file_store,
+    ) == read_session_alert_events(
+        session_id,
+        store=postgres_store,
+    ) == [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:00",
+            detector_id="video_metrics",
+            title="Shared alert payload",
+            message="Both stores should return this alert through the service seam.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    ]
+    assert session_store.checked_session_ids == [session_id, session_id]
 
 
 def test_file_and_postgres_alert_stores_match_filtered_summary_behavior(

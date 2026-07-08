@@ -1,29 +1,15 @@
-"""Session-file helpers for the local monitoring bridge and snapshot contract.
+"""File-backed helpers for the default session-artifact contract.
 
-The frontend does not read these files directly. Instead, backend helpers write
-and read a small set of session artifacts that together form the current local
-session contract:
-
-- `session.json` for stable session metadata
-- `progress.json` for the latest progress snapshot
-- `alerts.jsonl` for append-only alert events
-- `results.jsonl` for append-only detector result events
-- optional `worker.log` for backend-owned detached worker diagnostics
-
-These helpers keep the snapshot shape stable even when persisted files are
-missing, malformed, or only partially written. Alert persistence now has one
-internal seam in `session_alert_store.py`, but this module still owns the
-broader session-artifact contract:
-
-- metadata, progress, and results stay file-backed here
-- snapshot alerts follow the active alert store
-- `append_alert(...)` remains the compatibility write entrypoint for callers
+This module owns file persistence for session metadata, latest progress,
+detector results, cancel markers, and a few session-local diagnostics. Alert
+writes and reads flow through `session_alert_store`, but `append_alert(...)`
+stays here as the compatibility entrypoint for existing callers.
 """
 
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import cast
+from typing import Callable, TypeVar, cast
 
 import config
 from logger import get_logger
@@ -37,15 +23,18 @@ from session_models import (
     SessionProgress,
     SessionStatus,
 )
+from session_store import (
+    ResultEventPayload,
+    SessionMetadataPayload,
+    SessionProgressPayload,
+    SessionSnapshotPayload,
+    build_latest_result_payload,
+)
+
+JsonObject = dict[str, object]
+ParsedJsonObject = TypeVar("ParsedJsonObject", bound=JsonObject)
 
 logger = get_logger(__name__)
-EMPTY_SESSION_SNAPSHOT: dict[str, object] = {
-    "session": None,
-    "progress": None,
-    "alerts": [],
-    "results": [],
-    "latest_result": None,
-}
 
 
 def get_session_dir(session_id: str) -> Path:
@@ -57,12 +46,7 @@ def get_session_dir(session_id: str) -> Path:
 
 
 def session_exists(session_id: str) -> bool:
-    """Return whether one session has persisted metadata ownership on disk.
-
-    This helper is intentionally narrow: a session becomes "known" once
-    `session.json` exists, even if some append-only artifacts such as
-    `alerts.jsonl` or `results.jsonl` have not been written yet.
-    """
+    """Return whether durable file-backed metadata exists for a session."""
     return (get_session_dir(session_id) / "session.json").exists()
 
 
@@ -112,12 +96,7 @@ def update_session_status(metadata: SessionMetadata, status: SessionStatus) -> S
 
 
 def request_session_cancel(session_id: str) -> Path:
-    """Persist a cancel request that can be picked up by the session runner.
-
-    This helper is intentionally file-oriented and tolerant. Higher-level API
-    routes and runner logic decide whether cancellation is valid for the
-    current lifecycle state; this helper only records cancel intent.
-    """
+    """Persist file-backed cancel intent for the session runner to observe."""
     request_path = get_cancel_request_path(session_id)
     request_path.parent.mkdir(parents=True, exist_ok=True)
     _write_json_file(
@@ -145,6 +124,7 @@ def write_session_progress(progress: SessionProgress) -> None:
 
 def append_result(event: ResultEvent) -> None:
     """Append one validated detector result event to `results.jsonl`."""
+    event.validate()
     _append_jsonl(get_session_dir(event.session_id) / "results.jsonl", event.to_dict())
 
 
@@ -161,12 +141,7 @@ def append_alert(event: AlertEvent) -> None:
 
 
 def read_api_stream_seen_chunk_keys(session_id: str) -> set[tuple[str, int, str]]:
-    """Return persisted reconnect de-dup keys for one live session.
-
-    The loader uses this file-backed set to avoid replaying already accepted
-    live chunks after reconnect or repeated startup against the same session.
-    Malformed lines are ignored so de-dup state degrades safely.
-    """
+    """Return persisted reconnect de-dup keys for one live session."""
     file_path = get_api_stream_seen_chunk_keys_path(session_id)
     if not file_path.exists():
         return set()
@@ -221,7 +196,7 @@ def append_api_stream_seen_chunk_key(
     )
 
 
-def read_session_snapshot(session_id: str) -> dict[str, object]:
+def read_session_snapshot(session_id: str) -> SessionSnapshotPayload:
     """Read one stable frontend snapshot from the current hybrid persistence path.
 
     Metadata, progress, and results still come from the file-backed session
@@ -233,10 +208,19 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
     than surfacing partially parsed internal state.
     """
     session_dir = get_session_dir(session_id)
-    metadata = parse_session_metadata_payload(_read_json_file(session_dir / "session.json"))
-    progress = parse_session_progress_payload(_read_json_file(session_dir / "progress.json"))
+    metadata = cast(
+        SessionMetadataPayload | None,
+        parse_session_metadata_payload(_read_json_file(session_dir / "session.json")),
+    )
+    progress = cast(
+        SessionProgressPayload | None,
+        parse_session_progress_payload(_read_json_file(session_dir / "progress.json")),
+    )
     alerts = _read_snapshot_alerts(session_id, metadata=metadata)
-    results = _read_jsonl_file(session_dir / "results.jsonl", parser=parse_result_event_payload)
+    results = cast(
+        list[ResultEventPayload],
+        _read_jsonl_file(session_dir / "results.jsonl", parser=parse_result_event_payload),
+    )
     return _build_session_snapshot(
         metadata=metadata,
         progress=progress,
@@ -245,10 +229,22 @@ def read_session_snapshot(session_id: str) -> dict[str, object]:
     )
 
 
+def read_session_result_events(session_id: str) -> list[ResultEventPayload]:
+    """Return validated detector result rows without assembling a full snapshot."""
+    session_dir = get_session_dir(session_id)
+    return cast(
+        list[ResultEventPayload],
+        _read_jsonl_file(
+            session_dir / "results.jsonl",
+            parser=parse_result_event_payload,
+        ),
+    )
+
+
 def _read_snapshot_alerts(
     session_id: str,
     *,
-    metadata: dict[str, object] | None,
+    metadata: SessionMetadataPayload | None,
 ) -> list[dict[str, object]]:
     """Read snapshot alerts through the shared alert seam when the session is known.
 
@@ -282,23 +278,19 @@ def _append_jsonl(file_path: Path, payload: dict[str, object]) -> None:
 
 def _build_session_snapshot(
     *,
-    metadata: dict[str, object] | None,
-    progress: dict[str, object] | None,
+    metadata: SessionMetadataPayload | None,
+    progress: SessionProgressPayload | None,
     alerts: list[dict[str, object]],
-    results: list[dict[str, object]],
-) -> dict[str, object]:
+    results: list[ResultEventPayload],
+) -> SessionSnapshotPayload:
     """Build the stable frontend snapshot shape from persisted session artifacts."""
-    snapshot: dict[str, object] = dict(EMPTY_SESSION_SNAPSHOT)
-    snapshot.update(
-        {
-            "session": metadata,
-            "progress": progress,
-            "alerts": alerts,
-            "results": results,
-            "latest_result": results[-1] if results else None,
-        }
-    )
-    return snapshot
+    return {
+        "session": metadata,
+        "progress": progress,
+        "alerts": alerts,
+        "results": results,
+        "latest_result": build_latest_result_payload(results),
+    }
 
 
 def _write_json_file(file_path: Path, payload: dict[str, object]) -> None:
@@ -348,12 +340,12 @@ def _read_json_file(file_path: Path) -> dict[str, object] | None:
 def _read_jsonl_file(
     file_path: Path,
     *,
-    parser,
-) -> list[dict[str, object]]:
+    parser: Callable[[object], ParsedJsonObject | None],
+) -> list[ParsedJsonObject]:
     """Read one JSONL event log while skipping malformed or unreadable lines."""
     if not file_path.exists():
         return []
-    payloads: list[dict[str, object]] = []
+    payloads: list[ParsedJsonObject] = []
     try:
         lines = file_path.read_text(encoding="utf-8").splitlines()
     except OSError:

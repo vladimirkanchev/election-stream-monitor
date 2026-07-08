@@ -1,13 +1,19 @@
 /**
  * Shared builders for the bridge contract suites.
  *
- * These helpers keep the success and error tests focused on envelope and
- * normalization behavior instead of repeating source and summary literals.
+ * These helpers keep bridge tests focused on envelope and normalization
+ * behavior instead of repeated literals.
  */
 
 import { vi } from "vitest";
 
-import type { DetectorOption, LocalBridge, MonitorSource, SessionSummary } from "../types";
+import type {
+  DetectorOption,
+  LocalBridge,
+  MonitorSource,
+  SessionProgress,
+  SessionSummary,
+} from "../types";
 import { createNormalizedBridge } from "./contract";
 
 export const API_STREAM_MONITOR_SOURCE: MonitorSource = {
@@ -23,7 +29,7 @@ export const VIDEO_SEGMENTS_MONITOR_SOURCE: MonitorSource = {
 };
 
 /**
- * Creates a detector catalog entry shaped like the normalized bridge contract.
+ * Build a detector option that already matches the normalized bridge contract.
  */
 export function buildDetectorOption(
   overrides: Partial<DetectorOption> = {},
@@ -45,8 +51,7 @@ export function buildDetectorOption(
 }
 
 /**
- * Creates a valid session summary payload for bridge start/cancel contract
- * tests, with optional overrides for the lifecycle fields under test.
+ * Build a valid session summary for bridge contract tests.
  */
 export function buildSessionSummary(
   overrides: Partial<SessionSummary> = {},
@@ -62,8 +67,29 @@ export function buildSessionSummary(
 }
 
 /**
- * Wraps a partially stubbed raw bridge in the public normalization facade so
- * individual tests can override only the transport call they care about.
+ * Build a valid polling-progress payload for snapshot tests.
+ */
+export function buildSessionProgress(
+  overrides: Partial<SessionProgress> = {},
+): SessionProgress {
+  return {
+    session_id: "session-123",
+    status: "running",
+    processed_count: 1,
+    total_count: 4,
+    current_item: "segment_0000.ts",
+    latest_result_detector: "video_metrics",
+    latest_result_detectors: ["video_metrics"],
+    alert_count: 0,
+    last_updated_utc: "2026-07-02 13:15:00",
+    status_reason: "running",
+    status_detail: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Wrap a partially stubbed raw bridge in the public normalization facade.
  */
 export function createContractBridge(overrides: Partial<LocalBridge> = {}) {
   return createNormalizedBridge({

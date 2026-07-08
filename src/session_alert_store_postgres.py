@@ -12,8 +12,8 @@ from typing import Any, Protocol, Self, cast
 
 from session_alert_store import (
     AlertEventPayload,
+    require_known_session,
     SessionAlertStore,
-    SessionAlertsNotFoundError,
 )
 from session_alert_store_postgres_config import (
     PostgresAlertStoreConfigurationError,
@@ -21,10 +21,7 @@ from session_alert_store_postgres_config import (
     get_postgres_alert_store_settings,
     validate_postgres_alert_store_settings,
 )
-from session_io import session_exists
 from session_models import AlertEvent, EventSeverity
-
-
 POSTGRES_ALERT_EVENTS_TABLE_NAME = "session_alert_events"
 POSTGRES_ALERT_EVENT_COLUMNS: tuple[str, ...] = (
     "session_id",
@@ -163,10 +160,10 @@ class PostgresSessionAlertStore(SessionAlertStore):
     def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
         """Return validated raw alert rows for one known session.
 
-        Unknown-session behavior still follows the session metadata seam so the
-        alert store preserves the same contract while sessions remain file-backed.
+        Unknown-session behavior goes through the shared alert-side adapter so
+        file and PostgreSQL alert reads preserve the same not-found contract.
         """
-        _require_known_session(session_id)
+        require_known_session(session_id)
 
         with self._connection.cursor() as cursor:
             cursor.execute(POSTGRES_ALERT_EVENTS_READ_SQL, (session_id,))
@@ -216,8 +213,6 @@ def bootstrap_postgres_alert_store(
     if resolved_settings.auto_create_tables:
         initialize_postgres_alert_store(connection)
     return connection
-
-
 def _event_insert_params(event: AlertEvent) -> tuple[object, ...]:
     """Build insert parameters for one validated alert event."""
     return (
@@ -231,14 +226,6 @@ def _event_insert_params(event: AlertEvent) -> tuple[object, ...]:
         event.window_index,
         event.window_start_sec,
     )
-
-
-def _require_known_session(session_id: str) -> None:
-    """Preserve the shared unknown-session contract before issuing a read query."""
-    if not session_exists(session_id):
-        raise SessionAlertsNotFoundError(session_id)
-
-
 def _validated_postgres_alert_database_url(
     settings: PostgresAlertStoreSettings,
 ) -> str:
