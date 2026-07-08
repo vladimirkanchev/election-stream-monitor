@@ -1160,27 +1160,10 @@ It currently covers:
 - merged-skill regression markers for the newer multi-mode skills
 - representative repo scenarios plus fixed output-shape snapshots
 - lightweight regressions for real repo incidents
-- current workflow seams:
-  - branch/PR/readiness and dependency drift
-  - CI failure triage and smallest-lane reproduction
-  - test strategy, fixture/environment safety, and manual validation
-  - detector/rule, frontend/bridge, alert-backend, security, and docs review
 
-For the full skill routing map, use [docs/README.md](./README.md#repo-local-codex-skills).
-In this validation doc, the most relevant skill questions are:
-
-- "How big is this task and how much structure does it need?"
-  - `task-planning-evaluation`
-- "What is the smallest honest validation lane or the next test improvement?"
-  - `ci-failure-triage`
-  - `test-strategy-review`
-  - `manual-validation-planner`
-  - `fixture-environment-safety`
-- "Did the docs, fixtures, or validation ownership drift?"
-  - `docs-alignment`
-  - `fixture-environment-safety`
-- "Is the branch still coherent and ready to merge?"
-  - `branch-pr-readiness`
+Use [docs/README.md](./README.md#repo-local-codex-skills) for the skill routing
+map. This document owns the test command and validation-lane meaning, not the
+full question-to-skill catalog.
 
 The lightweight workflow templates that pair with this skill slice are:
 
@@ -1794,27 +1777,21 @@ the branch's current typing focus.
 
 ### Repo-Local Skill Tests
 
-The repo-local Codex skills under `./.agents/skills/` are validated with a
-small deterministic Python slice rather than live model calls.
+The repo-local Codex skills under `./.agents/skills/` are validated with the
+focused deterministic slice shown above, not with live model calls.
 
-Recent coverage also protects nearby skill boundaries that are easy to blur in
-AI-assisted work. The main guarded pairs are:
-
-- root README fit versus architecture-diagram review
-- docs drift audit versus docs editing
-- CI failure classification versus likely underlying cause
-
-Current test files:
+Harness ownership:
 
 - `tests/test_repo_skills.py`
-  - structure, handoff, boundary, scenario, and snapshot checks
+  - inventory, boundary, scenario, and snapshot assertions
+- `tests/repo_skill_expectations.py`
+  - inventory, routing, scenario, and snapshot expectation tables
 - `tests/skill_test_support.py`
-  - parsing and reusable test helpers
+  - parsing and shared assertion helpers
 - `tests/fixtures/skill_output_snapshots/`
-  - saved expected output templates for selected prompts
+  - stable example output shapes for selected prompts
 
-This keeps the skill layer cheap to validate and easy to evolve while the
-project is still in a local-first pre-pilot stage.
+This keeps the harness cheap to validate and honest about what it proves.
 
 ### Frontend
 

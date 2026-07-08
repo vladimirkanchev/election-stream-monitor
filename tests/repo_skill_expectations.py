@@ -1,8 +1,8 @@
-"""Structured expectations for deterministic repo-skill tests.
+"""Expectation tables for deterministic repo-skill tests.
 
-This keeps the growing skill inventory, scenario prompts, and snapshot metadata
-separate from the test assertions so the harness stays readable as more
-repo-local skills are added.
+This module keeps inventory, routing, scenario, and snapshot expectations out
+of the assertion file so the skill harness stays readable as the local skill
+set grows.
 """
 
 from __future__ import annotations
@@ -80,6 +80,7 @@ SCENARIO_EXPECTATIONS = [
         skill_name="fastapi-mcp-security-review",
         required_snippets=(
             "Checklist gaps",
+            "branch-scoped",
             "share mode",
             "MCP tool exposure",
             "dependency exposure",
@@ -90,6 +91,7 @@ SCENARIO_EXPECTATIONS = [
         skill_name="security-surface-review",
         required_snippets=(
             "Security surface",
+            "broad security-sensitive surfaces",
             "local-first advanced-prototype stage",
             "MCP `stdio` local tooling",
         ),
@@ -560,10 +562,10 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "postgres-migration-rollout-review",
         [
-            "use\n  `persistence-backend-review` first",
+            "use `persistence-backend-review` first",
             "use `release-version-readiness` first",
-            "use\n  `test-strategy-review` first",
-            "use `branch-pr-readiness`\n  first",
+            "use `test-strategy-review` first",
+            "use `branch-pr-readiness` first",
         ],
     ),
     (
@@ -619,9 +621,9 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "release-version-readiness",
         [
-            "use\n  `branch-pr-readiness` first",
-            "use `summarization`\n  first",
-            "use\n  `task-planning-evaluation` first",
+            "use `branch-pr-readiness` first",
+            "use `summarization` first",
+            "use `task-planning-evaluation` first",
             "use `dependency-change-review` first",
         ],
     ),

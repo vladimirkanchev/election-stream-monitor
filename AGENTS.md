@@ -19,6 +19,7 @@ If you are adding detectors or rules, also read:
 
 If you are changing repo-local Codex skills or their deterministic tests, also read:
 
+- [`docs/README.md`](./docs/README.md)
 - [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
 - `./.agents/skills/`
 - `tests/test_repo_skills.py`
@@ -45,8 +46,8 @@ heavy.
     [`docs/contracts.md`](./docs/contracts.md),
     [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
   - skills:
-    `fastapi-mcp-security-review`,
-    `security-surface-review`,
+    `fastapi-mcp-security-review` for branch-scoped hardening review,
+    `security-surface-review` for broader trust-boundary review,
     `ci-failure-triage`,
     `branch-pr-readiness`
 - real-media, long-running stream, or environment-sensitive validation work

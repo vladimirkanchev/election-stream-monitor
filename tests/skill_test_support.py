@@ -1,4 +1,4 @@
-"""Helpers for deterministic tests around repo-local Codex skills."""
+"""Shared loaders and assertions for deterministic repo-skill tests."""
 
 from __future__ import annotations
 

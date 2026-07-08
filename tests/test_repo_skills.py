@@ -1,15 +1,8 @@
-"""Deterministic tests for repo-local Codex skills.
+"""Deterministic contract tests for repo-local Codex skills.
 
-These tests avoid API keys and live model calls. They protect the repo-local
-skill layer by checking:
-
-- inventory and structure
-- ownership boundaries and explicit handoffs
-- bidirectional boundary checks for nearby skill pairs
-- workflow-owner guidance for planning depth, validation lanes, docs routing,
-  and branch readiness
-- representative scenarios and fixed output snapshots
-- recently merged skill shapes that should stay distinct
+This file is the main behavior-facing harness for the local skill layer. It
+checks inventory, routing boundaries, representative scenarios, and fixed
+output-shape snapshots without live model calls.
 """
 
 from __future__ import annotations
