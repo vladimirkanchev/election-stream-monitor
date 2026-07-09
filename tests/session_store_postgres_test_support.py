@@ -1,4 +1,8 @@
-"""Shared doubles and live-smoke helpers for PostgreSQL session-store tests."""
+"""Shared doubles and live-smoke helpers for PostgreSQL session-store tests.
+
+This module supports two nearby lanes: fast adapter-contract tests backed by
+an in-memory SQL-aware double, and opt-in live PostgreSQL smoke checks.
+"""
 
 from __future__ import annotations
 
@@ -24,10 +28,11 @@ from session_store_postgres_config import (
     POSTGRES_SESSION_DATABASE_URL_ENV,
     POSTGRES_SESSION_STORE_REAL_SMOKE_ENV,
 )
+from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 
 
 def is_real_postgres_session_store_smoke_enabled() -> bool:
-    """Return whether the opt-in live smoke env is fully enabled."""
+    """Return whether the opt-in live store smoke env is fully enabled."""
     return (
         os.getenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV) == "1"
         and bool(os.getenv(POSTGRES_SESSION_DATABASE_URL_ENV))
@@ -35,6 +40,19 @@ def is_real_postgres_session_store_smoke_enabled() -> bool:
 
 
 REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED = is_real_postgres_session_store_smoke_enabled()
+
+
+def is_real_postgres_session_runtime_smoke_enabled() -> bool:
+    """Return whether live runtime smoke is enabled for explicit Postgres mode."""
+    return (
+        is_real_postgres_session_store_smoke_enabled()
+        and os.getenv(SESSION_STORE_BACKEND_ENV, "").strip().lower() == "postgres"
+    )
+
+
+REAL_POSTGRES_SESSION_RUNTIME_SMOKE_ENABLED = (
+    is_real_postgres_session_runtime_smoke_enabled()
+)
 
 
 class InMemoryPostgresSessionStoreCursor:

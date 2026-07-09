@@ -1,10 +1,11 @@
 """Runtime-focused FastAPI session integration checks.
 
-These tests keep one runtime promise honest: the FastAPI session routes and
-the detached worker must still meet at a readable persisted snapshot.
+This file keeps one runtime contract honest: accepted FastAPI session work
+must converge to readable detached-worker snapshots, and cancel must travel
+through the same durable session store path.
 
-Routine runs keep this lane file-backed on purpose. Live PostgreSQL runtime
-confidence belongs in a separate opt-in smoke lane.
+Routine coverage stays file-backed on purpose. Live PostgreSQL runtime
+confidence remains a separate opt-in smoke lane.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import time
 from typing import cast
 from uuid import uuid4
 
+import httpx
 import pytest
 
 import session_service
@@ -26,8 +28,15 @@ from session_alert_store import clear_default_session_alert_store_cache
 from session_io import get_session_dir, get_worker_log_path
 from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
 from session_store_runtime import clear_default_session_store_cache
+from tests.api_boundary_sessions_runtime_test_support import (
+    RuntimeRequest,
+    live_postgres_runtime_fixture,
+)
 from tests.api_boundary_sessions_test_support import session_not_found_payload
 from tests.api_boundary_test_support import request
+from tests.session_store_postgres_test_support import (
+    REAL_POSTGRES_SESSION_RUNTIME_SMOKE_ENABLED,
+)
 
 pytestmark = pytest.mark.slow
 
@@ -35,10 +44,15 @@ POLL_INTERVAL_SEC = 0.05
 DEFAULT_SEGMENT_COUNT = 2
 CANCEL_TEST_SEGMENT_COUNT = 4000
 
+LIVE_POSTGRES_RUNTIME_SMOKE = pytest.mark.skipif(
+    not REAL_POSTGRES_SESSION_RUNTIME_SMOKE_ENABLED,
+    reason="Real PostgreSQL runtime smoke tests are opt-in.",
+)
+
 
 @dataclass(frozen=True)
 class RuntimeSessionCase:
-    """Minimal runtime test input for one detached-worker session run."""
+    """Minimal per-test input for one detached-worker session run."""
 
     session_id: str
     input_dir: Path
@@ -67,7 +81,7 @@ class RuntimeSessionCase:
 
 @pytest.fixture(autouse=True)
 def _clear_runtime_store_caches() -> Iterator[None]:
-    """Reset cached stores so each test sees only its own runtime settings."""
+    """Reset cached stores so each test sees only its own runtime config."""
     clear_default_session_store_cache()
     clear_default_session_alert_store_cache()
     yield
@@ -77,7 +91,7 @@ def _clear_runtime_store_caches() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _use_file_backed_runtime_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin routine runtime checks to the default file-backed session store."""
+    """Pin routine runtime checks to the default file-backed store."""
     monkeypatch.setenv("ESM_SESSION_STORE_BACKEND", "file")
 
 
@@ -86,7 +100,7 @@ def _write_segment_inputs(
     *,
     count: int = DEFAULT_SEGMENT_COUNT,
 ) -> None:
-    """Create a compact local segment set for the detached worker path."""
+    """Create a compact local segment set for one runtime case."""
     input_dir.mkdir()
     for index in range(1, count + 1):
         (input_dir / f"segment_{index:04d}.ts").write_bytes(b"ts")
@@ -100,7 +114,7 @@ def _runtime_session_case(
     name: str,
     segment_count: int = DEFAULT_SEGMENT_COUNT,
 ) -> Iterator[RuntimeSessionCase]:
-    """Create one isolated runtime case and clean its session artifacts."""
+    """Create one isolated runtime case with predictable ids and cleanup."""
     session_case = RuntimeSessionCase(
         session_id=f"session-runtime-{name}-{uuid4().hex[:8]}",
         input_dir=tmp_path / "segments",
@@ -121,14 +135,14 @@ def _runtime_session_case(
 
 
 def _remove_runtime_session_artifacts(session_id: str) -> None:
-    """Delete the session directory created for one runtime test case."""
+    """Delete file-backed session artifacts for one runtime case."""
     session_dir = get_session_dir(session_id)
     if session_dir.exists():
         shutil.rmtree(session_dir)
 
 
 def _worker_log_text(session_id: str) -> str:
-    """Return worker-log text for timeout diagnostics when it exists."""
+    """Return worker-log text for timeout diagnostics when available."""
     worker_log_path = get_worker_log_path(session_id)
     if not worker_log_path.exists():
         return "<worker.log not created>"
@@ -136,7 +150,7 @@ def _worker_log_text(session_id: str) -> str:
 
 
 def _assert_file_backed_session_artifacts_exist(session_id: str) -> None:
-    """Confirm the default runtime path wrote the canonical session files."""
+    """Confirm the default runtime path wrote its canonical file artifacts."""
     session_dir = get_session_dir(session_id)
     assert (session_dir / "session.json").exists()
     assert (session_dir / "progress.json").exists()
@@ -144,25 +158,29 @@ def _assert_file_backed_session_artifacts_exist(session_id: str) -> None:
 
 
 def _session_payload(snapshot: dict[str, object]) -> dict[str, object]:
-    """Return the session payload from a readable runtime snapshot."""
+    """Return the session payload from a readable snapshot."""
     return cast(dict[str, object], snapshot["session"])
 
 
 def _progress_payload(snapshot: dict[str, object]) -> dict[str, object]:
-    """Return the progress payload from a readable runtime snapshot."""
+    """Return the progress payload from a readable snapshot."""
     return cast(dict[str, object], snapshot["progress"])
 
 
-def _start_runtime_session(session_case: RuntimeSessionCase) -> None:
-    """Start one runtime session and assert the accepted pending response."""
-    start_response = request("POST", "/sessions", json=session_case.start_request)
+def _start_runtime_session(
+    session_case: RuntimeSessionCase,
+    *,
+    request_func: RuntimeRequest = request,
+) -> None:
+    """Start one runtime session and assert the accepted route response."""
+    start_response = request_func("POST", "/sessions", json=session_case.start_request)
 
     assert start_response.status_code == 200
     assert start_response.json() == session_case.pending_response
 
 
 def _assert_no_detector_outputs(snapshot: dict[str, object]) -> None:
-    """Confirm the empty-detector runtime path has no result or alert output."""
+    """Confirm the empty-detector runtime path produced no results or alerts."""
     assert snapshot["alerts"] == []
     assert snapshot["results"] == []
     assert snapshot["latest_result"] is None
@@ -172,9 +190,35 @@ def _assert_snapshot_belongs_to(
     snapshot: dict[str, object],
     session_case: RuntimeSessionCase,
 ) -> None:
-    """Confirm that a readable snapshot belongs to the expected runtime case."""
+    """Confirm that a readable snapshot belongs to the expected case."""
     assert _session_payload(snapshot)["session_id"] == session_case.session_id
     assert _progress_payload(snapshot)["session_id"] == session_case.session_id
+
+
+def _assert_session_summary(
+    snapshot: dict[str, object],
+    session_case: RuntimeSessionCase,
+) -> None:
+    """Confirm the stable route-level session fields for this case."""
+    session = _session_payload(snapshot)
+    assert session == {
+        "session_id": session_case.session_id,
+        "mode": "video_segments",
+        "input_path": str(session_case.input_dir),
+        "selected_detectors": [],
+        "status": session["status"],
+    }
+
+
+def _assert_start_read_snapshot(
+    snapshot: dict[str, object],
+    session_case: RuntimeSessionCase,
+) -> None:
+    """Confirm one readable snapshot without overfitting status timing."""
+    _assert_session_summary(snapshot, session_case)
+    _assert_snapshot_belongs_to(snapshot, session_case)
+    assert _progress_payload(snapshot)["total_count"] == session_case.segment_count
+    _assert_no_detector_outputs(snapshot)
 
 
 def _install_delayed_worker_start(
@@ -183,7 +227,7 @@ def _install_delayed_worker_start(
     *,
     delay_sec: float,
 ) -> None:
-    """Delay the real worker entrypoint long enough to exercise early reads."""
+    """Delay worker startup long enough to exercise honest early reads."""
     original_builder = session_service._build_run_session_command
     wrapper_path = tmp_path / "delayed_session_worker.py"
     wrapper_path.write_text(
@@ -224,22 +268,26 @@ def _install_delayed_worker_start(
 def _wait_for_readable_snapshot(
     session_id: str,
     *,
+    request_func: RuntimeRequest = request,
     timeout_sec: float = 5.0,
 ) -> dict[str, object]:
-    """Poll until the detached worker has written a readable snapshot."""
+    """Poll until the worker has written a readable snapshot."""
     deadline = time.monotonic() + timeout_sec
     last_status: int | None = None
     last_body: object = None
 
     while time.monotonic() < deadline:
-        response = request("GET", f"/sessions/{session_id}")
+        response = request_func("GET", f"/sessions/{session_id}")
         last_status = response.status_code
         payload = response.json()
         last_body = payload
 
-        if response.status_code == 200:
-            if payload["session"] is not None and payload["progress"] is not None:
-                return payload
+        if (
+            response.status_code == 200
+            and payload["session"] is not None
+            and payload["progress"] is not None
+        ):
+            return payload
 
         time.sleep(POLL_INTERVAL_SEC)
 
@@ -251,18 +299,53 @@ def _wait_for_readable_snapshot(
     )
 
 
+def _read_honest_early_runtime_state(
+    session_case: RuntimeSessionCase,
+    *,
+    request_func: RuntimeRequest = request,
+) -> dict[str, object] | None:
+    """Accept honest early reads and return a converged snapshot only if ready."""
+    early_read_response = request_func("GET", f"/sessions/{session_case.session_id}")
+
+    if early_read_response.status_code == 404:
+        assert early_read_response.json() == session_not_found_payload(
+            session_case.session_id
+        )
+        return None
+
+    assert early_read_response.status_code == 200
+    early_snapshot = early_read_response.json()
+    _assert_no_detector_outputs(early_snapshot)
+
+    session = early_snapshot["session"]
+    progress = early_snapshot["progress"]
+
+    assert isinstance(session, dict)
+    assert session["session_id"] == session_case.session_id
+
+    if progress is None:
+        return None
+
+    assert isinstance(progress, dict)
+    assert progress["session_id"] == session_case.session_id
+    if progress["total_count"] != session_case.segment_count:
+        return None
+    return early_snapshot
+
+
 def _wait_for_terminal_status(
     session_id: str,
     *,
     expected_status: str,
+    request_func: RuntimeRequest = request,
     timeout_sec: float = 5.0,
 ) -> dict[str, object]:
-    """Poll until the readable snapshot reaches the expected terminal status."""
+    """Poll until a readable snapshot reaches the expected terminal status."""
     deadline = time.monotonic() + timeout_sec
     last_payload: dict[str, object] | None = None
 
     while time.monotonic() < deadline:
-        response = request("GET", f"/sessions/{session_id}")
+        response = request_func("GET", f"/sessions/{session_id}")
         if response.status_code == 200:
             payload = response.json()
             last_payload = payload
@@ -289,6 +372,7 @@ def _wait_for_terminal_status(
 def _wait_for_cancelable_snapshot(
     session_id: str,
     *,
+    request_func: RuntimeRequest = request,
     timeout_sec: float = 5.0,
 ) -> dict[str, object]:
     """Poll until the session is readable while still non-terminal."""
@@ -296,7 +380,7 @@ def _wait_for_cancelable_snapshot(
     last_payload: dict[str, object] | None = None
 
     while time.monotonic() < deadline:
-        response = request("GET", f"/sessions/{session_id}")
+        response = request_func("GET", f"/sessions/{session_id}")
         if response.status_code == 200:
             payload = response.json()
             last_payload = payload
@@ -320,27 +404,77 @@ def _wait_for_cancelable_snapshot(
     )
 
 
+def _assert_terminal_snapshot_remains_readable(
+    session_id: str,
+    terminal_snapshot: dict[str, object],
+    *,
+    request_func: RuntimeRequest = request,
+) -> None:
+    """Re-read a terminal snapshot and confirm it stays stable."""
+    reread_response = request_func("GET", f"/sessions/{session_id}")
+
+    assert reread_response.status_code == 200
+    assert reread_response.json() == terminal_snapshot
+
+
+def _assert_completed_snapshot(
+    snapshot: dict[str, object],
+    session_case: RuntimeSessionCase,
+) -> None:
+    """Confirm terminal completion without depending on incidental timing."""
+    _assert_snapshot_belongs_to(snapshot, session_case)
+    completed_session = _session_payload(snapshot)
+    completed_progress = _progress_payload(snapshot)
+
+    assert completed_session["status"] == "completed"
+    assert completed_progress["status"] == "completed"
+    assert completed_progress["status_reason"] == "completed"
+    assert completed_progress["total_count"] == session_case.segment_count
+    _assert_no_detector_outputs(snapshot)
+
+
+def _assert_cancel_response(
+    response: httpx.Response,
+    session_case: RuntimeSessionCase,
+) -> None:
+    """Confirm the route-level cancel response for one runtime case."""
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": session_case.session_id,
+        "mode": "video_segments",
+        "input_path": str(session_case.input_dir),
+        "selected_detectors": [],
+        "status": "cancelling",
+    }
+
+
+def _assert_cancelled_snapshot(
+    snapshot: dict[str, object],
+    session_case: RuntimeSessionCase,
+) -> None:
+    """Confirm terminal cancellation without overfitting stop timing."""
+    _assert_snapshot_belongs_to(snapshot, session_case)
+    cancelled_session = _session_payload(snapshot)
+    cancelled_progress = _progress_payload(snapshot)
+
+    assert cancelled_session["status"] == "cancelled"
+    assert cancelled_progress["status"] == "cancelled"
+    assert cancelled_progress["status_reason"] == "cancel_requested"
+    assert cancelled_progress["processed_count"] < session_case.segment_count
+    assert cancelled_progress["total_count"] == session_case.segment_count
+    _assert_no_detector_outputs(snapshot)
+
+
 def test_sessions_start_runtime_path_persists_a_readable_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A real start request should lead to a readable completed snapshot."""
+    """A real start request should converge to a readable completed snapshot."""
     with _runtime_session_case(monkeypatch, tmp_path, name="fastapi") as session_case:
         _start_runtime_session(session_case)
 
         readable_snapshot = _wait_for_readable_snapshot(session_case.session_id)
-        session = _session_payload(readable_snapshot)
-        progress = _progress_payload(readable_snapshot)
-
-        assert session == {
-            "session_id": session_case.session_id,
-            "mode": "video_segments",
-            "input_path": str(session_case.input_dir),
-            "selected_detectors": [],
-            "status": session["status"],
-        }
-        assert progress["session_id"] == session_case.session_id
-        _assert_no_detector_outputs(readable_snapshot)
+        _assert_start_read_snapshot(readable_snapshot, session_case)
 
         completed_snapshot = _wait_for_terminal_status(
             session_case.session_id,
@@ -348,19 +482,129 @@ def test_sessions_start_runtime_path_persists_a_readable_snapshot(
         )
         completed_progress = _progress_payload(completed_snapshot)
 
+        _assert_completed_snapshot(completed_snapshot, session_case)
         _assert_file_backed_session_artifacts_exist(session_case.session_id)
         assert completed_progress["processed_count"] == session_case.segment_count
-        assert completed_progress["total_count"] == session_case.segment_count
         assert completed_progress["current_item"] == "segment_0002.ts"
-        assert completed_progress["status_reason"] == "completed"
         assert completed_progress["status_detail"] is None
+        _assert_terminal_snapshot_remains_readable(
+            session_case.session_id,
+            completed_snapshot,
+        )
+
+
+@LIVE_POSTGRES_RUNTIME_SMOKE
+def test_live_postgres_runtime_start_path_persists_a_readable_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Live PostgreSQL runtime should expose a readable persisted snapshot."""
+    with live_postgres_runtime_fixture(monkeypatch, tmp_path) as runtime:
+        with _runtime_session_case(
+            monkeypatch,
+            tmp_path,
+            name="postgres-start-read",
+        ) as session_case:
+            _start_runtime_session(session_case, request_func=runtime.request)
+
+            readable_snapshot = _wait_for_readable_snapshot(
+                session_case.session_id,
+                request_func=runtime.request,
+            )
+            _assert_start_read_snapshot(readable_snapshot, session_case)
+
+            completed_snapshot = _wait_for_terminal_status(
+                session_case.session_id,
+                expected_status="completed",
+                request_func=runtime.request,
+            )
+
+            _assert_completed_snapshot(completed_snapshot, session_case)
+            _assert_terminal_snapshot_remains_readable(
+                session_case.session_id,
+                completed_snapshot,
+                request_func=runtime.request,
+            )
+
+
+@LIVE_POSTGRES_RUNTIME_SMOKE
+def test_live_postgres_runtime_start_path_tolerates_honest_early_reads_before_snapshot_converges(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Live PostgreSQL runtime should tolerate honest early reads before catch-up."""
+    _install_delayed_worker_start(monkeypatch, tmp_path, delay_sec=0.35)
+
+    with live_postgres_runtime_fixture(monkeypatch, tmp_path) as runtime:
+        with _runtime_session_case(
+            monkeypatch,
+            tmp_path,
+            name="postgres-early-read",
+        ) as session_case:
+            _start_runtime_session(session_case, request_func=runtime.request)
+
+            early_snapshot = _read_honest_early_runtime_state(
+                session_case,
+                request_func=runtime.request,
+            )
+            readable_snapshot = (
+                early_snapshot
+                if early_snapshot is not None
+                else _wait_for_readable_snapshot(
+                    session_case.session_id,
+                    request_func=runtime.request,
+                )
+            )
+
+            _assert_start_read_snapshot(readable_snapshot, session_case)
+
+
+@LIVE_POSTGRES_RUNTIME_SMOKE
+def test_live_postgres_runtime_cancel_path_reaches_worker_through_durable_cancel_intent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Live PostgreSQL runtime should carry cancel intent to the worker."""
+    with live_postgres_runtime_fixture(monkeypatch, tmp_path) as runtime:
+        with _runtime_session_case(
+            monkeypatch,
+            tmp_path,
+            name="postgres-cancel",
+            segment_count=CANCEL_TEST_SEGMENT_COUNT,
+        ) as session_case:
+            _start_runtime_session(session_case, request_func=runtime.request)
+
+            cancelable_snapshot = _wait_for_cancelable_snapshot(
+                session_case.session_id,
+                request_func=runtime.request,
+            )
+            cancel_response = runtime.request(
+                "POST",
+                f"/sessions/{session_case.session_id}/cancel",
+            )
+
+            _assert_snapshot_belongs_to(cancelable_snapshot, session_case)
+            _assert_cancel_response(cancel_response, session_case)
+
+            cancelled_snapshot = _wait_for_terminal_status(
+                session_case.session_id,
+                expected_status="cancelled",
+                request_func=runtime.request,
+            )
+
+            _assert_cancelled_snapshot(cancelled_snapshot, session_case)
+            _assert_terminal_snapshot_remains_readable(
+                session_case.session_id,
+                cancelled_snapshot,
+                request_func=runtime.request,
+            )
 
 
 def test_sessions_cancel_runtime_path_reaches_worker_through_durable_cancel_intent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A real cancel request should settle the detached worker to `cancelled`."""
+    """A real cancel request should settle the worker to `cancelled`."""
     with _runtime_session_case(
         monkeypatch,
         tmp_path,
@@ -372,32 +616,20 @@ def test_sessions_cancel_runtime_path_reaches_worker_through_durable_cancel_inte
         cancelable_snapshot = _wait_for_cancelable_snapshot(session_case.session_id)
         cancel_response = request("POST", f"/sessions/{session_case.session_id}/cancel")
 
-        assert _session_payload(cancelable_snapshot)["session_id"] == (
-            session_case.session_id
-        )
-        assert cancel_response.status_code == 200
-        assert cancel_response.json() == {
-            "session_id": session_case.session_id,
-            "mode": "video_segments",
-            "input_path": str(session_case.input_dir),
-            "selected_detectors": [],
-            "status": "cancelling",
-        }
+        _assert_snapshot_belongs_to(cancelable_snapshot, session_case)
+        _assert_cancel_response(cancel_response, session_case)
 
         cancelled_snapshot = _wait_for_terminal_status(
             session_case.session_id,
             expected_status="cancelled",
         )
-        cancelled_session = _session_payload(cancelled_snapshot)
-        cancelled_progress = _progress_payload(cancelled_snapshot)
 
-        assert cancelled_session["status"] == "cancelled"
-        assert cancelled_progress["status"] == "cancelled"
-        assert cancelled_progress["status_reason"] == "cancel_requested"
-        assert cancelled_progress["processed_count"] < session_case.segment_count
-        assert cancelled_progress["total_count"] == session_case.segment_count
+        _assert_cancelled_snapshot(cancelled_snapshot, session_case)
         _assert_file_backed_session_artifacts_exist(session_case.session_id)
-        _assert_no_detector_outputs(cancelled_snapshot)
+        _assert_terminal_snapshot_remains_readable(
+            session_case.session_id,
+            cancelled_snapshot,
+        )
 
 
 def test_sessions_start_runtime_path_keeps_early_read_honest_before_worker_catches_up(
@@ -410,34 +642,34 @@ def test_sessions_start_runtime_path_keeps_early_read_honest_before_worker_catch
     with _runtime_session_case(monkeypatch, tmp_path, name="early-read") as session_case:
         _start_runtime_session(session_case)
 
-        early_read_response = request("GET", f"/sessions/{session_case.session_id}")
-        assert early_read_response.status_code == 404
-        assert early_read_response.json() == session_not_found_payload(
-            session_case.session_id
+        early_snapshot = _read_honest_early_runtime_state(session_case)
+        readable_snapshot = (
+            early_snapshot
+            if early_snapshot is not None
+            else _wait_for_readable_snapshot(session_case.session_id)
         )
-
-        readable_snapshot = _wait_for_readable_snapshot(session_case.session_id)
-        _assert_snapshot_belongs_to(readable_snapshot, session_case)
+        _assert_start_read_snapshot(readable_snapshot, session_case)
 
         completed_snapshot = _wait_for_terminal_status(
             session_case.session_id,
             expected_status="completed",
         )
-        completed_session = _session_payload(completed_snapshot)
         completed_progress = _progress_payload(completed_snapshot)
 
+        _assert_completed_snapshot(completed_snapshot, session_case)
         _assert_file_backed_session_artifacts_exist(session_case.session_id)
-        assert completed_session["status"] == "completed"
-        assert completed_progress["status"] == "completed"
         assert completed_progress["processed_count"] == session_case.segment_count
-        assert completed_progress["total_count"] == session_case.segment_count
+        _assert_terminal_snapshot_remains_readable(
+            session_case.session_id,
+            completed_snapshot,
+        )
 
 
 def test_sessions_runtime_path_keeps_parent_and_worker_on_file_backend_selection(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Conflicting PostgreSQL env should not pull this runtime path off file mode."""
+    """Conflicting PostgreSQL env should not pull this path off file mode."""
     monkeypatch.setenv(
         POSTGRES_SESSION_DATABASE_URL_ENV,
         "not-a-postgres-url://should-not-be-used",
@@ -455,14 +687,10 @@ def test_sessions_runtime_path_keeps_parent_and_worker_on_file_backend_selection
             session_case.session_id,
             expected_status="completed",
         )
-        completed_session = _session_payload(completed_snapshot)
-        completed_progress = _progress_payload(completed_snapshot)
 
+        _assert_completed_snapshot(completed_snapshot, session_case)
         _assert_file_backed_session_artifacts_exist(session_case.session_id)
-        _assert_snapshot_belongs_to(readable_snapshot, session_case)
-        assert completed_session["status"] == "completed"
-        assert completed_progress["status"] == "completed"
-        assert completed_progress["total_count"] == session_case.segment_count
+        _assert_start_read_snapshot(readable_snapshot, session_case)
         assert POSTGRES_SESSION_DATABASE_URL_ENV not in _worker_log_text(
             session_case.session_id
         )
