@@ -1,4 +1,4 @@
-"""Shared helpers for default and opt-in PostgreSQL session-store tests."""
+"""Shared doubles and live-smoke helpers for PostgreSQL session-store tests."""
 
 from __future__ import annotations
 
@@ -26,14 +26,19 @@ from session_store_postgres_config import (
 )
 
 
-REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED = (
-    os.getenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV) == "1"
-    and bool(os.getenv(POSTGRES_SESSION_DATABASE_URL_ENV))
-)
+def is_real_postgres_session_store_smoke_enabled() -> bool:
+    """Return whether the opt-in live smoke env is fully enabled."""
+    return (
+        os.getenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV) == "1"
+        and bool(os.getenv(POSTGRES_SESSION_DATABASE_URL_ENV))
+    )
+
+
+REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED = is_real_postgres_session_store_smoke_enabled()
 
 
 class InMemoryPostgresSessionStoreCursor:
-    """SQL-aware cursor double for the default PostgreSQL adapter test lane."""
+    """SQL-aware cursor double for the fast adapter-contract lane."""
 
     def __init__(self, connection: "InMemoryPostgresSessionStoreConnection") -> None:
         self._connection = connection
@@ -52,7 +57,7 @@ class InMemoryPostgresSessionStoreCursor:
         return None
 
     def execute(self, query: str, params: object | None = None) -> object:
-        """Handle only the SQL statements covered by the adapter contract tests."""
+        """Handle only the SQL statements owned by the adapter contract tests."""
         self._connection.executed_statements.append((query, params))
         if query == POSTGRES_SESSION_METADATA_EXISTS_SQL:
             session_id = cast(tuple[str], params)[0]
@@ -186,7 +191,7 @@ class InMemoryPostgresSessionStoreCursor:
 
 
 class InMemoryPostgresSessionStoreConnection:
-    """In-memory connection double used by default PostgreSQL adapter tests."""
+    """In-memory connection double used by the fast PostgreSQL adapter tests."""
 
     def __init__(self) -> None:
         self.metadata_rows: dict[str, object] = {}
@@ -212,7 +217,7 @@ def close_postgres_session_store_connection_if_possible(connection: object) -> N
 
 
 def bootstrap_isolated_postgres_session_store() -> PostgresSessionStoreConnection:
-    """Return one reset PostgreSQL connection for an opt-in live smoke run."""
+    """Return one live PostgreSQL connection with only the known store tables reset."""
     connection = cast(PostgresSessionStoreConnection, connect_postgres_session_store())
     reset_postgres_session_store_schema(connection)
     return connection
@@ -222,6 +227,6 @@ def build_isolated_postgres_session_store() -> tuple[
     PostgresSessionStoreConnection,
     PostgresSessionStore,
 ]:
-    """Return one reset connection together with a bound session store."""
+    """Return one reset live connection together with its bound session store."""
     connection = bootstrap_isolated_postgres_session_store()
     return connection, PostgresSessionStore(connection)
