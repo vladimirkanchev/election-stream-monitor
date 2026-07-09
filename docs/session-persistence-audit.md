@@ -315,6 +315,10 @@ The PostgreSQL bootstrap surface now has one narrow owner:
   - a small `PostgresSessionStore` adapter over an injected connection
   - opt-in schema reset helpers for live smoke tests
 
+The current live smoke stays deliberately narrow: it resets only the known
+session-store tables, checks durable cancel intent, and confirms the public
+snapshot shape through store reads.
+
 That keeps runtime backend choice separate from PostgreSQL bootstrap settings
 and test-only real-smoke toggles.
 

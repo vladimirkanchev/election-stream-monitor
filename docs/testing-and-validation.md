@@ -282,6 +282,7 @@ overrides that default in its dedicated live-DB lanes.
 Apply the same rule to the in-progress PostgreSQL session-store branch work:
 
 - keep `POSTGRES_SESSION_STORE_REAL_SMOKE` unset or `0` in normal local and PR validation
+- the live smoke stays disabled unless both `POSTGRES_SESSION_STORE_REAL_SMOKE=1` and `ESM_POSTGRES_SESSION_DATABASE_URL` are set
 - use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
 - reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
 
@@ -293,17 +294,8 @@ The fast CI workflows now make that default explicit too:
   - `POSTGRES_SESSION_STORE_REAL_SMOKE=0`
 
 Use a manual or service-backed run only when you intentionally want live
-PostgreSQL session-store confidence.
-
-Example focused live command:
-
-```bash
-export ESM_SESSION_STORE_BACKEND=postgres
-export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
-export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1
-export POSTGRES_SESSION_STORE_REAL_SMOKE=1
-.venv/bin/pytest -q tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
-```
+PostgreSQL session-store confidence. The focused command is listed in the
+session-store validation section below.
 
 For the short fixture and environment ownership rules behind those lanes, use
 [fixture-environment-policy.md](./fixture-environment-policy.md).
@@ -439,8 +431,18 @@ tests/test_api_boundary_sessions_cancel.py -q
 - opt-in live PostgreSQL session-store smoke:
   - keep this out of normal local and PR validation
   - do not promote it into the default protected PR lane in this branch
+  - it requires `ESM_SESSION_STORE_BACKEND=postgres`,
+    `ESM_POSTGRES_SESSION_DATABASE_URL`,
+    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, and
+    `POSTGRES_SESSION_STORE_REAL_SMOKE=1`
   - use it only when you intentionally want real database confidence after the
     faster parity and runtime lanes already say the contract still holds
+  - keep the live contract small and deterministic:
+    schema reset, metadata write/read, latest progress, ordered results,
+    cancel intent, and stable snapshot shape
+  - do not grow this lane into detached-worker, FastAPI, or broader
+    PostgreSQL rollout coverage; those belong in separate runtime or rollout
+    checks
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -448,8 +450,7 @@ export ESM_SESSION_STORE_BACKEND=postgres && \
 export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor' && \
 export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 && \
 export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
-.venv/bin/pytest -q \
-tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
+.venv/bin/pytest -q tests/test_session_store_postgres.py -k real_postgres_session_store
 ```
 
 Practical lane order for this area:
