@@ -2007,10 +2007,13 @@ Current session-storage boundary:
   - session tables do not auto-create by default
   - opt in only with `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
   - normal PR and local validation should not require a live PostgreSQL server
-  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live smoke lanes
-  - that live lane is intentionally small: reset the known tables, prove cancel
-    intent remains durable, and confirm the public snapshot shape against a
-    real database
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live store
+    and runtime smoke lanes
+  - those live lanes stay intentionally small:
+    - store smoke proves schema reset, durable cancel intent, and public
+      snapshot shape against a real database
+    - runtime smoke proves accepted start, first readable snapshot, durable
+      cancel delivery, and stable terminal readability after worker settlement
 - `src/session_service.py` and the session runner helpers consume that store
   contract instead of choosing backend details themselves.
 - FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and

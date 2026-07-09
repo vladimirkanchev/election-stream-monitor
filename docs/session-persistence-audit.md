@@ -716,6 +716,50 @@ The file-backed parity lane now has a clear split:
   `frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx` keep the
   frontend polling contract stable above the same store-backed snapshot path.
 
+Current detached-worker runtime confidence is also intentionally split:
+
+- `tests/test_api_boundary_sessions_runtime.py` covers the real FastAPI
+  start/read/cancel path, but it keeps routine runtime confidence pinned to
+  the default file-backed store on purpose.
+- `tests/test_session_service_worker.py` covers detached-worker spawn,
+  log-handle setup, and parent-to-worker session-store environment inheritance,
+  including explicit PostgreSQL env propagation.
+- `tests/test_session_store_runtime.py` covers runtime backend selection,
+  explicit PostgreSQL validation, rollback-safe file defaults, and cache
+  behavior.
+- `tests/test_api_boundary_sessions_runtime.py` now has an opt-in live
+  PostgreSQL start/read smoke proving FastAPI can accept a session and later
+  read the first detached-worker snapshot from the selected PostgreSQL store.
+- The same runtime file now also accepts honest early-read states before the
+  detached worker catches up: route reads may still report a structured
+  missing-session failure or a metadata-only snapshot before the first readable
+  persisted snapshot appears.
+- The opt-in live PostgreSQL runtime smoke now covers route-level cancel as
+  durable store-backed intent: the route writes cancel intent, the worker
+  observes it through the selected PostgreSQL store, and the session settles as
+  `cancelled`.
+- The same live runtime lane now also re-reads terminal `completed` and
+  `cancelled` snapshots after settlement so the public session route keeps
+  returning stable terminal data instead of a transient-only view.
+
+Keep that live runtime contract intentionally small:
+
+- FastAPI start accepts the session and returns pending metadata honestly.
+- The detached worker later writes the first readable persisted snapshot.
+- FastAPI read observes the persisted snapshot contract rather than local
+  process guesses.
+- FastAPI cancel reaches the worker through durable store-backed cancel intent.
+- Terminal session state remains readable after worker settlement.
+- Keep it opt-in behind the real DB env and explicit
+  `ESM_SESSION_STORE_BACKEND=postgres`.
+
+Leave these out of the live runtime smoke:
+
+- store-parity details already owned by `tests/test_session_store_parity.py`
+- runner-internal helper behavior already owned by focused runner tests
+- detector, alert-rule, or frontend UX coverage
+- broad failure-matrix or rollout coverage that belongs in later migration work
+
 ## Result Event Writer And Reader Audit
 
 Detector result events now sit fully behind the session-store boundary.
