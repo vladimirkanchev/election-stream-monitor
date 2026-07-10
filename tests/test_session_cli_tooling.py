@@ -1,15 +1,13 @@
-"""Tests for session CLI commands, snapshot reads, and worker runtime wiring.
+"""Tests for CLI command behavior and detached-worker runtime selection.
 
-These cases treat the CLI as a thin adapter over `session_service.py`.
-They keep the supported command surface explicit without duplicating the
-shared start/read/cancel business logic tests.
-
-This suite also checks the detached `run-session` path: it should log useful
-startup failures and resolve the same session-store runtime selection as the
-parent process service path.
+These cases treat the CLI as a thin adapter over `session_service.py` while
+also checking the detached `run-session` path. In particular, the worker path
+should resolve the same runtime session-store backend as the parent process and
+surface explicit PostgreSQL startup failures clearly.
 """
 
 import json
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -41,6 +39,8 @@ from tests.session_alert_test_support import (
 )
 
 # Electron runtime bridge behavior is covered separately in frontend/electron tests.
+
+VALID_POSTGRES_SESSION_URL = "postgresql://session:secret@db.example/esm"
 
 
 @pytest.fixture(autouse=True)
@@ -83,7 +83,7 @@ def _run_session_cli_and_record_resolved_stores(
     *,
     session_id: str,
 ) -> list[object]:
-    """Run the worker CLI path while recording resolved runner stores."""
+    """Run the worker CLI path and record each resolved session store it uses."""
     records: list[object] = []
     _set_argv(
         monkeypatch,
@@ -163,13 +163,53 @@ def _run_worker_cli_after_store_cache_clear(
     *,
     session_id: str,
 ) -> list[object]:
-    """Run the worker CLI after forcing env-driven store selection to refresh."""
+    """Force fresh runtime store selection before exercising the worker CLI path."""
     clear_default_session_store_cache()
     return _run_session_cli_and_record_resolved_stores(
         monkeypatch,
         capsys,
         session_id=session_id,
     )
+
+
+def _assert_worker_cli_explicit_postgres_failure(
+    monkeypatch,
+    capsys,
+    *,
+    session_id: str,
+    expected_message: str,
+    database_url: str | None = VALID_POSTGRES_SESSION_URL,
+    bootstrap_message: str | None = None,
+) -> None:
+    """Assert that the worker path surfaces explicit PostgreSQL startup failure early."""
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    if database_url is None:
+        monkeypatch.delenv(POSTGRES_SESSION_DATABASE_URL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, database_url)
+
+    monkeypatch.setattr(
+        session_runner.session_runner_lifecycle,
+        "initialize_pending_session",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("worker should not reach lifecycle initialization")
+        ),
+    )
+
+    if bootstrap_message is not None:
+        monkeypatch.setattr(
+            "session_store_runtime.bootstrap_postgres_session_store",
+            lambda: (_ for _ in ()).throw(
+                PostgresSessionStoreBootstrapError(bootstrap_message)
+            ),
+        )
+
+    with pytest.raises(RuntimeError, match=re.escape(expected_message)):
+        _run_worker_cli_after_store_cache_clear(
+            monkeypatch,
+            capsys,
+            session_id=session_id,
+        )
 
 
 def _cli_snapshot_alert(
@@ -180,7 +220,7 @@ def _cli_snapshot_alert(
     message: str,
     source_name: str,
 ) -> dict[str, object]:
-    """Build one normalized CLI snapshot alert payload."""
+    """Build one normalized alert payload for CLI snapshot assertions."""
     return build_normalized_alert(
         session_id,
         timestamp_utc=timestamp_utc,
@@ -198,7 +238,7 @@ def _pending_metadata(
     input_path: str,
     selected_detectors: list[str],
 ) -> SessionMetadata:
-    """Build one pending session metadata payload for start-session tests."""
+    """Build one pending metadata payload for CLI start-session assertions."""
     return SessionMetadata(
         session_id=session_id,
         mode=mode,
@@ -655,75 +695,63 @@ def test_run_session_worker_path_uses_explicit_postgres_store(
     assert all(store is postgres_store for store in postgres_records)
 
 
-def test_run_session_worker_path_fails_clearly_when_postgres_is_selected_without_url(
-    monkeypatch,
-    capsys,
-) -> None:
-    """The worker CLI should fail loudly when PostgreSQL mode is selected without a URL."""
-    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.delenv(POSTGRES_SESSION_DATABASE_URL_ENV, raising=False)
-
-    with pytest.raises(
-        RuntimeError,
-        match="PostgreSQL session store requires ESM_POSTGRES_SESSION_DATABASE_URL",
-    ):
-        _run_worker_cli_after_store_cache_clear(
-            monkeypatch,
-            capsys,
-            session_id="session-worker-runtime-postgres-missing-url",
-        )
-
-
-def test_run_session_worker_path_fails_clearly_when_postgres_url_shape_is_invalid(
-    monkeypatch,
-    capsys,
-) -> None:
-    """The worker CLI should reject a bad PostgreSQL URL instead of falling back."""
-    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, "sqlite:///tmp/sessions.db")
-
-    with pytest.raises(
-        RuntimeError,
-        match=(
-            "ESM_POSTGRES_SESSION_DATABASE_URL must use a postgres or "
-            "postgresql URL"
+@pytest.mark.parametrize(
+    ("session_id", "database_url", "bootstrap_message", "expected_message"),
+    [
+        pytest.param(
+            "session-worker-runtime-postgres-missing-url",
+            None,
+            None,
+            "PostgreSQL session store requires ESM_POSTGRES_SESSION_DATABASE_URL",
+            id="missing-url",
         ),
-    ):
-        _run_worker_cli_after_store_cache_clear(
-            monkeypatch,
-            capsys,
-            session_id="session-worker-runtime-postgres-invalid-url",
-        )
-
-
-def test_run_session_worker_path_fails_clearly_when_postgres_driver_bootstrap_is_missing(
+        pytest.param(
+            "session-worker-runtime-postgres-invalid-url",
+            "sqlite:///tmp/sessions.db",
+            None,
+            "ESM_POSTGRES_SESSION_DATABASE_URL must use a postgres or postgresql URL",
+            id="invalid-url",
+        ),
+        pytest.param(
+            "session-worker-runtime-postgres-missing-driver",
+            VALID_POSTGRES_SESSION_URL,
+            "Install psycopg to use the PostgreSQL session-store backend",
+            "Install psycopg to use the PostgreSQL session-store backend",
+            id="missing-driver",
+        ),
+        pytest.param(
+            "session-worker-runtime-postgres-connection-failure",
+            VALID_POSTGRES_SESSION_URL,
+            "Could not connect to the PostgreSQL session store: database unavailable",
+            "Could not connect to the PostgreSQL session store: database unavailable",
+            id="connection-failure",
+        ),
+        pytest.param(
+            "session-worker-runtime-postgres-bootstrap-failure",
+            VALID_POSTGRES_SESSION_URL,
+            "postgres bootstrap failed",
+            "postgres bootstrap failed",
+            id="bootstrap-failure",
+        ),
+    ],
+)
+def test_run_session_worker_path_surfaces_explicit_postgres_failures_without_fallback(
     monkeypatch,
     capsys,
+    session_id: str,
+    database_url: str | None,
+    bootstrap_message: str | None,
+    expected_message: str,
 ) -> None:
-    """The worker CLI should surface actionable PostgreSQL bootstrap failures."""
-    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setenv(
-        POSTGRES_SESSION_DATABASE_URL_ENV,
-        "postgresql://session:secret@db.example/esm",
+    """The worker CLI should surface explicit PostgreSQL failures instead of degrading to file mode."""
+    _assert_worker_cli_explicit_postgres_failure(
+        monkeypatch,
+        capsys,
+        session_id=session_id,
+        expected_message=expected_message,
+        database_url=database_url,
+        bootstrap_message=bootstrap_message,
     )
-    monkeypatch.setattr(
-        "session_store_runtime.bootstrap_postgres_session_store",
-        lambda: (_ for _ in ()).throw(
-            PostgresSessionStoreBootstrapError(
-                "Install psycopg to use the PostgreSQL session-store backend"
-            )
-        ),
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="Install psycopg to use the PostgreSQL session-store backend",
-    ):
-        _run_worker_cli_after_store_cache_clear(
-            monkeypatch,
-            capsys,
-            session_id="session-worker-runtime-postgres-missing-driver",
-        )
 
 
 def test_resolve_playback_source_returns_remote_url_for_api_stream(monkeypatch, capsys) -> None:

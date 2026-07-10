@@ -1,15 +1,12 @@
-"""Tests for local `session_runner` lifecycle and discovery behavior.
+"""Tests for local `session_runner` lifecycle, discovery, and backend failure policy.
 
-These cases primarily exercise:
-
-- orchestration in `src/session_runner.py`
-- local file/slice expansion seams now owned by `src/session_runner_discovery.py`
-
-They intentionally stay separate from the `api_stream` runner files so the
-local-mode contract remains easy to scan.
+These cases keep local-mode behavior easy to scan while covering the runner's
+orchestration, file/slice discovery, and explicit PostgreSQL startup behavior.
+They stay separate from the `api_stream` runner files on purpose.
 """
 
 import json
+import re
 from pathlib import Path
 
 import config
@@ -29,13 +26,59 @@ from tests.session_runner_api_stream_test_support import (
     _patch_runner_bundle,
 )
 
+VALID_POSTGRES_SESSION_URL = (
+    "postgresql://session:secret@db.example/election_stream_monitor"
+)
+
 
 def _make_segment_input_dir(tmp_path: Path, *names: str) -> Path:
+    """Create one small segment directory for local runner tests."""
     input_dir = tmp_path / "segments"
     input_dir.mkdir()
     for name in names:
         (input_dir / name).write_bytes(b"aa")
     return input_dir
+
+
+def _assert_run_local_session_explicit_postgres_failure(
+    monkeypatch,
+    tmp_path: Path,
+    *,
+    session_id: str,
+    expected_message: str,
+    database_url: str | None = VALID_POSTGRES_SESSION_URL,
+    bootstrap_message: str | None = None,
+) -> None:
+    """Assert one explicit PostgreSQL startup failure before local processing begins."""
+    _configure_runner_output_paths(monkeypatch, tmp_path)
+    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts")
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    if database_url is None:
+        monkeypatch.delenv(POSTGRES_SESSION_DATABASE_URL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, database_url)
+    clear_default_session_store_cache()
+    if bootstrap_message is not None:
+        monkeypatch.setattr(
+            "session_store_runtime.bootstrap_postgres_session_store",
+            lambda: (_ for _ in ()).throw(
+                PostgresSessionStoreBootstrapError(bootstrap_message)
+            ),
+        )
+
+    try:
+        with pytest.raises(RuntimeError, match=re.escape(expected_message)):
+            run_local_session(
+                mode="video_segments",
+                input_path=input_dir,
+                selected_detectors=["video_metrics"],
+                session_id=session_id,
+            )
+    finally:
+        clear_default_session_store_cache()
+
+    session_dir = (tmp_path / "sessions") / session_id
+    assert not session_dir.exists()
 
 
 def test_run_local_session_writes_incremental_files(
@@ -284,38 +327,63 @@ def test_run_local_session_ignores_stale_postgres_env_when_runtime_backend_is_un
     assert snapshot["progress"]["processed_count"] == 1
 
 
-def test_run_local_session_fails_fast_when_postgres_mode_is_selected_and_bootstrap_fails(
-    monkeypatch, tmp_path: Path
-) -> None:
-    """Explicit PostgreSQL mode should surface bootstrap failure instead of falling back."""
-    _configure_runner_output_paths(monkeypatch, tmp_path)
-    input_dir = _make_segment_input_dir(tmp_path, "segment_0001.ts")
-    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setenv(
-        POSTGRES_SESSION_DATABASE_URL_ENV,
-        "postgresql://session:secret@db.example/election_stream_monitor",
-    )
-    clear_default_session_store_cache()
-    monkeypatch.setattr(
-        "session_store_runtime.bootstrap_postgres_session_store",
-        lambda: (_ for _ in ()).throw(
-            PostgresSessionStoreBootstrapError("postgres bootstrap failed")
+@pytest.mark.parametrize(
+    ("session_id", "database_url", "bootstrap_message", "expected_message"),
+    [
+        pytest.param(
+            "session-postgres-missing-url",
+            None,
+            None,
+            "PostgreSQL session store requires ESM_POSTGRES_SESSION_DATABASE_URL",
+            id="missing-url",
         ),
+        pytest.param(
+            "session-postgres-invalid-url",
+            "sqlite:///tmp/sessions.db",
+            None,
+            "ESM_POSTGRES_SESSION_DATABASE_URL must use a postgres or postgresql URL",
+            id="invalid-url",
+        ),
+        pytest.param(
+            "session-postgres-connection-failure",
+            VALID_POSTGRES_SESSION_URL,
+            "Could not connect to the PostgreSQL session store: database unavailable",
+            "Could not connect to the PostgreSQL session store: database unavailable",
+            id="connection-failure",
+        ),
+        pytest.param(
+            "session-postgres-missing-driver",
+            VALID_POSTGRES_SESSION_URL,
+            "Install psycopg to use the PostgreSQL session-store backend",
+            "Install psycopg to use the PostgreSQL session-store backend",
+            id="missing-driver",
+        ),
+        pytest.param(
+            "session-postgres-bootstrap-failure",
+            VALID_POSTGRES_SESSION_URL,
+            "postgres bootstrap failed",
+            "postgres bootstrap failed",
+            id="bootstrap-failure",
+        ),
+    ],
+)
+def test_run_local_session_surfaces_explicit_postgres_failures_without_fallback(
+    monkeypatch,
+    tmp_path: Path,
+    session_id: str,
+    database_url: str | None,
+    bootstrap_message: str | None,
+    expected_message: str,
+) -> None:
+    """Local runner startup should match worker behavior for explicit PostgreSQL failures."""
+    _assert_run_local_session_explicit_postgres_failure(
+        monkeypatch,
+        tmp_path,
+        session_id=session_id,
+        expected_message=expected_message,
+        database_url=database_url,
+        bootstrap_message=bootstrap_message,
     )
-
-    try:
-        with pytest.raises(RuntimeError, match="postgres bootstrap failed"):
-            run_local_session(
-                mode="video_segments",
-                input_path=input_dir,
-                selected_detectors=["video_metrics"],
-                session_id="session-postgres-bootstrap-failure",
-            )
-    finally:
-        clear_default_session_store_cache()
-
-    session_dir = (tmp_path / "sessions") / "session-postgres-bootstrap-failure"
-    assert not session_dir.exists()
 
 
 def test_run_local_session_persists_validation_failure_progress_details(
