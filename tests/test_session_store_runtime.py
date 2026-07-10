@@ -1,8 +1,8 @@
-"""Focused tests for runtime session-store selection and failure policy.
+"""Focused tests for runtime session-store selection, rollback, and policy.
 
 These checks keep the current file-backed default honest while proving that
-explicit PostgreSQL mode, live-smoke gating, and bootstrap failures behave
-predictably.
+explicit PostgreSQL mode stays opt-in, single-backend, and clear about
+bootstrap failures.
 """
 
 import os
@@ -12,6 +12,7 @@ from pathlib import Path
 import config
 import pytest
 from session_models import ResultEvent, SessionMetadata, SessionProgress
+from session_store import SessionStore
 from session_store_file import DEFAULT_FILE_SESSION_STORE, FileSessionStore
 from session_store_postgres import PostgresSessionStore
 from session_store_postgres import PostgresSessionStoreBootstrapError
@@ -52,7 +53,7 @@ def _metadata(session_id: str) -> SessionMetadata:
 
 
 def _write_minimal_session_round_trip(store: FileSessionStore, session_id: str) -> None:
-    """Write the smallest useful session snapshot through the selected store."""
+    """Create one minimal known session through the file-backed store."""
     metadata = _metadata(session_id)
     store.write_metadata(metadata)
     store.write_progress(SessionProgress.initial(session_id=session_id, total_count=1))
@@ -69,6 +70,17 @@ def _assert_file_mode_round_trip(store: FileSessionStore, session_id: str) -> No
     """Assert that file-backed writes remain usable through runtime selection."""
     _write_minimal_session_round_trip(store, session_id)
     assert store.read_snapshot(session_id)["session"] == _metadata(session_id).to_dict()
+
+
+def _assert_missing_snapshot(store: SessionStore, session_id: str) -> None:
+    """Assert the stable missing-session snapshot for the active backend."""
+    assert store.read_snapshot(session_id) == {
+        "session": None,
+        "progress": None,
+        "alerts": [],
+        "results": [],
+        "latest_result": None,
+    }
 
 
 def _assert_file_runtime_settings(settings: SessionStoreRuntimeSettings) -> None:
@@ -524,6 +536,31 @@ def test_default_session_store_keeps_missing_schema_visible_when_explicit_postgr
         match=r'relation "session_metadata" does not exist',
     ):
         store.read_snapshot("session-postgres-missing-schema")
+
+
+def test_explicit_postgres_runtime_does_not_treat_existing_file_session_as_known(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Explicit PostgreSQL mode should not silently dual-read older file-backed sessions."""
+    monkeypatch.setattr(config, "SESSION_OUTPUT_FOLDER", tmp_path)
+
+    historical_session_id = "historical-file-session"
+    file_store = DEFAULT_FILE_SESSION_STORE
+    _write_minimal_session_round_trip(file_store, historical_session_id)
+    assert file_store.session_exists(historical_session_id) is True
+
+    _set_valid_postgres_runtime_env(monkeypatch)
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        session_store_postgres_test_support.InMemoryPostgresSessionStoreConnection,
+    )
+
+    runtime_store = get_default_session_store()
+
+    assert isinstance(runtime_store, PostgresSessionStore)
+    assert runtime_store.session_exists(historical_session_id) is False
+    _assert_missing_snapshot(runtime_store, historical_session_id)
 
 
 def test_default_session_store_builds_postgres_backend_when_selected(
