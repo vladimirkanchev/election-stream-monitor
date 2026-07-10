@@ -2,7 +2,7 @@
 
 This audit captures the current session persistence surface for the ongoing
 session-store migration. Use it as the detailed storage inventory, ownership
-map, and migration notebook.
+map, and migration reference.
 
 Document split:
 
@@ -391,6 +391,44 @@ The runtime validator now centralizes the branch rule:
 - session-table auto-create is now opt-in; the default is to require an
   explicit bootstrap helper or migration path rather than silently creating
   durable tables at runtime
+
+Current schema ownership audit:
+
+- owning doc for schema/bootstrap/migration detail:
+  `docs/session-persistence-audit.md`
+  `docs/contracts.md` keeps the high-level contract summary and points here
+  for table mapping, bootstrap policy, caller ownership, and migration policy
+- runtime backend selection owns whether PostgreSQL is used at all:
+  `src/session_store_runtime.py` chooses the file default or the explicit
+  PostgreSQL path
+- PostgreSQL bootstrap owns connection setup and optional schema creation:
+  `src/session_store_postgres.py` exposes
+  `connect_postgres_session_store(...)`,
+  `initialize_postgres_session_store(...)`, and
+  `bootstrap_postgres_session_store(...)`
+- app startup does not unconditionally own schema creation:
+  PostgreSQL tables are created only when explicit PostgreSQL mode is selected
+  and `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+- current table creation policy is narrow:
+  app bootstrap may issue `CREATE TABLE IF NOT EXISTS` only under that
+  explicit opt-in flag, for the known session-store tables only
+- schema reset is test-only today:
+  `reset_postgres_session_store_schema(...)` is used by the live smoke helpers,
+  not by normal runtime startup
+- current migration policy is still manual-first:
+  auto-create can bootstrap the known tables for deliberate opt-in runs, but
+  schema evolution is still handled as explicit reviewed change work
+- practical meaning at this stage:
+  when the session-store schema changes, update the owned SQL/bootstrap code,
+  focused contract or smoke tests, and owning docs together; do not treat
+  runtime startup as an upgrader for existing databases
+- a migration tool becomes necessary when the project needs in-place upgrades
+  of existing PostgreSQL session databases, more than one ordered schema
+  revision, or a tracked rollback path between schema versions
+
+That is the current practical owner split for this branch: runtime config owns
+backend choice, PostgreSQL bootstrap owns optional table creation, and schema
+reset remains isolated to live smoke support.
 
 Current callers now split cleanly:
 

@@ -2005,15 +2005,15 @@ Current session-storage boundary:
   - PostgreSQL session storage is available now, but only on deliberate opt-in
 - Bootstrap policy is explicit, not automatic:
   - session tables do not auto-create by default
-  - opt in only with `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+  - app bootstrap may run `CREATE TABLE IF NOT EXISTS` only when
+    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+  - schema/bootstrap/migration detail is owned by
+    `docs/session-persistence-audit.md`
   - normal PR and local validation should not require a live PostgreSQL server
   - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live store
     and runtime smoke lanes
-  - those live lanes stay intentionally small:
-    - store smoke proves schema reset, durable cancel intent, and public
-      snapshot shape against a real database
-    - runtime smoke proves accepted start, first readable snapshot, durable
-      cancel delivery, and stable terminal readability after worker settlement
+  - exact live-lane commands and scope belong in
+    `docs/testing-and-validation.md`
 - `src/session_service.py` and the session runner helpers consume that store
   contract instead of choosing backend details themselves.
 - FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and

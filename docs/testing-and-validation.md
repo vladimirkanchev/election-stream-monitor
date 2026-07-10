@@ -439,6 +439,8 @@ tests/test_api_boundary_sessions_cancel.py -q
     `ESM_POSTGRES_SESSION_DATABASE_URL`,
     `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, and
     `POSTGRES_SESSION_STORE_REAL_SMOKE=1`
+  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit bootstrap opt-in
+    for the known session-store tables, not default migration policy
   - use it only when you intentionally want real database confidence after the
     faster parity and runtime lanes already say the contract still holds
   - keep the live contract small and deterministic:
@@ -447,6 +449,8 @@ tests/test_api_boundary_sessions_cancel.py -q
   - do not grow this lane into detached-worker, FastAPI, or broader
     PostgreSQL rollout coverage; those belong in separate runtime or rollout
     checks
+  - for schema/bootstrap/migration ownership, use
+    `docs/session-persistence-audit.md`
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -2082,6 +2086,9 @@ session persistence.
   `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
 - add explicit runtime backend selection:
   `ESM_SESSION_STORE_BACKEND=postgres`
+- treat the auto-create flag here the same way as store smoke:
+  explicit bootstrap convenience for known tables, not a general runtime
+  upgrader for existing databases
 - after exporting that live store-smoke DB env, run the focused runtime file
   directly; this live variant is intentionally separate from the default
   file-backed `just test-session-runtime` helper:
@@ -2097,6 +2104,8 @@ export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
 - prefer `just test-session-runtime` for the default file-backed runtime lane
 - use the live PostgreSQL runtime smoke only after parity and focused runtime
   checks already say the contract still holds
+- use `docs/session-persistence-audit.md` for the owning schema/bootstrap/
+  migration policy instead of copying that detail into validation notes
 
 Do not use this lane as a substitute for the cheaper focused seams:
 
