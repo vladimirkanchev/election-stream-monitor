@@ -26,6 +26,62 @@ Document split:
 | `worker.log` | `session_service._spawn_session_worker(...)` | Append log file | Not part of the public snapshot; used for diagnostics | Keep file-backed for now unless a deliberate diagnostics surface is added. |
 | API stream temp media files | `stream_loader_http_hls` materialization and cleanup helpers | Runtime files | Processed by detectors, then cleaned | Runtime artifact, not durable session data. Keep out of the session-store migration. |
 
+## Current File Session Layout
+
+When the default file-backed session store is active, one session lives under:
+
+- `config.SESSION_OUTPUT_FOLDER/<session_id>/`
+- default repo path: `data/sessions/<session_id>/`
+
+Current file layout:
+
+```text
+data/sessions/<session_id>/
+  session.json
+  progress.json
+  results.jsonl
+  alerts.jsonl
+  cancel_requested.json
+  api_stream_seen_chunks.jsonl
+  worker.log
+```
+
+This directory mixes several ownership categories. That matters for migration
+planning because not every file in the folder is session-store data.
+
+### Session-store-owned durable data
+
+- `session.json`
+  - authoritative session metadata and current lifecycle summary
+- `progress.json`
+  - latest-only progress read model
+- `results.jsonl`
+  - append-ordered durable detector result history
+- `cancel_requested.json`
+  - durable cancel intent used by cooperative runtime polling
+
+### Neighbor artifacts that are not the session-store payload
+
+- `alerts.jsonl`
+  - alert-store data, not session-store data
+- `api_stream_seen_chunks.jsonl`
+  - replay and de-dup coordination state for `api_stream`
+- `worker.log`
+  - detached-worker diagnostics, not part of the public snapshot contract
+
+### Session-scoped runtime artifacts outside the main session-store contract
+
+- API stream temp media files under `config.API_STREAM_TEMP_ROOT`
+- other local temp and cleanup files created during media materialization
+
+Audit conclusion:
+
+- existing file sessions are not just one migratable blob
+- the first forward-only versus backfill decision should treat metadata,
+  progress, results, and cancel intent as the primary session-store surface
+- alerts, replay keys, worker diagnostics, and temp media should stay explicit
+  side categories unless a later branch intentionally migrates them too
+
 ## Current Ownership Map
 
 - `src/session_service.py` owns start/read/cancel orchestration for FastAPI and CLI adapters.
@@ -418,6 +474,37 @@ Current schema ownership audit:
 - current migration policy is still manual-first:
   auto-create can bootstrap the known tables for deliberate opt-in runs, but
   schema evolution is still handled as explicit reviewed change work
+- current historical-data policy is forward-only:
+  explicit PostgreSQL session mode applies to newly created sessions in that
+  mode; existing file-backed session directories are not automatically copied
+  into PostgreSQL by runtime startup, reads, or bootstrap helpers
+- no automatic historical migration yet:
+  enabling explicit PostgreSQL mode does not migrate older file-backed session
+  history on its own
+- current runtime-selection rule follows the same boundary:
+  once explicit PostgreSQL mode is active, parent reads, cancel writes, and
+  detached-worker writes all operate against the PostgreSQL-backed known-session
+  universe rather than probing older file-backed session directories
+- current read-compatibility expectation is intentionally narrow:
+  explicit PostgreSQL mode is single-backend and does not perform hidden
+  dual-store reads across PostgreSQL and file-backed session directories
+- backfill is a later explicit decision, not an implied part of enabling the
+  PostgreSQL session store:
+  if the project later needs historical file sessions in PostgreSQL, that work
+  should land as a separate reviewed migration path with its own validation,
+  rollback story, and operator guidance
+- future backfill work needs explicit entry criteria before implementation:
+  schema mapping: define exactly which file-backed session artifacts map into
+  which PostgreSQL tables and which artifacts stay file-backed on purpose
+  idempotency: rerunning the backfill must not duplicate results, corrupt
+  ordering, or turn partially migrated sessions into ambiguous mixed-state
+  records
+  rollback: define what operators do if backfill stops mid-run or the rollout
+  must return to file-backed reads for newly created sessions
+  validation: prove migrated sessions keep the same metadata, latest progress,
+  ordered results, cancel intent semantics, and public snapshot shape
+  dry run: provide a non-writing inventory mode that reports what would
+  migrate, what would be skipped, and what looks structurally unsafe
 - practical meaning at this stage:
   when the session-store schema changes, update the owned SQL/bootstrap code,
   focused contract or smoke tests, and owning docs together; do not treat
@@ -901,6 +988,15 @@ snapshot/read model. During implementation, update docs in this order:
 `session-persistence-audit.md`, `session-model.md`, `contracts.md`,
 `testing-and-validation.md`, `architecture.md`, then `README.md` only for
 user-visible behavior.
+
+Historical-data wording rule:
+
+- say "forward-only" when you mean new PostgreSQL-backed sessions are created
+  only after explicit backend selection
+- do not say "session migration" as if historical file sessions are already
+  copied into PostgreSQL
+- say "backfill" only for a later explicit migration path that moves old
+  file-backed session history
 
 For the current session-store migration slice, treat doc ownership this way:
 

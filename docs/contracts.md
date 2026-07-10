@@ -90,6 +90,15 @@ Current persistence contract, kept short here:
 - PostgreSQL session storage turns on only when
   `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
   PostgreSQL bootstrap settings are present.
+- In the current rollout stage, that PostgreSQL path is forward-only for new
+  sessions; historical file-backed sessions are not automatically backfilled
+  into PostgreSQL.
+- Runtime reads and cancel requests follow the active backend selection too.
+  Explicit PostgreSQL mode is intentionally single-backend:
+  older file-backed sessions stay outside that backend's known-session
+  universe unless a later backfill or deliberate dual-read policy is added.
+  Parent reads, cancel checks, and session-exists lookups do not silently fall
+  back to file-backed session directories.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only
   after explicit PostgreSQL selection; it should not poison the file default.
 - The detached worker and the parent process must resolve the same session

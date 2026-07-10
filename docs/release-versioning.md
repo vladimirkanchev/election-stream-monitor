@@ -71,6 +71,18 @@ explicitly in the release notes:
 That keeps releases honest about the current rollout state and avoids
 implying a project-wide default flip too early.
 
+When a release or PR includes session-storage changes, keep the wording just as
+explicit:
+
+- say "adds an opt-in PostgreSQL session storage path" when file-backed
+  storage still remains the default
+- say "forward-only" when PostgreSQL applies to newly created sessions only
+- do not say "migrates all sessions" unless the branch truly includes reviewed
+  historical backfill behavior and the docs/tests prove it
+
+That keeps PR summaries and release notes aligned with the current rollout
+truth instead of overstating migration completeness.
+
 ## Current Project Stage
 
 The current versioning posture matches the actual project state:
