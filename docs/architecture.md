@@ -42,8 +42,8 @@ Use this document when you need to answer:
 ## Short version
 
 The project is a local-first modular monolith with explicit detector
-registration, a file-backed default session store, and opt-in PostgreSQL
-backends for session and alert persistence.
+registration, file-backed default persistence, and explicit opt-in PostgreSQL
+backends for both session and alert persistence.
 
 In practice that means:
 
@@ -167,8 +167,9 @@ Today that means:
 
 That split kept the current JSONL behavior intact while making the PostgreSQL
 alert store a bounded replacement instead of a larger read-model rewrite.
-PostgreSQL can now be selected explicitly at runtime, while file-backed alerts
-remain the tested default backend for this branch.
+Alert PostgreSQL mode is selected explicitly at runtime through the alert
+backend configuration, while file-backed alerts remain the tested default
+backend for this branch.
 
 The current PostgreSQL alert mapping is intentionally column-first rather than
 JSONB-first:

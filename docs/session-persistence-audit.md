@@ -13,6 +13,79 @@ Document split:
 - keep this file detailed, especially for module ownership, table mapping,
   runtime selection, and migration watchpoints
 
+## Session / Alert Backend Naming Audit
+
+Current session-store and alert-store PostgreSQL naming is mostly aligned at
+the env and runtime-config seam.
+
+Shared naming pattern today:
+
+- runtime backend selection uses:
+  - `ESM_SESSION_STORE_BACKEND`
+  - `ESM_ALERT_STORE_BACKEND`
+- PostgreSQL database URLs use:
+  - `ESM_POSTGRES_SESSION_DATABASE_URL`
+  - `ESM_POSTGRES_ALERT_DATABASE_URL`
+- PostgreSQL bootstrap toggles use:
+  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES`
+  - `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES`
+- optional live-smoke flags use:
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE`
+  - `POSTGRES_ALERT_STORE_REAL_SMOKE`
+
+Current helper and lane naming is close, but not fully parallel:
+
+- session runtime/config helpers are split more explicitly between:
+  - `session_store_runtime_config.py`
+  - `session_store_postgres_config.py`
+  - `session_store_postgres_test_support.py`
+- alert runtime/config helpers follow the same config split, but test support
+  is grouped more broadly under `session_alert_test_support.py`
+- sessions already have compact `just` entrypoints for:
+  - `just test-session-store`
+  - `just test-session-runtime`
+- alerts still rely more on focused pytest slices and weekly/manual scripts
+  than on matching `just` wrappers
+
+Audit conclusion:
+
+- env naming is consistent enough to keep
+- runtime-selection wording is consistent enough to keep:
+  file-backed default, PostgreSQL opt-in
+- session rollout docs are currently more explicit about forward-only and
+  no-backfill semantics than alert docs; treat that as rollout-stage truth,
+  not as a naming bug
+- the next alignment work should focus on lane naming, rollout wording, and
+  helper discoverability rather than renaming stable env vars
+
+## Shared Rollout Vocabulary
+
+Use this vocabulary consistently across session-store and alert-store docs:
+
+- `file-backed default`
+  - the normal runtime path when no explicit PostgreSQL backend is selected
+- `PostgreSQL opt-in`
+  - PostgreSQL is supported, but it is not the project-wide default path yet
+- `explicit backend selection`
+  - the backend changes only after an env-backed runtime choice such as
+    `ESM_SESSION_STORE_BACKEND=postgres` or `ESM_ALERT_STORE_BACKEND=postgres`
+- `live smoke`
+  - an opt-in real-database confidence lane, not routine local validation and
+    not the default protected PR lane
+- `forward-only session path`
+  - session PostgreSQL currently applies to newly created sessions after
+    explicit backend selection; it does not imply historical file-session
+    backfill
+
+Vocabulary guardrails:
+
+- use `forward-only` only for session-store rollout unless alert docs later
+  gain the same historical-data policy
+- use `live smoke` for focused real-PostgreSQL confidence and reserve
+  `runtime confidence` for broader start/read/cancel worker-path checks
+- use `explicit backend selection` instead of vague wording such as
+  "when PostgreSQL is enabled" when the env-driven runtime choice matters
+
 ## Current Artifacts
 
 | Artifact | Current owner | Write shape | Read path | Migration note |
@@ -915,6 +988,36 @@ Current rule of thumb:
   local runner startup; explicit PostgreSQL bootstrap or missing-schema
   failures should stay visible instead of degrading to file mode
 
+Session versus alert runtime-config consistency today:
+
+- shared behavior:
+  - backend unset keeps the file-backed default
+  - explicit `file` ignores stale PostgreSQL env
+  - invalid backend values normalize back to the file-backed default
+  - explicit `postgres` must fail clearly rather than silently falling back
+- current intentional differences:
+  - session runtime selection validates explicit PostgreSQL URL shape before
+    store build, while alert runtime selection keeps only backend selection in
+    runtime config and leaves PostgreSQL URL/bootstrap validation to the alert
+    bootstrap seam
+  - session PostgreSQL auto-create defaults off and must be explicit;
+    alert PostgreSQL auto-create still defaults on in the current rollout stage
+  - session live-smoke gating includes a dedicated
+    `POSTGRES_SESSION_STORE_REAL_SMOKE` runtime/store flag; alert live-smoke
+    gating is currently used for focused real-DB alert confidence, not a
+    matching detached-worker session-runtime lane
+
+Current confidence for that split:
+
+- `tests/test_session_store_runtime.py` proves the stricter session runtime
+  failure truth table directly at the runtime seam
+- `tests/test_session_alert_store_runtime.py` proves alert backend selection,
+  stale-env safety, explicit Postgres failure propagation, and cache behavior
+- `tests/test_session_alert_store_postgres_config.py` and
+  `tests/test_session_alert_store_postgres.py` keep the alert PostgreSQL
+  URL/bootstrap seam validated even though that validation lives one layer
+  lower than the session runtime selector
+
 Leave these out of the live runtime smoke:
 
 - store-parity details already owned by `tests/test_session_store_parity.py`
@@ -978,7 +1081,7 @@ future drift between the default path and the new backend.
 | `docs/session-model.md` | Canonical session semantics plus current file names and JSON/JSONL behavior | Accurate, intentionally file-specific | Keep semantic sections stable; keep file-specific wording under the file default now that `SessionStore` owns the storage contract. |
 | `docs/contracts.md` | Snapshot contract and route behavior, with some file-backed implementation notes | Mostly storage-independent, with a few file examples | Preserve as the public contract reference. Replace implementation-specific "missing `session.json`" wording when known-session checks move behind a store. |
 | `docs/data-models.md` and `docs/fastapi-boundary.md` | Snapshot/API shape rather than storage implementation | Low drift risk | Keep focused on payload shape. Avoid adding PostgreSQL implementation details here unless the API changes. |
-| `docs/architecture.md` | Current runtime architecture: file-backed session state plus opt-in PostgreSQL alerts | Accurate but implementation-oriented | Update alongside the storage seam so architecture reflects file backend plus PostgreSQL backend rather than only files. |
+| `docs/architecture.md` | Current runtime architecture: file-backed default session state plus opt-in PostgreSQL backends for sessions and alerts | Accurate but implementation-oriented | Keep it aligned to the shared default-versus-opt-in rollout wording rather than older alert-only PostgreSQL phrasing. |
 | `docs/testing-and-validation.md` | Current lanes and test ownership, including session-store parity and optional live PostgreSQL session-store confidence | Accurate with recent adapter/test updates | Keep the fast-versus-live split explicit as coverage grows. |
 | `docs/README.md` | Navigation to session model, contracts, and this audit | Aligned | Keep this audit linked while the migration is active. |
 

@@ -330,7 +330,8 @@ module families and the matching tests:
     - file-backed contract for the current default alert store
   - `tests/test_session_alert_store_runtime.py`
     - runtime backend selection plus caller-stability coverage for the default
-      alert backend, including cache recovery after failed Postgres bootstrap
+      alert backend, including explicit Postgres URL/bootstrap failure policy
+      and cache recovery after failed Postgres bootstrap
   - `tests/test_session_alert_store_runtime_config.py`
     - explicit `file` versus `postgres` backend-mode config coverage
   - `tests/test_session_alert_store_parity.py`

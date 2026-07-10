@@ -90,6 +90,10 @@ Current persistence contract, kept short here:
 - PostgreSQL session storage turns on only when
   `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
   PostgreSQL bootstrap settings are present.
+- Alert storage follows the same rollout posture at its own seam:
+  file-backed remains the default, and PostgreSQL turns on only after
+  explicit `ESM_ALERT_STORE_BACKEND=postgres` selection with valid alert
+  bootstrap settings.
 - In the current rollout stage, that PostgreSQL path is forward-only for new
   sessions; historical file-backed sessions are not automatically backfilled
   into PostgreSQL.
