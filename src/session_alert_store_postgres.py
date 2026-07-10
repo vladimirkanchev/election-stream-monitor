@@ -1,7 +1,9 @@
-"""PostgreSQL-backed alert store and schema helpers.
+"""Database-facing implementation for the opt-in PostgreSQL alert backend.
 
-This module owns the database-facing side of the Postgres alert backend:
-schema, bootstrap, and the concrete `SessionAlertStore` implementation.
+This module owns the concrete PostgreSQL alert-store path below the shared
+alert seam: schema statements, explicit bootstrap, and the concrete
+`SessionAlertStore` implementation. It is only relevant after runtime config
+selects the Postgres alert backend.
 """
 
 from __future__ import annotations
@@ -174,7 +176,7 @@ class PostgresSessionAlertStore(SessionAlertStore):
 def connect_postgres_alert_store(
     settings: PostgresAlertStoreSettings | None = None,
 ) -> PostgresAlertStoreConnection:
-    """Open one PostgreSQL connection for the alert-store bootstrap path."""
+    """Open one PostgreSQL connection for the explicit alert-store bootstrap path."""
     resolved_settings = settings or get_postgres_alert_store_settings()
     database_url = _validated_postgres_alert_database_url(resolved_settings)
 
@@ -197,7 +199,7 @@ def connect_postgres_alert_store(
 
 
 def initialize_postgres_alert_store(connection: PostgresAlertStoreConnection) -> None:
-    """Create the PostgreSQL alert schema for the current seam design."""
+    """Create the current alert-store tables and indexes on one connection."""
     with connection.cursor() as cursor:
         for statement in POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS:
             cursor.execute(statement)
@@ -207,12 +209,14 @@ def initialize_postgres_alert_store(connection: PostgresAlertStoreConnection) ->
 def bootstrap_postgres_alert_store(
     settings: PostgresAlertStoreSettings | None = None,
 ) -> PostgresAlertStoreConnection:
-    """Connect to PostgreSQL and initialize the alert schema when configured."""
+    """Connect to PostgreSQL and optionally auto-create alert tables for this seam."""
     resolved_settings = settings or get_postgres_alert_store_settings()
     connection = connect_postgres_alert_store(resolved_settings)
     if resolved_settings.auto_create_tables:
         initialize_postgres_alert_store(connection)
     return connection
+
+
 def _event_insert_params(event: AlertEvent) -> tuple[object, ...]:
     """Build insert parameters for one validated alert event."""
     return (
@@ -226,10 +230,12 @@ def _event_insert_params(event: AlertEvent) -> tuple[object, ...]:
         event.window_index,
         event.window_start_sec,
     )
+
+
 def _validated_postgres_alert_database_url(
     settings: PostgresAlertStoreSettings,
 ) -> str:
-    """Validate bootstrap settings and return the required PostgreSQL URL."""
+    """Validate explicit bootstrap settings and return the required PostgreSQL URL."""
     try:
         validate_postgres_alert_store_settings(settings)
     except PostgresAlertStoreConfigurationError as err:
