@@ -1,4 +1,9 @@
-"""Focused contract, bootstrap, and opt-in live-smoke tests for the PostgreSQL session store."""
+"""Focused PostgreSQL session-store contract, bootstrap, and live-smoke tests.
+
+This file owns store-level confidence for the opt-in PostgreSQL backend:
+contract-facing reads and writes, explicit bootstrap policy, and a small
+real-database smoke lane.
+"""
 
 from __future__ import annotations
 
@@ -300,6 +305,36 @@ def _postgres_settings(
         auto_create_tables=auto_create_tables,
         real_smoke_enabled=False,
     )
+
+
+def _patch_recorded_postgres_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: PostgresSessionStoreSettings,
+) -> tuple[RecordingConnection, list[str]]:
+    """Patch bootstrap collaborators and return the connection plus call order."""
+    connection = RecordingConnection()
+    seen: list[str] = []
+
+    def fake_connect(
+        resolved_settings: PostgresSessionStoreSettings,
+    ) -> RecordingConnection:
+        assert resolved_settings == settings
+        seen.append("connect")
+        return connection
+
+    def fake_initialize(resolved_connection: RecordingConnection) -> None:
+        assert resolved_connection is connection
+        seen.append("initialize")
+
+    monkeypatch.setattr(
+        "session_store_postgres.connect_postgres_session_store",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        "session_store_postgres.initialize_postgres_session_store",
+        fake_initialize,
+    )
+    return connection, seen
 
 
 @pytest.mark.parametrize(
@@ -883,28 +918,7 @@ def test_bootstrap_postgres_session_store_initializes_schema_when_enabled(
 ) -> None:
     """Bootstrap should connect and initialize when auto-create is enabled."""
     settings = _postgres_settings(auto_create_tables=True)
-    connection = RecordingConnection()
-    seen: list[str] = []
-
-    def fake_connect(
-        resolved_settings: PostgresSessionStoreSettings,
-    ) -> RecordingConnection:
-        assert resolved_settings == settings
-        seen.append("connect")
-        return connection
-
-    def fake_initialize(resolved_connection: RecordingConnection) -> None:
-        assert resolved_connection is connection
-        seen.append("initialize")
-
-    monkeypatch.setattr(
-        "session_store_postgres.connect_postgres_session_store",
-        fake_connect,
-    )
-    monkeypatch.setattr(
-        "session_store_postgres.initialize_postgres_session_store",
-        fake_initialize,
-    )
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     result = bootstrap_postgres_session_store(settings)
 
@@ -917,28 +931,7 @@ def test_bootstrap_postgres_session_store_skips_schema_init_when_disabled(
 ) -> None:
     """Bootstrap should skip schema creation when auto-create is disabled."""
     settings = _postgres_settings()
-    connection = RecordingConnection()
-    seen: list[str] = []
-
-    def fake_connect(
-        resolved_settings: PostgresSessionStoreSettings,
-    ) -> RecordingConnection:
-        assert resolved_settings == settings
-        seen.append("connect")
-        return connection
-
-    def fake_initialize(resolved_connection: RecordingConnection) -> None:
-        assert resolved_connection is connection
-        seen.append("initialize")
-
-    monkeypatch.setattr(
-        "session_store_postgres.connect_postgres_session_store",
-        fake_connect,
-    )
-    monkeypatch.setattr(
-        "session_store_postgres.initialize_postgres_session_store",
-        fake_initialize,
-    )
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     result = bootstrap_postgres_session_store(settings)
 
@@ -951,30 +944,35 @@ def test_bootstrap_postgres_session_store_uses_cached_settings_when_not_provided
 ) -> None:
     """Bootstrap should fall back to the cached session-store settings."""
     settings = _postgres_settings()
-    connection = RecordingConnection()
-    seen: list[str] = []
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     monkeypatch.setattr(
         "session_store_postgres.get_postgres_session_store_settings",
         lambda: settings,
     )
 
-    def fake_connect(
-        resolved_settings: PostgresSessionStoreSettings,
-    ) -> RecordingConnection:
-        assert resolved_settings == settings
-        seen.append("connect")
-        return connection
+    result = bootstrap_postgres_session_store()
+
+    assert result is connection
+    assert seen == ["connect"]
+
+
+def test_bootstrap_postgres_session_store_uses_cached_auto_create_opt_in_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cached bootstrap settings should still honor explicit schema-create opt-in."""
+    settings = _postgres_settings(auto_create_tables=True)
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     monkeypatch.setattr(
-        "session_store_postgres.connect_postgres_session_store",
-        fake_connect,
+        "session_store_postgres.get_postgres_session_store_settings",
+        lambda: settings,
     )
 
     result = bootstrap_postgres_session_store()
 
     assert result is connection
-    assert seen == ["connect"]
+    assert seen == ["connect", "initialize"]
 
 
 def test_bootstrap_postgres_session_store_explicit_settings_override_stale_cached_env(
