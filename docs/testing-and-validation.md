@@ -229,9 +229,10 @@ Current focused ownership map:
   not by themselves prove that the full session-store backend evolution is complete
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
-  and explicit proof that `postgres` is built only on deliberate opt-in
-  - explicit proof that missing URL, invalid URL shape, and missing driver
-    fail clearly only after explicit PostgreSQL selection
+    and explicit proof that `postgres` is built only on deliberate opt-in
+  - explicit proof that unsupported backend values stay on the file default,
+    while missing URL, invalid URL shape, driver/bootstrap failure, and
+    missing-schema behavior fail clearly only after explicit PostgreSQL selection
 - `tests/test_session_store_postgres.py`
   - PostgreSQL session-store adapter behavior, bootstrap, driver failure
     shaping, and opt-in schema-isolation helpers for live smoke lanes
@@ -411,15 +412,17 @@ tests/test_api_boundary_sessions_runtime.py \
 tests/test_session_store_runtime.py -q
 ```
 
-  This slower lane is the right next step when you need to prove three things
-  at once:
+  This slower lane is the right next step when you need to prove the
+  runtime-selection contract across parent and worker paths:
 
   - file-backed session storage is still the default
   - PostgreSQL session storage still turns on only after explicit backend
     selection plus valid PostgreSQL configuration
   - the detached worker and parent process still agree on the selected backend
   - explicit bad PostgreSQL config fails clearly instead of silently falling
-    back in the worker path
+    back in the worker or local runner path
+  - for the detailed rollback and failure-policy matrix, use
+    `docs/session-persistence-audit.md` instead of repeating that policy here
 
 - cancel behavior across store, service, and route seams:
 

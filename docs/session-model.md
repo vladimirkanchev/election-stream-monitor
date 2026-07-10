@@ -252,6 +252,7 @@ default.
 - `SessionStore` owns durable session metadata, latest progress, ordered
   detector results, snapshot reads, known-session checks, and cancel intent.
 - File-backed session storage is still the runtime default.
+- Unsupported runtime backend values still resolve to the file-backed default.
 - PostgreSQL session storage is available only through explicit backend
   selection plus valid PostgreSQL bootstrap settings.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only in
@@ -268,6 +269,8 @@ default.
   durable session contract unless a separate contract is added.
 - The parent process and detached worker must resolve the same backend so
   accepted sessions do not later look missing or stale.
+- The same explicit-PostgreSQL failure rule applies across parent reads,
+  detached-worker startup, and local runner startup.
 
 For the current migration stage, cancel-request state should be treated as
 runtime coordination with bounded durability:

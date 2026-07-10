@@ -86,6 +86,7 @@ Current persistence contract, kept short here:
 - Low-level cancel intent is part of the broader durable coordination
   contract, but it stays outside the public snapshot payload.
 - File-backed session storage is still the runtime default.
+- Unsupported backend values still normalize to the file-backed default.
 - PostgreSQL session storage turns on only when
   `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
   PostgreSQL bootstrap settings are present.

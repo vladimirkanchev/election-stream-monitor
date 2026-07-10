@@ -788,8 +788,45 @@ Keep that live runtime contract intentionally small:
   process guesses.
 - FastAPI cancel reaches the worker through durable store-backed cancel intent.
 - Terminal session state remains readable after worker settlement.
-- Keep it opt-in behind the real DB env and explicit
+
+Current rollback and failure-mode coverage:
+
+- `tests/test_session_store_runtime.py` owns default runtime selection,
+  rollback-safe file behavior, explicit PostgreSQL validation, bootstrap
+  failure propagation, and missing-schema visibility.
+- `tests/test_session_cli_tooling.py` and `tests/test_session_runner_local.py`
+  keep the detached worker and local runner aligned with the same rule:
+  non-PostgreSQL selections stay file-backed, while explicit PostgreSQL
+  failures abort instead of silently writing somewhere else.
+- `tests/test_session_store_postgres.py` owns the bootstrap helper itself,
+  including cached settings, URL validation, missing driver handling, and
+  connection failure.
+- Keep live PostgreSQL confidence opt-in behind the real DB env and explicit
   `ESM_SESSION_STORE_BACKEND=postgres`.
+
+Failure policy truth table:
+
+| Runtime selection | PostgreSQL bootstrap state | Expected behavior | Why |
+| --- | --- | --- | --- |
+| backend unset | any stale, missing, or invalid PostgreSQL env | stay on the default file-backed store | safe fallback; PostgreSQL is still opt-in |
+| backend `file` | any stale, missing, or invalid PostgreSQL env | stay on the file-backed store | explicit file mode should ignore unrelated PostgreSQL bootstrap state |
+| invalid backend value | any PostgreSQL env | degrade to the file-backed store | safe fallback for unsupported runtime config |
+| backend `postgres` | database URL missing | fail clearly before driver or store work | dangerous to guess another backend after explicit PostgreSQL selection |
+| backend `postgres` | database URL has non-PostgreSQL scheme | fail clearly before driver or store work | explicit PostgreSQL mode must reject bad config, not reinterpret it |
+| backend `postgres` | driver missing | fail clearly with one actionable bootstrap error | explicit PostgreSQL mode should not silently fall back to `file` |
+| backend `postgres` | connection/bootstrap failure | fail clearly and abort the explicit PostgreSQL path | protects against split or partial backend selection |
+| backend `postgres` with auto-create disabled | known tables missing | fail clearly when the store first touches missing tables | missing schema must stay visible until bootstrap or migration work fixes it |
+
+Current rule of thumb:
+
+- safe fallback is allowed only while runtime selection still resolves to the
+  default file-backed path
+- once runtime selection explicitly says `postgres`, silent fallback becomes a
+  contract bug because it can hide drift, split parent/worker behavior, or
+  strand writes in the wrong backend
+- keep that rule consistent across parent reads, detached-worker startup, and
+  local runner startup; explicit PostgreSQL bootstrap or missing-schema
+  failures should stay visible instead of degrading to file mode
 
 Leave these out of the live runtime smoke:
 
