@@ -299,6 +299,15 @@ Apply the same rule to the in-progress PostgreSQL session-store branch work:
 - the live smoke stays disabled unless both `POSTGRES_SESSION_STORE_REAL_SMOKE=1` and `ESM_POSTGRES_SESSION_DATABASE_URL` are set
 - use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
 - reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
+- if you just ran `just test-session-postgres-live`, clear the PostgreSQL
+  session env before returning to the normal file-default lanes:
+
+```bash
+unset ESM_SESSION_STORE_BACKEND
+unset ESM_POSTGRES_SESSION_DATABASE_URL
+unset ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES
+unset POSTGRES_SESSION_STORE_REAL_SMOKE
+```
 
 The fast CI workflows now make that default explicit too:
 
@@ -410,6 +419,9 @@ just test-session-store
   - PostgreSQL session storage still turns on only after explicit backend
     selection plus valid PostgreSQL configuration
   - file and PostgreSQL-like store behavior still agree on the shared contract
+  - this lane assumes the normal file-default runtime env; stale PostgreSQL
+    runtime env from live smoke work can make unrelated parity or file-store
+    tests fail by forcing runtime store resolution through PostgreSQL
 
   Lane meaning:
 
