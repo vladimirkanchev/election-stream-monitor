@@ -151,9 +151,9 @@ test-session-store:
       tests/test_session_store_parity.py \
       tests/test_session_store_runtime.py
 
-# Opt-in local live PostgreSQL session store/runtime confidence lane.
-# This stays outside protected PR CI and runs only the narrow real-DB session
-# smoke bundles: focused store behavior plus focused FastAPI-to-worker runtime.
+# Opt-in local live PostgreSQL confidence lane.
+# Runs the narrow real-DB store smoke first, then the matching runtime smoke.
+# This stays outside protected PR CI.
 test-session-postgres-live:
     @if [ "$${POSTGRES_SESSION_STORE_REAL_SMOKE:-0}" != "1" ]; then \
       echo "Set POSTGRES_SESSION_STORE_REAL_SMOKE=1 to run live PostgreSQL session smoke."; \

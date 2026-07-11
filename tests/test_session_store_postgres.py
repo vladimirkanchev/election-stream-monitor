@@ -1,8 +1,7 @@
-"""Focused PostgreSQL session-store contract, bootstrap, and live-smoke tests.
+"""Focused PostgreSQL session-store contract and opt-in live-smoke tests.
 
-This file owns store-level confidence for the opt-in PostgreSQL backend:
-contract-facing reads and writes, explicit bootstrap policy, and a small
-real-database smoke lane.
+This file owns adapter-facing contract coverage, explicit bootstrap and
+failure policy, and the narrow real-database store smoke lane.
 """
 
 from __future__ import annotations

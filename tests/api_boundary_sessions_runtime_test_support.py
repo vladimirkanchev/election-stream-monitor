@@ -1,7 +1,7 @@
-"""Shared support for opt-in live PostgreSQL runtime smoke tests.
+"""Shared fixture support for opt-in live PostgreSQL runtime smoke.
 
-This helper module owns the live runtime fixture: backend selection, real
-schema reset, session-output isolation, request access, and cleanup.
+This module owns backend selection, isolated schema reset, session-root
+isolation, request access, and cleanup for the real FastAPI-to-worker lane.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class LivePostgresRuntimeFixture:
 
 
 def _clear_runtime_backend_caches() -> None:
-    """Reset cached runtime-selected stores around live smoke."""
+    """Reset runtime-selected store caches around live smoke."""
     clear_default_session_alert_store_cache()
     clear_default_session_store_cache()
 

@@ -1,7 +1,7 @@
-"""Shared doubles and live-smoke helpers for PostgreSQL session-store tests.
+"""Shared doubles and opt-in live helpers for PostgreSQL session-store tests.
 
-This module supports two nearby lanes: fast adapter-contract tests backed by
-an in-memory SQL-aware double, and opt-in live PostgreSQL smoke checks.
+This module owns the SQL-aware in-memory double plus the real-DB bootstrap
+helpers shared by the focused store-smoke and runtime-smoke lanes.
 """
 
 from __future__ import annotations

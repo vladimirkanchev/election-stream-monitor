@@ -85,6 +85,67 @@ Vocabulary guardrails:
   `runtime confidence` for broader start/read/cancel worker-path checks
 - use `explicit backend selection` instead of vague wording such as
   "when PostgreSQL is enabled" when the env-driven runtime choice matters
+- shared vocabulary does not mean shared rollout maturity:
+  session and alert PostgreSQL are both opt-in, but session rollout is
+  currently further along than alert rollout
+
+## Readiness States
+
+Use these labels when describing session-store rollout status. Keep them short
+and behavioral.
+
+- `ready`
+  - the current branch already proves the behavior well enough for its
+    intended scope
+  - this does not automatically mean "ready to become the default"
+- `opt-in`
+  - the behavior is supported, but it turns on only after explicit backend or
+    environment selection
+  - routine local runs and protected PR CI should not quietly depend on it
+- `manual`
+  - setup or validation still needs an explicit human-controlled step such as
+    local PostgreSQL bootstrap, schema prep, or a live smoke command
+- `future`
+  - a later branch may add this behavior, but the current code and docs do not
+    claim it yet
+  - use this for backfill, broader rollout automation, or default-switch work
+- `blocked`
+  - a later rollout step should not happen yet because one or more prerequisite
+    behaviors are still missing, incomplete, or intentionally deferred
+
+Readiness guardrails:
+
+- do not say `migration ready`; say what is ready:
+  store parity, opt-in runtime selection, live smoke, manual bootstrap, or
+  default-switch blockers
+- reserve `ready` for behavior that already exists in code, tests, and docs
+- reserve `blocked` for explicit prerequisites, not for vague caution
+- reserve `future` for unshipped work, not partially supported work that
+  already exists behind opt-in controls
+
+## Current Session-Store Readiness
+
+| Area | State | Current meaning |
+| --- | --- | --- |
+| File-backed session runtime | `ready` | File-backed session storage remains the normal runtime default for routine local runs, protected PR CI, and current operator-facing session flows. |
+| Shared session-store contract | `ready` | File and PostgreSQL-backed session stores already agree on metadata, latest progress, ordered results, cancel intent, and snapshot shape. |
+| Session-store parity coverage | `ready` | Focused parity and contract tests already prove shared behavior without tying the branch to backend-specific file paths or SQL details. |
+| PostgreSQL session store | `opt-in` | PostgreSQL session storage is implemented and usable now, but it turns on only after explicit backend selection plus valid PostgreSQL configuration. |
+| Live PostgreSQL session confidence | `opt-in` | Narrow live store smoke and live runtime smoke exist for real-database confidence, but they stay outside routine local and protected PR lanes. |
+| Explicit PostgreSQL failure policy | `ready` | Explicit PostgreSQL mode fails clearly for bad URL, missing driver, bootstrap failure, and missing-schema cases instead of silently falling back. |
+| Live PostgreSQL setup | `manual` | Real PostgreSQL confidence still depends on deliberate database bootstrap, env selection, and direct opt-in commands. |
+| Alert PostgreSQL rollout | `opt-in` | Alert PostgreSQL is supported and validated as opt-in, but it is still narrower than the current session rollout. |
+| Alert/session default alignment | `blocked` | A full project-wide default switch still needs one coherent default-backend story across both session and alert persistence. |
+| Historical session data | `blocked` | Session PostgreSQL is still forward-only; older file-backed sessions are not automatically backfilled or dual-read by default. |
+| Rollback for a default switch | `blocked` | Explicit PostgreSQL failure handling is covered, but full default-switch rollback expectations are not finished yet. |
+| Operational confidence | `blocked` | Live database confidence is still targeted and manual rather than routine operational proof. |
+| Security and deployment review | `blocked` | A default PostgreSQL path still needs a broader review of connection handling, secret management, and shared-environment assumptions. |
+
+Readiness boundary:
+
+This branch is ready for file-backed default plus explicit PostgreSQL opt-in.
+Do not describe PostgreSQL session storage as the default runtime path yet.
+Other docs should link to this readiness table instead of restating it.
 
 ## Current Artifacts
 
@@ -154,6 +215,29 @@ Audit conclusion:
   progress, results, and cancel intent as the primary session-store surface
 - alerts, replay keys, worker diagnostics, and temp media should stay explicit
   side categories unless a later branch intentionally migrates them too
+
+What still stays file-backed or filesystem-owned:
+
+- `worker.log`
+  - stays a local detached-worker diagnostic artifact
+- replay and de-dup files such as `api_stream_seen_chunks.jsonl`
+  - stay runtime coordination state on the filesystem for now
+- HTTP/HLS temp media and other materialized processing files
+  - stay ephemeral filesystem inputs, not durable database records
+- local source media files and directories
+  - stay external runtime inputs; PostgreSQL session mode does not ingest or
+    copy the monitored media itself
+- alert-store data
+  - stays on the alert-store contract rather than becoming part of the session
+    PostgreSQL rollout by implication
+- other non-session artifacts
+  - stay outside the session-store PostgreSQL contract unless a later branch
+    gives them an explicit product surface and ownership model
+
+Practical rule:
+
+- PostgreSQL session mode stores durable session state, not the whole app
+  state
 
 ## Current Ownership Map
 
@@ -544,16 +628,10 @@ Current schema ownership audit:
 - schema reset is test-only today:
   `reset_postgres_session_store_schema(...)` is used by the live smoke helpers,
   not by normal runtime startup
-- current migration policy is still manual-first:
+- current migration policy stays manual-first:
   auto-create can bootstrap the known tables for deliberate opt-in runs, but
-  schema evolution is still handled as explicit reviewed change work
-- current historical-data policy is forward-only:
-  explicit PostgreSQL session mode applies to newly created sessions in that
-  mode; existing file-backed session directories are not automatically copied
-  into PostgreSQL by runtime startup, reads, or bootstrap helpers
-- no automatic historical migration yet:
-  enabling explicit PostgreSQL mode does not migrate older file-backed session
-  history on its own
+  schema evolution and historical backfill still require explicit reviewed
+  change work
 - current runtime-selection rule follows the same boundary:
   once explicit PostgreSQL mode is active, parent reads, cancel writes, and
   detached-worker writes all operate against the PostgreSQL-backed known-session
@@ -561,23 +639,10 @@ Current schema ownership audit:
 - current read-compatibility expectation is intentionally narrow:
   explicit PostgreSQL mode is single-backend and does not perform hidden
   dual-store reads across PostgreSQL and file-backed session directories
-- backfill is a later explicit decision, not an implied part of enabling the
-  PostgreSQL session store:
-  if the project later needs historical file sessions in PostgreSQL, that work
-  should land as a separate reviewed migration path with its own validation,
-  rollback story, and operator guidance
-- future backfill work needs explicit entry criteria before implementation:
-  schema mapping: define exactly which file-backed session artifacts map into
-  which PostgreSQL tables and which artifacts stay file-backed on purpose
-  idempotency: rerunning the backfill must not duplicate results, corrupt
-  ordering, or turn partially migrated sessions into ambiguous mixed-state
-  records
-  rollback: define what operators do if backfill stops mid-run or the rollout
-  must return to file-backed reads for newly created sessions
-  validation: prove migrated sessions keep the same metadata, latest progress,
-  ordered results, cancel intent semantics, and public snapshot shape
-  dry run: provide a non-writing inventory mode that reports what would
-  migrate, what would be skipped, and what looks structurally unsafe
+- forward-only and backfill policy stays simple here:
+  enabling explicit PostgreSQL mode does not migrate older file-backed session
+  history, and any later backfill should land as its own reviewed migration
+  path with mapping, idempotency, rollback, validation, and dry-run criteria
 - practical meaning at this stage:
   when the session-store schema changes, update the owned SQL/bootstrap code,
   focused contract or smoke tests, and owning docs together; do not treat
@@ -1092,16 +1157,7 @@ snapshot/read model. During implementation, update docs in this order:
 `testing-and-validation.md`, `architecture.md`, then `README.md` only for
 user-visible behavior.
 
-Historical-data wording rule:
-
-- say "forward-only" when you mean new PostgreSQL-backed sessions are created
-  only after explicit backend selection
-- do not say "session migration" as if historical file sessions are already
-  copied into PostgreSQL
-- say "backfill" only for a later explicit migration path that moves old
-  file-backed session history
-
-For the current session-store migration slice, treat doc ownership this way:
+Doc ownership for the current session-store migration slice:
 
 - `docs/contracts.md`
   - public session snapshot contract, backend-selection promises, and what
@@ -1117,6 +1173,15 @@ For the current session-store migration slice, treat doc ownership this way:
     implementation inventory
 - `README.md`
   - short current-state summary only; no schema, table, or migration detail
+
+Historical-data wording rule:
+
+- say "forward-only" when new PostgreSQL-backed sessions are created only
+  after explicit backend selection
+- say "backfill" only for a later explicit migration path that moves old
+  file-backed session history
+- do not say "session migration" as if historical file sessions are already
+  copied into PostgreSQL
 
 ## Migration Boundary Notes
 

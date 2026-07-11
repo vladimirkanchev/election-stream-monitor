@@ -463,11 +463,9 @@ tests/test_api_boundary_sessions_cancel.py -q
 ```
 
 - opt-in live PostgreSQL session-store smoke:
-  - keep this out of normal local and PR validation
-  - do not promote it into the default protected PR lane in this branch
-  - treat the helper for this lane as a local-only convenience wrapper
-  - keep weekly/manual-depth ownership at the documentation and operator level
-    unless the repo later adds a dedicated live-PostgreSQL weekly runner
+  - keep this out of normal local runs, protected PR CI, and `main-gate`
+  - keep the helper local-only in this branch; weekly/manual depth can still
+    call the same narrow smoke bundles without making them protected CI work
   - use the shared rollout vocabulary consistently here:
     file-backed default, PostgreSQL opt-in, explicit backend selection, and
     live smoke
@@ -477,27 +475,20 @@ tests/test_api_boundary_sessions_cancel.py -q
     `POSTGRES_SESSION_STORE_REAL_SMOKE=1`
   - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit bootstrap opt-in
     for the known session-store tables, not default migration policy
-  - use it only when you intentionally want real database confidence after the
-    faster parity and runtime lanes already say the contract still holds
   - keep the live contract small and deterministic:
     schema reset, metadata write/read, latest progress, ordered results,
     cancel intent, and stable snapshot shape
-  - the exact store-smoke bundle for any helper in this branch is:
+  - `just test-session-postgres-live` owns the shared live PostgreSQL env gate
+    and runs the two narrow real-DB bundles in order:
     `tests/test_session_store_postgres.py -k real_postgres_session_store`
-  - the local helper is `just test-session-postgres-live`; it keeps
-    `ESM_POSTGRES_SESSION_DATABASE_URL` and
-    `POSTGRES_SESSION_STORE_REAL_SMOKE=1` explicit, requires
-    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, then runs the narrow live
-    store bundle followed by the narrow live runtime bundle
-  - protected PR CI, `backend-tests`, `test-and-build`, and `main-gate` do
-    not depend on this helper
-  - keep this lane narrow even though it includes both live bundles:
-    real-store contract smoke plus real FastAPI-to-worker PostgreSQL runtime
-    confidence
+    then `tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime`
+  - use the helper only after the cheaper parity and file-default runtime
+    lanes already say the contract still holds
   - do not grow this lane into broader PostgreSQL rollout, backfill, or
     unrelated slow-runtime coverage
-  - for schema/bootstrap/migration ownership, use
-    `docs/session-persistence-audit.md`
+  - use `docs/session-persistence-audit.md` for readiness states,
+    default-switch blockers, forward-only/backfill policy, and
+    schema/bootstrap ownership instead of repeating that rollout story here
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -1261,6 +1252,12 @@ Use the same shared rollout vocabulary here too:
 - PostgreSQL opt-in
 - explicit backend selection
 - live smoke
+
+Use the same words, but not the same maturity claims:
+
+- alert PostgreSQL is opt-in like session PostgreSQL
+- alert validation should not inherit session forward-only, backfill, or
+  default-switch wording unless the alert rollout explicitly reaches that stage
 
 Alert lane meaning:
 
@@ -2158,24 +2155,12 @@ Run the opt-in live PostgreSQL variant only when the branch changes the real
 runtime path between FastAPI, the detached worker, and PostgreSQL-backed
 session persistence.
 
-- use the same real-DB env gate already documented for the live store smoke:
-  `POSTGRES_SESSION_STORE_REAL_SMOKE=1`,
-  `ESM_POSTGRES_SESSION_DATABASE_URL`, and
-  `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
 - add explicit runtime backend selection:
   `ESM_SESSION_STORE_BACKEND=postgres`
-- treat the auto-create flag here the same way as store smoke:
-  explicit bootstrap convenience for known tables, not a general runtime
-  upgrader for existing databases
 - the exact runtime-smoke bundle for any helper in this branch is:
   `tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime`
-- `just test-session-postgres-live` follows the store smoke with this runtime
-  bundle under the same explicit PostgreSQL env
-- the helper fails early if `POSTGRES_SESSION_STORE_REAL_SMOKE`,
-  `ESM_POSTGRES_SESSION_DATABASE_URL`, or
-  `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is missing
-- protected PR CI does not call this helper and does not block on its result;
-  treat it as explicit local depth, not protected branch feedback
+- reuse the same live env gate and helper ownership already documented in the
+  store-smoke section above
 - if you want the direct command instead of the helper, export the same live
   store-smoke env first; this live variant stays intentionally separate from
   the default file-backed `just test-session-runtime` helper:
@@ -2190,16 +2175,13 @@ export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
 ```
 
 - keep the live variant out of routine local loops and normal PR CI
-- keep any wrapper for this live variant local-only in this branch; the
-  current weekly workflow does not own a shared external PostgreSQL runtime
-  smoke lane
 - do not fold `tests/test_session_service_worker.py`,
   `tests/test_session_cli_tooling.py`, `tests/test_session_store_runtime.py`,
   parity tests, or broader slow/e2e selectors into this live helper bundle
 - prefer `just test-session-runtime` for the default file-backed runtime lane
 - use the live PostgreSQL runtime smoke only after parity and focused runtime
   checks already say the contract still holds
-- use `docs/session-persistence-audit.md` for the owning schema/bootstrap/
+- use `docs/session-persistence-audit.md` for schema/bootstrap, readiness, and
   migration policy instead of copying that detail into validation notes
 
 Do not use this lane as a substitute for the cheaper focused seams:
