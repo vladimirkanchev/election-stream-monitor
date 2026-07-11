@@ -6,6 +6,7 @@ helpers shared by the focused store-smoke and runtime-smoke lanes.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, cast
 
@@ -55,6 +56,13 @@ REAL_POSTGRES_SESSION_RUNTIME_SMOKE_ENABLED = (
 )
 
 
+def _decode_json_param(value: object) -> object:
+    """Normalize one JSONB-bound parameter back into Python data."""
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
 class InMemoryPostgresSessionStoreCursor:
     """SQL-aware cursor double for the fast adapter-contract lane."""
 
@@ -94,7 +102,10 @@ class InMemoryPostgresSessionStoreCursor:
                 "session_id": str(session_id),
                 "mode": mode,
                 "input_path": str(input_path),
-                "selected_detectors": list(cast(list[str], selected_detectors)),
+                "selected_detectors": cast(
+                    list[str],
+                    _decode_json_param(selected_detectors),
+                ),
                 "status": status,
             }
             self._fetchone_result = None
@@ -141,7 +152,10 @@ class InMemoryPostgresSessionStoreCursor:
                 "latest_result_detector": latest_result_detector,
                 "alert_count": alert_count,
                 "last_updated_utc": str(last_updated_utc),
-                "latest_result_detectors": list(cast(list[str], latest_result_detectors)),
+                "latest_result_detectors": cast(
+                    list[str],
+                    _decode_json_param(latest_result_detectors),
+                ),
                 "status_reason": status_reason,
                 "status_detail": status_detail,
             }
@@ -193,7 +207,10 @@ class InMemoryPostgresSessionStoreCursor:
                     "detector_id": str(detector_id),
                     "detector_name": detector_name,
                     "event_timestamp_utc": event_timestamp_utc,
-                    "payload_json": payload_json,
+                    "payload_json": cast(
+                        dict[str, object],
+                        _decode_json_param(payload_json),
+                    ),
                 }
             )
             self._fetchone_result = None

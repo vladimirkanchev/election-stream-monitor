@@ -155,15 +155,15 @@ test-session-store:
 # Runs the narrow real-DB store smoke first, then the matching runtime smoke.
 # This stays outside protected PR CI.
 test-session-postgres-live:
-    @if [ "$${POSTGRES_SESSION_STORE_REAL_SMOKE:-0}" != "1" ]; then \
+    @if [ "${POSTGRES_SESSION_STORE_REAL_SMOKE:-0}" != "1" ]; then \
       echo "Set POSTGRES_SESSION_STORE_REAL_SMOKE=1 to run live PostgreSQL session smoke."; \
       exit 1; \
     fi
-    @if [ -z "$${ESM_POSTGRES_SESSION_DATABASE_URL:-}" ]; then \
+    @if [ -z "${ESM_POSTGRES_SESSION_DATABASE_URL:-}" ]; then \
       echo "Set ESM_POSTGRES_SESSION_DATABASE_URL to run live PostgreSQL session smoke."; \
       exit 1; \
     fi
-    @if [ "$${ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES:-}" != "1" ]; then \
+    @if [ "${ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES:-}" != "1" ]; then \
       echo "Set ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 to run live PostgreSQL session smoke."; \
       exit 1; \
     fi

@@ -12,6 +12,7 @@ than a broader command history.
 from __future__ import annotations
 
 import importlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
@@ -387,7 +388,7 @@ class PostgresSessionStore(SessionStore):
                 metadata.session_id,
                 metadata.mode,
                 metadata.input_path,
-                metadata.selected_detectors,
+                _postgres_json_param(metadata.selected_detectors),
                 metadata.status,
             ),
         )
@@ -406,7 +407,7 @@ class PostgresSessionStore(SessionStore):
                 progress.latest_result_detector,
                 progress.alert_count,
                 progress.last_updated_utc,
-                progress.latest_result_detectors,
+                _postgres_json_param(progress.latest_result_detectors),
                 progress.status_reason,
                 progress.status_detail,
             ),
@@ -555,7 +556,7 @@ def _sort_result_rows_by_append_sequence(rows: list[object]) -> list[object]:
 
 def _build_postgres_result_insert_params(
     event: ResultEvent,
-) -> tuple[str, str, str | None, str | None, dict[str, object]]:
+) -> tuple[str, str, str | None, str | None, str]:
     """Project shared query fields while keeping the raw payload intact."""
     payload = event.payload
     detector_name = payload.get("detector_name")
@@ -565,8 +566,13 @@ def _build_postgres_result_insert_params(
         event.detector_id,
         detector_name if isinstance(detector_name, str) else None,
         event_timestamp_utc if isinstance(event_timestamp_utc, str) else None,
-        payload,
+        _postgres_json_param(payload),
     )
+
+
+def _postgres_json_param(value: object) -> str:
+    """Serialize one JSONB-bound value for the real PostgreSQL driver path."""
+    return json.dumps(value)
 
 
 def load_postgres_session_store_driver() -> ModuleType:
