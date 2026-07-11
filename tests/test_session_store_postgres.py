@@ -1,4 +1,8 @@
-"""Focused contract and bootstrap tests for the PostgreSQL session-store adapter."""
+"""Focused PostgreSQL session-store contract and opt-in live-smoke tests.
+
+This file owns adapter-facing contract coverage, explicit bootstrap and
+failure policy, and the narrow real-database store smoke lane.
+"""
 
 from __future__ import annotations
 
@@ -37,7 +41,11 @@ from session_store_postgres import (
     load_postgres_session_store_driver,
     reset_postgres_session_store_schema,
 )
-from session_store_postgres_config import PostgresSessionStoreSettings
+from session_store_postgres_config import (
+    POSTGRES_SESSION_DATABASE_URL_ENV,
+    POSTGRES_SESSION_STORE_REAL_SMOKE_ENV,
+    PostgresSessionStoreSettings,
+)
 from tests import session_store_postgres_test_support
 from tests.session_store_postgres_test_support import (
     InMemoryPostgresSessionStoreConnection,
@@ -48,6 +56,23 @@ from tests.session_store_postgres_test_support import (
 )
 
 VALID_POSTGRES_SESSION_URL = "postgresql://session:secret@db.example/esm"
+LIVE_POSTGRES_SESSION_STORE_SMOKE = pytest.mark.skipif(
+    not REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL session-store smoke test is opt-in.",
+)
+LIVE_SESSION_STORE_TABLE_NAMES = (
+    POSTGRES_SESSION_METADATA_TABLE_NAME,
+    POSTGRES_SESSION_PROGRESS_TABLE_NAME,
+    POSTGRES_SESSION_RESULTS_TABLE_NAME,
+    POSTGRES_SESSION_CANCEL_TABLE_NAME,
+)
+EMPTY_SESSION_SNAPSHOT = {
+    "session": None,
+    "progress": None,
+    "alerts": [],
+    "results": [],
+    "latest_result": None,
+}
 
 
 def _metadata(
@@ -98,6 +123,12 @@ def _assert_snapshot_contract_shape(snapshot: dict[str, object]) -> None:
     assert set(snapshot) == set(SESSION_SNAPSHOT_KEYS)
 
 
+def _assert_empty_snapshot_contract(snapshot: dict[str, object]) -> None:
+    """Assert the stable public snapshot for an unknown or reset session."""
+    _assert_snapshot_contract_shape(snapshot)
+    assert snapshot == EMPTY_SESSION_SNAPSHOT
+
+
 def _assert_store_round_trip_contract(store: SessionStore, session_id: str) -> None:
     """Assert the core round-trip contract shared by all backends."""
     metadata = _metadata(session_id, status="running")
@@ -121,6 +152,40 @@ def _assert_store_round_trip_contract(store: SessionStore, session_id: str) -> N
         alerts=[],
         results=expected_results,
     )
+
+
+def _live_table_row_count(
+    connection: session_store_postgres_test_support.PostgresSessionStoreConnection,
+    table_name: str,
+) -> int:
+    """Return the current row count for one known live-smoke table."""
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+        row = cursor.fetchone()
+    if not isinstance(row, tuple) or len(row) != 1 or not isinstance(row[0], int):
+        raise AssertionError(f"Unexpected row-count result for {table_name!r}: {row!r}")
+    return row[0]
+
+
+def _assert_live_session_store_tables_are_empty(
+    connection: session_store_postgres_test_support.PostgresSessionStoreConnection,
+) -> None:
+    """Assert that all known session-store tables currently exist and are empty."""
+    assert {
+        table_name: _live_table_row_count(connection, table_name)
+        for table_name in LIVE_SESSION_STORE_TABLE_NAMES
+    } == dict.fromkeys(LIVE_SESSION_STORE_TABLE_NAMES, 0)
+
+
+def _assert_live_session_store_table_counts(
+    connection: session_store_postgres_test_support.PostgresSessionStoreConnection,
+    expected_counts: dict[str, int],
+) -> None:
+    """Assert row counts for the known session-store tables in live smoke."""
+    assert {
+        table_name: _live_table_row_count(connection, table_name)
+        for table_name in LIVE_SESSION_STORE_TABLE_NAMES
+    } == expected_counts
 
 
 class RecordingCursor:
@@ -238,6 +303,69 @@ def _postgres_settings(
         database_url=database_url,
         auto_create_tables=auto_create_tables,
         real_smoke_enabled=False,
+    )
+
+
+def _patch_recorded_postgres_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    settings: PostgresSessionStoreSettings,
+) -> tuple[RecordingConnection, list[str]]:
+    """Patch bootstrap collaborators and return the connection plus call order."""
+    connection = RecordingConnection()
+    seen: list[str] = []
+
+    def fake_connect(
+        resolved_settings: PostgresSessionStoreSettings,
+    ) -> RecordingConnection:
+        assert resolved_settings == settings
+        seen.append("connect")
+        return connection
+
+    def fake_initialize(resolved_connection: RecordingConnection) -> None:
+        assert resolved_connection is connection
+        seen.append("initialize")
+
+    monkeypatch.setattr(
+        "session_store_postgres.connect_postgres_session_store",
+        fake_connect,
+    )
+    monkeypatch.setattr(
+        "session_store_postgres.initialize_postgres_session_store",
+        fake_initialize,
+    )
+    return connection, seen
+
+
+@pytest.mark.parametrize(
+    ("real_smoke_value", "database_url", "expected_enabled"),
+    [
+        (None, None, False),
+        ("0", VALID_POSTGRES_SESSION_URL, False),
+        ("1", None, False),
+        ("1", "", False),
+        ("1", VALID_POSTGRES_SESSION_URL, True),
+    ],
+)
+def test_real_postgres_session_store_smoke_gate_requires_opt_in_flag_and_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+    real_smoke_value: str | None,
+    database_url: str | None,
+    expected_enabled: bool,
+) -> None:
+    """Live smoke should stay off until both the opt-in flag and DB URL exist."""
+    if real_smoke_value is None:
+        monkeypatch.delenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV, real_smoke_value)
+
+    if database_url is None:
+        monkeypatch.delenv(POSTGRES_SESSION_DATABASE_URL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, database_url)
+
+    assert (
+        session_store_postgres_test_support.is_real_postgres_session_store_smoke_enabled()
+        is expected_enabled
     )
 
 
@@ -789,28 +917,7 @@ def test_bootstrap_postgres_session_store_initializes_schema_when_enabled(
 ) -> None:
     """Bootstrap should connect and initialize when auto-create is enabled."""
     settings = _postgres_settings(auto_create_tables=True)
-    connection = RecordingConnection()
-    seen: list[str] = []
-
-    def fake_connect(
-        resolved_settings: PostgresSessionStoreSettings,
-    ) -> RecordingConnection:
-        assert resolved_settings == settings
-        seen.append("connect")
-        return connection
-
-    def fake_initialize(resolved_connection: RecordingConnection) -> None:
-        assert resolved_connection is connection
-        seen.append("initialize")
-
-    monkeypatch.setattr(
-        "session_store_postgres.connect_postgres_session_store",
-        fake_connect,
-    )
-    monkeypatch.setattr(
-        "session_store_postgres.initialize_postgres_session_store",
-        fake_initialize,
-    )
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     result = bootstrap_postgres_session_store(settings)
 
@@ -823,28 +930,7 @@ def test_bootstrap_postgres_session_store_skips_schema_init_when_disabled(
 ) -> None:
     """Bootstrap should skip schema creation when auto-create is disabled."""
     settings = _postgres_settings()
-    connection = RecordingConnection()
-    seen: list[str] = []
-
-    def fake_connect(
-        resolved_settings: PostgresSessionStoreSettings,
-    ) -> RecordingConnection:
-        assert resolved_settings == settings
-        seen.append("connect")
-        return connection
-
-    def fake_initialize(resolved_connection: RecordingConnection) -> None:
-        assert resolved_connection is connection
-        seen.append("initialize")
-
-    monkeypatch.setattr(
-        "session_store_postgres.connect_postgres_session_store",
-        fake_connect,
-    )
-    monkeypatch.setattr(
-        "session_store_postgres.initialize_postgres_session_store",
-        fake_initialize,
-    )
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     result = bootstrap_postgres_session_store(settings)
 
@@ -857,30 +943,35 @@ def test_bootstrap_postgres_session_store_uses_cached_settings_when_not_provided
 ) -> None:
     """Bootstrap should fall back to the cached session-store settings."""
     settings = _postgres_settings()
-    connection = RecordingConnection()
-    seen: list[str] = []
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     monkeypatch.setattr(
         "session_store_postgres.get_postgres_session_store_settings",
         lambda: settings,
     )
 
-    def fake_connect(
-        resolved_settings: PostgresSessionStoreSettings,
-    ) -> RecordingConnection:
-        assert resolved_settings == settings
-        seen.append("connect")
-        return connection
+    result = bootstrap_postgres_session_store()
+
+    assert result is connection
+    assert seen == ["connect"]
+
+
+def test_bootstrap_postgres_session_store_uses_cached_auto_create_opt_in_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cached bootstrap settings should still honor explicit schema-create opt-in."""
+    settings = _postgres_settings(auto_create_tables=True)
+    connection, seen = _patch_recorded_postgres_bootstrap(monkeypatch, settings)
 
     monkeypatch.setattr(
-        "session_store_postgres.connect_postgres_session_store",
-        fake_connect,
+        "session_store_postgres.get_postgres_session_store_settings",
+        lambda: settings,
     )
 
     result = bootstrap_postgres_session_store()
 
     assert result is connection
-    assert seen == ["connect"]
+    assert seen == ["connect", "initialize"]
 
 
 def test_bootstrap_postgres_session_store_explicit_settings_override_stale_cached_env(
@@ -1045,31 +1136,100 @@ def test_connect_postgres_session_store_wraps_driver_connection_errors(
     assert fake_psycopg.connect_calls == [VALID_POSTGRES_SESSION_URL]
 
 
-@pytest.mark.skipif(
-    not REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED,
-    reason="Real PostgreSQL session-store smoke test is opt-in.",
-)
+# Keep the opt-in live smoke limited to real-database store guarantees.
+# Broader runtime behavior belongs in separate service or FastAPI lanes.
+@LIVE_POSTGRES_SESSION_STORE_SMOKE
 def test_real_postgres_session_store_isolation_helper_resets_schema_cleanly() -> None:
-    """The isolation helper should provide a clean live schema without polluting default lanes."""
+    """The live reset helper should clear durable rows and restore the empty snapshot."""
     connection = bootstrap_isolated_postgres_session_store()
     try:
-        initialize_postgres_session_store(connection)
+        store = PostgresSessionStore(connection)
+        session_id = "session-postgres-real-smoke-reset"
+        metadata = _metadata(session_id)
+        progress = _running_progress(session_id, processed_count=1)
+        result = _result(session_id, "video_metrics", 1)
+
+        _assert_live_session_store_tables_are_empty(connection)
+
+        store.write_metadata(metadata)
+        store.write_progress(progress)
+        store.append_result(result)
+        store.request_cancel(session_id)
+
+        _assert_live_session_store_table_counts(
+            connection,
+            {
+                POSTGRES_SESSION_METADATA_TABLE_NAME: 1,
+                POSTGRES_SESSION_PROGRESS_TABLE_NAME: 1,
+                POSTGRES_SESSION_RESULTS_TABLE_NAME: 1,
+                POSTGRES_SESSION_CANCEL_TABLE_NAME: 1,
+            },
+        )
+
+        reset_postgres_session_store_schema(connection)
+
+        _assert_live_session_store_tables_are_empty(connection)
+        assert store.session_exists(session_id) is False
+        _assert_empty_snapshot_contract(store.read_snapshot(session_id))
+
         initialize_postgres_session_store(connection)
     finally:
         close_postgres_session_store_connection_if_possible(connection)
 
 
-@pytest.mark.skipif(
-    not REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED,
-    reason="Real PostgreSQL session-store smoke test is opt-in.",
-)
-def test_real_postgres_session_store_adapter_round_trip_smoke() -> None:
-    """Live adapter smoke should stay isolated and preserve the shared store contract."""
+@LIVE_POSTGRES_SESSION_STORE_SMOKE
+def test_real_postgres_session_store_cancel_intent_smoke() -> None:
+    """Live smoke should keep cancel intent readable and cheap to repeat."""
     connection, store = build_isolated_postgres_session_store()
+    session_id = "session-postgres-real-smoke-cancel"
     try:
-        _assert_store_round_trip_contract(
-            store,
-            "session-postgres-real-smoke-round-trip",
+        assert store.is_cancel_requested(session_id) is False
+
+        store.request_cancel(session_id)
+        store.request_cancel(session_id)
+
+        assert store.is_cancel_requested(session_id) is True
+        _assert_live_session_store_table_counts(
+            connection,
+            {
+                POSTGRES_SESSION_METADATA_TABLE_NAME: 0,
+                POSTGRES_SESSION_PROGRESS_TABLE_NAME: 0,
+                POSTGRES_SESSION_RESULTS_TABLE_NAME: 0,
+                POSTGRES_SESSION_CANCEL_TABLE_NAME: 1,
+            },
         )
+    finally:
+        close_postgres_session_store_connection_if_possible(connection)
+
+
+@LIVE_POSTGRES_SESSION_STORE_SMOKE
+def test_real_postgres_session_store_public_round_trip_smoke() -> None:
+    """Live smoke should rebuild the public snapshot through store methods only."""
+    connection, store = build_isolated_postgres_session_store()
+    session_id = "session-postgres-real-smoke-round-trip"
+    try:
+        metadata = _metadata(session_id, status="running")
+        progress = _running_progress(session_id, processed_count=2)
+        first = _result(session_id, "video_metrics", 1)
+        second = _result(session_id, "video_blur", 2)
+
+        assert store.session_exists(session_id) is False
+        assert store.read_results(session_id) == []
+        _assert_empty_snapshot_contract(store.read_snapshot(session_id))
+
+        store.write_metadata(metadata)
+        store.write_progress(progress)
+        store.append_result(first)
+        store.append_result(second)
+
+        snapshot = store.read_snapshot(session_id)
+        _assert_snapshot_contract_shape(snapshot)
+        assert snapshot == {
+            "session": metadata.to_dict(),
+            "progress": progress.to_dict(),
+            "alerts": [],
+            "results": [first.to_dict(), second.to_dict()],
+            "latest_result": second.to_dict(),
+        }
     finally:
         close_postgres_session_store_connection_if_possible(connection)

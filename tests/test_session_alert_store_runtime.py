@@ -1,7 +1,8 @@
 """Focused tests for the runtime-selected default alert store.
 
-These checks stay at the runtime seam: `file` remains the default, `postgres`
-is opt-in, and callers keep using the same default-store entry points.
+These checks stay at the runtime seam: file-backed alerts remain the default,
+explicit Postgres selection must fail clearly on bad bootstrap input, and
+callers keep using the same default-store entry points either way.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ STALE_POSTGRES_SESSION_DATABASE_URL = (
 
 
 class RecordingRuntimeAlertStore:
-    """Small fake store for tests that observe runtime-selected routing."""
+    """Tiny fake store for runtime backend-selection routing assertions."""
 
     def __init__(self) -> None:
         self.read_session_ids: list[str] = []
@@ -67,14 +68,14 @@ class RecordingRuntimeAlertStore:
 
 
 class InMemoryRuntimePostgresAlertCursor:
-    """Tiny cursor for mixed-backend runtime selection tests."""
+    """Small cursor double for runtime tests that exercise the real store mapper."""
 
     def __init__(self, connection: "InMemoryRuntimePostgresAlertConnection") -> None:
         self._connection = connection
         self._rows: list[tuple[object, ...]] = []
 
     def __enter__(self) -> "InMemoryRuntimePostgresAlertCursor":
-        """Return the same cursor inside the context manager block."""
+        """Return the cursor itself for store code that uses context managers."""
         return self
 
     def __exit__(
@@ -83,10 +84,10 @@ class InMemoryRuntimePostgresAlertCursor:
         exc: BaseException | None,
         tb: object,
     ) -> None:
-        """Close the synthetic cursor without extra cleanup work."""
+        """Exit cleanly; the in-memory test double needs no cursor cleanup."""
 
     def execute(self, query: str, params: object | None = None) -> object:
-        """Handle only the insert/read statements used by the Postgres alert store."""
+        """Handle only the insert/read SQL used by the Postgres alert store."""
         if query == POSTGRES_ALERT_EVENTS_INSERT_SQL:
             assert isinstance(params, tuple)
             self._connection.append_inserted_row(params)
@@ -105,7 +106,7 @@ class InMemoryRuntimePostgresAlertCursor:
 
 
 class InMemoryRuntimePostgresAlertConnection:
-    """Minimal connection for real Postgres alert-store behavior without a database."""
+    """Minimal connection double for Postgres alert-store runtime behavior."""
 
     def __init__(self) -> None:
         self._rows: list[tuple[object, ...]] = []
@@ -115,7 +116,7 @@ class InMemoryRuntimePostgresAlertConnection:
         return InMemoryRuntimePostgresAlertCursor(self)
 
     def commit(self) -> None:
-        """Commit is a no-op for the in-memory runtime test connection."""
+        """Commit is a no-op for the in-memory runtime connection."""
 
     def append_inserted_row(self, params: tuple[object, ...]) -> None:
         """Store one inserted row in the shape expected by the read mapper."""
@@ -164,6 +165,19 @@ def _set_stale_postgres_urls(monkeypatch: pytest.MonkeyPatch) -> None:
         POSTGRES_SESSION_DATABASE_URL_ENV,
         STALE_POSTGRES_SESSION_DATABASE_URL,
     )
+
+
+def _select_explicit_postgres_alert_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    database_url: str | None,
+) -> None:
+    """Select explicit Postgres alert mode with an optional bootstrap URL override."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    if database_url is None:
+        monkeypatch.delenv(POSTGRES_ALERT_DATABASE_URL_ENV, raising=False)
+        return
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, database_url)
 
 
 def _select_postgres_runtime_backend(
@@ -342,6 +356,36 @@ def test_get_default_session_alert_store_only_fails_for_missing_postgres_driver_
     monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
 
     with pytest.raises(AssertionError, match="postgres builder should not run"):
+        get_default_session_alert_store()
+
+
+@pytest.mark.parametrize(
+    ("database_url", "expected_message"),
+    [
+        pytest.param(
+            None,
+            "PostgreSQL alert store requires ESM_POSTGRES_ALERT_DATABASE_URL",
+            id="missing-url",
+        ),
+        pytest.param(
+            "sqlite:///tmp/alerts.db",
+            "ESM_POSTGRES_ALERT_DATABASE_URL must use a postgres or postgresql URL",
+            id="invalid-url",
+        ),
+    ],
+)
+def test_explicit_postgres_alert_backend_rejects_missing_or_invalid_url_without_fallback(
+    monkeypatch,
+    database_url: str | None,
+    expected_message: str,
+) -> None:
+    """Explicit Postgres mode should surface URL validation failures clearly."""
+    _select_explicit_postgres_alert_backend(
+        monkeypatch,
+        database_url=database_url,
+    )
+
+    with pytest.raises(RuntimeError, match=expected_message):
         get_default_session_alert_store()
 
 

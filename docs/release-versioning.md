@@ -2,7 +2,7 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.6.1`
+Current public stage: `0.6.2`
 
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
 - `0.5.1` was the workflow and AI-harness follow-up on top of that stage
@@ -10,10 +10,14 @@ Current public stage: `0.6.1`
   top of that stage
 - `0.6.0` marks dual-backend persistence as a supported project stage: file
   remains the default runtime path, while PostgreSQL is now a documented
-  supported option for session and alert persistence
-- `0.6.1` is the AI-harness policy refresh on top of that stage: repo-local
+  supported option for session and alert persistence, with both backends still
+  explicit opt-in rollout paths rather than default storage
+- `0.6.1` was the AI-harness policy refresh on top of that stage: repo-local
   review skills, routing guidance, and deterministic skill tests now align
   more clearly before the next persistence and security branches
+- `0.6.2` extends the same dual-backend stage with stronger PostgreSQL session
+  rollout confidence: live store smoke, runtime smoke, failure-policy clarity,
+  and tighter validation guidance without changing the default file-backed path
 
 ## Current Approach
 
@@ -71,6 +75,25 @@ explicitly in the release notes:
 That keeps releases honest about the current rollout state and avoids
 implying a project-wide default flip too early.
 
+When a release or PR includes session-storage changes, keep the wording just as
+explicit:
+
+- say "adds an opt-in PostgreSQL session storage path" when file-backed
+  storage still remains the default
+- say "forward-only" when PostgreSQL applies to newly created sessions only
+- do not say "migrates all sessions" unless the branch truly includes reviewed
+  historical backfill behavior and the docs/tests prove it
+
+For shared persistence rollout wording, keep one compact rule:
+
+- say both session and alert PostgreSQL backends are opt-in unless a branch
+  truly changes the defaults
+- say session historical backfill is not included unless the branch adds,
+  validates, and documents that migration path explicitly
+
+That keeps PR summaries and release notes aligned with the current rollout
+truth instead of overstating migration completeness.
+
 ## Current Project Stage
 
 The current versioning posture matches the actual project state:
@@ -78,5 +101,8 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- current `0.6.1` work keeps the dual-backend stage intact while tightening
-  maintainer-facing review guidance, routing, and harness confidence around it
+- current `0.6.2` work keeps the dual-backend stage intact while strengthening
+  PostgreSQL session rollout confidence, validation helpers, and failure-policy
+  clarity around it
+- both PostgreSQL persistence paths remain explicit opt-in; session historical
+  backfill is still a later rollout decision, not part of the current version

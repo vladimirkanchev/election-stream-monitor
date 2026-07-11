@@ -1,7 +1,8 @@
 """Focused tests for runtime alert-store backend selection.
 
-This file stays at the runtime-config seam and does not exercise bootstrap or
-concrete store behavior.
+This file stays at the runtime-config seam: file-backed remains the safe
+default, explicit backend selection is parsed here, and bootstrap behavior is
+left to the narrower Postgres config/store tests.
 """
 
 from __future__ import annotations

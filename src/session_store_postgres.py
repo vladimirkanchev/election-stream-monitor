@@ -1,16 +1,18 @@
-"""PostgreSQL-backed session-store adapter and bootstrap helpers.
+"""PostgreSQL session-store adapter plus explicit bootstrap helpers.
 
-This module owns the PostgreSQL session persistence path: schema mapping,
-connection/bootstrap helpers, the concrete `SessionStore` adapter, and a small
-set of reset helpers used by opt-in live smoke tests. Result rows stay compact:
-the store preserves append order, projects a few shared query hints, and keeps
-detector-specific detail in JSON. Cancel intent stays intentionally smaller:
-one current-state row per session rather than a broader command/event history.
+This module owns the opt-in PostgreSQL backend for session persistence:
+contract-owned table mapping, driver and connection setup, schema bootstrap for
+known tables, the concrete `SessionStore` adapter, and test-only schema reset
+helpers for live smoke runs. The default runtime path still stays file-backed
+elsewhere. Within the PostgreSQL store, progress stays latest-only, results
+stay append-ordered, and cancel intent stays a small current-state row rather
+than a broader command history.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
@@ -51,7 +53,7 @@ POSTGRES_SESSION_CANCEL_TABLE_NAME = "session_cancel_requests"
 
 @dataclass(frozen=True)
 class PostgresSessionStoreTableSpec:
-    """Describe one table owned by the session-store contract."""
+    """Describe one contract-owned PostgreSQL session table."""
 
     table_name: str
     contract_methods: tuple[str, ...]
@@ -386,7 +388,7 @@ class PostgresSessionStore(SessionStore):
                 metadata.session_id,
                 metadata.mode,
                 metadata.input_path,
-                metadata.selected_detectors,
+                _postgres_json_param(metadata.selected_detectors),
                 metadata.status,
             ),
         )
@@ -405,7 +407,7 @@ class PostgresSessionStore(SessionStore):
                 progress.latest_result_detector,
                 progress.alert_count,
                 progress.last_updated_utc,
-                progress.latest_result_detectors,
+                _postgres_json_param(progress.latest_result_detectors),
                 progress.status_reason,
                 progress.status_detail,
             ),
@@ -554,7 +556,7 @@ def _sort_result_rows_by_append_sequence(rows: list[object]) -> list[object]:
 
 def _build_postgres_result_insert_params(
     event: ResultEvent,
-) -> tuple[str, str, str | None, str | None, dict[str, object]]:
+) -> tuple[str, str, str | None, str | None, str]:
     """Project shared query fields while keeping the raw payload intact."""
     payload = event.payload
     detector_name = payload.get("detector_name")
@@ -564,8 +566,13 @@ def _build_postgres_result_insert_params(
         event.detector_id,
         detector_name if isinstance(detector_name, str) else None,
         event_timestamp_utc if isinstance(event_timestamp_utc, str) else None,
-        payload,
+        _postgres_json_param(payload),
     )
+
+
+def _postgres_json_param(value: object) -> str:
+    """Serialize one JSONB-bound value for the real PostgreSQL driver path."""
+    return json.dumps(value)
 
 
 def load_postgres_session_store_driver() -> ModuleType:
@@ -595,17 +602,17 @@ def connect_postgres_session_store(
 
 
 def initialize_postgres_session_store(connection: PostgresSessionStoreConnection) -> None:
-    """Create the session-store schema expected by the current contract."""
+    """Create the known session-store tables and indexes for this contract."""
     _execute_schema_statements(connection, POSTGRES_SESSION_STORE_SCHEMA_STATEMENTS)
 
 
 def drop_postgres_session_store_schema(connection: PostgresSessionStoreConnection) -> None:
-    """Drop the session-store schema in reverse dependency order."""
+    """Drop the known session-store tables in reverse dependency order."""
     _execute_schema_statements(connection, POSTGRES_SESSION_STORE_SCHEMA_DROP_STATEMENTS)
 
 
 def reset_postgres_session_store_schema(connection: PostgresSessionStoreConnection) -> None:
-    """Drop and recreate the session-store schema for isolated smoke runs."""
+    """Reset the known session-store tables for isolated live smoke runs."""
     drop_postgres_session_store_schema(connection)
     initialize_postgres_session_store(connection)
 
@@ -613,7 +620,7 @@ def reset_postgres_session_store_schema(connection: PostgresSessionStoreConnecti
 def bootstrap_postgres_session_store(
     settings: PostgresSessionStoreSettings | None = None,
 ) -> PostgresSessionStoreConnection:
-    """Connect to PostgreSQL and optionally initialize schema."""
+    """Open the PostgreSQL backend and bootstrap known tables only on opt-in."""
     resolved_settings = settings or get_postgres_session_store_settings()
     connection = connect_postgres_session_store(resolved_settings)
     if should_auto_create_postgres_session_store_tables(resolved_settings):

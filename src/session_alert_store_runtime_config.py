@@ -1,10 +1,9 @@
 """Runtime backend selection for the alert persistence seam.
 
-The current rollout decision is explicit:
-
-- `file` remains the default alert backend
-- `postgres` is the supported opt-in backend through
-  `ESM_ALERT_STORE_BACKEND=postgres`
+This module owns only the backend-mode choice for the default alert store.
+Unset or unsupported values stay on the safe file-backed default, while
+explicit PostgreSQL bootstrap validation happens in the narrower Postgres
+config module.
 """
 
 from __future__ import annotations
@@ -30,17 +29,13 @@ class AlertStoreRuntimeConfigurationError(RuntimeError):
 
 @dataclass(frozen=True)
 class AlertStoreRuntimeSettings:
-    """Structured settings for default alert-store selection.
-
-    These settings intentionally keep file-backed alert storage as the default
-    rollout mode until PostgreSQL becomes the broader project default later.
-    """
+    """Structured settings for choosing the default alert-store backend."""
 
     backend: AlertStoreBackend
 
 
 def _parse_backend_env(name: str, default: AlertStoreBackend) -> AlertStoreBackend:
-    """Parse one backend env var and fall back to the safe default on invalid values."""
+    """Parse one backend env var and normalize unsupported values to the default."""
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
@@ -55,8 +50,8 @@ def _parse_backend_env(name: str, default: AlertStoreBackend) -> AlertStoreBacke
 def get_alert_store_runtime_settings() -> AlertStoreRuntimeSettings:
     """Return cached runtime backend-selection settings.
 
-    Missing or invalid backend env values resolve to the branch default:
-    file-backed alert storage.
+    Missing or invalid backend env values resolve to the safe file-backed
+    default for this rollout stage.
     """
     return AlertStoreRuntimeSettings(
         backend=_parse_backend_env(
@@ -74,7 +69,7 @@ def clear_alert_store_runtime_settings_cache() -> None:
 def validate_alert_store_runtime_settings(
     settings: AlertStoreRuntimeSettings,
 ) -> None:
-    """Validate one runtime backend-selection settings object defensively."""
+    """Validate one runtime backend-selection object defensively."""
     if settings.backend not in SUPPORTED_ALERT_STORE_BACKENDS:
         raise AlertStoreRuntimeConfigurationError(
             UNSUPPORTED_ALERT_STORE_BACKEND_MESSAGE

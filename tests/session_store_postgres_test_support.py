@@ -1,7 +1,12 @@
-"""Shared helpers for default and opt-in PostgreSQL session-store tests."""
+"""Shared doubles and opt-in live helpers for PostgreSQL session-store tests.
+
+This module owns the SQL-aware in-memory double plus the real-DB bootstrap
+helpers shared by the focused store-smoke and runtime-smoke lanes.
+"""
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, cast
 
@@ -24,16 +29,42 @@ from session_store_postgres_config import (
     POSTGRES_SESSION_DATABASE_URL_ENV,
     POSTGRES_SESSION_STORE_REAL_SMOKE_ENV,
 )
+from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 
 
-REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED = (
-    os.getenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV) == "1"
-    and bool(os.getenv(POSTGRES_SESSION_DATABASE_URL_ENV))
+def is_real_postgres_session_store_smoke_enabled() -> bool:
+    """Return whether the opt-in live store smoke env is fully enabled."""
+    return (
+        os.getenv(POSTGRES_SESSION_STORE_REAL_SMOKE_ENV) == "1"
+        and bool(os.getenv(POSTGRES_SESSION_DATABASE_URL_ENV))
+    )
+
+
+REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED = is_real_postgres_session_store_smoke_enabled()
+
+
+def is_real_postgres_session_runtime_smoke_enabled() -> bool:
+    """Return whether live runtime smoke is enabled for explicit Postgres mode."""
+    return (
+        is_real_postgres_session_store_smoke_enabled()
+        and os.getenv(SESSION_STORE_BACKEND_ENV, "").strip().lower() == "postgres"
+    )
+
+
+REAL_POSTGRES_SESSION_RUNTIME_SMOKE_ENABLED = (
+    is_real_postgres_session_runtime_smoke_enabled()
 )
 
 
+def _decode_json_param(value: object) -> object:
+    """Normalize one JSONB-bound parameter back into Python data."""
+    if isinstance(value, str):
+        return json.loads(value)
+    return value
+
+
 class InMemoryPostgresSessionStoreCursor:
-    """SQL-aware cursor double for the default PostgreSQL adapter test lane."""
+    """SQL-aware cursor double for the fast adapter-contract lane."""
 
     def __init__(self, connection: "InMemoryPostgresSessionStoreConnection") -> None:
         self._connection = connection
@@ -52,7 +83,7 @@ class InMemoryPostgresSessionStoreCursor:
         return None
 
     def execute(self, query: str, params: object | None = None) -> object:
-        """Handle only the SQL statements covered by the adapter contract tests."""
+        """Handle only the SQL statements owned by the adapter contract tests."""
         self._connection.executed_statements.append((query, params))
         if query == POSTGRES_SESSION_METADATA_EXISTS_SQL:
             session_id = cast(tuple[str], params)[0]
@@ -71,7 +102,10 @@ class InMemoryPostgresSessionStoreCursor:
                 "session_id": str(session_id),
                 "mode": mode,
                 "input_path": str(input_path),
-                "selected_detectors": list(cast(list[str], selected_detectors)),
+                "selected_detectors": cast(
+                    list[str],
+                    _decode_json_param(selected_detectors),
+                ),
                 "status": status,
             }
             self._fetchone_result = None
@@ -118,7 +152,10 @@ class InMemoryPostgresSessionStoreCursor:
                 "latest_result_detector": latest_result_detector,
                 "alert_count": alert_count,
                 "last_updated_utc": str(last_updated_utc),
-                "latest_result_detectors": list(cast(list[str], latest_result_detectors)),
+                "latest_result_detectors": cast(
+                    list[str],
+                    _decode_json_param(latest_result_detectors),
+                ),
                 "status_reason": status_reason,
                 "status_detail": status_detail,
             }
@@ -170,7 +207,10 @@ class InMemoryPostgresSessionStoreCursor:
                     "detector_id": str(detector_id),
                     "detector_name": detector_name,
                     "event_timestamp_utc": event_timestamp_utc,
-                    "payload_json": payload_json,
+                    "payload_json": cast(
+                        dict[str, object],
+                        _decode_json_param(payload_json),
+                    ),
                 }
             )
             self._fetchone_result = None
@@ -186,7 +226,7 @@ class InMemoryPostgresSessionStoreCursor:
 
 
 class InMemoryPostgresSessionStoreConnection:
-    """In-memory connection double used by default PostgreSQL adapter tests."""
+    """In-memory connection double used by the fast PostgreSQL adapter tests."""
 
     def __init__(self) -> None:
         self.metadata_rows: dict[str, object] = {}
@@ -212,7 +252,7 @@ def close_postgres_session_store_connection_if_possible(connection: object) -> N
 
 
 def bootstrap_isolated_postgres_session_store() -> PostgresSessionStoreConnection:
-    """Return one reset PostgreSQL connection for an opt-in live smoke run."""
+    """Return one live PostgreSQL connection with only the known store tables reset."""
     connection = cast(PostgresSessionStoreConnection, connect_postgres_session_store())
     reset_postgres_session_store_schema(connection)
     return connection
@@ -222,6 +262,6 @@ def build_isolated_postgres_session_store() -> tuple[
     PostgresSessionStoreConnection,
     PostgresSessionStore,
 ]:
-    """Return one reset connection together with a bound session store."""
+    """Return one reset live connection together with its bound session store."""
     connection = bootstrap_isolated_postgres_session_store()
     return connection, PostgresSessionStore(connection)

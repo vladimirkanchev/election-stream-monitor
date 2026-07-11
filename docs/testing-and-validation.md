@@ -20,9 +20,10 @@ For branch workflow around those checks, use:
 
 Treat them as one flow:
 
-1. define branch purpose first
-2. keep PR scope and validation notes explicit while the branch is active
-3. use the readiness checklist at the end instead of turning it into a second planning doc
+- define branch purpose first
+- keep PR scope and validation notes explicit while the branch is active
+- use the readiness checklist at the end instead of turning it into a second
+  planning doc
 
 The branch template owns the lightweight execution pattern and the medium-task
 checklist. Reuse that pattern in planning and review notes instead of copying
@@ -85,9 +86,9 @@ Choose the smallest honest lane first.
 | --- | --- | --- | --- |
 | One clear seam such as detectors, alert rules, HLS, or docs/workflow helpers | Matching focused lane such as `just test-detectors`, `just test-alert-rules`, `just test-hls`, or `just docs-check` | Path-aware branch lanes and the protected `main` chain when the change reaches those areas | Focused runs do not prove neighboring seams stayed intact |
 | Multi-seam runtime work that crosses backend plus frontend/operator flow | `just test-fast` | Fast branch-feedback lanes such as `backend-tests`, `frontend-checkpoint`, and aggregate gates | Does not prove packaging smoke, full frontend production validation, or PR-only policy checks |
-| Detached-worker runtime persistence work across FastAPI, `session_service`, and durable session snapshots | `just test-session-runtime` only when the branch really changes that seam | Weekly `lifecycle-deep` lane | Slower and more timing-sensitive than routine fast local loops; still file-backed by design |
+| Detached-worker runtime persistence work across FastAPI, `session_service`, and durable session snapshots | `just test-session-runtime` only when the branch really changes that seam | Weekly `lifecycle-deep` lane | Slower and more timing-sensitive than routine fast local loops; default helper stays file-backed while live PostgreSQL runtime smoke stays separate and opt-in |
 | "Ready to push" confidence for ordinary day-to-day work | `just ci-local` | Required and advisory PR lanes | Still does not reproduce clean-runner setup, editable-install packaging checks, full frontend test/build, or GitHub event/branch-protection behavior |
-| Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk | `weekly-validation` | Too slow and environment-sensitive for routine local or PR use |
+| Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk; use `just test-session-postgres-live` for explicit local PostgreSQL session smoke | `weekly-validation` for the weekly-owned lanes; the session PostgreSQL live helper itself stays local-only | Too slow and environment-sensitive for routine local or PR use |
 
 Harness ownership for this workflow is intentionally split:
 
@@ -111,7 +112,12 @@ Recommended local command order for most day-to-day work:
   - best default fast production-runtime lane when you want one honest fast runtime pass
 - `just test-session-runtime`
   - use only when the branch changes detached-worker startup, FastAPI/session-service agreement, durable session snapshot timing, or backend-selection runtime behavior
+  - bundles `tests/test_session_service_worker.py`, `tests/test_session_cli_tooling.py`, `tests/test_api_boundary_sessions_runtime.py`, and `tests/test_session_store_runtime.py`
   - not a default edit-refresh loop; keep it for slower runtime-confidence passes
+- `just test-session-postgres-live`
+  - use only when the branch needs real PostgreSQL session confidence after the faster parity and file-backed runtime lanes already pass
+  - runs the narrow live store smoke and the narrow live FastAPI-to-worker runtime smoke only
+  - local-only helper; protected PR CI and `main-gate` do not depend on it
 - `just fixture-check`
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
@@ -228,9 +234,10 @@ Current focused ownership map:
   not by themselves prove that the full session-store backend evolution is complete
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
-  and explicit proof that `postgres` is built only on deliberate opt-in
-  - explicit proof that missing URL, invalid URL shape, and missing driver
-    fail clearly only after explicit PostgreSQL selection
+    and explicit proof that `postgres` is built only on deliberate opt-in
+  - explicit proof that unsupported backend values stay on the file default,
+    while missing URL, invalid URL shape, driver/bootstrap failure, and
+    missing-schema behavior fail clearly only after explicit PostgreSQL selection
 - `tests/test_session_store_postgres.py`
   - PostgreSQL session-store adapter behavior, bootstrap, driver failure
     shaping, and opt-in schema-isolation helpers for live smoke lanes
@@ -272,8 +279,10 @@ Use two explicit backend modes when validating this branch:
   - leave `POSTGRES_ALERT_STORE_REAL_SMOKE` unset or `0`
 - live Postgres confidence
   - set `ESM_ALERT_STORE_BACKEND=postgres`
-  - set `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
   - provide `ESM_POSTGRES_ALERT_DATABASE_URL`
+  - keep `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES` explicit when you want to
+    make bootstrap intent obvious; the current alert path defaults it on
+  - set `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
 
 The fast PR/branch CI workflow now pins the synthetic path to the file-backed
 alert backend. The weekly workflow owns the real Postgres confidence jobs and
@@ -281,9 +290,24 @@ overrides that default in its dedicated live-DB lanes.
 
 Apply the same rule to the in-progress PostgreSQL session-store branch work:
 
+- treat the env shape as parallel where practical:
+  - backend selector
+  - PostgreSQL database URL
+  - optional auto-create flag
+  - real-smoke flag
 - keep `POSTGRES_SESSION_STORE_REAL_SMOKE` unset or `0` in normal local and PR validation
+- the live smoke stays disabled unless both `POSTGRES_SESSION_STORE_REAL_SMOKE=1` and `ESM_POSTGRES_SESSION_DATABASE_URL` are set
 - use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
 - reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
+- if you just ran `just test-session-postgres-live`, clear the PostgreSQL
+  session env before returning to the normal file-default lanes:
+
+```bash
+unset ESM_SESSION_STORE_BACKEND
+unset ESM_POSTGRES_SESSION_DATABASE_URL
+unset ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES
+unset POSTGRES_SESSION_STORE_REAL_SMOKE
+```
 
 The fast CI workflows now make that default explicit too:
 
@@ -293,17 +317,8 @@ The fast CI workflows now make that default explicit too:
   - `POSTGRES_SESSION_STORE_REAL_SMOKE=0`
 
 Use a manual or service-backed run only when you intentionally want live
-PostgreSQL session-store confidence.
-
-Example focused live command:
-
-```bash
-export ESM_SESSION_STORE_BACKEND=postgres
-export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
-export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1
-export POSTGRES_SESSION_STORE_REAL_SMOKE=1
-.venv/bin/pytest -q tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
-```
+PostgreSQL session-store confidence. The focused command is listed in the
+session-store validation section below.
 
 For the short fixture and environment ownership rules behind those lanes, use
 [fixture-environment-policy.md](./fixture-environment-policy.md).
@@ -364,10 +379,13 @@ Current CI coverage audit for this area:
 - `test-and-build` owns the protected manifest-backed route/session-service
   contract checks for `main` PRs.
 - `tests/test_api_boundary_sessions_runtime.py` is also listed in the weekly
-  lifecycle manifest and has a local helper, `just test-session-runtime`.
-  It is now marked `slow`, so routine backend PR tests do not collect it.
+  lifecycle manifest and included in the local `just test-session-runtime`
+  helper bundle.
+  It is marked `slow`, so routine backend PR tests do not collect it even
+  though the helper also includes faster supporting worker, CLI, and
+  runtime-selection tests.
   Use `just test-session-runtime` locally or weekly lifecycle when you want
-  that deeper runtime confidence.
+  that deeper detached-worker confidence.
 - live PostgreSQL session-store smoke remains opt-in and should not be added
   to routine PR CI without a separate CI-expansion decision.
   Keep it manual or weekly until the project intentionally accepts service
@@ -401,6 +419,24 @@ just test-session-store
   - PostgreSQL session storage still turns on only after explicit backend
     selection plus valid PostgreSQL configuration
   - file and PostgreSQL-like store behavior still agree on the shared contract
+  - this lane assumes the normal file-default runtime env; stale PostgreSQL
+    runtime env from live smoke work can make unrelated parity or file-store
+    tests fail by forcing runtime store resolution through PostgreSQL
+
+  Lane meaning:
+
+  - `just test-session-store`
+    - store contract and backend parity
+  - `just test-session-runtime`
+    - detached-worker runtime confidence over FastAPI, `session_service`,
+      CLI/runtime wiring, and backend-selection agreement
+  - opt-in live PostgreSQL session-store smoke
+    - real-database store smoke only
+  - opt-in live PostgreSQL runtime smoke
+    - real FastAPI-to-worker PostgreSQL runtime confidence
+
+  Keep these as separate lanes. Do not treat them as one generic PostgreSQL
+  validation bucket.
 
 - use runtime integration only when the detached worker path or parent/worker
   backend agreement is part of the risk:
@@ -415,15 +451,17 @@ tests/test_api_boundary_sessions_runtime.py \
 tests/test_session_store_runtime.py -q
 ```
 
-  This slower lane is the right next step when you need to prove three things
-  at once:
+  This slower lane is the right next step when you need to prove the
+  runtime-selection contract across parent and worker paths:
 
   - file-backed session storage is still the default
   - PostgreSQL session storage still turns on only after explicit backend
     selection plus valid PostgreSQL configuration
   - the detached worker and parent process still agree on the selected backend
   - explicit bad PostgreSQL config fails clearly instead of silently falling
-    back in the worker path
+    back in the worker or local runner path
+  - for the detailed rollback and failure-policy matrix, use
+    `docs/session-persistence-audit.md` instead of repeating that policy here
 
 - cancel behavior across store, service, and route seams:
 
@@ -437,10 +475,32 @@ tests/test_api_boundary_sessions_cancel.py -q
 ```
 
 - opt-in live PostgreSQL session-store smoke:
-  - keep this out of normal local and PR validation
-  - do not promote it into the default protected PR lane in this branch
-  - use it only when you intentionally want real database confidence after the
-    faster parity and runtime lanes already say the contract still holds
+  - keep this out of normal local runs, protected PR CI, and `main-gate`
+  - keep the helper local-only in this branch; weekly/manual depth can still
+    call the same narrow smoke bundles without making them protected CI work
+  - use the shared rollout vocabulary consistently here:
+    file-backed default, PostgreSQL opt-in, explicit backend selection, and
+    live smoke
+  - it requires `ESM_SESSION_STORE_BACKEND=postgres`,
+    `ESM_POSTGRES_SESSION_DATABASE_URL`,
+    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, and
+    `POSTGRES_SESSION_STORE_REAL_SMOKE=1`
+  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit bootstrap opt-in
+    for the known session-store tables, not default migration policy
+  - keep the live contract small and deterministic:
+    schema reset, metadata write/read, latest progress, ordered results,
+    cancel intent, and stable snapshot shape
+  - `just test-session-postgres-live` owns the shared live PostgreSQL env gate
+    and runs the two narrow real-DB bundles in order:
+    `tests/test_session_store_postgres.py -k real_postgres_session_store`
+    then `tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime`
+  - use the helper only after the cheaper parity and file-default runtime
+    lanes already say the contract still holds
+  - do not grow this lane into broader PostgreSQL rollout, backfill, or
+    unrelated slow-runtime coverage
+  - use `docs/session-persistence-audit.md` for readiness states,
+    default-switch blockers, forward-only/backfill policy, and
+    schema/bootstrap ownership instead of repeating that rollout story here
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -448,8 +508,7 @@ export ESM_SESSION_STORE_BACKEND=postgres && \
 export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor' && \
 export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 && \
 export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
-.venv/bin/pytest -q \
-tests/test_session_store_postgres.py::test_real_postgres_session_store_isolation_helper_resets_schema_cleanly
+.venv/bin/pytest -q tests/test_session_store_postgres.py -k real_postgres_session_store
 ```
 
 Practical lane order for this area:
@@ -459,9 +518,10 @@ Practical lane order for this area:
 - add live PostgreSQL smoke only when you need confidence in the real database
   path itself
 
-The always-needed store parity lane and the detached-worker runtime lane now
-have dedicated `just` wrappers. Keep the remaining commands direct until the
-repo has a real reason to wrap them too.
+The always-needed store parity lane, the detached-worker runtime lane, and the
+opt-in live PostgreSQL session lane now have dedicated `just` wrappers. Keep
+the remaining commands direct until the repo has a real reason to wrap them
+too.
 
 Useful focused examples:
 
@@ -1189,13 +1249,45 @@ boundary, and the MCP adapter over the same service seam. If you change only
 one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
 
-The normal local pass stays synthetic by default. The live PostgreSQL alert
-smokes are opt-in and currently need:
+The normal local pass stays synthetic by default. The opt-in live PostgreSQL
+alert smoke lane currently needs:
 
+- `ESM_ALERT_STORE_BACKEND=postgres`
 - `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
 - `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
-- usually `ESM_ALERT_STORE_BACKEND=postgres` when the test exercises the
-  runtime-selected backend path rather than the store in isolation
+- optional explicit `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` when you want to
+  make bootstrap intent obvious; the current alert path defaults it on
+
+Use the same shared rollout vocabulary here too:
+
+- file-backed default
+- PostgreSQL opt-in
+- explicit backend selection
+- live smoke
+
+Use the same words, but not the same maturity claims:
+
+- alert PostgreSQL is opt-in like session PostgreSQL
+- alert validation should not inherit session forward-only, backfill, or
+  default-switch wording unless the alert rollout explicitly reaches that stage
+
+Alert lane meaning:
+
+- focused synthetic alert slice
+  - alert parity plus FastAPI/MCP/service boundary confidence without a live DB
+- opt-in live PostgreSQL alert smoke
+  - real-database alert-store confidence for bootstrap and append/read behavior
+- weekly/manual live PostgreSQL alert runtime/operator bundles
+  - broader runtime/operator confidence for grouped routes, MCP, snapshot
+    reads, and CLI behavior over the active backend
+
+Keep alert parity, alert live smoke, and broader runtime/operator-flow
+confidence as separate lanes rather than one large PostgreSQL bucket.
+
+The focused synthetic slice already owns the explicit failure policy too:
+runtime alert-store tests prove that unset or invalid PostgreSQL bootstrap
+input stays harmless in file mode and fails clearly only after explicit
+`ESM_ALERT_STORE_BACKEND=postgres` selection.
 
 Use the live smokes when you need confidence in the real database path:
 
@@ -1366,7 +1458,11 @@ Current alert persistence contract to preserve:
     - owns the PostgreSQL alert table, preserved read order, the small
       connection/bootstrap path, and the concrete second store implementation
   - `src/session_alert_store_postgres_config.py`
-    - owns the narrow env/config parsing for the PostgreSQL bootstrap path
+    - owns the narrow env/config parsing for the PostgreSQL bootstrap path:
+      `ESM_ALERT_STORE_BACKEND`,
+      `ESM_POSTGRES_ALERT_DATABASE_URL`,
+      `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES`, and
+      `POSTGRES_ALERT_STORE_REAL_SMOKE`
   - `src/session_alerts.py` and `src/session_alert_incidents.py`
     - public read-model entrypoints accept the store contract explicitly while still
       defaulting to the runtime-selected store implementation
@@ -1859,6 +1955,9 @@ Backend/API contract checks:
     the default file-backed session-store runtime
   - owned by the slower local `just test-session-runtime` helper and the
     weekly `lifecycle-deep` CI lane, not the routine fast PR lanes
+  - live PostgreSQL runtime coverage stays in the same file but runs only by
+    direct opt-in command with explicit real-DB env plus
+    `ESM_SESSION_STORE_BACKEND=postgres`
 - `tests/test_session_service_start.py`
   - shared start-session service behavior
 - `tests/test_session_service_worker.py`
@@ -2038,6 +2137,15 @@ Keep the suite behavioral and narrow:
 - keep routine runtime coverage file-backed
 - treat PostgreSQL-like behavior as store-parity coverage
 - keep any live PostgreSQL runtime confidence as a separate opt-in smoke lane
+- keep that live runtime smoke narrow:
+  accepted start, first persisted readable snapshot, durable cancel delivery,
+  and post-settlement terminal readability
+- require the same real DB env as the store smoke plus explicit
+  `ESM_SESSION_STORE_BACKEND=postgres` so routine file-backed runs and normal
+  PR CI cannot collect it accidentally
+- keep the live runtime setup shared through
+  `tests/api_boundary_sessions_runtime_test_support.py` so backend selection,
+  schema reset, request access, and cleanup do not drift across tests
 - use the slower detached-worker suite only in explicit lanes:
   local `just test-session-runtime` when that seam changes, and weekly
   `lifecycle-deep` for recurring CI confidence
@@ -2055,6 +2163,39 @@ Use this lane when you need proof that the real runtime chain still holds:
 - durable cancel intent reaches that worker path and later settles to a stable
   terminal snapshot
 
+Run the opt-in live PostgreSQL variant only when the branch changes the real
+runtime path between FastAPI, the detached worker, and PostgreSQL-backed
+session persistence.
+
+- add explicit runtime backend selection:
+  `ESM_SESSION_STORE_BACKEND=postgres`
+- the exact runtime-smoke bundle for any helper in this branch is:
+  `tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime`
+- reuse the same live env gate and helper ownership already documented in the
+  store-smoke section above
+- if you want the direct command instead of the helper, export the same live
+  store-smoke env first; this live variant stays intentionally separate from
+  the default file-backed `just test-session-runtime` helper:
+
+```bash
+cd /home/vlad/Projects/election-stream-monitor && \
+export ESM_SESSION_STORE_BACKEND=postgres && \
+export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor' && \
+export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 && \
+export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
+.venv/bin/pytest -q tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime
+```
+
+- keep the live variant out of routine local loops and normal PR CI
+- do not fold `tests/test_session_service_worker.py`,
+  `tests/test_session_cli_tooling.py`, `tests/test_session_store_runtime.py`,
+  parity tests, or broader slow/e2e selectors into this live helper bundle
+- prefer `just test-session-runtime` for the default file-backed runtime lane
+- use the live PostgreSQL runtime smoke only after parity and focused runtime
+  checks already say the contract still holds
+- use `docs/session-persistence-audit.md` for schema/bootstrap, readiness, and
+  migration policy instead of copying that detail into validation notes
+
 Do not use this lane as a substitute for the cheaper focused seams:
 
 - use `tests/test_session_store_parity.py` for file versus PostgreSQL-like
@@ -2064,9 +2205,9 @@ Do not use this lane as a substitute for the cheaper focused seams:
 - use the split `tests/test_api_boundary_sessions_*.py` files for route
   payload shape, status mapping, and structured API error behavior
 
-What this runtime lane does not prove:
+What the default file-backed runtime lane does not prove:
 
-- real PostgreSQL runtime behavior
+- real PostgreSQL runtime behavior; use the opt-in live variant for that
 - detector correctness, alert-rule correctness, or frontend UX behavior
 - every runner-internal state transition already covered by runner and store
   suites

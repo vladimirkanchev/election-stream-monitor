@@ -15,9 +15,12 @@ Today it is an advanced desktop-first prototype with:
 - two built-in detectors: `Black Screen` and `Blur Check`
 - two built-in production alert rules built on top of those detectors
 - a small local MCP server with read-only alert-query tools
-- selectable alert backend: file by default, PostgreSQL opt-in
+- selectable session and alert backends:
+  file-backed by default, PostgreSQL opt-in
 - session persistence stays file-backed by default; PostgreSQL session storage
   only turns on when you explicitly select and configure it
+- session PostgreSQL mode is forward-only for newly created sessions in that
+  mode; historical file-backed sessions are not automatically backfilled
 
 It works best today for local development, demos, and small desktop-backed
 monitoring runs.
@@ -75,6 +78,8 @@ Today the runtime is local-first:
 - session metadata, latest progress, and results read through one shared session-store contract
 - the runtime default is still file-backed under `data/sessions/`
 - alerts use one shared backend: file-backed by default, PostgreSQL as an explicit opt-in backend
+- session PostgreSQL remains an explicit opt-in backend too, and it does not
+  include automatic historical backfill in the current rollout stage
 - the UI, alert routes, grouped incident routes, and MCP tools all read alerts
   through that shared backend
 
@@ -181,6 +186,8 @@ This part keeps the session state stable enough for the UI to refresh:
 - a session is created when monitoring starts
 - progress and results persist through `SessionStore` with a file default
 - alerts use one shared alert backend: file by default, PostgreSQL when you opt in
+- session PostgreSQL applies only after explicit backend selection and does
+  not migrate older file-backed sessions automatically
 - the frontend polls session snapshots through Electron and the local FastAPI backend
 - sessions can complete, fail, or be cancelled cleanly
 
@@ -213,7 +220,9 @@ In practice, the flow looks like this:
 5. Detectors and alert rules process the media, while local session state and
    the shared alert backend keep progress, results, and alerts. Session data
    still defaults to the file-backed store, while alerts stay file-backed by
-   default with PostgreSQL available as an opt-in backend.
+   default with PostgreSQL available as an opt-in backend. Session PostgreSQL
+   is also opt-in and currently forward-only rather than a historical
+   migration path.
 
 FastAPI and MCP are separate entry points over the same local alert and session
 data. FastAPI owns the main desktop HTTP path, while MCP remains a local
@@ -621,7 +630,7 @@ If a change affects API, CLI, persisted data, or bridge shape, start with
 
 ## Versioning And Releases
 
-- the project is now in an early `0.6.1` stage
+- the project is now in an early `0.6.2` stage
 - expect active iteration and improving internal stability rather than strict
   long-term compatibility
 - release notes live in [release-versioning.md](./docs/release-versioning.md)
@@ -729,7 +738,8 @@ This repo leans toward:
 
 - explicit detector and alert-rule registration
 - clear Electron, FastAPI, and MCP boundaries
-- file-backed session state with a selectable alert backend
+- file-backed default persistence with explicit PostgreSQL opt-in backends for
+  sessions and alerts
 - readable code over heavy abstraction
 - promote experiments into production only on purpose
 

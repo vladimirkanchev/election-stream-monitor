@@ -1,7 +1,8 @@
-"""Configuration seam for the PostgreSQL-backed alert store.
+"""Bootstrap configuration for the PostgreSQL-backed alert store.
 
-This module owns only the narrow bootstrap settings for the Postgres alert
-backend. Runtime backend selection stays elsewhere.
+This module stays narrow on purpose: it parses and validates the PostgreSQL
+URL and auto-create flag that matter only after explicit
+`ESM_ALERT_STORE_BACKEND=postgres` selection.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ class PostgresAlertStoreConfigurationError(RuntimeError):
 
 @dataclass(frozen=True)
 class PostgresAlertStoreSettings:
-    """Structured configuration for PostgreSQL alert-store bootstrap."""
+    """Structured bootstrap settings for the PostgreSQL alert-store path."""
 
     database_url: str | None
     auto_create_tables: bool
@@ -54,7 +55,7 @@ def _parse_optional_string_env(name: str, default: str | None) -> str | None:
 
 @lru_cache(maxsize=1)
 def get_postgres_alert_store_settings() -> PostgresAlertStoreSettings:
-    """Return cached PostgreSQL alert-store settings."""
+    """Return cached PostgreSQL bootstrap settings for the alert store."""
     return PostgresAlertStoreSettings(
         database_url=_parse_optional_string_env(
             POSTGRES_ALERT_DATABASE_URL_ENV,
@@ -75,7 +76,7 @@ def clear_postgres_alert_store_settings_cache() -> None:
 def validate_postgres_alert_store_settings(
     settings: PostgresAlertStoreSettings,
 ) -> None:
-    """Validate one PostgreSQL alert-store settings object for bootstrap."""
+    """Validate explicit PostgreSQL alert-store bootstrap settings."""
     if settings.database_url is None:
         raise PostgresAlertStoreConfigurationError(
             f"PostgreSQL alert store requires {POSTGRES_ALERT_DATABASE_URL_ENV}"

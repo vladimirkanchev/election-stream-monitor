@@ -1,9 +1,12 @@
-"""Parse and validate runtime settings for default session-store selection.
+"""Parse and validate runtime settings for session-store backend selection.
 
-This module owns the small runtime config surface for choosing the active
-session-store backend. It keeps the current rollout explicit: `file` is still
-the default, `postgres` is recognized, and PostgreSQL settings are checked only
-when that backend is selected.
+This module owns the small env-backed surface that chooses the active session
+store. The current rollout stays explicit:
+
+- `file` is the default
+- `postgres` is opt-in
+- invalid or unsupported backend values normalize back to the safe file default
+- PostgreSQL bootstrap settings are validated only when `postgres` is selected
 """
 
 from __future__ import annotations
@@ -34,14 +37,14 @@ class SessionStoreRuntimeConfigurationError(RuntimeError):
 
 @dataclass(frozen=True)
 class SessionStoreRuntimeSettings:
-    """Normalized settings used to choose the default runtime store."""
+    """Normalized backend selection plus parsed PostgreSQL bootstrap settings."""
 
     backend: SessionStoreBackend
     postgres: PostgresSessionStoreSettings
 
 
 def _parse_backend_env(name: str, default: SessionStoreBackend) -> SessionStoreBackend:
-    """Read one backend env var and fall back to the default on invalid input."""
+    """Normalize one backend env var and fall back to the default on bad input."""
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
@@ -54,7 +57,7 @@ def _parse_backend_env(name: str, default: SessionStoreBackend) -> SessionStoreB
 
 @lru_cache(maxsize=1)
 def get_session_store_runtime_settings() -> SessionStoreRuntimeSettings:
-    """Return cached runtime settings for default store selection."""
+    """Return cached normalized settings for default store selection."""
     return SessionStoreRuntimeSettings(
         backend=_parse_backend_env(
             SESSION_STORE_BACKEND_ENV,
@@ -65,7 +68,7 @@ def get_session_store_runtime_settings() -> SessionStoreRuntimeSettings:
 
 
 def clear_session_store_runtime_settings_cache() -> None:
-    """Clear cached runtime settings and dependent PostgreSQL config."""
+    """Clear cached backend selection and dependent PostgreSQL settings."""
     get_session_store_runtime_settings.cache_clear()
     from session_store_postgres_config import (
         clear_postgres_session_store_settings_cache,
@@ -77,7 +80,7 @@ def clear_session_store_runtime_settings_cache() -> None:
 def validate_session_store_runtime_settings(
     settings: SessionStoreRuntimeSettings,
 ) -> None:
-    """Validate backend selection and any backend-specific runtime requirements."""
+    """Validate backend selection and any explicit PostgreSQL requirements."""
     if settings.backend not in SUPPORTED_SESSION_STORE_BACKENDS:
         raise SessionStoreRuntimeConfigurationError(
             UNSUPPORTED_SESSION_STORE_BACKEND_MESSAGE

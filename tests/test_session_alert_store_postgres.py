@@ -2,7 +2,8 @@
 
 This file owns the concrete Postgres backend below the service and boundary
 layers: schema/bootstrap behavior, SQL mapping, row normalization,
-unknown-session parity, and the opt-in live store smoke path.
+unknown-session parity, and the opt-in live store smoke path. File-backed
+alerts remain the default runtime backend outside this explicit seam.
 """
 
 from __future__ import annotations

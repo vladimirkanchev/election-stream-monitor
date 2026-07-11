@@ -234,6 +234,15 @@ Current runtime note:
 - file-backed session storage remains the default runtime path
 - PostgreSQL session storage turns on only after deliberate backend selection
   and valid PostgreSQL bootstrap settings
+- newly created sessions persist into whichever backend is active for that
+  runtime
+- later reads and cancel requests use that same selected backend
+- explicit PostgreSQL mode is single-backend on purpose:
+  it reads PostgreSQL-backed sessions only and does not automatically discover
+  older file-backed sessions
+- in practice, a historical file-backed session can still read as
+  missing-session behavior from the PostgreSQL runtime path until a later
+  backfill or deliberate dual-read policy exists
 - routine runtime integration should prove that agreement through the public
   FastAPI session routes and detached-worker path, not through backend-specific
   storage assertions
@@ -252,8 +261,14 @@ default.
 - `SessionStore` owns durable session metadata, latest progress, ordered
   detector results, snapshot reads, known-session checks, and cancel intent.
 - File-backed session storage is still the runtime default.
+- Unsupported runtime backend values still resolve to the file-backed default.
 - PostgreSQL session storage is available only through explicit backend
   selection plus valid PostgreSQL bootstrap settings.
+- For this migration stage, PostgreSQL session storage is forward-only:
+  it applies to newly created sessions after explicit backend selection, not
+  to automatic backfill of existing file-backed session history.
+- No automatic historical migration happens when PostgreSQL session mode is
+  enabled.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only in
   explicit PostgreSQL mode; it should not silently replace or break the file default.
 - Progress is a latest-only read model, not an event history.
@@ -268,6 +283,8 @@ default.
   durable session contract unless a separate contract is added.
 - The parent process and detached worker must resolve the same backend so
   accepted sessions do not later look missing or stale.
+- The same explicit-PostgreSQL failure rule applies across parent reads,
+  detached-worker startup, and local runner startup.
 
 For the current migration stage, cancel-request state should be treated as
 runtime coordination with bounded durability:

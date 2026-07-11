@@ -42,8 +42,8 @@ Use this document when you need to answer:
 ## Short version
 
 The project is a local-first modular monolith with explicit detector
-registration, a file-backed default session store, and opt-in PostgreSQL alert
-storage for alerts.
+registration, file-backed default persistence, and explicit opt-in PostgreSQL
+backends for both session and alert persistence.
 
 In practice that means:
 
@@ -53,8 +53,8 @@ In practice that means:
   - a detached session worker for monitoring runs
 - durable session persistence still resolves to the file-backed store by
   default
-- the session-store seam exists for migration work, but PostgreSQL session
-  storage is not active in the normal runtime path yet
+- PostgreSQL session storage is available now, but only through explicit
+  backend selection plus valid bootstrap configuration
 - one React/Electron frontend
 - explicit detector registration
 - explicit alert rules
@@ -114,10 +114,10 @@ It is now:
     as `worker.log`.
 12. The frontend polls the session snapshot and updates playback and alerts.
 
-For the current branch stage, that session persistence path is still
-file-backed at runtime. The new `SessionStore` boundary and PostgreSQL
-bootstrap code prepare the migration path, but they do not enable PostgreSQL
-session storage in normal runtime flow yet.
+For the current project stage, that session persistence path is still
+file-backed by default at runtime. The `SessionStore` boundary and PostgreSQL
+bootstrap code now also support an explicit PostgreSQL session mode, but the
+project still treats file-backed runtime as the normal default path.
 
 The new MCP surface follows the same adapter pattern:
 
@@ -167,8 +167,9 @@ Today that means:
 
 That split kept the current JSONL behavior intact while making the PostgreSQL
 alert store a bounded replacement instead of a larger read-model rewrite.
-PostgreSQL can now be selected explicitly at runtime, while file-backed alerts
-remain the tested default backend for this branch.
+Alert PostgreSQL mode is selected explicitly at runtime through the alert
+backend configuration, while file-backed alerts remain the tested default
+backend for this branch.
 
 The current PostgreSQL alert mapping is intentionally column-first rather than
 JSONB-first:

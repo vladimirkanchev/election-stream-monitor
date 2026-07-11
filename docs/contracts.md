@@ -86,9 +86,23 @@ Current persistence contract, kept short here:
 - Low-level cancel intent is part of the broader durable coordination
   contract, but it stays outside the public snapshot payload.
 - File-backed session storage is still the runtime default.
+- Unsupported backend values still normalize to the file-backed default.
 - PostgreSQL session storage turns on only when
   `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
   PostgreSQL bootstrap settings are present.
+- Alert storage follows the same rollout posture at its own seam:
+  file-backed remains the default, and PostgreSQL turns on only after
+  explicit `ESM_ALERT_STORE_BACKEND=postgres` selection with valid alert
+  bootstrap settings.
+- In the current rollout stage, that PostgreSQL path is forward-only for new
+  sessions; historical file-backed sessions are not automatically backfilled
+  into PostgreSQL.
+- Runtime reads and cancel requests follow the active backend selection too.
+  Explicit PostgreSQL mode is intentionally single-backend:
+  older file-backed sessions stay outside that backend's known-session
+  universe unless a later backfill or deliberate dual-read policy is added.
+  Parent reads, cancel checks, and session-exists lookups do not silently fall
+  back to file-backed session directories.
 - Missing or invalid PostgreSQL bootstrap config should fail clearly only
   after explicit PostgreSQL selection; it should not poison the file default.
 - The detached worker and the parent process must resolve the same session
@@ -98,6 +112,9 @@ Current persistence contract, kept short here:
 - Alert stores may ask the active `SessionStore` whether durable session
   metadata exists for a session. They should not read backend-specific storage
   details directly.
+- Rollout readiness, default-switch blockers, forward-only/backfill policy,
+  and PostgreSQL bootstrap or migration detail are owned by
+  [session-persistence-audit.md](./session-persistence-audit.md).
 
 For table mapping, bootstrap policy, caller ownership, and migration notes, use
 [session-persistence-audit.md](./session-persistence-audit.md). For field
@@ -2005,9 +2022,15 @@ Current session-storage boundary:
   - PostgreSQL session storage is available now, but only on deliberate opt-in
 - Bootstrap policy is explicit, not automatic:
   - session tables do not auto-create by default
-  - opt in only with `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+  - app bootstrap may run `CREATE TABLE IF NOT EXISTS` only when
+    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
+  - schema/bootstrap/migration detail is owned by
+    `docs/session-persistence-audit.md`
   - normal PR and local validation should not require a live PostgreSQL server
-  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live smoke lanes
+  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live store
+    and runtime smoke lanes
+  - exact live-lane commands and scope belong in
+    `docs/testing-and-validation.md`
 - `src/session_service.py` and the session runner helpers consume that store
   contract instead of choosing backend details themselves.
 - FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
@@ -2558,7 +2581,7 @@ Why this matters:
 
 ## Expected next evolution
 
-Most likely next steps:
+Near-term contract work:
 
 - add explicit `api_stream` contract cases
 - document reconnect and failure-state semantics
