@@ -2,7 +2,7 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.6.1`
+Current public stage: `0.6.2`
 
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
 - `0.5.1` was the workflow and AI-harness follow-up on top of that stage
@@ -12,9 +12,12 @@ Current public stage: `0.6.1`
   remains the default runtime path, while PostgreSQL is now a documented
   supported option for session and alert persistence, with both backends still
   explicit opt-in rollout paths rather than default storage
-- `0.6.1` is the AI-harness policy refresh on top of that stage: repo-local
+- `0.6.1` was the AI-harness policy refresh on top of that stage: repo-local
   review skills, routing guidance, and deterministic skill tests now align
   more clearly before the next persistence and security branches
+- `0.6.2` extends the same dual-backend stage with stronger PostgreSQL session
+  rollout confidence: live store smoke, runtime smoke, failure-policy clarity,
+  and tighter validation guidance without changing the default file-backed path
 
 ## Current Approach
 
@@ -98,7 +101,8 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- current `0.6.1` work keeps the dual-backend stage intact while tightening
-  maintainer-facing review guidance, routing, and harness confidence around it
+- current `0.6.2` work keeps the dual-backend stage intact while strengthening
+  PostgreSQL session rollout confidence, validation helpers, and failure-policy
+  clarity around it
 - both PostgreSQL persistence paths remain explicit opt-in; session historical
   backfill is still a later rollout decision, not part of the current version
