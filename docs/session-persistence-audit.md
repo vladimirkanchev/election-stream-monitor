@@ -765,7 +765,7 @@ Migration conclusion:
 - Validation should prove parent process / detached-worker backend agreement
   explicitly whenever runtime selection changes.
 
-Worker storage invariant for the next implementation steps:
+Worker storage invariant:
 
 - for one session run, parent process reads and cancel writes, and detached-worker
   lifecycle writes, must resolve the same `SessionStore` backend
@@ -788,7 +788,7 @@ Current worker-env decision:
 
 ## Lifecycle Transition Map
 
-| Step | Persisted transition | Main owner | Notes for PostgreSQL migration |
+| Transition | Persisted transition | Main owner | Notes for PostgreSQL migration |
 | --- | --- | --- | --- |
 | Start request accepted | none yet in the parent process; `start_session(...)` returns pending metadata after spawning the worker | `session_service.start_session(...)` | The worker creates durable session state. Avoid parent process durable claims unless reservation is deliberately designed. |
 | Worker initialization | no session -> `pending` metadata and zero-count `pending` progress | `session_runner_lifecycle.initialize_pending_session(...)` | This creates the durable known-session marker and initial polling shape. |

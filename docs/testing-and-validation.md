@@ -20,9 +20,10 @@ For branch workflow around those checks, use:
 
 Treat them as one flow:
 
-1. define branch purpose first
-2. keep PR scope and validation notes explicit while the branch is active
-3. use the readiness checklist at the end instead of turning it into a second planning doc
+- define branch purpose first
+- keep PR scope and validation notes explicit while the branch is active
+- use the readiness checklist at the end instead of turning it into a second
+  planning doc
 
 The branch template owns the lightweight execution pattern and the medium-task
 checklist. Reuse that pattern in planning and review notes instead of copying
@@ -87,7 +88,7 @@ Choose the smallest honest lane first.
 | Multi-seam runtime work that crosses backend plus frontend/operator flow | `just test-fast` | Fast branch-feedback lanes such as `backend-tests`, `frontend-checkpoint`, and aggregate gates | Does not prove packaging smoke, full frontend production validation, or PR-only policy checks |
 | Detached-worker runtime persistence work across FastAPI, `session_service`, and durable session snapshots | `just test-session-runtime` only when the branch really changes that seam | Weekly `lifecycle-deep` lane | Slower and more timing-sensitive than routine fast local loops; default helper stays file-backed while live PostgreSQL runtime smoke stays separate and opt-in |
 | "Ready to push" confidence for ordinary day-to-day work | `just ci-local` | Required and advisory PR lanes | Still does not reproduce clean-runner setup, editable-install packaging checks, full frontend test/build, or GitHub event/branch-protection behavior |
-| Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk | `weekly-validation` | Too slow and environment-sensitive for routine local or PR use |
+| Real-media, long-running lifecycle, deep `api_stream`, security, dependency, or live PostgreSQL confidence | Weekly/manual-depth commands only when the change reaches that risk; use `just test-session-postgres-live` for explicit local PostgreSQL session smoke | `weekly-validation` for the weekly-owned lanes; the session PostgreSQL live helper itself stays local-only | Too slow and environment-sensitive for routine local or PR use |
 
 Harness ownership for this workflow is intentionally split:
 
@@ -113,6 +114,10 @@ Recommended local command order for most day-to-day work:
   - use only when the branch changes detached-worker startup, FastAPI/session-service agreement, durable session snapshot timing, or backend-selection runtime behavior
   - bundles `tests/test_session_service_worker.py`, `tests/test_session_cli_tooling.py`, `tests/test_api_boundary_sessions_runtime.py`, and `tests/test_session_store_runtime.py`
   - not a default edit-refresh loop; keep it for slower runtime-confidence passes
+- `just test-session-postgres-live`
+  - use only when the branch needs real PostgreSQL session confidence after the faster parity and file-backed runtime lanes already pass
+  - runs the narrow live store smoke and the narrow live FastAPI-to-worker runtime smoke only
+  - local-only helper; protected PR CI and `main-gate` do not depend on it
 - `just fixture-check`
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
@@ -460,6 +465,9 @@ tests/test_api_boundary_sessions_cancel.py -q
 - opt-in live PostgreSQL session-store smoke:
   - keep this out of normal local and PR validation
   - do not promote it into the default protected PR lane in this branch
+  - treat the helper for this lane as a local-only convenience wrapper
+  - keep weekly/manual-depth ownership at the documentation and operator level
+    unless the repo later adds a dedicated live-PostgreSQL weekly runner
   - use the shared rollout vocabulary consistently here:
     file-backed default, PostgreSQL opt-in, explicit backend selection, and
     live smoke
@@ -474,9 +482,20 @@ tests/test_api_boundary_sessions_cancel.py -q
   - keep the live contract small and deterministic:
     schema reset, metadata write/read, latest progress, ordered results,
     cancel intent, and stable snapshot shape
-  - do not grow this lane into detached-worker, FastAPI, or broader
-    PostgreSQL rollout coverage; those belong in separate runtime or rollout
-    checks
+  - the exact store-smoke bundle for any helper in this branch is:
+    `tests/test_session_store_postgres.py -k real_postgres_session_store`
+  - the local helper is `just test-session-postgres-live`; it keeps
+    `ESM_POSTGRES_SESSION_DATABASE_URL` and
+    `POSTGRES_SESSION_STORE_REAL_SMOKE=1` explicit, requires
+    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, then runs the narrow live
+    store bundle followed by the narrow live runtime bundle
+  - protected PR CI, `backend-tests`, `test-and-build`, and `main-gate` do
+    not depend on this helper
+  - keep this lane narrow even though it includes both live bundles:
+    real-store contract smoke plus real FastAPI-to-worker PostgreSQL runtime
+    confidence
+  - do not grow this lane into broader PostgreSQL rollout, backfill, or
+    unrelated slow-runtime coverage
   - for schema/bootstrap/migration ownership, use
     `docs/session-persistence-audit.md`
 
@@ -496,9 +515,10 @@ Practical lane order for this area:
 - add live PostgreSQL smoke only when you need confidence in the real database
   path itself
 
-The always-needed store parity lane and the detached-worker runtime lane now
-have dedicated `just` wrappers. Keep the remaining commands direct until the
-repo has a real reason to wrap them too.
+The always-needed store parity lane, the detached-worker runtime lane, and the
+opt-in live PostgreSQL session lane now have dedicated `just` wrappers. Keep
+the remaining commands direct until the repo has a real reason to wrap them
+too.
 
 Useful focused examples:
 
@@ -2147,18 +2167,35 @@ session persistence.
 - treat the auto-create flag here the same way as store smoke:
   explicit bootstrap convenience for known tables, not a general runtime
   upgrader for existing databases
-- after exporting that live store-smoke DB env, run the focused runtime file
-  directly; this live variant is intentionally separate from the default
-  file-backed `just test-session-runtime` helper:
+- the exact runtime-smoke bundle for any helper in this branch is:
+  `tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime`
+- `just test-session-postgres-live` follows the store smoke with this runtime
+  bundle under the same explicit PostgreSQL env
+- the helper fails early if `POSTGRES_SESSION_STORE_REAL_SMOKE`,
+  `ESM_POSTGRES_SESSION_DATABASE_URL`, or
+  `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is missing
+- protected PR CI does not call this helper and does not block on its result;
+  treat it as explicit local depth, not protected branch feedback
+- if you want the direct command instead of the helper, export the same live
+  store-smoke env first; this live variant stays intentionally separate from
+  the default file-backed `just test-session-runtime` helper:
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
 export ESM_SESSION_STORE_BACKEND=postgres && \
+export ESM_POSTGRES_SESSION_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor' && \
+export ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 && \
 export POSTGRES_SESSION_STORE_REAL_SMOKE=1 && \
-.venv/bin/pytest -q tests/test_api_boundary_sessions_runtime.py
+.venv/bin/pytest -q tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime
 ```
 
 - keep the live variant out of routine local loops and normal PR CI
+- keep any wrapper for this live variant local-only in this branch; the
+  current weekly workflow does not own a shared external PostgreSQL runtime
+  smoke lane
+- do not fold `tests/test_session_service_worker.py`,
+  `tests/test_session_cli_tooling.py`, `tests/test_session_store_runtime.py`,
+  parity tests, or broader slow/e2e selectors into this live helper bundle
 - prefer `just test-session-runtime` for the default file-backed runtime lane
 - use the live PostgreSQL runtime smoke only after parity and focused runtime
   checks already say the contract still holds

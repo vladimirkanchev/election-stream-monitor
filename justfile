@@ -26,6 +26,7 @@ venv_mypy := ".venv/bin/mypy"
 venv_pyright := ".venv/bin/pyright"
 pytest_base_flags := "-p no:cacheprovider -q"
 pytest_env_prefix := "PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
+live_session_postgres_env_prefix := "ESM_SESSION_STORE_BACKEND=postgres ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 POSTGRES_SESSION_STORE_REAL_SMOKE=1"
 backend_typecheck_targets := "src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alert_report.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py"
 backend_fast_synthetic_selector := "-m 'not e2e and not slow'"
 
@@ -149,6 +150,25 @@ test-session-store:
       tests/test_session_store_file.py \
       tests/test_session_store_parity.py \
       tests/test_session_store_runtime.py
+
+# Opt-in local live PostgreSQL session store/runtime confidence lane.
+# This stays outside protected PR CI and runs only the narrow real-DB session
+# smoke bundles: focused store behavior plus focused FastAPI-to-worker runtime.
+test-session-postgres-live:
+    @if [ "$${POSTGRES_SESSION_STORE_REAL_SMOKE:-0}" != "1" ]; then \
+      echo "Set POSTGRES_SESSION_STORE_REAL_SMOKE=1 to run live PostgreSQL session smoke."; \
+      exit 1; \
+    fi
+    @if [ -z "$${ESM_POSTGRES_SESSION_DATABASE_URL:-}" ]; then \
+      echo "Set ESM_POSTGRES_SESSION_DATABASE_URL to run live PostgreSQL session smoke."; \
+      exit 1; \
+    fi
+    @if [ "$${ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES:-}" != "1" ]; then \
+      echo "Set ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 to run live PostgreSQL session smoke."; \
+      exit 1; \
+    fi
+    {{live_session_postgres_env_prefix}} {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_session_store_postgres.py -k real_postgres_session_store
+    {{live_session_postgres_env_prefix}} {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime
 
 # Fast synthetic backend lane aligned with the current `backend-tests` CI job.
 _backend-tests-fast:

@@ -2578,7 +2578,7 @@ Why this matters:
 
 ## Expected next evolution
 
-Most likely next steps:
+Near-term contract work:
 
 - add explicit `api_stream` contract cases
 - document reconnect and failure-state semantics
