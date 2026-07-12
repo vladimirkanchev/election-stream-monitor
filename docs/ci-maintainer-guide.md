@@ -55,6 +55,17 @@ Weekly failures fail the weekly workflow but do not block an ordinary PR
 merge. Local lanes produce no GitHub status and do not reproduce the complete
 protected workflow.
 
+Recent weekly-maintenance expectations:
+
+- frontend Node setup is pinned through repo `.nvmrc` and workflow
+  `node-version-file` usage so audit-driven dependency refreshes do not drift
+  between local and CI environments
+- weekly PostgreSQL alert-confidence helpers must run through the runner
+  Python (`sys.executable -m pytest`) instead of assuming a repo-local
+  `.venv` path on GitHub-hosted runners
+- weekly real-media detector confidence should prefer artifact-rich,
+  behavior-based assertions over brittle exact-window calibration
+
 For the current session-store migration work, keep live PostgreSQL session
 confidence in weekly or manual-depth lanes. Do not add a default PR job that
 boots a database service just to restate the focused parity and runtime

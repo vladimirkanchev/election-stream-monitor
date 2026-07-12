@@ -10,16 +10,6 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PYTEST_PATH = REPO_ROOT / ".venv" / "bin" / "pytest"
-
-
-def require_pytest_executable() -> None:
-    """Fail clearly when the project virtualenv has not been created yet."""
-    if PYTEST_PATH.exists():
-        return
-    print(f"Pytest executable not found: {PYTEST_PATH}", file=sys.stderr)
-    print("Create the project virtualenv before running this helper.", file=sys.stderr)
-    raise SystemExit(1)
 
 
 def require_database_url() -> str:
@@ -46,7 +36,7 @@ def build_live_postgres_env(database_url: str) -> dict[str, str]:
 
 def build_pytest_command(test_paths: tuple[str, ...]) -> list[str]:
     """Return the focused pytest command for one live Postgres confidence group."""
-    return [str(PYTEST_PATH), "-q", *test_paths]
+    return [sys.executable, "-m", "pytest", "-q", *test_paths]
 
 
 def print_run_plan(
@@ -70,7 +60,6 @@ def run_live_postgres_test_group(
     test_paths: tuple[str, ...],
 ) -> int:
     """Run one named live-Postgres confidence group and return the pytest exit code."""
-    require_pytest_executable()
     database_url = require_database_url()
     env = build_live_postgres_env(database_url)
     command = build_pytest_command(test_paths)

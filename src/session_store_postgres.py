@@ -243,17 +243,19 @@ class PostgresSessionStoreConnection(Protocol):
 
 
 POSTGRES_SESSION_METADATA_COLUMN_SQL = ", ".join(POSTGRES_SESSION_METADATA_FIELDS)
-POSTGRES_SESSION_METADATA_EXISTS_SQL = (
-    f"SELECT 1 FROM {POSTGRES_SESSION_METADATA_TABLE_NAME} WHERE session_id = %s"
-)
-POSTGRES_SESSION_METADATA_SELECT_SQL = f"""
-SELECT {POSTGRES_SESSION_METADATA_COLUMN_SQL}
-FROM {POSTGRES_SESSION_METADATA_TABLE_NAME}
+POSTGRES_SESSION_METADATA_EXISTS_SQL = "SELECT 1 FROM session_metadata WHERE session_id = %s"
+POSTGRES_SESSION_METADATA_SELECT_SQL = """
+SELECT session_id, mode, input_path, selected_detectors, status
+FROM session_metadata
 WHERE session_id = %s
 """.strip()
-POSTGRES_SESSION_METADATA_UPSERT_SQL = f"""
-INSERT INTO {POSTGRES_SESSION_METADATA_TABLE_NAME} (
-    {POSTGRES_SESSION_METADATA_COLUMN_SQL}
+POSTGRES_SESSION_METADATA_UPSERT_SQL = """
+INSERT INTO session_metadata (
+    session_id,
+    mode,
+    input_path,
+    selected_detectors,
+    status
 ) VALUES (%s, %s, %s, %s, %s)
 ON CONFLICT (session_id) DO UPDATE SET
     mode = EXCLUDED.mode,
@@ -262,14 +264,35 @@ ON CONFLICT (session_id) DO UPDATE SET
     status = EXCLUDED.status
 """.strip()
 POSTGRES_SESSION_PROGRESS_COLUMN_SQL = ", ".join(POSTGRES_SESSION_PROGRESS_FIELDS)
-POSTGRES_SESSION_PROGRESS_SELECT_SQL = f"""
-SELECT {POSTGRES_SESSION_PROGRESS_COLUMN_SQL}
-FROM {POSTGRES_SESSION_PROGRESS_TABLE_NAME}
+POSTGRES_SESSION_PROGRESS_SELECT_SQL = """
+SELECT
+    session_id,
+    status,
+    processed_count,
+    total_count,
+    current_item,
+    latest_result_detector,
+    alert_count,
+    last_updated_utc,
+    latest_result_detectors,
+    status_reason,
+    status_detail
+FROM session_progress
 WHERE session_id = %s
 """.strip()
-POSTGRES_SESSION_PROGRESS_UPSERT_SQL = f"""
-INSERT INTO {POSTGRES_SESSION_PROGRESS_TABLE_NAME} (
-    {POSTGRES_SESSION_PROGRESS_COLUMN_SQL}
+POSTGRES_SESSION_PROGRESS_UPSERT_SQL = """
+INSERT INTO session_progress (
+    session_id,
+    status,
+    processed_count,
+    total_count,
+    current_item,
+    latest_result_detector,
+    alert_count,
+    last_updated_utc,
+    latest_result_detectors,
+    status_reason,
+    status_detail
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (session_id) DO UPDATE SET
     status = EXCLUDED.status,
@@ -297,14 +320,14 @@ POSTGRES_SESSION_RESULT_SELECT_COLUMN_SQL = ", ".join(
         "payload_json AS payload",
     )
 )
-POSTGRES_SESSION_RESULTS_SELECT_SQL = f"""
-SELECT {POSTGRES_SESSION_RESULT_SELECT_COLUMN_SQL}
-FROM {POSTGRES_SESSION_RESULTS_TABLE_NAME}
+POSTGRES_SESSION_RESULTS_SELECT_SQL = """
+SELECT id, session_id, detector_id, payload_json AS payload
+FROM session_result_events
 WHERE session_id = %s
 ORDER BY id ASC
 """.strip()
-POSTGRES_SESSION_RESULTS_INSERT_SQL = f"""
-INSERT INTO {POSTGRES_SESSION_RESULTS_TABLE_NAME} (
+POSTGRES_SESSION_RESULTS_INSERT_SQL = """
+INSERT INTO session_result_events (
     session_id,
     detector_id,
     detector_name,
@@ -312,13 +335,13 @@ INSERT INTO {POSTGRES_SESSION_RESULTS_TABLE_NAME} (
     payload_json
 ) VALUES (%s, %s, %s, %s, %s)
 """.strip()
-POSTGRES_SESSION_CANCEL_EXISTS_SQL = f"""
+POSTGRES_SESSION_CANCEL_EXISTS_SQL = """
 SELECT 1
-FROM {POSTGRES_SESSION_CANCEL_TABLE_NAME}
+FROM session_cancel_requests
 WHERE session_id = %s AND cancel_requested = TRUE
 """.strip()
-POSTGRES_SESSION_CANCEL_UPSERT_SQL = f"""
-INSERT INTO {POSTGRES_SESSION_CANCEL_TABLE_NAME} (
+POSTGRES_SESSION_CANCEL_UPSERT_SQL = """
+INSERT INTO session_cancel_requests (
     session_id,
     cancel_requested
 ) VALUES (%s, %s)

@@ -2,7 +2,12 @@
   "name": "election-stream-monitor-frontend",
   "version": "0.6.2",
   "private": true,
+  "packageManager": "npm@11.15.0",
   "type": "module",
+  "engines": {
+    "node": "22.x",
+    "npm": "11.x"
+  },
   "scripts": {
     "sync:detectors": "python3 ../src/export_detector_catalog.py --output public/detectors.json",
     "dev:web": "npm run sync:detectors && vite",
@@ -36,16 +41,16 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
-    "@vitejs/plugin-react": "^5.0.4",
-    "concurrently": "^9.2.1",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
     "electron": "^41.1.0",
     "eslint": "^9.39.4",
     "globals": "^16.5.0",
-    "jsdom": "^29.0.1",
+    "jsdom": "^29.1.1",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.59.1",
-    "vite": "^8.0.8",
-    "vitest": "^3.2.4",
-    "wait-on": "^9.0.5"
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10",
+    "wait-on": "^9.0.10"
   }
 }
