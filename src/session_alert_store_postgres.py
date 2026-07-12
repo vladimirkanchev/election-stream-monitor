@@ -71,8 +71,8 @@ POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     POSTGRES_ALERT_EVENTS_TABLE_SQL,
     *POSTGRES_ALERT_EVENTS_INDEX_SQL,
 )
-POSTGRES_ALERT_EVENTS_INSERT_SQL = f"""
-INSERT INTO {POSTGRES_ALERT_EVENTS_TABLE_NAME} (
+POSTGRES_ALERT_EVENTS_INSERT_SQL = """
+INSERT INTO session_alert_events (
     session_id,
     timestamp_utc,
     detector_id,
@@ -84,10 +84,10 @@ INSERT INTO {POSTGRES_ALERT_EVENTS_TABLE_NAME} (
     window_start_sec
 ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 """.strip()
-POSTGRES_ALERT_EVENTS_READ_SQL = f"""
+POSTGRES_ALERT_EVENTS_READ_SQL = """
 SELECT
     session_id,
-    to_char(timestamp_utc, '{POSTGRES_ALERT_TIMESTAMP_TO_CHAR_FORMAT}') AS timestamp_utc,
+    to_char(timestamp_utc, 'YYYY-MM-DD HH24:MI:SS') AS timestamp_utc,
     detector_id,
     title,
     message,
@@ -95,9 +95,9 @@ SELECT
     source_name,
     window_index,
     window_start_sec
-FROM {POSTGRES_ALERT_EVENTS_TABLE_NAME}
+FROM session_alert_events
 WHERE session_id = %s
-ORDER BY {POSTGRES_ALERT_EVENT_READ_ORDER}
+ORDER BY id ASC
 """.strip()
 
 __all__ = [

@@ -35,14 +35,13 @@ class SessionAlertReport(TypedDict):
 
 def build_session_alert_report(snapshot: dict[str, object]) -> SessionAlertReport:
     """Extract the compact alert report view from a full session snapshot."""
-    session = snapshot["session"]
-    alerts = snapshot["alerts"]
-    assert isinstance(session, dict)
-    assert isinstance(alerts, list)
+    session = _read_required_dict(snapshot, "session")
+    alerts = _read_required_list(snapshot, "alerts")
 
     report_alerts: list[SessionAlertReportEntry] = []
     for alert in alerts:
-        assert isinstance(alert, dict)
+        if not isinstance(alert, dict):
+            raise TypeError("Session snapshot alerts must contain mapping entries.")
         report_alerts.append(
             {
                 "segment": _read_required_str(alert, "source_name"),
@@ -97,7 +96,24 @@ def format_session_alert_report_table(report: SessionAlertReport) -> str:
 def _read_required_str(payload: dict[str, object], key: str) -> str:
     """Read one required string field from a loosely typed snapshot payload."""
     value = payload[key]
-    assert isinstance(value, str)
+    if not isinstance(value, str):
+        raise TypeError(f"Expected '{key}' to be a string.")
+    return value
+
+
+def _read_required_dict(payload: dict[str, object], key: str) -> dict[str, object]:
+    """Read one required nested mapping from a loosely typed snapshot payload."""
+    value = payload[key]
+    if not isinstance(value, dict):
+        raise TypeError(f"Expected '{key}' to be a mapping.")
+    return value
+
+
+def _read_required_list(payload: dict[str, object], key: str) -> list[object]:
+    """Read one required list field from a loosely typed snapshot payload."""
+    value = payload[key]
+    if not isinstance(value, list):
+        raise TypeError(f"Expected '{key}' to be a list.")
     return value
 
 
