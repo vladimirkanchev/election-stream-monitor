@@ -38,7 +38,13 @@ jobs:
       - name: Show Python detector-lab dependency versions
         run: |
           .venv/bin/python --version
-          .venv/bin/python -m pip show numpy opencv-python-headless
+          .venv/bin/python - <<'PY'
+          import cv2
+          import numpy
+
+          print(f"numpy=={numpy.__version__}")
+          print(f"opencv-python-headless=={cv2.__version__}")
+          PY
 
       # `weekly_slow_real_media` lanes still resolve through the same shared
       # manifest contract as the protected PR lanes, but they own the slow and
