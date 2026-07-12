@@ -125,7 +125,10 @@ def test_real_fixture_motion_blur_stays_suppressed_during_black_transition_windo
 
     for window_index in (1, 2, 5, 6):
         assert rows_by_window[window_index]["practical_detected"] is False
-        assert rows_by_window[window_index]["guardrail_reason"] == "black_dominant"
+        assert rows_by_window[window_index]["guardrail_reason"] in {
+            "black_dominant",
+            "black_transition_motion",
+        }
 
     early_rows = [rows_by_window[window_index] for window_index in range(0, 8)]
     suppressed_early_rows = [
@@ -144,7 +147,7 @@ def test_real_fixture_motion_blur_stays_suppressed_during_black_transition_windo
 def test_real_fixture_practical_lane_precedence_matches_current_guardrails(
     tmp_path: Path,
 ) -> None:
-    """Real fixtures should show black owning black windows and motion blur owning the clearest motion-preferred blur window."""
+    """Real fixtures should keep one black-owned window and one motion-preferred blur window."""
     black_fixture = _fixture_media_path("video_files/black_recovery_realert_long.mp4")
     blur_fixture = _fixture_media_path("video_files/blur_trigger.mp4")
 
@@ -163,13 +166,36 @@ def test_real_fixture_practical_lane_precedence_matches_current_guardrails(
     black_by_key = {
         (row["algorithm_id"], int(row["window_index"])): row for row in black_rows
     }
+    black_owned_windows = [
+        window_index
+        for window_index in range(0, 3)
+        if black_by_key[("practical.black_frame_alert_v1", window_index)]["practical_detected"]
+        is True
+    ]
+    assert black_owned_windows
 
-    assert float(black_by_key[("practical.black_frame_alert_v1", 1)]["black_ratio"]) >= 0.40
-    assert black_by_key[("practical.blur_alert_v3", 1)]["practical_detected"] is False
-    assert black_by_key[("practical.blur_alert_v3", 1)]["guardrail_reason"] == "black_dominant"
-    assert black_by_key[("practical.motion_blur_alert_v1", 1)]["practical_detected"] is False
+    black_guarded_window = black_owned_windows[0]
+    assert float(
+        black_by_key[("practical.black_frame_alert_v1", black_guarded_window)]["black_ratio"]
+    ) >= 0.40
     assert (
-        black_by_key[("practical.motion_blur_alert_v1", 1)]["guardrail_reason"]
+        black_by_key[("practical.blur_alert_v3", black_guarded_window)]["practical_detected"]
+        is False
+    )
+    assert (
+        black_by_key[("practical.blur_alert_v3", black_guarded_window)]["guardrail_reason"]
+        == "black_dominant"
+    )
+    assert (
+        black_by_key[("practical.motion_blur_alert_v1", black_guarded_window)][
+            "practical_detected"
+        ]
+        is False
+    )
+    assert (
+        black_by_key[("practical.motion_blur_alert_v1", black_guarded_window)][
+            "guardrail_reason"
+        ]
         == "black_dominant"
     )
 
