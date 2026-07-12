@@ -112,6 +112,7 @@ def test_real_fixture_motion_blur_stays_suppressed_during_black_transition_windo
 ) -> None:
     """The practical motion-blur lane should stay suppressed through the black-transition-heavy part of the recovery fixture."""
     fixture_path = _fixture_media_path("video_files/black_recovery_realert_long.mp4")
+    black_suppression_reasons = {"black_dominant", "black_transition_motion"}
 
     rows = _run_real_media_detector_lab(
         label="black_recovery_motion",
@@ -123,12 +124,12 @@ def test_real_fixture_motion_blur_stays_suppressed_during_black_transition_windo
     )
     rows_by_window = {int(row["window_index"]): row for row in rows}
 
+    # Weekly real-media confidence should hold to the suppression behavior, not
+    # to one exact window classification when ffmpeg/OpenCV boundary effects
+    # can shift a transition window between the two black-suppression reasons.
     for window_index in (1, 2, 5, 6):
         assert rows_by_window[window_index]["practical_detected"] is False
-        assert rows_by_window[window_index]["guardrail_reason"] in {
-            "black_dominant",
-            "black_transition_motion",
-        }
+        assert rows_by_window[window_index]["guardrail_reason"] in black_suppression_reasons
 
     early_rows = [rows_by_window[window_index] for window_index in range(0, 8)]
     suppressed_early_rows = [
@@ -137,7 +138,7 @@ def test_real_fixture_motion_blur_stays_suppressed_during_black_transition_windo
     black_suppressed_rows = [
         row
         for row in early_rows
-        if row["guardrail_reason"] in {"black_dominant", "black_transition_motion"}
+        if row["guardrail_reason"] in black_suppression_reasons
     ]
 
     assert len(suppressed_early_rows) >= 4
@@ -169,7 +170,9 @@ def test_real_fixture_practical_lane_precedence_matches_current_guardrails(
     black_owned_windows = [
         window_index
         for window_index in range(0, 3)
-        if black_by_key[("practical.black_frame_alert_v1", window_index)]["practical_detected"]
+        if black_by_key[("practical.black_frame_alert_v1", window_index)][
+            "practical_detected"
+        ]
         is True
     ]
     assert black_owned_windows
