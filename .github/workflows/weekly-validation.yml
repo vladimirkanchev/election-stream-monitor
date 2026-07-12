@@ -64,6 +64,8 @@ jobs:
         run: .venv/bin/python .github/scripts/validate_ci_test_targets.py
 
       - name: Run weekly_slow_real_media slow e2e media tests
+        env:
+          ESM_DETECTOR_LAB_ARTIFACT_DIR: ci-artifacts/detector-lab-real-media
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
@@ -76,7 +78,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: slow-e2e-${{ github.run_id }}
-          path: ci-artifacts/slow-e2e.log
+          path: |
+            ci-artifacts/slow-e2e.log
+            ci-artifacts/detector-lab-real-media/**
           retention-days: 7
 
   api-stream-deep:
