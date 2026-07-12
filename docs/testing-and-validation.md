@@ -258,6 +258,10 @@ Current focused ownership map:
     and export shaping
 - `tests/test_detector_lab_real_media.py`
   - slower real-media confidence lane for detector-lab motion/flow behavior
+  - weekly confidence here is intentionally behavior-based and artifact-backed;
+    when fixture boundary timing shifts slightly across environments, prefer
+    suppression/precedence assertions plus emitted CSV diagnostics over exact
+    window-number calibration
 - `tests/test_detector_lab_representative_media.py`
   - reviewed representative MP4 calibration lane for low-resolution and
     compression cases
@@ -1404,6 +1408,10 @@ The scheduled `weekly-validation` workflow also runs the backend and
 runtime/operator bundles automatically with a disposable `postgres:16` service
 container. CI does not rely on a shared external database for those weekly
 checks.
+
+Those weekly PostgreSQL alert-confidence helpers run through the GitHub
+runner's Python environment rather than a repo-local `.venv` path. Keep that
+portability intact when editing the helper scripts or workflow steps.
 
 Do not treat it as a normal branch-push requirement. The synthetic seam,
 parity, and boundary suites remain the primary everyday validation path.
