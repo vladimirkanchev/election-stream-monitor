@@ -336,8 +336,8 @@ module families and the matching tests:
     - explicit `file` versus `postgres` backend-mode config coverage
   - `tests/test_session_alert_store_parity.py`
     - file-store versus PostgreSQL-store parity over the shared alert backend
-      and read-model layer, including filtered raw reads plus grouped filtered
-      and time-bounded parity
+      and read-model layer, including append order, normalized raw shape,
+      session-scoped filtering, empty-state behavior, and grouped reads
   - `tests/test_session_alert_store_postgres.py`
     - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
       second backend's read/write drift-sensitive behavior

@@ -1534,10 +1534,10 @@ The current test split is:
 - `tests/test_session_alert_store_runtime_config.py`
   - explicit runtime backend-mode config coverage for `file` versus `postgres`
 - `tests/test_session_alert_store_parity.py`
-  - shared file-store versus PostgreSQL-store parity for raw reads,
-    filtered raw reads, known-empty and unknown-session behavior, filtered
-    summaries, grouped timelines, grouped summaries, grouped filtered reads,
-    grouped time-bounded reads, and the file-only malformed-row subset path
+  - shared file-store versus PostgreSQL-store parity for append order,
+    normalized raw read shape, session-scoped filtering, summaries, grouped
+    timelines, grouped incident summaries, known-empty and unknown-session
+    behavior, and the file-only malformed-row subset path
 - `tests/test_session_alert_store_postgres.py`
   - PostgreSQL alert-store contract coverage for schema/bootstrap plus the
     concrete second backend's read/write drift-sensitive behavior
