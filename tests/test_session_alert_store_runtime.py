@@ -345,13 +345,14 @@ def test_get_default_session_alert_store_defaults_to_file_backend(
     [
         pytest.param(None, id="unset"),
         pytest.param("file", id="explicit-file"),
+        pytest.param("sqlite", id="unsupported"),
     ],
 )
-def test_file_alert_backend_ignores_stale_postgres_bootstrap_settings(
+def test_file_resolving_alert_backend_ignores_stale_postgres_bootstrap_settings(
     monkeypatch: pytest.MonkeyPatch,
     backend: str | None,
 ) -> None:
-    """File mode must ignore stale PostgreSQL URL and bootstrap settings."""
+    """Selections resolving to file mode must ignore stale PostgreSQL settings."""
     if backend is None:
         monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
     else:
@@ -446,8 +447,11 @@ def test_explicit_postgres_alert_backend_surfaces_bootstrap_failures_at_runtime_
     with pytest.raises(
         AlertStoreRuntimeConfigurationError,
         match=bootstrap_message,
-    ):
+    ) as error:
         get_default_session_alert_store()
+
+    assert isinstance(error.value.__cause__, PostgresAlertStoreBootstrapError)
+    assert str(error.value.__cause__) == bootstrap_message
 
 
 def test_get_default_session_alert_store_only_fails_for_missing_postgres_driver_when_postgres_is_selected(
@@ -520,7 +524,7 @@ def test_explicit_postgres_alert_backend_keeps_missing_schema_failure_visible_af
     with pytest.raises(
         RuntimeError,
         match='relation "session_alert_events" does not exist',
-    ):
+    ) as error:
         store.append_alert(
             _alert_event(
                 session_id="runtime-postgres-missing-schema",
@@ -529,6 +533,8 @@ def test_explicit_postgres_alert_backend_keeps_missing_schema_failure_visible_af
                 message="The alert table was not bootstrapped.",
             )
         )
+
+    assert not isinstance(error.value, AlertStoreRuntimeConfigurationError)
 
 
 def test_default_alert_service_entrypoint_uses_runtime_selected_backend(

@@ -1040,24 +1040,13 @@ Keep that live runtime contract intentionally small:
 - FastAPI cancel reaches the worker through durable store-backed cancel intent.
 - Terminal session state remains readable after worker settlement.
 
-Current rollback and failure-mode coverage:
+### Shared Persistence Failure Policy
 
-- `tests/test_session_store_runtime.py` owns default runtime selection,
-  rollback-safe file behavior, explicit PostgreSQL validation, bootstrap
-  failure propagation, and missing-schema visibility.
-- `tests/test_session_cli_tooling.py` and `tests/test_session_runner_local.py`
-  keep the detached worker and local runner aligned with the same rule:
-  non-PostgreSQL selections stay file-backed, while explicit PostgreSQL
-  failures abort instead of silently writing somewhere else.
-- `tests/test_session_store_postgres.py` owns the bootstrap helper itself,
-  including cached settings, URL validation, missing driver handling, and
-  connection failure.
-- Keep live PostgreSQL confidence opt-in behind the real DB env and explicit
-  `ESM_SESSION_STORE_BACKEND=postgres`.
+This is the authoritative failure-policy matrix for both session and alert
+storage. Backend-specific code may validate or bootstrap at different layers,
+but it must preserve this observable behavior.
 
-Failure policy truth table:
-
-| Runtime selection | PostgreSQL bootstrap state | Expected behavior | Why |
+| Selection | PostgreSQL state | Expected behavior | Why |
 | --- | --- | --- | --- |
 | backend unset | any stale, missing, or invalid PostgreSQL env | stay on the default file-backed store | safe fallback; PostgreSQL is still opt-in |
 | backend `file` | any stale, missing, or invalid PostgreSQL env | stay on the file-backed store | explicit file mode should ignore unrelated PostgreSQL bootstrap state |
@@ -1068,7 +1057,22 @@ Failure policy truth table:
 | backend `postgres` | connection/bootstrap failure | fail clearly and abort the explicit PostgreSQL path | protects against split or partial backend selection |
 | backend `postgres` with auto-create disabled | known tables missing | fail clearly when the store first touches missing tables | missing schema must stay visible until bootstrap or migration work fixes it |
 
-Current rule of thumb:
+Focused ownership:
+
+- `tests/test_session_store_runtime.py`, `tests/test_session_cli_tooling.py`,
+  and `tests/test_session_runner_local.py` cover session selection, worker/CLI
+  propagation, and rollback-safe file behavior.
+- `tests/test_session_alert_store_runtime.py` and
+  `tests/test_session_alert_store_runtime_config.py` cover equivalent alert
+  selection, explicit bootstrap failures, missing-schema visibility, and cache
+  rebuilding.
+- `tests/test_session_store_postgres.py` and
+  `tests/test_session_alert_store_postgres.py` cover the lower bootstrap,
+  driver, connection, and schema behavior.
+- Live PostgreSQL confidence stays opt-in behind the relevant real-DB flag,
+  explicit backend selection, and database URL.
+
+Rule of thumb:
 
 - safe fallback is allowed only while runtime selection still resolves to the
   default file-backed path
@@ -1079,25 +1083,27 @@ Current rule of thumb:
   local runner startup; explicit PostgreSQL bootstrap or missing-schema
   failures should stay visible instead of degrading to file mode
 
-### Shared Alert and Session Rollout Invariants
-
-The current runtime selectors and focused tests establish these behavioral
-invariants for both persistence seams:
-
-- file-backed storage remains the default
-- PostgreSQL requires explicit backend selection
-- stale PostgreSQL settings do not affect file mode
-- unsupported backend values normalize to file mode
-- explicit PostgreSQL configuration or bootstrap failures remain visible
-- explicit PostgreSQL selection never silently falls back to file storage
-
 At the runtime-store boundary, both paths translate actionable bootstrap
 failures to their persistence-specific configuration error. Later operational
 failures, such as missing tables, remain visible to the caller.
 
+### Alert-Store Rollback
+
+Rolling alert storage back to files is an operator-controlled backend change:
+
+- stop or restart the affected runtime with `ESM_ALERT_STORE_BACKEND=file`
+- clear the default alert-store cache only for in-process tests or tooling that
+  deliberately changes backend configuration
+- do not copy, merge, or dual-read PostgreSQL alert rows into file storage
+- do not switch to file storage during a failed explicit PostgreSQL operation
+
+Existing PostgreSQL alerts remain in PostgreSQL; file mode resumes the
+file-backed alert path for later operations. A backfill or cross-store recovery
+tool would be separate, explicit migration work.
+
 ### Intentional Maturity Differences
 
-These invariants do not require identical implementation or rollout maturity:
+The shared policy does not require identical implementation or rollout maturity:
 
 - session runtime selection validates explicit PostgreSQL URL shape before
   store build, while alert runtime selection leaves URL and bootstrap

@@ -113,7 +113,8 @@ Current persistence contract, kept short here:
   metadata exists for a session. They should not read backend-specific storage
   details directly.
 - Rollout readiness, default-switch blockers, forward-only/backfill policy,
-  and PostgreSQL bootstrap or migration detail are owned by
+  failure and rollback behavior, and PostgreSQL bootstrap or migration detail
+  are owned by
   [session-persistence-audit.md](./session-persistence-audit.md).
 
 For table mapping, bootstrap policy, caller ownership, and migration notes, use

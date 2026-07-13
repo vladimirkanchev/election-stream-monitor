@@ -24,7 +24,7 @@ UNSUPPORTED_ALERT_STORE_BACKEND_MESSAGE = (
 
 
 class AlertStoreRuntimeConfigurationError(RuntimeError):
-    """Raised when the configured alert-store backend is unsupported."""
+    """Raised when explicit alert-store runtime configuration cannot be honored."""
 
 
 @dataclass(frozen=True)
