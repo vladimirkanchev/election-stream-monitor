@@ -9,8 +9,10 @@ live-smoke gate test remains deterministic and does not connect to PostgreSQL.
 from __future__ import annotations
 
 from collections.abc import Iterator
+import os
 
 import pytest
+import tests.session_alert_test_support as session_alert_test_support
 from tests.session_alert_test_support import (
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENV,
@@ -18,6 +20,7 @@ from tests.session_alert_test_support import (
     close_store_if_possible,
     configure_session_alert_test,
     is_real_postgres_alert_store_smoke_enabled,
+    select_live_runtime_postgres_alert_store,
     write_known_session,
 )
 
@@ -75,6 +78,31 @@ def test_live_postgres_alert_smoke_requires_all_explicit_opt_ins() -> None:
 
     blank_url_values = {**enabled_values, POSTGRES_ALERT_DATABASE_URL_ENV: "  "}
     assert is_real_postgres_alert_store_smoke_enabled(blank_url_values) is False
+
+
+def test_select_live_runtime_postgres_alert_store_aligns_selection_and_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live helper selection should set Postgres runtime state and clear its cache."""
+    selected_store = object.__new__(PostgresSessionAlertStore)
+    cache_clears: list[None] = []
+    monkeypatch.setattr(
+        session_alert_test_support,
+        "clear_default_session_alert_store_cache",
+        lambda: cache_clears.append(None),
+    )
+    monkeypatch.setattr(
+        session_alert_test_support,
+        "get_default_session_alert_store",
+        lambda: selected_store,
+    )
+
+    store = select_live_runtime_postgres_alert_store(monkeypatch)
+
+    assert store is selected_store
+    assert cache_clears == [None]
+    assert os.environ[ALERT_STORE_BACKEND_ENV] == "postgres"
+    assert os.environ[POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV] == "1"
 
 
 class RecordingRuntimeAlertStore:

@@ -151,18 +151,31 @@ def build_live_runtime_postgres_store(
     session_id: str,
     session_root_builder: SessionRootBuilder | None = None,
 ) -> PostgresSessionAlertStore:
-    """Build a live runtime-selected Postgres store over a known persisted session."""
-    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
+    """Seed known session metadata, then select the live PostgreSQL alert store."""
     build_session_root = session_root_builder or configure_session_alert_test
     session_root = build_session_root(monkeypatch, tmp_path)
     write_known_session(session_root, session_id)
+    return select_live_runtime_postgres_alert_store(monkeypatch)
+
+
+def select_live_runtime_postgres_alert_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> PostgresSessionAlertStore:
+    """Select and return the real PostgreSQL alert store for an opt-in test.
+
+    The caller supplies the smoke flag and disposable database URL. This helper
+    aligns runtime selection, bootstrap intent, and default-store cache state.
+    """
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
     clear_default_session_alert_store_cache()
-    return cast(PostgresSessionAlertStore, get_default_session_alert_store())
+    store = get_default_session_alert_store()
+    assert isinstance(store, PostgresSessionAlertStore)
+    return store
 
 
 def close_store_if_possible(store: object) -> None:
-    """Close an optional live Postgres store or connection without concrete typing."""
+    """Close a live test store or its wrapped connection when available."""
     close = getattr(store, "close", None)
     if callable(close):
         close()

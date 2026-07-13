@@ -1360,27 +1360,42 @@ focused bundles:
   - raw/grouped FastAPI route checks
   - grouped MCP agreement over the active backend
 - runtime/operator-flow confidence
-  - runner-written alerts through the live PostgreSQL backend
-  - session snapshot reads over the active backend
+  - canonical runner-written alerts through the live PostgreSQL backend
+  - standalone session snapshot reads over the active backend
   - CLI `read-session` behavior over the active backend
+
+The backend bundle seeds alerts through the real store before exercising public
+readers. The runtime/operator bundle owns the stronger write-to-read seam:
+deterministic runner output is persisted through the selected PostgreSQL store,
+then compared across the session snapshot and FastAPI readers.
+
+Its canonical smoke proves only this compact operator contract:
+
+- runtime selection resolves the PostgreSQL alert store
+- the runner persists a small ordered alert sequence
+- the session snapshot and raw alert route expose that same normalized sequence
+- FastAPI raw alerts plus derived summary and timeline views remain coherent
+
+Detached worker startup, real video processing, MCP, and CLI behavior remain
+separate confidence seams so this smoke stays deterministic and fast.
 
 Use either bundle directly:
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
-python3 scripts/postgres_alert_weekly_backend_confidence.py
+.venv/bin/python scripts/postgres_alert_weekly_backend_confidence.py
 ```
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
-python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py
+.venv/bin/python scripts/postgres_alert_weekly_runtime_operator_confidence.py
 ```
 
 Or run both with the umbrella helper:
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
-python3 scripts/postgres_alert_weekly_confidence.py
+.venv/bin/python scripts/postgres_alert_weekly_confidence.py
 ```
 
 The umbrella helper runs both bundles in order.

@@ -350,6 +350,9 @@ module families and the matching tests:
     - local execution-path coverage for runner-written alerts through the
       shared alert backend plus the live weekly runtime/operator-flow runner
       confidence anchor
+  - `scripts/postgres_alert_weekly_confidence_support.py`
+    - shared explicit-PostgreSQL environment and current-interpreter runner for
+      the scheduled/manual alert-confidence bundles
   - `scripts/postgres_alert_weekly_backend_confidence.py`
     - opt-in weekly/manual live Postgres backend-confidence runner for store,
       raw/grouped FastAPI, and grouped MCP checks
