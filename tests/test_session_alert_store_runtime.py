@@ -2,7 +2,8 @@
 
 These checks stay at the runtime seam: file-backed alerts remain the default,
 explicit Postgres selection must fail clearly on bad bootstrap input, and
-callers keep using the same default-store entry points either way.
+callers keep using the same default-store entry points either way. The small
+live-smoke gate test remains deterministic and does not connect to PostgreSQL.
 """
 
 from __future__ import annotations
@@ -12,9 +13,11 @@ from collections.abc import Iterator
 import pytest
 from tests.session_alert_test_support import (
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENV,
     build_normalized_alert,
     close_store_if_possible,
     configure_session_alert_test,
+    is_real_postgres_alert_store_smoke_enabled,
     write_known_session,
 )
 
@@ -48,6 +51,30 @@ STALE_POSTGRES_ALERT_DATABASE_URL = (
 STALE_POSTGRES_SESSION_DATABASE_URL = (
     "postgresql://stale:stale@localhost:5432/election_stream_monitor_sessions"
 )
+
+
+def test_live_postgres_alert_smoke_requires_all_explicit_opt_ins() -> None:
+    """The live-smoke gate requires the flag, Postgres selection, and a URL."""
+    enabled_values = {
+        REAL_POSTGRES_ALERT_STORE_SMOKE_ENV: "1",
+        ALERT_STORE_BACKEND_ENV: "postgres",
+        POSTGRES_ALERT_DATABASE_URL_ENV: (
+            "postgresql://postgres:postgres@localhost:5432/election_stream_monitor"
+        ),
+    }
+    assert is_real_postgres_alert_store_smoke_enabled(enabled_values) is True
+    assert is_real_postgres_alert_store_smoke_enabled(
+        {**enabled_values, ALERT_STORE_BACKEND_ENV: "  POSTGRES  "}
+    ) is True
+
+    for missing_name in enabled_values:
+        incomplete_values = {
+            name: value for name, value in enabled_values.items() if name != missing_name
+        }
+        assert is_real_postgres_alert_store_smoke_enabled(incomplete_values) is False
+
+    blank_url_values = {**enabled_values, POSTGRES_ALERT_DATABASE_URL_ENV: "  "}
+    assert is_real_postgres_alert_store_smoke_enabled(blank_url_values) is False
 
 
 class RecordingRuntimeAlertStore:

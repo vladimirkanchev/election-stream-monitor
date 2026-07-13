@@ -3,7 +3,8 @@
 This module owns the concrete PostgreSQL alert-store path below the shared
 alert seam: schema statements, explicit bootstrap, and the concrete
 `SessionAlertStore` implementation. It is only relevant after runtime config
-selects the Postgres alert backend.
+selects the Postgres alert backend. Its destructive reset helpers are test
+support for explicitly configured disposable databases, not runtime migration.
 """
 
 from __future__ import annotations
@@ -71,6 +72,9 @@ POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS: tuple[str, ...] = (
     POSTGRES_ALERT_EVENTS_TABLE_SQL,
     *POSTGRES_ALERT_EVENTS_INDEX_SQL,
 )
+POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS: tuple[str, ...] = (
+    f"DROP TABLE IF EXISTS {POSTGRES_ALERT_EVENTS_TABLE_NAME}",
+)
 POSTGRES_ALERT_EVENTS_INSERT_SQL = """
 INSERT INTO session_alert_events (
     session_id,
@@ -112,12 +116,15 @@ __all__ = [
     "POSTGRES_ALERT_TIMESTAMP_FORMAT",
     "POSTGRES_ALERT_TIMESTAMP_TO_CHAR_FORMAT",
     "POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS",
+    "POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS",
     "PostgresSessionAlertStore",
     "PostgresAlertStoreBootstrapError",
     "PostgresAlertStoreConnection",
     "bootstrap_postgres_alert_store",
     "connect_postgres_alert_store",
+    "drop_postgres_alert_store_schema",
     "initialize_postgres_alert_store",
+    "reset_postgres_alert_store_schema",
 ]
 
 
@@ -199,9 +206,28 @@ def connect_postgres_alert_store(
 
 
 def initialize_postgres_alert_store(connection: PostgresAlertStoreConnection) -> None:
-    """Create the current alert-store tables and indexes on one connection."""
+    """Idempotently create the current alert-store tables and indexes."""
+    _execute_schema_statements(connection, POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS)
+
+
+def drop_postgres_alert_store_schema(connection: PostgresAlertStoreConnection) -> None:
+    """Drop alert-store-owned tables for an isolated disposable test database."""
+    _execute_schema_statements(connection, POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS)
+
+
+def reset_postgres_alert_store_schema(connection: PostgresAlertStoreConnection) -> None:
+    """Destructively rebuild the alert-store schema for an isolated live smoke."""
+    drop_postgres_alert_store_schema(connection)
+    initialize_postgres_alert_store(connection)
+
+
+def _execute_schema_statements(
+    connection: PostgresAlertStoreConnection,
+    statements: tuple[str, ...],
+) -> None:
+    """Execute and commit one ordered batch of alert-store DDL statements."""
     with connection.cursor() as cursor:
-        for statement in POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS:
+        for statement in statements:
             cursor.execute(statement)
     connection.commit()
 
