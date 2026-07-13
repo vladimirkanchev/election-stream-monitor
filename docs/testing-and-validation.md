@@ -276,35 +276,26 @@ Current focused ownership map:
   - useful for detector tuning and false-positive control, not for exact
     production truth promotion
 
-Use two explicit backend modes when validating this branch:
+### PostgreSQL Persistence Setup And Lane Map
 
-- everyday synthetic checks
-  - force `ESM_ALERT_STORE_BACKEND=file`
-  - leave `POSTGRES_ALERT_STORE_REAL_SMOKE` unset or `0`
-- live Postgres confidence
-  - set `ESM_ALERT_STORE_BACKEND=postgres`
-  - provide `ESM_POSTGRES_ALERT_DATABASE_URL`
-  - keep `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES` explicit when you want to
-    make bootstrap intent obvious; the current alert path defaults it on
-  - set `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
+Routine local and PR validation stays file-backed. The shared PostgreSQL
+settings below are only for deliberate live confidence against disposable
+databases; `docs/session-persistence-audit.md` owns the rollout and schema
+policy behind them.
 
-The fast PR/branch CI workflow now pins the synthetic path to the file-backed
-alert backend. The weekly workflow owns the real Postgres confidence jobs and
-overrides that default in its dedicated live-DB lanes.
+| Need | Session storage | Alert storage |
+| --- | --- | --- |
+| Backend selector | `ESM_SESSION_STORE_BACKEND=postgres` | `ESM_ALERT_STORE_BACKEND=postgres` |
+| Database URL | `ESM_POSTGRES_SESSION_DATABASE_URL` | `ESM_POSTGRES_ALERT_DATABASE_URL` |
+| Table auto-create | `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit opt-in; default is off | `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` may be set explicitly; current default is on |
+| Live-smoke gate | `POSTGRES_SESSION_STORE_REAL_SMOKE=1` | `POSTGRES_ALERT_STORE_REAL_SMOKE=1` |
+| Routine validation | `just test-session-store`; add `just test-session-runtime` for worker-path changes | Focused synthetic alert slice; no live database required |
+| Deeper confidence | Local `just test-session-postgres-live`; weekly lifecycle for the slower file-backed runtime lane | Weekly/manual backend and runtime/operator scripts against a disposable database |
 
-Apply the same rule to the in-progress PostgreSQL session-store branch work:
-
-- treat the env shape as parallel where practical:
-  - backend selector
-  - PostgreSQL database URL
-  - optional auto-create flag
-  - real-smoke flag
-- keep `POSTGRES_SESSION_STORE_REAL_SMOKE` unset or `0` in normal local and PR validation
-- the live smoke stays disabled unless both `POSTGRES_SESSION_STORE_REAL_SMOKE=1` and `ESM_POSTGRES_SESSION_DATABASE_URL` are set
-- use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
-- reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
-- if you just ran `just test-session-postgres-live`, clear the PostgreSQL
-  session env before returning to the normal file-default lanes:
+Keep both live-smoke gates unset or `0` in normal validation. Live session
+checks reset only known store tables; do not target a long-lived database. If
+you just ran `just test-session-postgres-live`, clear the PostgreSQL session
+environment before returning to the normal file-default lanes:
 
 ```bash
 unset ESM_SESSION_STORE_BACKEND
@@ -370,9 +361,6 @@ boundary in mind:
   - they may prove score shape, false-positive resistance, or burst consistency
   - they should not be promoted into exact alert truth until a reviewed runtime
     lane proves a stable subset worth promoting
-
-For current session-store migration work, use these as the smallest useful
-focused lanes before you reach for `just test-fast` or `just ci-local`:
 
 Current CI coverage audit for this area:
 
@@ -1253,26 +1241,13 @@ boundary, and the MCP adapter over the same service seam. If you change only
 one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
 
-The normal local pass stays synthetic by default. The opt-in live PostgreSQL
-alert smoke lane requires all of these explicit settings:
+The normal alert pass stays synthetic by default. For the opt-in live
+PostgreSQL alert smoke, use the alert entries in the setup map above. The
+store-level smoke resets alert-store-owned schema, so its URL must point to a
+disposable database; it skips when the required backend, URL, or live-smoke
+gate is absent.
 
-- `ESM_ALERT_STORE_BACKEND=postgres`
-- `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
-- `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
-- optional explicit `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` when you want to
-  make bootstrap intent obvious; the current alert path defaults it on
-
-The store-level live smoke resets alert-store-owned schema, so its URL must
-point to a disposable database. It skips when any required setting is absent.
-
-Use the same shared rollout vocabulary here too:
-
-- file-backed default
-- PostgreSQL opt-in
-- explicit backend selection
-- live smoke
-
-Use the same words, but not the same maturity claims:
+Use the shared terminology, but not the same maturity claims:
 
 - alert PostgreSQL is opt-in like session PostgreSQL
 - alert validation should not inherit session forward-only, backfill, or
@@ -1342,6 +1317,7 @@ Example local env for the live checks:
 ```bash
 export ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
 export ESM_ALERT_STORE_BACKEND=postgres
+export ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1
 export POSTGRES_ALERT_STORE_REAL_SMOKE=1
 ```
 

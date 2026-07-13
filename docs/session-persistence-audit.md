@@ -628,33 +628,36 @@ The runtime validator now centralizes the branch rule:
   explicit bootstrap helper or migration path rather than silently creating
   durable tables at runtime
 
-Current schema ownership audit:
+Current schema and bootstrap ownership:
 
 - owning doc for schema/bootstrap/migration detail:
   `docs/session-persistence-audit.md`
   `docs/contracts.md` keeps the high-level contract summary and points here
   for table mapping, bootstrap policy, caller ownership, and migration policy
-- runtime backend selection owns whether PostgreSQL is used at all:
-  `src/session_store_runtime.py` chooses the file default or the explicit
-  PostgreSQL path
-- PostgreSQL bootstrap owns connection setup and optional schema creation:
+- runtime backend selection owns whether either PostgreSQL store is used at
+  all; the file-backed store remains the default
+- PostgreSQL bootstrap owns connection setup and current-table creation:
   `src/session_store_postgres.py` exposes
   `connect_postgres_session_store(...)`,
   `initialize_postgres_session_store(...)`, and
-  `bootstrap_postgres_session_store(...)`
-- app startup does not unconditionally own schema creation:
-  PostgreSQL tables are created only when explicit PostgreSQL mode is selected
-  and `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
-- current table creation policy is narrow:
-  app bootstrap may issue `CREATE TABLE IF NOT EXISTS` only under that
-  explicit opt-in flag, for the known session-store tables only
+  `bootstrap_postgres_session_store(...)`; the alert equivalent lives in
+  `src/session_alert_store_postgres.py`
+- table creation is bootstrap convenience, not automatic migration:
+  after explicit PostgreSQL selection, either bootstrap path may issue
+  `CREATE TABLE IF NOT EXISTS` for its current owned tables when its
+  auto-create setting allows it
+- session auto-create defaults off, so session tables need explicit setup;
+  alert auto-create currently defaults on to keep its explicit opt-in path
+  usable. These are rollout defaults, not evidence of identical maturity.
+- neither bootstrap path alters existing table definitions, migrates rows, or
+  backfills historical file-backed data
 - schema reset is test-only today:
-  `reset_postgres_session_store_schema(...)` is used by the live smoke helpers,
-  not by normal runtime startup
+  `reset_postgres_session_store_schema(...)` and
+  `reset_postgres_alert_store_schema(...)` are used by live smoke helpers, not
+  normal runtime startup
 - current migration policy stays manual-first:
-  auto-create can bootstrap the known tables for deliberate opt-in runs, but
-  schema evolution and historical backfill still require explicit reviewed
-  change work
+  bootstrap can create known tables for deliberate opt-in runs, but schema
+  evolution and historical backfill still require explicit reviewed change work
 - current runtime-selection rule follows the same boundary:
   once explicit PostgreSQL mode is active, parent reads, cancel writes, and
   detached-worker writes all operate against the PostgreSQL-backed known-session
@@ -1076,26 +1079,38 @@ Current rule of thumb:
   local runner startup; explicit PostgreSQL bootstrap or missing-schema
   failures should stay visible instead of degrading to file mode
 
-Session versus alert runtime-config consistency today:
+### Shared Alert and Session Rollout Invariants
 
-- shared behavior:
-  - backend unset keeps the file-backed default
-  - explicit `file` ignores stale PostgreSQL env
-  - invalid backend values normalize back to the file-backed default
-  - explicit `postgres` must fail clearly rather than silently falling back
-- current intentional differences:
-  - session runtime selection validates explicit PostgreSQL URL shape before
-    store build, while alert runtime selection keeps only backend selection in
-    runtime config and leaves PostgreSQL URL/bootstrap validation to the alert
-    bootstrap seam
-  - session PostgreSQL auto-create defaults off and must be explicit;
-    alert PostgreSQL auto-create still defaults on in the current rollout stage
-  - session live-smoke gating includes a dedicated
-    `POSTGRES_SESSION_STORE_REAL_SMOKE` runtime/store flag; alert live-smoke
-    gating is currently used for focused real-DB alert confidence, not a
-    matching detached-worker session-runtime lane
+The current runtime selectors and focused tests establish these behavioral
+invariants for both persistence seams:
 
-Current confidence for that split:
+- file-backed storage remains the default
+- PostgreSQL requires explicit backend selection
+- stale PostgreSQL settings do not affect file mode
+- unsupported backend values normalize to file mode
+- explicit PostgreSQL configuration or bootstrap failures remain visible
+- explicit PostgreSQL selection never silently falls back to file storage
+
+At the runtime-store boundary, both paths translate actionable bootstrap
+failures to their persistence-specific configuration error. Later operational
+failures, such as missing tables, remain visible to the caller.
+
+### Intentional Maturity Differences
+
+These invariants do not require identical implementation or rollout maturity:
+
+- session runtime selection validates explicit PostgreSQL URL shape before
+  store build, while alert runtime selection leaves URL and bootstrap
+  validation to the alert PostgreSQL configuration seam
+- session PostgreSQL auto-create defaults off and must be explicit; alert
+  PostgreSQL auto-create currently defaults on
+- session persistence has focused detached-worker, durable-cancel,
+  terminal-readability, and forward-only migration coverage
+- alert persistence has file/PostgreSQL parity, opt-in live-store smoke, and
+  runner-to-operator-read confidence; it remains a supported opt-in path, not
+  evidence that alerts are ready for the default persistence switch
+
+Current evidence for that split:
 
 - `tests/test_session_store_runtime.py` proves the stricter session runtime
   failure truth table directly at the runtime seam

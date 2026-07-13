@@ -398,6 +398,8 @@ Practical effect:
 - the current rollout state is simple:
   - file is still the default backend
   - PostgreSQL is the supported opt-in backend
+  - after explicit PostgreSQL selection, bootstrap failures remain visible and
+    never switch alert reads or writes back to the file store
 
 The current PostgreSQL alert path keeps that contract narrow too:
 
