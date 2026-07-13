@@ -128,13 +128,21 @@ def _build_default_session_alert_store(
 
 
 def _build_postgres_default_session_alert_store() -> SessionAlertStore:
-    """Build the PostgreSQL-backed default store through the bootstrap seam."""
+    """Build explicit PostgreSQL storage and normalize bootstrap configuration errors.
+
+    Once PostgreSQL is selected, failures remain visible to callers rather
+    than falling back to the file-backed store.
+    """
     from session_alert_store_postgres import (
+        PostgresAlertStoreBootstrapError,
         PostgresSessionAlertStore,
         bootstrap_postgres_alert_store,
     )
 
-    return PostgresSessionAlertStore(bootstrap_postgres_alert_store())
+    try:
+        return PostgresSessionAlertStore(bootstrap_postgres_alert_store())
+    except PostgresAlertStoreBootstrapError as err:
+        raise AlertStoreRuntimeConfigurationError(str(err)) from err
 
 
 class _DefaultSessionAlertStoreProxy:
