@@ -3,6 +3,8 @@
 This module owns the runtime-selected store boundary for raw session alert
 events. File-backed `alerts.jsonl` remains the default alert backend, while
 PostgreSQL stays an explicit opt-in path behind the same call surface.
+Each runtime reads and writes one selected backend only; it does not merge or
+discover alert history from the other backend.
 
 Known-session checks resolve through the active `SessionStore`, and query
 behavior remains in the alert read-model modules.

@@ -4,12 +4,15 @@ These checks stay at the runtime seam: file-backed alerts remain the default,
 explicit Postgres selection must fail clearly on bad bootstrap input, and
 callers keep using the same default-store entry points either way. The small
 live-smoke gate test remains deterministic and does not connect to PostgreSQL.
+Backend reselection tests also protect the forward-only rule: alert history is
+visible only through the explicitly selected backend.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 import os
+from pathlib import Path
 
 import pytest
 import tests.session_alert_test_support as session_alert_test_support
@@ -618,6 +621,45 @@ def test_default_alert_store_proxy_keeps_file_backed_append_read_round_trip(
             detector_id="video_metrics",
             title="File mode alert",
             message="Persisted through the default file-backed alert store.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    ]
+
+
+def test_alert_history_stays_isolated_across_explicit_backend_reselection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Reselecting the backend must not combine file and PostgreSQL history."""
+    session_id = "runtime-alert-backend-isolation"
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+
+    DEFAULT_SESSION_ALERT_STORE.append_alert(
+        _alert_event(
+            session_id=session_id,
+            timestamp_utc="2026-06-02 10:00:00",
+            title="File-backed alert",
+            message="This history belongs only to the file-backed alert store.",
+        )
+    )
+
+    _select_in_memory_postgres_alert_backend(monkeypatch)
+    clear_default_session_alert_store_cache()
+
+    assert read_session_alert_events(session_id) == []
+
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "file")
+    clear_default_session_alert_store_cache()
+
+    assert read_session_alert_events(session_id) == [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-06-02 10:00:00",
+            detector_id="video_metrics",
+            title="File-backed alert",
+            message="This history belongs only to the file-backed alert store.",
             severity="warning",
             source_name="segment_0001.ts",
         )
