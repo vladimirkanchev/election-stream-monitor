@@ -311,7 +311,7 @@ module families and the matching tests:
     - explicit runtime selection for the default alert store:
       `ESM_ALERT_STORE_BACKEND=file|postgres`
   - `src/session_alert_store_postgres.py`
-    - concrete PostgreSQL alert backend plus schema/bootstrap helpers
+    - concrete PostgreSQL alert backend, bootstrap, and test-only schema-reset helpers
   - `src/session_alert_store_postgres_config.py`
     - narrow env/config parsing for the PostgreSQL alert-store bootstrap path
   - `src/session_io.py`
@@ -323,7 +323,7 @@ module families and the matching tests:
     - compact session-alert report shaping and table formatting
     - source owner for the demo-report CLI and normalized alert-report test helpers
   - `tests/session_alert_test_support.py`
-    - shared alert/session helpers for alert-store, boundary, and report assertions
+    - shared alert/session helpers, including strict opt-in live-PostgreSQL setup
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
   - `tests/test_session_alert_store.py`
@@ -339,8 +339,8 @@ module families and the matching tests:
       and read-model layer, including append order, normalized raw shape,
       session-scoped filtering, empty-state behavior, and grouped reads
   - `tests/test_session_alert_store_postgres.py`
-    - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
-      second backend's read/write drift-sensitive behavior
+    - PostgreSQL alert-store contract, including opt-in live schema/reset and
+      read-model smoke coverage
   - `tests/test_session_alert_store_postgres_config.py`
     - narrow env/config, cache-behavior, and URL-validation coverage for the
       PostgreSQL alert-store bootstrap path

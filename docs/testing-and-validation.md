@@ -1254,13 +1254,16 @@ one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
 
 The normal local pass stays synthetic by default. The opt-in live PostgreSQL
-alert smoke lane currently needs:
+alert smoke lane requires all of these explicit settings:
 
 - `ESM_ALERT_STORE_BACKEND=postgres`
 - `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
 - `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
 - optional explicit `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` when you want to
   make bootstrap intent obvious; the current alert path defaults it on
+
+The store-level live smoke resets alert-store-owned schema, so its URL must
+point to a disposable database. It skips when any required setting is absent.
 
 Use the same shared rollout vocabulary here too:
 
@@ -1280,7 +1283,11 @@ Alert lane meaning:
 - focused synthetic alert slice
   - alert parity plus FastAPI/MCP/service boundary confidence without a live DB
 - opt-in live PostgreSQL alert smoke
-  - real-database alert-store confidence for bootstrap and append/read behavior
+  - run after the synthetic parity slice when a reachable disposable PostgreSQL
+    database is available
+  - proves schema/bootstrap, append/read, ordering, filtering, and raw or
+    grouped summary shapes through the alert-store read models
+  - does not replace the broader runtime/operator or API/MCP bundles
 - weekly/manual live PostgreSQL alert runtime/operator bundles
   - broader runtime/operator confidence for grouped routes, MCP, snapshot
     reads, and CLI behavior over the active backend
@@ -1301,8 +1308,8 @@ Use the live smokes when you need confidence in the real database path:
 
 For this branch, the smallest useful live checks are:
 
-- store-level smoke:
-  - `tests/test_session_alert_store_postgres.py::test_real_postgres_alert_store_smoke_round_trip`
+- store-level smoke after the synthetic slice:
+  - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/test_session_alert_store_postgres.py -k real_postgres_alert_store`
 - representative public-surface smoke:
   - `tests/test_api_session_alert_incidents.py::test_live_runtime_postgres_grouped_routes_follow_actual_startup_path`
 

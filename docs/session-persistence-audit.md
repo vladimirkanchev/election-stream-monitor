@@ -421,6 +421,29 @@ The coupling is real but fairly concentrated:
   the active session-store backend describes the same session universe as the
   alert backend
 
+### Focused Live PostgreSQL Alert Contract
+
+The opt-in real-database alert-store smoke has one deliberately small target
+contract. It runs only with the explicit gate documented in
+[testing-and-validation.md](./testing-and-validation.md), against a disposable
+database because its isolation reset is destructive. It proves the PostgreSQL
+adapter and schema work together without repeating broader synthetic parity or
+runtime suites:
+
+| Concern | Live-smoke evidence | Keep outside this lane |
+| --- | --- | --- |
+| Schema lifecycle | Bootstrap and isolated reset leave a usable empty store. | Version-specific catalog inspection or migration-history coverage. |
+| Raw persistence | An appended alert can be read back through the public store method. | File-path or SQL-statement assertions already owned by unit tests. |
+| Ordering | Alerts with the same timestamp retain append order. | Broad event-order matrices already owned by parity tests. |
+| Filtering | A small mixed set produces the expected session/detector/severity subset through the shared read-model seam. | Every HTTP, MCP, and incident-filter combination. |
+| Public shape | The active PostgreSQL store feeds stable raw and grouped incident summary shapes. | Full session snapshots, CLI, frontend, or operator-flow coverage. |
+| Malformed rows | No live-database case: required columns and severity are constrained by the PostgreSQL schema. | Artificial table corruption; file-only tolerance remains covered by the synthetic parity suite. |
+
+This is a real-database confidence lane, not a second end-to-end suite.
+`tests/test_session_alert_store_parity.py` remains the fast cross-backend
+behavior owner; the weekly backend and runtime/operator bundles remain the
+owners of FastAPI, MCP, runner, snapshot, and CLI confidence.
+
 ### Ownership boundary decision
 
 Alert storage owns alert events only. Session storage owns whether a session is
