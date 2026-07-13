@@ -70,7 +70,10 @@ When a release includes alert-storage changes, state the rollout mode
 explicitly in the release notes:
 
 - file-backed alerts remain the default backend
-- PostgreSQL alerts are supported behind `ESM_ALERT_STORE_BACKEND=postgres`
+- say "adds an opt-in forward-only PostgreSQL alert-storage path" when that
+  describes the release
+- do not say "migrates alert history" unless the release includes reviewed
+  historical backfill behavior
 
 That keeps releases honest about the current rollout state and avoids
 implying a project-wide default flip too early.
@@ -88,8 +91,8 @@ For shared persistence rollout wording, keep one compact rule:
 
 - say both session and alert PostgreSQL backends are opt-in unless a branch
   truly changes the defaults
-- say session historical backfill is not included unless the branch adds,
-  validates, and documents that migration path explicitly
+- say historical backfill for either store is not included unless the branch
+  adds, validates, and documents that migration path explicitly
 
 That keeps PR summaries and release notes aligned with the current rollout
 truth instead of overstating migration completeness.

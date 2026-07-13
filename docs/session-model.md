@@ -392,6 +392,8 @@ Practical effect:
   unchanged
 - the PostgreSQL alert store can be enabled without moving filtering or
   grouping into the storage layer
+- alert PostgreSQL is forward-only: it records alerts produced after explicit
+  selection and does not discover historical `alerts.jsonl` rows
 - mixed runtime selection is still possible during migration; when alert and
   session backends differ, the alert side must keep treating the active
   `SessionStore` as the source of truth for whether a session is known
@@ -400,6 +402,9 @@ Practical effect:
   - PostgreSQL is the supported opt-in backend
   - after explicit PostgreSQL selection, bootstrap failures remain visible and
     never switch alert reads or writes back to the file store
+
+For alert backfill, rollback, and cross-store-read policy, use
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 The current PostgreSQL alert path keeps that contract narrow too:
 

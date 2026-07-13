@@ -94,9 +94,9 @@ Current persistence contract, kept short here:
   file-backed remains the default, and PostgreSQL turns on only after
   explicit `ESM_ALERT_STORE_BACKEND=postgres` selection with valid alert
   bootstrap settings.
-- In the current rollout stage, that PostgreSQL path is forward-only for new
-  sessions; historical file-backed sessions are not automatically backfilled
-  into PostgreSQL.
+- PostgreSQL alert storage is forward-only: it stores alerts produced after
+  explicit selection and does not automatically backfill historical
+  `alerts.jsonl` data. Reads use the selected alert backend only.
 - Runtime reads and cancel requests follow the active backend selection too.
   Explicit PostgreSQL mode is intentionally single-backend:
   older file-backed sessions stay outside that backend's known-session

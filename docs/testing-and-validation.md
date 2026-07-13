@@ -1249,9 +1249,11 @@ gate is absent.
 
 Use the shared terminology, but not the same maturity claims:
 
-- alert PostgreSQL is opt-in like session PostgreSQL
-- alert validation should not inherit session forward-only, backfill, or
-  default-switch wording unless the alert rollout explicitly reaches that stage
+- alert PostgreSQL is opt-in and forward-only; it does not migrate alert
+  history during validation or normal runtime selection
+- alert historical-data and backfill policy is owned by
+  `docs/session-persistence-audit.md`; do not infer it from session validation
+  lanes
 
 Alert lane meaning:
 

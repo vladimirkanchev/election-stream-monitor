@@ -52,11 +52,10 @@ Audit conclusion:
 - env naming is consistent enough to keep
 - runtime-selection wording is consistent enough to keep:
   file-backed default, PostgreSQL opt-in
-- session rollout docs are currently more explicit about forward-only and
-  no-backfill semantics than alert docs; treat that as rollout-stage truth,
-  not as a naming bug
-- the next alignment work should focus on lane naming, rollout wording, and
-  helper discoverability rather than renaming stable env vars
+- session and alert rollout docs both define forward-only, no-backfill
+  PostgreSQL paths while preserving their distinct maturity levels
+- future alignment should focus on lane naming and helper discoverability,
+  rather than renaming stable env vars or duplicating rollout policy
 
 ## Shared Rollout Vocabulary
 
@@ -72,15 +71,15 @@ Use this vocabulary consistently across session-store and alert-store docs:
 - `live smoke`
   - an opt-in real-database confidence lane, not routine local validation and
     not the default protected PR lane
-- `forward-only session path`
-  - session PostgreSQL currently applies to newly created sessions after
-    explicit backend selection; it does not imply historical file-session
-    backfill
+- `forward-only path`
+  - session PostgreSQL applies to newly created sessions, and alert PostgreSQL
+    applies to newly produced alerts, after explicit backend selection; neither
+    implies automatic historical backfill
 
 Vocabulary guardrails:
 
-- use `forward-only` only for session-store rollout unless alert docs later
-  gain the same historical-data policy
+- use `forward-only` only for explicitly selected PostgreSQL session or alert
+  paths that do not backfill historical file-backed data
 - use `live smoke` for focused real-PostgreSQL confidence and reserve
   `runtime confidence` for broader start/read/cancel worker-path checks
 - use `explicit backend selection` instead of vague wording such as
@@ -373,7 +372,7 @@ session metadata, progress, results, or snapshot reads directly.
 | `src/session_runner_terminal.py` | `update_session_status(...)`, `write_session_progress(...)` | Terminal metadata/progress writes | High | none in this module; terminal persistence is part of the durable session read model. |
 | `src/session_store_file.py` | file-backed adapter over `session_exists(...)`, `read_session_snapshot(...)`, `read_session_result_events(...)`, `write_session_metadata(...)`, `write_session_progress(...)` | Compatibility backend for the `SessionStore` contract | High | none; this adapter is the intentional bridge for parity and rollback. |
 | `src/session_alert_store.py` | `get_session_dir(...)`, `session_exists(...)` | Alert-store known-session coupling | Medium | Alert rows stay on the alert-store contract; only the known-session check matters to the session-store migration. |
-| `src/session_alert_store_postgres.py` | shared `require_known_session(...)` adapter | PostgreSQL alert reads now use the shared alert-side known-session adapter backed by `SessionStore.session_exists(...)` | Medium | Do not migrate alert persistence in this phase; keep the dependency limited to the known-session question. |
+| `src/session_alert_store_postgres.py` | shared `require_known_session(...)` adapter | PostgreSQL alert reads now use the shared alert-side known-session adapter backed by `SessionStore.session_exists(...)` | Medium | Keep the dependency limited to the known-session question; alert backfill and dual-read remain out of scope. |
 | `src/stream_loader_http_hls.py` | `append_api_stream_seen_chunk_key(...)`, `read_api_stream_seen_chunk_keys(...)`, `is_session_cancel_requested(...)` | Replay-key persistence and cooperative cancellation | Low for this phase | These are runtime coordination paths, not the first durable session-store surface. Keep them separate until the main session read model is stable. |
 
 Practical migration rule:
@@ -1097,9 +1096,56 @@ Rolling alert storage back to files is an operator-controlled backend change:
 - do not copy, merge, or dual-read PostgreSQL alert rows into file storage
 - do not switch to file storage during a failed explicit PostgreSQL operation
 
-Existing PostgreSQL alerts remain in PostgreSQL; file mode resumes the
-file-backed alert path for later operations. A backfill or cross-store recovery
-tool would be separate, explicit migration work.
+Existing PostgreSQL alerts remain in PostgreSQL. After file mode is selected,
+later alert writes and reads use the file-backed path only; rollback does not
+merge histories, restore a combined view, or automatically backfill either
+store. A backfill or cross-store recovery tool would be separate, explicit
+migration work.
+
+### Alert Historical Data Policy
+
+PostgreSQL alert storage is forward-only in the current rollout: after
+`ESM_ALERT_STORE_BACKEND=postgres` is explicitly selected, it stores newly
+produced alert events only. Existing file-backed `alerts.jsonl` history is not
+imported or automatically migrated.
+
+This policy applies only to alert writes. It does not move session metadata,
+results, worker logs, media artifacts, or other persistence seams into
+PostgreSQL. Any historical alert backfill remains separate reviewed migration
+work.
+
+### Future Alert Backfill Criteria
+
+A later alert-history backfill branch must define and validate all of the
+following before it changes production data:
+
+- source discovery for eligible `alerts.jsonl` files, row validation, and a
+  stable source-to-PostgreSQL ordering rule
+- idempotent reruns with explicit duplicate handling
+- a dry-run mode and an audit report covering scanned, accepted, skipped,
+  duplicated, and failed rows
+- an operator rollback plan and post-migration verification of row counts,
+  ordering, and public alert-read shapes
+
+These are acceptance criteria for a future migration tool, not behavior
+implemented by the current alert-store rollout.
+
+### Alert Read Compatibility
+
+Alert reads use the explicitly selected backend only. PostgreSQL mode reads its
+own alert rows and does not discover older `alerts.jsonl` history; file mode
+reads `alerts.jsonl` and does not discover PostgreSQL alert rows. Switching
+backends can therefore make older alerts unavailable to that runtime, but it
+does not delete them or imply data loss. No automatic cross-store or dual-read
+behavior exists in the current rollout.
+
+### Alert Backend Cutover
+
+Choose `ESM_ALERT_STORE_BACKEND` before starting a monitoring session. Change
+it only between sessions: let the current session settle, then stop or restart
+the affected runtime with the new setting. Do not change alert backends during
+an active session, because its history could otherwise be divided between
+`alerts.jsonl` and PostgreSQL.
 
 ### Intentional Maturity Differences
 
@@ -1195,37 +1241,38 @@ future drift between the default path and the new backend.
 | `docs/README.md` | Navigation to session model, contracts, and this audit | Aligned | Keep this audit linked while the migration is active. |
 
 Docs migration rule: keep docs honest about the current default, but avoid
-timeless phrasing that says "sessions are files" when the real contract is the
-snapshot/read model. During implementation, update docs in this order:
+timeless phrasing that says persistence is file-only when the real contract is
+the selected backend plus the snapshot/read model. During implementation,
+update docs in this order:
 `session-persistence-audit.md`, `session-model.md`, `contracts.md`,
 `testing-and-validation.md`, `architecture.md`, then `README.md` only for
 user-visible behavior.
 
-Doc ownership for the current session-store migration slice:
+Doc ownership for the current persistence rollout:
 
 - `docs/contracts.md`
-  - public session snapshot contract, backend-selection promises, and what
-    stays outside the public payload
+  - public snapshot and alert-read contract, backend-selection promises, and
+    what stays outside the public payload
 - `docs/session-model.md`
-  - lifecycle meaning, file-default runtime notes, and which artifacts still
-    remain file-backed in the current local runtime
+  - lifecycle meaning, file-default runtime notes, and alert/session
+    read-compatibility boundaries
 - `docs/testing-and-validation.md`
-  - focused test ownership, file-default local lanes, and opt-in live
+  - focused test ownership, routine file-default lanes, and opt-in live
     PostgreSQL confidence
 - `docs/session-persistence-audit.md`
-  - PostgreSQL table mapping, migration notes, caller ownership, and
-    implementation inventory
+  - rollout state, table mapping, rollback/backfill policy, caller ownership,
+    and implementation inventory
 - `README.md`
   - short current-state summary only; no schema, table, or migration detail
 
 Historical-data wording rule:
 
-- say "forward-only" when new PostgreSQL-backed sessions are created only
-  after explicit backend selection
+- say "forward-only" when explicit PostgreSQL selection applies only to new
+  sessions or newly produced alert events
 - say "backfill" only for a later explicit migration path that moves old
-  file-backed session history
-- do not say "session migration" as if historical file sessions are already
-  copied into PostgreSQL
+  file-backed session or alert history
+- do not say "session migration" or "alert migration" as if historical data
+  is already copied into PostgreSQL
 
 ## Migration Boundary Notes
 
