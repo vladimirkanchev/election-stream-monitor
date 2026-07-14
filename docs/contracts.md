@@ -119,7 +119,7 @@ Current persistence contract, kept short here:
   details directly.
 - Rollout readiness, default-switch blockers, forward-only/backfill policy,
   failure and rollback behavior, and PostgreSQL bootstrap or migration detail
-  are owned by [session-persistence-audit.md](./session-persistence-audit.md).
+  are owned by the [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard).
   For field meaning and lifecycle semantics, use
   [session-model.md](./session-model.md).
 

@@ -498,9 +498,10 @@ tests/test_api_boundary_sessions_cancel.py -q
     lanes already say the contract still holds
   - do not grow this lane into broader PostgreSQL rollout, backfill, or
     unrelated slow-runtime coverage
-  - use `docs/session-persistence-audit.md` for readiness states,
-    default-switch blockers, forward-only/backfill policy, and
-    schema/bootstrap ownership instead of repeating that rollout story here
+  - use the [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard)
+    for readiness states, default-switch blockers, forward-only/backfill
+    policy, and schema/bootstrap ownership instead of repeating that rollout
+    story here
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \

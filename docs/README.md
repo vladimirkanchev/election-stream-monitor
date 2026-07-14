@@ -113,10 +113,10 @@ Use these first depending on what you are doing:
 
 Use this shortcut map before editing code:
 
-For the current alert-storage rollout state, use:
+For the current persistence rollout state, use:
 
 - [session-persistence-audit.md](./session-persistence-audit.md) for rollout,
-  schema, rollback, and backfill policy
+  schema, rollback, backfill policy, and default-readiness evidence
 - [architecture.md](./architecture.md) for the concise storage split
 - [session-model.md](./session-model.md) for snapshot and persistence semantics
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split

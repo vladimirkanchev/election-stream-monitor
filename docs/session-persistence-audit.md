@@ -20,8 +20,14 @@ Document split:
 
 Use the sections below as the authoritative persistence rollout reference:
 
-- [Current Session-Store Readiness](#current-session-store-readiness) records
-  what is ready, opt-in, manual, or blocked.
+- [Readiness Evidence Baseline](#readiness-evidence-baseline) maps the current
+  proof, manual confidence, and known gaps before any default-switch decision.
+- [Default-Switch Decision Gates](#default-switch-decision-gates) defines the
+  evidence required before either PostgreSQL backend can become a default.
+- [Current Persistence Readiness Scorecard](#current-persistence-readiness-scorecard)
+  records what is ready, opt-in, manual, or blocked for sessions and alerts.
+- [Shared Operational Blockers](#shared-operational-blockers) defines the
+  measurable evidence still required for a coordinated default switch.
 - [Schema and Bootstrap Ownership](#schema-and-bootstrap-ownership) defines
   table ownership, auto-create behavior, and the manual-first schema policy.
 - [Shared Persistence Failure Policy](#shared-persistence-failure-policy)
@@ -114,8 +120,9 @@ Vocabulary guardrails:
 
 ## Readiness States
 
-Use these labels when describing session-store rollout status. Keep them short
-and behavioral.
+Use these labels when describing persistence rollout status. Keep them short
+and behavioral. This section and the scorecard below are the sole authority
+for readiness states; other docs should link here instead of redefining them.
 
 - `ready`
   - the current branch already proves the behavior well enough for its
@@ -146,29 +153,102 @@ Readiness guardrails:
 - reserve `future` for unshipped work, not partially supported work that
   already exists behind opt-in controls
 
-## Current Session-Store Readiness
+## Readiness Evidence Baseline
 
-| Area | State | Current meaning |
+This baseline records evidence, not a default-switch decision. `ready` below
+means the current opt-in contract is covered; it does not mean PostgreSQL is
+ready to replace the file-backed default.
+
+| Area | Verified evidence | Current boundary |
 | --- | --- | --- |
-| File-backed session runtime | `ready` | File-backed session storage remains the normal runtime default for routine local runs, protected PR CI, and current operator-facing session flows. |
-| Shared session-store contract | `ready` | File and PostgreSQL-backed session stores already agree on metadata, latest progress, ordered results, cancel intent, and snapshot shape. |
-| Session-store parity coverage | `ready` | Focused parity and contract tests already prove shared behavior without tying the branch to backend-specific file paths or SQL details. |
-| PostgreSQL session store | `opt-in` | PostgreSQL session storage is implemented and usable now, but it turns on only after explicit backend selection plus valid PostgreSQL configuration. |
-| Live PostgreSQL session confidence | `opt-in` | Narrow live store smoke and live runtime smoke exist for real-database confidence, but they stay outside routine local and protected PR lanes. |
-| Explicit PostgreSQL failure policy | `ready` | Explicit PostgreSQL mode fails clearly for bad URL, missing driver, bootstrap failure, and missing-schema cases instead of silently falling back. |
-| Live PostgreSQL setup | `manual` | Real PostgreSQL confidence still depends on deliberate database bootstrap, env selection, and direct opt-in commands. |
-| Alert PostgreSQL rollout | `opt-in` | Alert PostgreSQL is supported and validated as opt-in, but it is still narrower than the current session rollout. |
-| Alert/session default alignment | `blocked` | A full project-wide default switch still needs one coherent default-backend story across both session and alert persistence. |
-| Historical session data | `blocked` | Session PostgreSQL is still forward-only; older file-backed sessions are not automatically backfilled or dual-read by default. |
-| Rollback for a default switch | `blocked` | Explicit PostgreSQL failure handling is covered, but full default-switch rollback expectations are not finished yet. |
-| Operational confidence | `blocked` | Live database confidence is still targeted and manual rather than routine operational proof. |
-| Security and deployment review | `blocked` | A default PostgreSQL path still needs a broader review of connection handling, secret management, and shared-environment assumptions. |
+| Store parity | `tests/test_session_store_parity.py` and `tests/test_session_alert_store_parity.py` exercise the shared public contracts against file-backed and PostgreSQL-like stores. | Fast, deterministic doubles prove behavior, not live deployment readiness. |
+| Live store smoke | `tests/test_session_store_postgres.py` and `tests/test_session_alert_store_postgres.py` cover opt-in schema reset/bootstrap and public round trips against PostgreSQL. | Requires a disposable database and explicit real-smoke gates. |
+| Runtime smoke | `tests/test_api_boundary_sessions_runtime.py` covers session start/read/cancel; alert runner-to-operator confidence is covered by `tests/test_session_runner_execution_local.py` and live alert route tests. | Live paths are local or weekly/manual confidence, not protected PR work. |
+| Failure and rollback | Session and alert runtime/configuration suites cover safe file selection, visible explicit-PostgreSQL failures, missing-schema behavior, and cache reset. | They prove backend reselection, not a production rollback runbook. |
+| Historical data | Session and alert PostgreSQL paths are forward-only; no automatic backfill or dual-read implementation exists. | A later backfill decision needs its own mapping, validation, and recovery plan. |
+| Schema ownership | `session_store_postgres.py` owns session tables; `session_alert_store_postgres.py` owns alert tables. Focused bootstrap/reset tests cover current schema behavior. | `CREATE TABLE IF NOT EXISTS` is opt-in bootstrap convenience, not migration management. |
+| Documentation | This audit owns rollout policy; `contracts.md`, `session-model.md`, and `testing-and-validation.md` own public behavior, lifecycle meaning, and commands respectively. | Documentation is aligned to file-backed default plus PostgreSQL opt-in. |
+| Security and operations | Routine CI stays synthetic; opt-in local and weekly PostgreSQL lanes prove focused database behavior. | Secret handling, deployment configuration, backups, monitoring, recovery rehearsal, and shared-environment review remain default-switch blockers. |
+
+## Default-Switch Decision Gates
+
+Change a persistence default only when every applicable gate has `ready`
+evidence for the affected store. A project-wide switch requires the criteria
+for both session and alert persistence; a one-store switch needs an explicit
+compatibility and operations decision rather than inheriting readiness from the
+other store.
+
+| Gate | Evidence required before a default change |
+| --- | --- |
+| Contract parity | File and PostgreSQL stores preserve the documented public read/write contract, including ordering, empty states, and snapshot or alert shapes. |
+| Real PostgreSQL store smoke | A repeatable disposable-database smoke proves schema bootstrap/reset and representative public reads/writes against the real adapter. |
+| Runtime/operator smoke | The active runtime writes PostgreSQL-backed data and the relevant FastAPI, snapshot, CLI, or operator read path returns it coherently. |
+| Explicit failure and rollback | Explicit PostgreSQL failures remain visible; documented backend rollback is deliberate, does not silently fall back, and has focused regression coverage. |
+| Historical-data decision | The release explicitly chooses forward-only behavior or an approved backfill plan; no implicit dual-read or history merge is assumed. |
+| Schema deployment and upgrades | Table ownership, new-database bootstrap, existing-database upgrade, and rollback expectations are reproducible. A migration tool is adopted when the existing trigger criteria require one. |
+| Documentation alignment | Contracts, lifecycle semantics, validation commands, and this audit match the implemented selection and failure behavior. |
+| Security review | Connection secrets, least-privilege database access, transport assumptions, and local-versus-shared deployment boundaries have been reviewed for the intended environment. |
+| Operational monitoring and recovery | Provisioning, backups, restore verification, monitoring, incident diagnostics, and recovery rehearsal are defined for the intended deployment. |
+
+These are decision criteria, not an implementation plan or a requirement to
+add live PostgreSQL checks to routine protected PR CI.
+
+## Current Persistence Readiness Scorecard
+
+This table scores each store against the decision gates above. `ready` means
+the named criterion has current evidence; it does not authorize a default
+change by itself. Equal labels do not imply equal depth of runtime coverage.
+
+| Criterion | Session state | Alert state | Current evidence | Remaining blocker |
+| --- | --- | --- | --- | --- |
+| File-backed default | `ready` | `ready` | File-backed stores remain the normal runtime path for local runs, protected PR CI, and operator flows. | None for this criterion. |
+| Contract parity | `ready` | `ready` | The session parity suite covers metadata, progress, ordered results, cancel intent, and snapshots; the alert suite covers order, filtering, empty states, and read shapes. | None for this criterion. |
+| Real PostgreSQL store smoke | `opt-in` | `opt-in` | Both real-store suites exercise disposable-database bootstrap/reset and public round trips. | Deliberate database setup and explicit real-smoke selection remain required. |
+| Runtime/operator smoke | `opt-in` | `opt-in` | Sessions cover FastAPI start/read, detached-worker cancellation, and terminal readability. Alerts cover runner-written data through snapshots, FastAPI list/summary routes, and the weekly/manual operator bundle. | Alert confidence does not yet cover the full detached session-start path; neither lane is routine PR confidence. |
+| Explicit failure and rollback | `ready` | `ready` | Runtime configuration tests keep file mode safe, surface explicit PostgreSQL failures, and cover deliberate backend reselection. | Operational rollback rehearsal remains blocked below. |
+| Historical-data decision | `ready` | `ready` | Both paths are explicitly forward-only; neither silently backfills nor dual-reads old file data. | A later backfill, if needed, requires its own reviewed plan. |
+| Schema deployment and upgrades | `manual` | `manual` | Each store owns its table definitions and bootstrap behavior; session auto-create defaults off and alert auto-create defaults on after explicit selection. | Existing-database upgrades remain operator-managed until migration-tool triggers are met. |
+| Documentation alignment | `ready` | `ready` | Contracts, lifecycle semantics, validation commands, and this audit all describe file-backed default plus explicit PostgreSQL opt-in. | Keep future changes linked to this scorecard instead of duplicating policy. |
+| Security review | `blocked` | `blocked` | Current configuration and tests prove explicit selection and failure behavior. | Review secrets, least-privilege access, transport, and shared-runtime boundaries for the intended environment. |
+| Operational monitoring and recovery | `blocked` | `blocked` | Focused local and weekly/manual database confidence exists. | Define provisioning, backup/restore verification, monitoring, diagnostics, and recovery rehearsal. |
+
+### Shared Operational Blockers
+
+These blockers apply across session and alert persistence. They define the
+evidence needed for a default decision without prescribing a cloud provider or
+deployment platform.
+
+| Blocker | Current state | Completion evidence |
+| --- | --- | --- |
+| Secrets and connections | `blocked` | The intended environment defines secret injection and rotation, a least-privilege database role, transport requirements, and a check that credentials are not exposed in logs or operator output. |
+| Schema upgrades | `manual` | An upgrade from the current schema is repeatable on a disposable database, has a documented rollback or recovery path, and adopts versioned migration tooling when the existing trigger criteria are met. |
+| Backup and recovery | `blocked` | Backup scope and retention are documented, a restore is rehearsed against disposable infrastructure, and restored session snapshots and alert reads are verified through public store paths. |
+| Deployment configuration | `blocked` | Required environment settings, database availability ordering, startup failure behavior, health verification, and restart steps are documented for the intended runtime. |
+| Monitoring and diagnostics | `blocked` | Operators can detect connection, schema, and persistence read/write failures and have a documented first diagnostic path before data availability is affected silently. |
+| Rollback rehearsal | `blocked` | A stop, backend-reselection, restart, and verification exercise succeeds without silent fallback, dual reads, or implied history merging. The expected visibility of data in each backend is documented. |
+| Session/alert backend agreement | `blocked` | The supported backend combination is explicit, parent and detached-worker selection agree, and one integration smoke proves session snapshots and alert reads resolve the intended stores together. |
+
+### Frozen Follow-ups
+
+The scorecard closes this branch's readiness assessment. Keep the remaining
+work in separately scoped changes:
+
+- security and connection-handling review for the intended deployment
+- schema upgrade/backfill work, including migration tooling when its triggers
+  are reached
+- backup, restore, monitoring, and rollback rehearsal
+- coordinated session/alert backend agreement before any default switch
+
+None of these follow-ups changes the current file-backed default or requires
+live PostgreSQL validation in protected PR CI.
 
 Readiness boundary:
 
-This branch is ready for file-backed default plus explicit PostgreSQL opt-in.
-Do not describe PostgreSQL session storage as the default runtime path yet.
-Other docs should link to this readiness table instead of restating it.
+Both PostgreSQL stores are strong opt-in paths, not default runtime paths. The
+session path has broader detached-worker lifecycle coverage; the alert path
+has focused store and operator-read confidence. Both still require manual
+environment setup and share security and operational blockers. Other docs
+should link to this scorecard instead of restating it.
 
 ## Current Artifacts
 
@@ -671,12 +751,9 @@ schema and bootstrap behavior:
   `CREATE TABLE IF NOT EXISTS` for its current owned tables only when its
   auto-create setting allows it. Alert auto-create currently defaults on;
   session auto-create remains explicit opt-in.
-- session auto-create defaults off, so session tables need explicit setup;
-  alert auto-create currently defaults on to keep its explicit opt-in path
-  usable. These are temporary rollout defaults, not permanent architecture or
-  evidence of identical maturity.
-- neither bootstrap path alters existing table definitions, migrates rows, or
-  backfills historical file-backed data
+- these defaults are rollout choices, not evidence of equal maturity or an
+  automatic migration path. Neither bootstrap path alters existing table
+  definitions, migrates rows, or backfills file-backed history.
 - schema reset is test-only today:
   `reset_postgres_session_store_schema(...)` and
   `reset_postgres_alert_store_schema(...)` are used by live smoke helpers, not
@@ -686,17 +763,10 @@ schema and bootstrap behavior:
   live-smoke expectations, and this owning documentation together. Existing
   databases must be updated deliberately through reviewed operational work
   before code relies on the new layout; bootstrap does not upgrade them.
-- current runtime-selection rule follows the same boundary:
-  once explicit PostgreSQL mode is active, parent reads, cancel writes, and
-  detached-worker writes all operate against the PostgreSQL-backed known-session
-  universe rather than probing older file-backed session directories
-- current read-compatibility expectation is intentionally narrow:
-  explicit PostgreSQL mode is single-backend and does not perform hidden
-  dual-store reads across PostgreSQL and file-backed session directories
-- forward-only and backfill policy stays simple here:
-  enabling explicit PostgreSQL mode does not migrate older file-backed session
-  history, and any later backfill should land as its own reviewed migration
-  path with mapping, idempotency, rollback, validation, and dry-run criteria
+- explicit PostgreSQL mode is single-backend: parent reads, cancel writes, and
+  detached-worker writes use the selected PostgreSQL store without probing
+  older file-backed data. Any backfill remains separate reviewed migration
+  work with mapping, idempotency, rollback, validation, and dry-run criteria.
 - adopt a real migration tool before any of these becomes necessary:
   - in-place upgrades of existing PostgreSQL session or alert databases
   - support for more than one ordered schema revision

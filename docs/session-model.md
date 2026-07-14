@@ -388,13 +388,10 @@ Practical effect:
   session backends differ, the alert side must keep treating the active
   `SessionStore` as the source of truth for whether a session is known
 
-For alert history, rollback, cross-store-read, and explicit PostgreSQL failure
-policy, use [session-persistence-audit.md](./session-persistence-audit.md).
-
 The PostgreSQL alert backend preserves the same alert-reader, snapshot, and
-CLI semantics after explicit selection. Its table mapping, bootstrap, and
-runtime ownership are documented in
-[session-persistence-audit.md](./session-persistence-audit.md).
+CLI semantics after explicit selection. For alert history, rollback,
+cross-store reads, failure policy, and default-readiness evidence, use the
+[persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard).
 
 ### Important field semantics
 
