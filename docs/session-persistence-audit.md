@@ -639,15 +639,18 @@ Current schema and bootstrap ownership:
   `src/session_store_postgres.py` exposes
   `connect_postgres_session_store(...)`,
   `initialize_postgres_session_store(...)`, and
-  `bootstrap_postgres_session_store(...)`; the alert equivalent lives in
-  `src/session_alert_store_postgres.py`
+  `bootstrap_postgres_session_store(...)`; `src/session_alert_store_postgres.py`
+  owns the alert equivalent, including `session_alert_events` table and index
+  DDL
 - table creation is bootstrap convenience, not automatic migration:
-  after explicit PostgreSQL selection, either bootstrap path may issue
-  `CREATE TABLE IF NOT EXISTS` for its current owned tables when its
-  auto-create setting allows it
+  after explicit PostgreSQL selection, a store bootstrap path may issue
+  `CREATE TABLE IF NOT EXISTS` for its current owned tables only when its
+  auto-create setting allows it. Alert auto-create currently defaults on;
+  session auto-create remains explicit opt-in.
 - session auto-create defaults off, so session tables need explicit setup;
   alert auto-create currently defaults on to keep its explicit opt-in path
-  usable. These are rollout defaults, not evidence of identical maturity.
+  usable. These are temporary rollout defaults, not permanent architecture or
+  evidence of identical maturity.
 - neither bootstrap path alters existing table definitions, migrates rows, or
   backfills historical file-backed data
 - schema reset is test-only today:
@@ -655,8 +658,10 @@ Current schema and bootstrap ownership:
   `reset_postgres_alert_store_schema(...)` are used by live smoke helpers, not
   normal runtime startup
 - current migration policy stays manual-first:
-  bootstrap can create known tables for deliberate opt-in runs, but schema
-  evolution and historical backfill still require explicit reviewed change work
+  for a schema change, update the owned SQL/bootstrap code, focused tests,
+  live-smoke expectations, and this owning documentation together. Existing
+  databases must be updated deliberately through reviewed operational work
+  before code relies on the new layout; bootstrap does not upgrade them.
 - current runtime-selection rule follows the same boundary:
   once explicit PostgreSQL mode is active, parent reads, cancel writes, and
   detached-worker writes all operate against the PostgreSQL-backed known-session
@@ -668,13 +673,13 @@ Current schema and bootstrap ownership:
   enabling explicit PostgreSQL mode does not migrate older file-backed session
   history, and any later backfill should land as its own reviewed migration
   path with mapping, idempotency, rollback, validation, and dry-run criteria
-- practical meaning at this stage:
-  when the session-store schema changes, update the owned SQL/bootstrap code,
-  focused contract or smoke tests, and owning docs together; do not treat
-  runtime startup as an upgrader for existing databases
-- a migration tool becomes necessary when the project needs in-place upgrades
-  of existing PostgreSQL session databases, more than one ordered schema
-  revision, or a tracked rollback path between schema versions
+- adopt a real migration tool before any of these becomes necessary:
+  - in-place upgrades of existing PostgreSQL session or alert databases
+  - support for more than one ordered schema revision
+  - data transformation or historical backfill
+  - tracked deployment upgrade and rollback history
+  - reproducible convergence across multiple environments
+  - routine destructive or compatibility-sensitive schema changes
 
 That is the current practical owner split for this branch: runtime config owns
 backend choice, PostgreSQL bootstrap owns optional table creation, and schema

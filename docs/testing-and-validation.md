@@ -287,7 +287,7 @@ policy behind them.
 | --- | --- | --- |
 | Backend selector | `ESM_SESSION_STORE_BACKEND=postgres` | `ESM_ALERT_STORE_BACKEND=postgres` |
 | Database URL | `ESM_POSTGRES_SESSION_DATABASE_URL` | `ESM_POSTGRES_ALERT_DATABASE_URL` |
-| Table auto-create | `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit opt-in; default is off | `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` may be set explicitly; current default is on |
+| Table auto-create | `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit opt-in; default is off | `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` may be set explicitly; its current default is on only after PostgreSQL selection |
 | Live-smoke gate | `POSTGRES_SESSION_STORE_REAL_SMOKE=1` | `POSTGRES_ALERT_STORE_REAL_SMOKE=1` |
 | Routine validation | `just test-session-store`; add `just test-session-runtime` for worker-path changes | Focused synthetic alert slice; no live database required |
 | Deeper confidence | Local `just test-session-postgres-live`; weekly lifecycle for the slower file-backed runtime lane | Weekly/manual backend and runtime/operator scripts against a disposable database |

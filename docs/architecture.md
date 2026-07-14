@@ -115,8 +115,9 @@ It is now:
 
 For the current project stage, both persistence seams remain file-backed by
 default. Explicit PostgreSQL selection never silently falls back after a
-bootstrap failure; detailed rollout state, schema ownership, and validation
-lanes live in [session-persistence-audit.md](./session-persistence-audit.md).
+bootstrap failure; detailed rollout state, schema ownership, manual
+schema-change policy, and validation lanes live in
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 The new MCP surface follows the same adapter pattern:
 
