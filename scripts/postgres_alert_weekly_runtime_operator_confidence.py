@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the weekly/manual live Postgres runtime and operator-flow bundle.
+"""Run the weekly/manual live PostgreSQL runtime and operator-flow bundle.
 
 The first entry is the canonical runner-write-to-operator-read smoke. The
 remaining entries extend confidence to the snapshot and CLI reader seams.
@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from postgres_alert_weekly_confidence_support import run_live_postgres_test_group
 
+
+RUNTIME_OPERATOR_CONFIDENCE_TITLE = (
+    "weekly/manual live Postgres runtime/operator-flow confidence bundle"
+)
 
 CANONICAL_RUNTIME_OPERATOR_SMOKE = (
     "tests/test_session_runner_execution_local.py::"
@@ -33,7 +37,7 @@ RUNTIME_OPERATOR_CONFIDENCE_TESTS: tuple[str, ...] = (
 def main() -> int:
     """Run the live-Postgres runtime/operator flow confidence bundle."""
     return run_live_postgres_test_group(
-        "weekly/manual live Postgres runtime/operator-flow confidence bundle",
+        RUNTIME_OPERATOR_CONFIDENCE_TITLE,
         RUNTIME_OPERATOR_CONFIDENCE_TESTS,
     )
 

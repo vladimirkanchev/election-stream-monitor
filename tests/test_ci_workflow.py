@@ -26,6 +26,7 @@ ci_workflow = importlib.import_module("ci_workflow")
 ci_workflow_contract = importlib.import_module("ci_workflow_contract")
 CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "ci.yml"
 BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
+WEEKLY_VALIDATION_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
 MAIN_GATE_REQUIRED_JOBS = ci_workflow_contract.MAIN_GATE_REQUIRED_JOBS
 FEATURE_GATE_REQUIRED_JOBS = ci_workflow_contract.FEATURE_GATE_REQUIRED_JOBS
 ADVISORY_JOBS = ci_workflow_contract.ADVISORY_JOBS
@@ -175,6 +176,41 @@ def test_branch_feedback_workflow_is_push_only() -> None:
     assert "\n  push:" in workflow_text.split("jobs:", 1)[0]
     assert "branches-ignore:" in workflow_text
     assert "pull_request:" not in workflow_text.split("jobs:", 1)[0]
+
+
+def test_routine_workflows_keep_live_alert_postgres_confidence_disabled() -> None:
+    """Routine PR and branch workflows must not start PostgreSQL confidence."""
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        workflow_text = _workflow_text(workflow_path)
+
+        assert "ESM_ALERT_STORE_BACKEND: file" in workflow_text
+        assert 'POSTGRES_ALERT_STORE_REAL_SMOKE: "0"' in workflow_text
+        assert "services:" not in workflow_text
+        assert "postgres_alert_weekly_" not in workflow_text
+
+
+def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:
+    """Scheduled/manual validation must retain both isolated live-alert jobs."""
+    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    backend_job = workflow_text.split(
+        "  postgres-alert-backend-confidence:", 1
+    )[1].split("  postgres-alert-runtime-operator-confidence:", 1)[0]
+    runtime_job = workflow_text.split(
+        "  postgres-alert-runtime-operator-confidence:", 1
+    )[1]
+
+    assert "  schedule:" in workflow_text
+    assert "  workflow_dispatch:" in workflow_text
+
+    for job_text in (backend_job, runtime_job):
+        assert "services:\n      postgres:" in job_text
+        assert "image: postgres:16" in job_text
+        assert (
+            "ESM_POSTGRES_ALERT_DATABASE_URL: "
+            "postgresql://postgres:postgres@localhost:5432/election_stream_monitor"
+        ) in job_text
+        assert "ESM_ALERT_STORE_BACKEND: postgres" in job_text
+        assert 'POSTGRES_ALERT_STORE_REAL_SMOKE: "1"' in job_text
 
 
 def test_current_ci_workflow_satisfies_complete_contract() -> None:

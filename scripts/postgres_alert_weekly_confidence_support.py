@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Shared setup and execution helpers for live PostgreSQL alert confidence.
+"""Shared setup for scheduled and manual live PostgreSQL alert confidence.
 
-The scheduled and manual bundles validate a supplied disposable database URL,
-force PostgreSQL runtime selection, and invoke pytest through their own Python
-environment.
+Each bundle requires a disposable database URL, forces PostgreSQL selection,
+and invokes pytest through the current Python interpreter. Missing setup fails
+before pytest; printed plans redact the database URL.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def require_database_url() -> str:
 
 
 def build_live_postgres_env(database_url: str) -> dict[str, str]:
-    """Build the opt-in environment for one live PostgreSQL alert bundle."""
+    """Build the forced PostgreSQL live-test environment for one bundle."""
     env = os.environ.copy()
     env.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     env["POSTGRES_ALERT_STORE_REAL_SMOKE"] = "1"
