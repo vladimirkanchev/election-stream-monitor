@@ -3,8 +3,10 @@
 This module owns the concrete PostgreSQL alert-store path below the shared
 alert seam: schema statements, explicit bootstrap, and the concrete
 `SessionAlertStore` implementation. It is only relevant after runtime config
-selects the Postgres alert backend. Its destructive reset helpers are test
-support for explicitly configured disposable databases, not runtime migration.
+selects the Postgres alert backend. It is the current owner of the
+`session_alert_events` table and index contract; runtime selectors do not
+evolve that schema. Its destructive reset helpers are test support for
+explicitly configured disposable databases, not runtime migration.
 """
 
 from __future__ import annotations
@@ -206,7 +208,7 @@ def connect_postgres_alert_store(
 
 
 def initialize_postgres_alert_store(connection: PostgresAlertStoreConnection) -> None:
-    """Idempotently create the current alert-store tables and indexes."""
+    """Idempotently apply the current alert-store table and index definitions."""
     _execute_schema_statements(connection, POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS)
 
 
@@ -216,7 +218,7 @@ def drop_postgres_alert_store_schema(connection: PostgresAlertStoreConnection) -
 
 
 def reset_postgres_alert_store_schema(connection: PostgresAlertStoreConnection) -> None:
-    """Destructively rebuild the alert-store schema for an isolated live smoke."""
+    """Destructively rebuild the schema only for an isolated live smoke test."""
     drop_postgres_alert_store_schema(connection)
     initialize_postgres_alert_store(connection)
 
@@ -235,7 +237,12 @@ def _execute_schema_statements(
 def bootstrap_postgres_alert_store(
     settings: PostgresAlertStoreSettings | None = None,
 ) -> PostgresAlertStoreConnection:
-    """Connect to PostgreSQL and optionally auto-create alert tables for this seam."""
+    """Open the explicitly selected alert store and optionally initialize its schema.
+
+    ``CREATE TABLE IF NOT EXISTS`` is bootstrap convenience for the current
+    schema when ``auto_create_tables`` is enabled, not an in-place migration
+    mechanism for existing databases.
+    """
     resolved_settings = settings or get_postgres_alert_store_settings()
     connection = connect_postgres_alert_store(resolved_settings)
     if resolved_settings.auto_create_tables:

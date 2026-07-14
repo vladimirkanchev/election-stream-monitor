@@ -936,6 +936,34 @@ def test_real_postgres_alert_store_reset_clears_old_rows_and_remains_usable(
     not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     reason="Real PostgreSQL alert-store smoke test is opt-in.",
 )
+def test_real_postgres_alert_store_schema_initialization_is_idempotent(
+    monkeypatch,
+) -> None:
+    """Reapplying owned schema DDL should preserve a usable alert store."""
+    session_id = build_unique_session_id("real-postgres-idempotent-bootstrap")
+    _mark_known_sessions(monkeypatch, session_id)
+    connection, store = build_isolated_postgres_alert_store()
+    try:
+        initialize_postgres_alert_store(connection)
+        store.append_alert(
+            _sample_alert_event(
+                session_id=session_id,
+                title="Schema initialized twice",
+                message="The existing alert schema remained usable.",
+            )
+        )
+
+        assert [alert["title"] for alert in store.read_session_alert_events(session_id)] == [
+            "Schema initialized twice"
+        ]
+    finally:
+        close_store_if_possible(connection)
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL alert-store smoke test is opt-in.",
+)
 def test_real_postgres_alert_store_smoke_round_trip(
     monkeypatch,
 ) -> None:

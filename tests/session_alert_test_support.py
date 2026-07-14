@@ -190,7 +190,7 @@ def build_isolated_postgres_alert_store() -> tuple[
     PostgresAlertStoreConnection,
     PostgresSessionAlertStore,
 ]:
-    """Connect and destructively reset a disposable database for a live smoke test."""
+    """Build a live-smoke store after destructively resetting a disposable database."""
     connection = connect_postgres_alert_store()
     try:
         reset_postgres_alert_store_schema(connection)

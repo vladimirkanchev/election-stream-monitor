@@ -2,7 +2,8 @@
 
 This module stays narrow on purpose: it parses and validates the PostgreSQL
 URL and auto-create flag that matter only after explicit
-`ESM_ALERT_STORE_BACKEND=postgres` selection.
+`ESM_ALERT_STORE_BACKEND=postgres` selection. Its current auto-create default
+is a rollout setting for that opt-in path, not a migration policy.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ class PostgresAlertStoreConfigurationError(RuntimeError):
 
 @dataclass(frozen=True)
 class PostgresAlertStoreSettings:
-    """Structured bootstrap settings for the PostgreSQL alert-store path."""
+    """Structured settings for the explicitly selected alert-store bootstrap path."""
 
     database_url: str | None
     auto_create_tables: bool
@@ -55,7 +56,7 @@ def _parse_optional_string_env(name: str, default: str | None) -> str | None:
 
 @lru_cache(maxsize=1)
 def get_postgres_alert_store_settings() -> PostgresAlertStoreSettings:
-    """Return cached PostgreSQL bootstrap settings for the alert store."""
+    """Return cached settings for the explicit PostgreSQL alert-store bootstrap."""
     return PostgresAlertStoreSettings(
         database_url=_parse_optional_string_env(
             POSTGRES_ALERT_DATABASE_URL_ENV,
