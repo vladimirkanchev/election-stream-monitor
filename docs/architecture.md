@@ -115,9 +115,11 @@ It is now:
 
 For the current project stage, both persistence seams remain file-backed by
 default. Explicit PostgreSQL selection never silently falls back after a
-bootstrap failure; detailed rollout state, schema ownership, manual
-schema-change policy, and validation lanes live in
-[session-persistence-audit.md](./session-persistence-audit.md).
+bootstrap failure. Detailed rollout state, schema ownership, and manual
+schema-change policy live in
+[session-persistence-audit.md](./session-persistence-audit.md); commands and
+validation-lane selection live in
+[testing-and-validation.md](./testing-and-validation.md).
 
 The new MCP surface follows the same adapter pattern:
 
@@ -129,8 +131,8 @@ The new MCP surface follows the same adapter pattern:
   owns the explicit `file` versus `postgres` backend-mode selection for that
   default store through `ESM_ALERT_STORE_BACKEND`
 - [`src/session_alert_store_postgres.py`](../src/session_alert_store_postgres.py)
-  now freezes the PostgreSQL alert-table contract, owns the small
-  connection/bootstrap path, and includes the concrete
+  owns the current PostgreSQL alert-table and index definitions, the small
+  connection/bootstrap path, and the concrete
   `PostgresSessionAlertStore` second backend over the existing seam
 - [`src/session_alert_store_postgres_config.py`](../src/session_alert_store_postgres_config.py)
   owns the narrow Postgres alert-store env/config parsing used by that bootstrap path

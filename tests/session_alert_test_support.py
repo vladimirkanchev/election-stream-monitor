@@ -48,7 +48,7 @@ REAL_POSTGRES_ALERT_STORE_SMOKE_ENV = "POSTGRES_ALERT_STORE_REAL_SMOKE"
 def is_real_postgres_alert_store_smoke_enabled(
     environ: Mapping[str, str] | None = None,
 ) -> bool:
-    """Return whether the flag, Postgres selection, and database URL are set."""
+    """Return whether live-smoke opt-in, PostgreSQL selection, and a URL are set."""
     values = os.environ if environ is None else environ
     return (
         values.get(REAL_POSTGRES_ALERT_STORE_SMOKE_ENV) == "1"

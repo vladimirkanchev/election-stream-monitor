@@ -19,8 +19,8 @@ the migration inventory; see [architecture.md](./architecture.md),
 - session storage stays file-backed by default, with PostgreSQL available only
   through explicit backend selection plus valid configuration
 - this document explains what session data means, not which module writes it
-- alert storage stays file-backed by default for this branch phase and can now
-  switch to PostgreSQL
+- alert storage stays file-backed by default for this branch phase; PostgreSQL
+  requires explicit backend selection
 - the snapshot `alerts` field now follows that same alert backend
 - monitoring session state and playback state are related but intentionally
   separate
@@ -139,7 +139,7 @@ not whole-file based.
 Current progress behavior:
 
 - progress writes now go through `SessionStore`
-- the file default still persists them to `progress.json` through
+- the file-backed default still persists them to `progress.json` through
   `FileSessionStore`
 - explicit `ESM_SESSION_STORE_BACKEND=postgres` persists the same contract in
   PostgreSQL
@@ -264,13 +264,6 @@ default.
 - Unsupported runtime backend values still resolve to the file-backed default.
 - PostgreSQL session storage is available only through explicit backend
   selection plus valid PostgreSQL bootstrap settings.
-- For this migration stage, PostgreSQL session storage is forward-only:
-  it applies to newly created sessions after explicit backend selection, not
-  to automatic backfill of existing file-backed session history.
-- No automatic historical migration happens when PostgreSQL session mode is
-  enabled.
-- Missing or invalid PostgreSQL bootstrap config should fail clearly only in
-  explicit PostgreSQL mode; it should not silently replace or break the file default.
 - Progress is a latest-only read model, not an event history.
 - A metadata-only snapshot is valid: `session` may exist while `progress`
   remains `null`.
@@ -283,7 +276,7 @@ default.
   durable session contract unless a separate contract is added.
 - The parent process and detached worker must resolve the same backend so
   accepted sessions do not later look missing or stale.
-- The same explicit-PostgreSQL failure rule applies across parent reads,
+- Explicit PostgreSQL failures stay visible across parent reads,
   detached-worker startup, and local runner startup.
 
 For the current migration stage, cancel-request state should be treated as
@@ -295,13 +288,14 @@ runtime coordination with bounded durability:
   detached-worker boundary reliably
 - the active contract is now `SessionStore.request_cancel(...)` and
   `SessionStore.is_cancel_requested(...)`
-- file-backed storage remains the file default unless
+- file-backed storage remains the file-backed default unless
   `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected
 - not part of the durable session snapshot read model and not ordinary
   append-only session history
 
-For module ownership, PostgreSQL table mapping, runtime selection, and focused
-validation lanes, use [session-persistence-audit.md](./session-persistence-audit.md).
+For module ownership, schema/bootstrap, forward-only history, and rollback,
+use [session-persistence-audit.md](./session-persistence-audit.md). For
+validation lanes, use [testing-and-validation.md](./testing-and-validation.md).
 
 ### Session-scoped files
 
@@ -388,37 +382,19 @@ Practical effect:
 - writes and reads now go through the same alert seam
 - the dedicated alert routes/tools and the general session snapshot now agree
   on the active alert backend
-- the default file-backed mode keeps the persisted `alerts.jsonl` contract
-  unchanged
-- the PostgreSQL alert store can be enabled without moving filtering or
-  grouping into the storage layer
-- alert PostgreSQL is forward-only: it records alerts produced after explicit
-  selection and does not discover historical `alerts.jsonl` rows
+- file remains the default alert backend; PostgreSQL is an explicit opt-in
+  without moving filtering or grouping into the storage layer
 - mixed runtime selection is still possible during migration; when alert and
   session backends differ, the alert side must keep treating the active
   `SessionStore` as the source of truth for whether a session is known
-- the current rollout state is simple:
-  - file is still the default backend
-  - PostgreSQL is the supported opt-in backend
-  - after explicit PostgreSQL selection, bootstrap failures remain visible and
-    never switch alert reads or writes back to the file store
 
-For alert backfill, rollback, and cross-store-read policy, use
+For alert history, rollback, cross-store-read, and explicit PostgreSQL failure
+policy, use [session-persistence-audit.md](./session-persistence-audit.md).
+
+The PostgreSQL alert backend preserves the same alert-reader, snapshot, and
+CLI semantics after explicit selection. Its table mapping, bootstrap, and
+runtime ownership are documented in
 [session-persistence-audit.md](./session-persistence-audit.md).
-
-The current PostgreSQL alert path keeps that contract narrow too:
-
-- the PostgreSQL alert table is `session_alert_events`
-- the runtime backend mode now switches explicitly between `file` and
-  `postgres` through `ESM_ALERT_STORE_BACKEND`
-- each current alert field maps to its own column rather than a JSON payload
-- `window_index` and `window_start_sec` remain nullable
-- read order should preserve append order through `ORDER BY id ASC`
-- `timestamp_utc` should be materialized back into the current
-  `%Y-%m-%d %H:%M:%S` string contract on reads
-- a concrete `PostgresSessionAlertStore` now exists behind the same seam, and
-  runtime selection can opt into it without changing the alert readers,
-  snapshot route, or CLI read path
 
 ### Important field semantics
 

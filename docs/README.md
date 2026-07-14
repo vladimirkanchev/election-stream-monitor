@@ -115,7 +115,9 @@ Use this shortcut map before editing code:
 
 For the current alert-storage rollout state, use:
 
-- [architecture.md](./architecture.md) for the storage split and rollout decision
+- [session-persistence-audit.md](./session-persistence-audit.md) for rollout,
+  schema, rollback, and backfill policy
+- [architecture.md](./architecture.md) for the concise storage split
 - [session-model.md](./session-model.md) for snapshot and persistence semantics
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
 

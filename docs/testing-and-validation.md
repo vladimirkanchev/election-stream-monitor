@@ -235,7 +235,7 @@ Current focused ownership map:
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
     and explicit proof that `postgres` is built only on deliberate opt-in
-  - explicit proof that unsupported backend values stay on the file default,
+  - explicit proof that unsupported backend values stay on the file-backed default,
     while missing URL, invalid URL shape, driver/bootstrap failure, and
     missing-schema behavior fail clearly only after explicit PostgreSQL selection
 - `tests/test_session_store_postgres.py`
@@ -280,20 +280,23 @@ Current focused ownership map:
 
 Routine local and PR validation stays file-backed. The shared PostgreSQL
 settings below are only for deliberate live confidence against disposable
-databases; `docs/session-persistence-audit.md` owns the rollout and schema
-policy behind them.
+databases. This guide owns commands and validation-lane selection;
+`docs/session-persistence-audit.md` owns the rollout and schema policy behind
+them.
 
 | Need | Session storage | Alert storage |
 | --- | --- | --- |
 | Backend selector | `ESM_SESSION_STORE_BACKEND=postgres` | `ESM_ALERT_STORE_BACKEND=postgres` |
 | Database URL | `ESM_POSTGRES_SESSION_DATABASE_URL` | `ESM_POSTGRES_ALERT_DATABASE_URL` |
 | Table auto-create | `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit opt-in; default is off | `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` may be set explicitly; its current default is on only after PostgreSQL selection |
-| Live-smoke gate | `POSTGRES_SESSION_STORE_REAL_SMOKE=1` | `POSTGRES_ALERT_STORE_REAL_SMOKE=1` |
+| Live-smoke opt-in | `POSTGRES_SESSION_STORE_REAL_SMOKE=1` | `POSTGRES_ALERT_STORE_REAL_SMOKE=1` |
 | Routine validation | `just test-session-store`; add `just test-session-runtime` for worker-path changes | Focused synthetic alert slice; no live database required |
 | Deeper confidence | Local `just test-session-postgres-live`; weekly lifecycle for the slower file-backed runtime lane | Weekly/manual backend and runtime/operator scripts against a disposable database |
 
-Keep both live-smoke gates unset or `0` in normal validation. Live session
-checks reset only known store tables; do not target a long-lived database. If
+Keep both live-smoke opt-ins unset or `0` in normal validation. They allow
+live tests to run but do not select a runtime backend; use the matching backend
+selector as well. Live session checks reset only known store tables; do not
+target a long-lived database. If
 you just ran `just test-session-postgres-live`, clear the PostgreSQL session
 environment before returning to the normal file-default lanes:
 
@@ -472,7 +475,7 @@ tests/test_api_boundary_sessions_cancel.py -q
     call the same narrow smoke bundles without making them protected CI work
   - use the shared rollout vocabulary consistently here:
     file-backed default, PostgreSQL opt-in, explicit backend selection, and
-    live smoke
+    live-smoke opt-in
   - it requires `ESM_SESSION_STORE_BACKEND=postgres`,
     `ESM_POSTGRES_SESSION_DATABASE_URL`,
     `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, and
@@ -1247,35 +1250,27 @@ store-level smoke resets alert-store-owned schema, so its URL must point to a
 disposable database; it skips when the required backend, URL, or live-smoke
 gate is absent.
 
-Use the shared terminology, but not the same maturity claims:
-
-- alert PostgreSQL is opt-in and forward-only; it does not migrate alert
-  history during validation or normal runtime selection
-- alert historical-data and backfill policy is owned by
-  `docs/session-persistence-audit.md`; do not infer it from session validation
-  lanes
+This guide records validation behavior only. The alert rollout, historical-data,
+rollback, and schema policy is owned by
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 Alert lane meaning:
 
-- focused synthetic alert slice
-  - alert parity plus FastAPI/MCP/service boundary confidence without a live DB
-- opt-in live PostgreSQL alert smoke
-  - run after the synthetic parity slice when a reachable disposable PostgreSQL
-    database is available
-  - proves schema/bootstrap, append/read, ordering, filtering, and raw or
-    grouped summary shapes through the alert-store read models
-  - does not replace the broader runtime/operator or API/MCP bundles
-- weekly/manual live PostgreSQL alert runtime/operator bundles
-  - broader runtime/operator confidence for grouped routes, MCP, snapshot
-    reads, and CLI behavior over the active backend
+| Lane | Use it when | What it proves | Database and CI ownership |
+| --- | --- | --- | --- |
+| Focused synthetic and parity | Normal alert-store, query, route, or MCP work | File/PostgreSQL-like parity plus FastAPI, MCP, and service boundaries without a real database | Default local and PR path; no live PostgreSQL variables required. |
+| Opt-in real PostgreSQL store smoke | The real alert adapter, schema, or read-model mapping changed | Schema/bootstrap, append/read, ordering, filtering, and raw/grouped report shapes | Manual against a disposable database; direct tests skip while `POSTGRES_ALERT_STORE_REAL_SMOKE` is unset. |
+| Weekly/manual backend confidence | Seeded real-database reader or MCP behavior needs deeper confirmation | Store round trips, timestamp/order checks, raw/grouped FastAPI routes, and MCP agreement | `postgres_alert_weekly_backend_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
+| Weekly/manual runtime/operator confidence | Runner-produced alerts or operator-facing reads changed | Runner write to PostgreSQL, snapshot reads, and CLI `read-session` behavior | `postgres_alert_weekly_runtime_operator_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
 
-Keep alert parity, alert live smoke, and broader runtime/operator-flow
-confidence as separate lanes rather than one large PostgreSQL bucket.
+Keep these lanes separate rather than treating them as one large PostgreSQL
+bucket. The direct real-PostgreSQL tests skip by default when the live-smoke
+opt-in is unset. The weekly/manual helpers instead require a database URL and
+then force explicit PostgreSQL selection and the live-smoke opt-in themselves.
 
-The focused synthetic slice already owns the explicit failure policy too:
-runtime alert-store tests prove that unset or invalid PostgreSQL bootstrap
-input stays harmless in file mode and fails clearly only after explicit
-`ESM_ALERT_STORE_BACKEND=postgres` selection.
+The focused synthetic slice covers runtime configuration behavior; the
+authoritative failure and rollback policy remains in the
+[persistence audit](./session-persistence-audit.md).
 
 Use the live smokes when you need confidence in the real database path:
 
@@ -1329,8 +1324,8 @@ Quick connection sanity check before the longer bundles:
 .venv/bin/python -c "import psycopg; psycopg.connect('postgresql://postgres:postgres@localhost:5432/election_stream_monitor').close(); print('ok')"
 ```
 
-For weekly/manual rollout confidence, the live Postgres path is split into two
-focused bundles:
+For weekly/manual rollout confidence, the live PostgreSQL path is split into
+two focused bundles:
 
 - backend confidence
   - store bootstrap and real append/read round-trips
@@ -1467,10 +1462,10 @@ Current alert persistence contract to preserve:
       connection/bootstrap path, and the concrete second store implementation
   - `src/session_alert_store_postgres_config.py`
     - owns the narrow env/config parsing for the PostgreSQL bootstrap path:
-      `ESM_ALERT_STORE_BACKEND`,
       `ESM_POSTGRES_ALERT_DATABASE_URL`,
-      `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES`, and
-      `POSTGRES_ALERT_STORE_REAL_SMOKE`
+      `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES`
+    - `POSTGRES_ALERT_STORE_REAL_SMOKE` is the live-test gate owned by the
+      shared test support, not runtime bootstrap configuration
   - `src/session_alerts.py` and `src/session_alert_incidents.py`
     - public read-model entrypoints accept the store contract explicitly while still
       defaulting to the runtime-selected store implementation

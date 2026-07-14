@@ -64,7 +64,7 @@ STALE_POSTGRES_SESSION_DATABASE_URL = (
 
 
 def test_live_postgres_alert_smoke_requires_all_explicit_opt_ins() -> None:
-    """The live-smoke gate requires the flag, Postgres selection, and a URL."""
+    """The live-smoke opt-in requires selection, a URL, and its explicit flag."""
     enabled_values = {
         REAL_POSTGRES_ALERT_STORE_SMOKE_ENV: "1",
         ALERT_STORE_BACKEND_ENV: "postgres",
