@@ -137,15 +137,20 @@ Use weekly or manual-depth validation only when the change materially reaches:
 - dependency or security audit work
 - live PostgreSQL backend or operator-flow confidence
 
-For the current session-store branch work, keep that deeper lane modest on
-purpose:
+### Deferred PostgreSQL CI Expansion
 
-- do not add a nightly-only validation lane yet
-- do not add an OS or Python-version matrix just for this slice
-- do not turn file-backed versus PostgreSQL-backed coverage into a broad PR
-  matrix before the focused parity and runtime lanes stop being enough
-- treat broader CI depth here as later expansion work, not as routine branch
-  polish
+Keep deeper PostgreSQL validation modest for now. The following are separate
+follow-up work, not routine PR requirements:
+
+- a PostgreSQL-version matrix
+- an operating-system or Python-version matrix
+- required live-database checks on PRs
+- broader performance and recovery validation
+
+Routine PR validation keeps the real PostgreSQL smoke gates disabled and uses
+synthetic, parity, configuration, and boundary coverage. The alert backend and
+runtime/operator PostgreSQL bundles remain scheduled weekly/manual confidence
+with disposable databases; they are not new protected PR requirements.
 
 Local validation is intentionally incomplete. It cannot prove:
 
@@ -1259,17 +1264,16 @@ Alert lane meaning:
 | Lane | Use it when | What it proves | Database and CI ownership |
 | --- | --- | --- | --- |
 | Focused synthetic and parity | Normal alert-store, query, route, or MCP work | File/PostgreSQL-like parity plus FastAPI, MCP, and service boundaries without a real database | Default local and PR path; no live PostgreSQL variables required. |
-| Opt-in real PostgreSQL store smoke | The real alert adapter, schema, or read-model mapping changed | Schema/bootstrap, append/read, ordering, filtering, and raw/grouped report shapes | Manual against a disposable database; direct tests skip while `POSTGRES_ALERT_STORE_REAL_SMOKE` is unset. |
+| Opt-in real PostgreSQL store smoke | The real alert adapter, schema, or read-model mapping changed | Schema/bootstrap, append/read, ordering, filtering, and raw/grouped report shapes | Manual against a disposable database. Use `just test-alert-postgres-live`; direct tests skip while `POSTGRES_ALERT_STORE_REAL_SMOKE` is unset. |
 | Weekly/manual backend confidence | Seeded real-database reader or MCP behavior needs deeper confirmation | Store round trips, timestamp/order checks, raw/grouped FastAPI routes, and MCP agreement | `postgres_alert_weekly_backend_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
-| Weekly/manual runtime/operator confidence | Runner-produced alerts or operator-facing reads changed | Runner write to PostgreSQL, snapshot reads, and CLI `read-session` behavior | `postgres_alert_weekly_runtime_operator_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
+| Weekly/manual runtime/operator confidence | Runner-produced alerts or operator-facing reads changed | Runner-produced alerts remain coherent across snapshots, FastAPI reads, and CLI `read-session` behavior | `postgres_alert_weekly_runtime_operator_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
 
-Keep these lanes separate rather than treating them as one large PostgreSQL
-bucket. The direct real-PostgreSQL tests skip by default when the live-smoke
-opt-in is unset. The weekly/manual helpers instead require a database URL and
-then force explicit PostgreSQL selection and the live-smoke opt-in themselves.
-
-The focused synthetic slice covers runtime configuration behavior; the
-authoritative failure and rollback policy remains in the
+Protected PR and branch CI intentionally stay on the focused synthetic path:
+the live-smoke gate is disabled and no PostgreSQL service starts. Direct
+real-PostgreSQL tests skip by default; the weekly/manual helpers require a
+disposable database URL and force explicit PostgreSQL selection plus the
+live-smoke gate. The focused synthetic slice covers runtime configuration;
+failure and rollback policy remains in the
 [persistence audit](./session-persistence-audit.md).
 
 Use the live smokes when you need confidence in the real database path:
@@ -1372,6 +1376,16 @@ ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
 ```
 
 The umbrella helper runs both bundles in order.
+
+For the same complete local confidence pass, use:
+
+```bash
+just test-alert-postgres-live
+```
+
+It requires `ESM_POSTGRES_ALERT_DATABASE_URL` to name a disposable database.
+The helper itself forces explicit PostgreSQL selection and the live-smoke gate;
+it remains a local/weekly confidence lane, not a protected PR requirement.
 
 Use the backend bundle when:
 

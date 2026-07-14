@@ -67,8 +67,9 @@ Current helper and lane naming is close, but not fully parallel:
 - sessions already have compact `just` entrypoints for:
   - `just test-session-store`
   - `just test-session-runtime`
-- alerts still rely more on focused pytest slices and weekly/manual scripts
-  than on matching `just` wrappers
+- alerts provide `just test-alert-postgres-live` for the complete manual
+  confidence pass; the focused scripts remain available when one weekly bundle
+  is the relevant seam
 
 Audit conclusion:
 
