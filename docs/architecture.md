@@ -184,11 +184,9 @@ The first FastAPI authentication split follows the same boundary-oriented style:
 - [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py) owns the
   alerts-router HTTP protection policy that composes authentication and rate
   limiting
-- [`src/config.py`](../src/config.py) owns the small structured auth settings
-  object used by that boundary
-- [`src/config.py`](../src/config.py) also owns the first structured
-  rate-limit settings layer so later request counting can stay out of route
-  bodies
+- [`src/api_boundary_config.py`](../src/api_boundary_config.py) owns the
+  structured auth and rate-limit settings; [`src/config.py`](../src/config.py)
+  provides compatibility re-exports
 - [`src/api_rate_limit.py`](../src/api_rate_limit.py) owns the current
   principal-aware fixed-window limiter and keeps its local in-memory store
   replaceable
@@ -211,6 +209,10 @@ Current MCP versus FastAPI trust boundary:
   - maybe the limiter concepts or backend
 - but that future work should still be implemented as MCP-boundary logic, not
   by coupling MCP directly to FastAPI dependencies
+
+The detailed current-versus-intended HTTP policy belongs in
+[fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix); the
+MCP tool and transport inventory belongs in [mcp-server.md](./mcp-server.md).
 
 ## Legacy Tooling
 

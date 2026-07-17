@@ -83,9 +83,6 @@ Today the runtime is local-first:
 - the UI, alert routes, grouped incident routes, and MCP tools all read alerts
   through that shared backend
 
-FastAPI auth and rate limiting are available for shared access modes. MCP remains a separate local `stdio` tool surface.
-
-
 ## Current Readiness
 
 This works best for:
@@ -107,7 +104,9 @@ Still not:
 MCP is still a local `stdio` tool surface over local alert and session data.
 FastAPI auth and rate limiting currently protect the alerts HTTP routes in
 `share` mode, not the whole local runtime. PostgreSQL-backed alerts now use
-the same shared alert backend, but file remains the default.
+the same shared alert backend, but file remains the default. The detailed
+current-versus-intended HTTP policy is in
+[docs/fastapi-boundary.md](./docs/fastapi-boundary.md#http-route-security-matrix).
 
 For local startup, use [Running The Project](./README.md#running-the-project).
 For live Postgres validation and weekly confidence runs, use

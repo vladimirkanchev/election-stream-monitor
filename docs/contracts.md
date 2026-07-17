@@ -177,6 +177,9 @@ Purpose:
 Current scope:
 
 - this contract applies to the FastAPI HTTP API only
+- this section describes enforced behavior today; the full current-versus-
+  intended share-mode policy is owned by
+  [fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix)
 - the current stdio MCP server remains a local-trust transport and is not
   authenticated by this contract
 - the current protected FastAPI scope is the alerts router:
@@ -353,8 +356,10 @@ Implementation note:
   rather than pushing counting logic into route bodies or shared alert services
 - invalid configured auth or limiter settings now fail during FastAPI startup
   rather than waiting for the first protected request
-- unrelated public routes such as `/health`, `/docs`, and `/openapi.json`
-  intentionally stay outside the alerts-router auth/rate-limit boundary
+- other routes such as `/health`, `/docs`, and `/openapi.json` currently stay
+  outside the alerts-router auth/rate-limit boundary; their intended
+  share-mode policy is owned by
+  [fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix)
 
 Future remote MCP note:
 

@@ -149,11 +149,10 @@ For the current persistence rollout state, use:
   - [contracts.md](./contracts.md)
   - [testing-and-validation.md](./testing-and-validation.md)
 - changing FastAPI endpoints or response semantics:
-  - [fastapi-boundary.md](./fastapi-boundary.md)
   - [architecture-decision-fastapi.md](./architecture-decision-fastapi.md)
   - [contracts.md](./contracts.md)
-  - read `fastapi-boundary.md` first if the change touches auth, rate
-    limiting, or current readiness expectations for the alerts router
+  - [`fastapi-boundary.md`](./fastapi-boundary.md#policy-and-regression-ownership)
+    owns the HTTP route/mode matrix, share-mode policy, and its regression map
   - current CLI-oriented FastAPI boundary checks live mainly in:
     - `tests/test_api_server_cli_runtime.py`
     - `tests/test_api_server_cli_output.py`
@@ -161,9 +160,10 @@ For the current persistence rollout state, use:
 - changing MCP alert-reading tools or local MCP launch wiring:
   - [architecture.md](./architecture.md)
   - [contracts.md](./contracts.md)
-  - [mcp-server.md](./mcp-server.md)
   - [testing-and-validation.md](./testing-and-validation.md)
-  - [fastapi-boundary.md](./fastapi-boundary.md)
+  - [`mcp-server.md`](./mcp-server.md#current-tool-inventory) owns MCP
+    transport and tool policy; [fastapi-boundary.md](./fastapi-boundary.md)
+    explains why HTTP and MCP protections are separate
   - `src/api_auth.py`
   - `src/api_rate_limit.py`
   - `src/api/alert_route_policy.py`
