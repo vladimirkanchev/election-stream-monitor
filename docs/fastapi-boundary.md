@@ -14,18 +14,34 @@ distribution.
 
 ## Current Status
 
-The FastAPI layer currently provides:
+## Mounted Route Inventory
 
-- `GET /health`
-- `GET /detectors`
-- `POST /sessions`
-- `GET /sessions/{session_id}`
-- `GET /sessions/{session_id}/alerts`
-- `GET /sessions/{session_id}/alerts/summary`
-- `GET /sessions/{session_id}/alerts/timeline`
-- `GET /sessions/{session_id}/alerts/incident-summary`
-- `POST /sessions/{session_id}/cancel`
-- `POST /playback/resolve`
+This inventory is derived from the routes mounted by
+[`src/api/app.py`](../src/api/app.py), including FastAPI's framework-owned
+documentation routes. It records current exposure, not the intended final
+share-mode protection policy; that policy is defined separately as the
+security-hardening work progresses.
+
+| Method | Path | Mounted owner | Operation type |
+| --- | --- | --- | --- |
+| `GET`, `HEAD` | `/openapi.json` | FastAPI framework | diagnostic |
+| `GET`, `HEAD` | `/docs` | FastAPI framework | diagnostic |
+| `GET`, `HEAD` | `/docs/oauth2-redirect` | FastAPI framework | diagnostic |
+| `GET`, `HEAD` | `/redoc` | FastAPI framework | diagnostic |
+| `GET` | `/health` | `api.routers.health` | diagnostic |
+| `GET` | `/detectors` | `api.routers.detectors` | read |
+| `POST` | `/sessions` | `api.routers.sessions` | mutation |
+| `GET` | `/sessions/{session_id}` | `api.routers.sessions` | read |
+| `POST` | `/sessions/{session_id}/cancel` | `api.routers.sessions` | control |
+| `GET` | `/sessions/{session_id}/alerts` | `api.routers.alerts` | read |
+| `GET` | `/sessions/{session_id}/alerts/summary` | `api.routers.alerts` | read |
+| `GET` | `/sessions/{session_id}/alerts/timeline` | `api.routers.alerts` | read |
+| `GET` | `/sessions/{session_id}/alerts/incident-summary` | `api.routers.alerts` | read |
+| `POST` | `/playback/resolve` | `api.routers.playback` | control |
+
+The application currently mounts exactly the health, detectors, sessions,
+alerts, and playback routers. A route defined in another module is not part of
+the public FastAPI surface unless the application factory mounts its router.
 
 These endpoints already use:
 
@@ -42,58 +58,109 @@ composition lives in
 app validates enabled auth/rate-limit settings during startup so invalid
 boundary config fails before the first protected request.
 
-Current FastAPI access-mode policy:
+### Runtime Mode And Network Exposure Audit
 
-- `local` is the default run mode
-- `local` keeps FastAPI auth and rate limiting disabled by default
-- `share` is the protected-sharing preset
-- `share` turns FastAPI auth and rate limiting on by default before any
-  lower-level overrides apply
-- when no manual share-mode API key is configured, the CLI can auto-generate
-  one strong process-local key at startup
-- the lower-level auth and limiter settings still exist, but run mode is now
-  the main top-level way to choose the default FastAPI security posture
+The CLI applies runtime-mode policy and binding separately. Both `local` and
+`share` default to `127.0.0.1`, but both currently accept `--host` and pass it
+directly to Uvicorn.
 
-Current alerts-router protection scope:
+| Concern | `local` | `share` |
+| --- | --- | --- |
+| Default bind address | `127.0.0.1` | `127.0.0.1` |
+| Custom bind address | Accepted through `--host`, including non-loopback addresses | Accepted through `--host`, including non-loopback addresses |
+| Authentication default | Disabled | Enabled |
+| Rate-limit default | Disabled | Enabled |
+| Credentials | No key is generated | Generates one strong process-local API key when no manual key is supplied and auth remains enabled |
+| Startup output | Mode, listen address, auth state, and rate-limit state | The same summary plus protected-sharing guidance; a generated key is printed once, while a manual key is not echoed |
 
-- `GET /sessions/{session_id}/alerts`
-- `GET /sessions/{session_id}/alerts/summary`
-- `GET /sessions/{session_id}/alerts/timeline`
-- `GET /sessions/{session_id}/alerts/incident-summary`
+Lower-level `ESM_API_AUTH_ENABLED` and `ESM_API_RATE_LIMIT_ENABLED` settings
+can override either mode's defaults. Startup validation rejects enabled auth
+without usable keys, but it does not currently impose a relationship between
+run mode and bind address.
 
-Current unaffected public routes:
+**Current audit finding:** non-loopback exposure can happen without selecting
+`share`, for example through `api_server_cli local --host 0.0.0.0`. In that
+case local-mode auth and rate limiting remain disabled by default. Therefore,
+the eventual access policy must consider route, run mode, and bind address
+together; `local` must not be interpreted as an enforced loopback-only mode.
 
-- `GET /health` stays outside the alerts-router auth/rate-limit boundary
-- `GET /detectors` stays outside the alerts-router auth boundary
-- FastAPI docs and schema endpoints remain public today:
-  - `GET /docs`
-  - `GET /openapi.json`
+This is a documented current-state gap. The later bind/exposure hardening task
+will decide and enforce the permitted host-and-mode combinations.
 
-Current alerts-router rate-limit rule:
+### Authentication Ownership And Intended Policy
 
-- default identity strategy is authenticated principal, keyed by
-  `principal.key_id`
-- auth-disabled local runs fall back to one deterministic local identity
-- alternate `ip` strategy can instead key the budget by request host
-- `429` responses use the standard structured API error envelope:
-  - `detail = "Rate limit exceeded"`
-  - `error_code = "rate_limit_exceeded"`
-  - `status_reason = "rate_limit_exceeded"`
-  - `status_detail = "Too many requests for the configured window."`
-- `429` responses also include `Retry-After` with a coarse whole-window number
-  of seconds so clients can retry later without guessing the current budget
-- tests also lock down that public health/docs surfaces remain usable after one
-  protected alert route has exhausted its budget
-- tests also lock down that `GET /detectors` and `GET /openapi.json` remain
-  public even when CLI-prepared `share` mode enables alerts-router protection
-- tests also lock down that invalid and missing API-key failures stay aligned
-  across the protected alerts route family
+Authentication settings are owned by
+[`src/api_boundary_config.py`](../src/api_boundary_config.py), API-key
+validation and principal creation by [`src/api_auth.py`](../src/api_auth.py),
+and HTTP error mapping by
+[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py). The
+alerts router applies `require_http_alert_principal` as a router dependency.
+There is no application-wide authentication middleware or endpoint-specific
+authentication dependency elsewhere today.
 
-Current limitation:
+`No (default)` below means no key is required with the normal mode defaults.
+The lower-level auth setting can enable the existing alerts-router dependency,
+but it cannot protect routes that do not use that dependency. The intended
+column is the proposed share-mode contract for later enforcement; it is not
+current behavior.
 
-- the limiter is intentionally local-first, in-memory, and per-process
-- it is appropriate for the current local backend/runtime model
-- it is not yet a shared-store or multi-worker rate-limit contract
+| Route | Auth required in `local` | Auth required in `share` today | Current policy owner | Intended policy |
+| --- | --- | --- | --- | --- |
+| `GET`, `HEAD /openapi.json` | No (default) | No | None; FastAPI framework route | Unavailable in share mode |
+| `GET`, `HEAD /docs` | No (default) | No | None; FastAPI framework route | Unavailable in share mode |
+| `GET`, `HEAD /docs/oauth2-redirect` | No (default) | No | None; FastAPI framework route | Unavailable in share mode |
+| `GET`, `HEAD /redoc` | No (default) | No | None; FastAPI framework route | Unavailable in share mode |
+| `GET /health` | No (default) | No | None; health router | Public reachability check |
+| `GET /detectors` | No (default) | No | None; detectors router | Require API key in share mode |
+| `POST /sessions` | No (default) | No | None; sessions router | Require API key in share mode |
+| `GET /sessions/{session_id}` | No (default) | No | None; sessions router | Require API key in share mode |
+| `POST /sessions/{session_id}/cancel` | No (default) | No | None; sessions router | Require API key in share mode |
+| `GET /sessions/{session_id}/alerts` | No (default); yes if auth is explicitly enabled | Yes | Alerts-router `require_http_alert_principal` dependency | Require API key in share mode |
+| `GET /sessions/{session_id}/alerts/summary` | No (default); yes if auth is explicitly enabled | Yes | Alerts-router `require_http_alert_principal` dependency | Require API key in share mode |
+| `GET /sessions/{session_id}/alerts/timeline` | No (default); yes if auth is explicitly enabled | Yes | Alerts-router `require_http_alert_principal` dependency | Require API key in share mode |
+| `GET /sessions/{session_id}/alerts/incident-summary` | No (default); yes if auth is explicitly enabled | Yes | Alerts-router `require_http_alert_principal` dependency | Require API key in share mode |
+| `POST /playback/resolve` | No (default) | No | None; playback router | Require API key in share mode |
+
+This is dependency-based router protection, not application-wide protection.
+The immediate gap is therefore broader than alerts: session start/read/cancel,
+playback resolution, and detector discovery stay unauthenticated when share
+mode enables the existing alert-only boundary. The later route-hardening task
+must either apply one shared policy dependency to these operational routes or
+provide an equally explicit per-router policy.
+
+### Rate-Limit And Resource-Control Audit
+
+Only the alerts router currently invokes the limiter. When enabled, it uses a
+local in-memory fixed window, shared across the four alert routes. The default
+budget is 100 requests per 60 seconds, configurable through
+`ESM_API_RATE_LIMIT_MAX_REQUESTS` and `ESM_API_RATE_LIMIT_WINDOW_SEC`.
+The default identity is the authenticated API-key fingerprint; the optional
+`ip` strategy instead uses the request host. When auth is disabled locally,
+the principal strategy uses one shared local identity.
+
+| Route family | Rate limited today | Existing input or result control | Missing resource control to record |
+| --- | --- | --- | --- |
+| Framework docs, OpenAPI, health | No | Small static or constant responses | No route-specific abuse control; share-mode exposure is addressed by the intended route policy |
+| Detector catalog | No | Optional `mode` is a fixed enum; catalog is registry-backed | No request budget if exposed remotely |
+| Session start | No | `mode` is a fixed enum; source validation rejects blank, unsupported, missing, and disallowed remote sources | No request budget, body-size cap, or detector-count cap before a detached worker is started |
+| Session read | No | Session identifier is the only route input | Snapshot may contain unbounded persisted alerts and results; no response cap or pagination |
+| Session cancel | No | Session identifier is the only route input | No request budget for a state-changing control operation |
+| Alert list, summary, timeline, incident summary | Yes, only through the alerts-router dependency | `severity` is a fixed enum; time ranges are parsed and ordered; invalid values return validation errors | Raw lists and grouped timelines have no pagination or response-size cap; summaries still scan the selected session's alerts |
+| Playback resolution | No | `mode` is a fixed enum; source and remote-host trust validation run before resolution | No request budget or body-size cap; resolution can inspect local media paths or validate remote stream URLs |
+
+The protected alerts routes return the standard `429` envelope plus a
+whole-window `Retry-After` header. Tests confirm that one exhausted alert
+budget does not affect health, documentation, detector, or OpenAPI routes.
+
+The limiter is intentionally local-first, in-memory, and per process. It is
+appropriate for current single-process desktop-backed runs, but it is not a
+shared-store or multi-worker throttling contract.
+
+**Current audit finding:** authentication and rate limiting are separate
+controls. Even after share-mode authentication is extended beyond alerts,
+session start, cancellation, playback resolution, and potentially large read
+responses still need their own proportionate request, input, or result bounds.
+The later resource-abuse task owns those implementation choices.
 
 Current readiness summary:
 
