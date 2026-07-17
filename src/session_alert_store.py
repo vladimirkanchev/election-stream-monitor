@@ -3,6 +3,8 @@
 This module owns the runtime-selected store boundary for raw session alert
 events. File-backed `alerts.jsonl` remains the default alert backend, while
 PostgreSQL stays an explicit opt-in path behind the same call surface.
+Each runtime reads and writes one selected backend only; it does not merge or
+discover alert history from the other backend.
 
 Known-session checks resolve through the active `SessionStore`, and query
 behavior remains in the alert read-model modules.
@@ -128,13 +130,21 @@ def _build_default_session_alert_store(
 
 
 def _build_postgres_default_session_alert_store() -> SessionAlertStore:
-    """Build the PostgreSQL-backed default store through the bootstrap seam."""
+    """Build explicit PostgreSQL storage and normalize bootstrap configuration errors.
+
+    Once PostgreSQL is selected, failures remain visible to callers rather
+    than falling back to the file-backed store.
+    """
     from session_alert_store_postgres import (
+        PostgresAlertStoreBootstrapError,
         PostgresSessionAlertStore,
         bootstrap_postgres_alert_store,
     )
 
-    return PostgresSessionAlertStore(bootstrap_postgres_alert_store())
+    try:
+        return PostgresSessionAlertStore(bootstrap_postgres_alert_store())
+    except PostgresAlertStoreBootstrapError as err:
+        raise AlertStoreRuntimeConfigurationError(str(err)) from err
 
 
 class _DefaultSessionAlertStoreProxy:

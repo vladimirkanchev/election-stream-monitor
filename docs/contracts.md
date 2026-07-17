@@ -12,11 +12,12 @@ The goal is:
 - reduce accidental contract drift
 - prepare later `api_stream` and service/API evolution
 
-Use this doc for stable payload and seam contracts.
-Do not use it as the main architecture narrative, the session semantics guide,
-or the migration inventory; see [architecture.md](./architecture.md),
-[session-model.md](./session-model.md), and
-[session-persistence-audit.md](./session-persistence-audit.md).
+Use this doc for stable payload and seam contracts. Do not use it as the main
+architecture narrative, session-semantics guide, migration inventory, or
+validation-command reference; see [architecture.md](./architecture.md),
+[session-model.md](./session-model.md),
+[session-persistence-audit.md](./session-persistence-audit.md), and
+[testing-and-validation.md](./testing-and-validation.md).
 
 ## At a glance
 
@@ -90,21 +91,25 @@ Current persistence contract, kept short here:
 - PostgreSQL session storage turns on only when
   `ESM_SESSION_STORE_BACKEND=postgres` is explicitly selected and valid
   PostgreSQL bootstrap settings are present.
-- Alert storage follows the same rollout posture at its own seam:
-  file-backed remains the default, and PostgreSQL turns on only after
-  explicit `ESM_ALERT_STORE_BACKEND=postgres` selection with valid alert
-  bootstrap settings.
-- In the current rollout stage, that PostgreSQL path is forward-only for new
-  sessions; historical file-backed sessions are not automatically backfilled
-  into PostgreSQL.
+- Alert persistence has its own stable backend contract:
+  file-backed storage remains the default, and
+  `ESM_ALERT_STORE_BACKEND=postgres` explicitly selects PostgreSQL.
+- PostgreSQL alert storage is forward-only: it stores newly produced alerts
+  after explicit selection and does not automatically backfill historical
+  `alerts.jsonl` data.
+- Alert reads use the selected backend only. There is no automatic dual-read
+  or cross-store history merge; raw, summary, incident, and snapshot readers
+  must agree on the normalized alerts from that selected backend.
+- An explicit PostgreSQL alert selection that cannot be built fails clearly;
+  it never silently changes the active alert store back to file mode.
 - Runtime reads and cancel requests follow the active backend selection too.
   Explicit PostgreSQL mode is intentionally single-backend:
   older file-backed sessions stay outside that backend's known-session
   universe unless a later backfill or deliberate dual-read policy is added.
   Parent reads, cancel checks, and session-exists lookups do not silently fall
   back to file-backed session directories.
-- Missing or invalid PostgreSQL bootstrap config should fail clearly only
-  after explicit PostgreSQL selection; it should not poison the file default.
+- Missing or invalid PostgreSQL configuration should fail clearly only after
+  explicit selection; it should not poison the file-backed default.
 - The detached worker and the parent process must resolve the same session
   store backend.
 - Alerts, replay keys, worker logs, temp media, and other runtime artifacts
@@ -113,12 +118,10 @@ Current persistence contract, kept short here:
   metadata exists for a session. They should not read backend-specific storage
   details directly.
 - Rollout readiness, default-switch blockers, forward-only/backfill policy,
-  and PostgreSQL bootstrap or migration detail are owned by
-  [session-persistence-audit.md](./session-persistence-audit.md).
-
-For table mapping, bootstrap policy, caller ownership, and migration notes, use
-[session-persistence-audit.md](./session-persistence-audit.md). For field
-meaning and lifecycle semantics, use [session-model.md](./session-model.md).
+  failure and rollback behavior, and PostgreSQL bootstrap or migration detail
+  are owned by the [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard).
+  For field meaning and lifecycle semantics, use
+  [session-model.md](./session-model.md).
 
 ## Do Not Drift These Together By Accident
 
@@ -1080,7 +1083,7 @@ Notes:
   shape above
 - current behavior:
   - result append/read and snapshot assembly are now store-backed
-  - the file default remains the runtime default
+  - the file-backed default remains the runtime default
   - broader session persistence migration is still in progress
 
 This keeps the row stable for storage and parity testing without freezing the
@@ -2002,7 +2005,7 @@ Current session-storage boundary:
 - `src/session_store.py` owns durable metadata, latest progress, ordered
   results, snapshot reads, and known-session checks.
 - `src/session_store_runtime.py` and `src/session_store_runtime_config.py`
-  centralize the current file default and rollback-safe runtime
+  centralize the current file-backed default and rollback-safe runtime
   selection.
 - `src/session_store_file.py` is the current file-backed implementation.
 - `src/session_store_postgres_config.py` owns the PostgreSQL session env

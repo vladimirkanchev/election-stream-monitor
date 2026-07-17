@@ -170,6 +170,12 @@ test-session-postgres-live:
     {{live_session_postgres_env_prefix}} {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_session_store_postgres.py -k real_postgres_session_store
     {{live_session_postgres_env_prefix}} {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_api_boundary_sessions_runtime.py -k live_postgres_runtime
 
+# Opt-in local live PostgreSQL alert confidence lane.
+# The shared helper forces PostgreSQL selection and the live-smoke gate.
+# This stays outside protected PR CI and requires a disposable database URL.
+test-alert-postgres-live:
+    {{venv_python}} scripts/postgres_alert_weekly_confidence.py
+
 # Fast synthetic backend lane aligned with the current `backend-tests` CI job.
 _backend-tests-fast:
     {{venv_python}} -c "import api.app, api.routers.sessions, session_service, session_cli, session_alert_report"

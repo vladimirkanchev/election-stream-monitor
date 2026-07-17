@@ -2,19 +2,28 @@
 
 These checks stay at the runtime seam: file-backed alerts remain the default,
 explicit Postgres selection must fail clearly on bad bootstrap input, and
-callers keep using the same default-store entry points either way.
+callers keep using the same default-store entry points either way. The small
+live-smoke gate test remains deterministic and does not connect to PostgreSQL.
+Backend reselection tests also protect the forward-only rule: alert history is
+visible only through the explicitly selected backend.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
+import os
+from pathlib import Path
 
 import pytest
+import tests.session_alert_test_support as session_alert_test_support
 from tests.session_alert_test_support import (
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENV,
     build_normalized_alert,
     close_store_if_possible,
     configure_session_alert_test,
+    is_real_postgres_alert_store_smoke_enabled,
+    select_live_runtime_postgres_alert_store,
     write_known_session,
 )
 
@@ -29,13 +38,17 @@ from session_alert_store_postgres import (
     POSTGRES_ALERT_EVENTS_INSERT_SQL,
     POSTGRES_ALERT_EVENTS_READ_SQL,
     POSTGRES_ALERT_TIMESTAMP_FORMAT,
+    PostgresAlertStoreBootstrapError,
     PostgresSessionAlertStore,
 )
 from session_alert_store_postgres_config import (
     POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV,
     POSTGRES_ALERT_DATABASE_URL_ENV,
 )
-from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
+from session_alert_store_runtime_config import (
+    ALERT_STORE_BACKEND_ENV,
+    AlertStoreRuntimeConfigurationError,
+)
 from session_alerts import read_session_alert_events
 from session_models import AlertEvent
 from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
@@ -48,6 +61,55 @@ STALE_POSTGRES_ALERT_DATABASE_URL = (
 STALE_POSTGRES_SESSION_DATABASE_URL = (
     "postgresql://stale:stale@localhost:5432/election_stream_monitor_sessions"
 )
+
+
+def test_live_postgres_alert_smoke_requires_all_explicit_opt_ins() -> None:
+    """The live-smoke opt-in requires selection, a URL, and its explicit flag."""
+    enabled_values = {
+        REAL_POSTGRES_ALERT_STORE_SMOKE_ENV: "1",
+        ALERT_STORE_BACKEND_ENV: "postgres",
+        POSTGRES_ALERT_DATABASE_URL_ENV: (
+            "postgresql://postgres:postgres@localhost:5432/election_stream_monitor"
+        ),
+    }
+    assert is_real_postgres_alert_store_smoke_enabled(enabled_values) is True
+    assert is_real_postgres_alert_store_smoke_enabled(
+        {**enabled_values, ALERT_STORE_BACKEND_ENV: "  POSTGRES  "}
+    ) is True
+
+    for missing_name in enabled_values:
+        incomplete_values = {
+            name: value for name, value in enabled_values.items() if name != missing_name
+        }
+        assert is_real_postgres_alert_store_smoke_enabled(incomplete_values) is False
+
+    blank_url_values = {**enabled_values, POSTGRES_ALERT_DATABASE_URL_ENV: "  "}
+    assert is_real_postgres_alert_store_smoke_enabled(blank_url_values) is False
+
+
+def test_select_live_runtime_postgres_alert_store_aligns_selection_and_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live helper selection should set Postgres runtime state and clear its cache."""
+    selected_store = object.__new__(PostgresSessionAlertStore)
+    cache_clears: list[None] = []
+    monkeypatch.setattr(
+        session_alert_test_support,
+        "clear_default_session_alert_store_cache",
+        lambda: cache_clears.append(None),
+    )
+    monkeypatch.setattr(
+        session_alert_test_support,
+        "get_default_session_alert_store",
+        lambda: selected_store,
+    )
+
+    store = select_live_runtime_postgres_alert_store(monkeypatch)
+
+    assert store is selected_store
+    assert cache_clears == [None]
+    assert os.environ[ALERT_STORE_BACKEND_ENV] == "postgres"
+    assert os.environ[POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV] == "1"
 
 
 class RecordingRuntimeAlertStore:
@@ -150,11 +212,44 @@ class InMemoryRuntimePostgresAlertConnection:
         return [row for row in self._rows if row[0] == session_id]
 
 
+class MissingSchemaRuntimeAlertConnection:
+    """Connection/cursor double that exposes a post-bootstrap missing-table error.
+
+    It models an operational failure after explicit PostgreSQL selection, not
+    a bootstrap configuration failure that the runtime boundary translates.
+    """
+
+    def cursor(self) -> "MissingSchemaRuntimeAlertConnection":
+        return self
+
+    def __enter__(self) -> "MissingSchemaRuntimeAlertConnection":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        return None
+
+    def execute(self, query: str, params: object | None = None) -> object:
+        """Raise the stable missing-table failure used by this boundary test."""
+        raise RuntimeError('relation "session_alert_events" does not exist')
+
+    def commit(self) -> None:
+        return None
+
+
 def _install_unexpected_postgres_builder(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fail fast if file-mode resolution ever reaches the Postgres builder."""
+
+    def fail_unexpected_build() -> object:
+        raise AssertionError("postgres builder should not run")
+
     monkeypatch.setattr(
         "session_alert_store._build_postgres_default_session_alert_store",
-        lambda: (_ for _ in ()).throw(AssertionError("postgres builder should not run")),
+        fail_unexpected_build,
     )
 
 
@@ -248,25 +343,25 @@ def test_get_default_session_alert_store_defaults_to_file_backend(
     assert isinstance(store, FileSessionAlertStore)
 
 
-def test_get_default_session_alert_store_ignores_stale_postgres_url_when_backend_is_unset(
-    monkeypatch,
+@pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param(None, id="unset"),
+        pytest.param("file", id="explicit-file"),
+        pytest.param("sqlite", id="unsupported"),
+    ],
+)
+def test_file_resolving_alert_backend_ignores_stale_postgres_bootstrap_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    backend: str | None,
 ) -> None:
-    """A leftover Postgres URL alone should not switch the default backend."""
-    monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
-    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, STALE_POSTGRES_ALERT_DATABASE_URL)
-    _install_unexpected_postgres_builder(monkeypatch)
-
-    store = get_default_session_alert_store()
-
-    assert isinstance(store, FileSessionAlertStore)
-
-
-def test_get_default_session_alert_store_ignores_stale_postgres_url_when_file_backend_is_explicit(
-    monkeypatch,
-) -> None:
-    """Explicit file mode should ignore Postgres bootstrap settings completely."""
-    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "file")
-    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, STALE_POSTGRES_ALERT_DATABASE_URL)
+    """Selections resolving to file mode must ignore stale PostgreSQL settings."""
+    if backend is None:
+        monkeypatch.delenv(ALERT_STORE_BACKEND_ENV, raising=False)
+    else:
+        monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, backend)
+    monkeypatch.setenv(POSTGRES_ALERT_DATABASE_URL_ENV, "sqlite:///stale-alerts.db")
+    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "0")
     _install_unexpected_postgres_builder(monkeypatch)
 
     store = get_default_session_alert_store()
@@ -320,22 +415,46 @@ def test_get_default_session_alert_store_normalizes_runtime_backend_env_whitespa
     assert store is built_stores[0]
 
 
-def test_get_default_session_alert_store_raises_when_postgres_bootstrap_fails(
-    monkeypatch,
+@pytest.mark.parametrize(
+    "bootstrap_message",
+    [
+        pytest.param(
+            "schema bootstrap failed",
+            id="schema-bootstrap",
+        ),
+        pytest.param(
+            "Install psycopg to use the PostgreSQL alert-store bootstrap path",
+            id="missing-driver",
+        ),
+        pytest.param(
+            "Could not connect to the PostgreSQL alert store",
+            id="connection-failure",
+        ),
+    ],
+)
+def test_explicit_postgres_alert_backend_surfaces_bootstrap_failures_at_runtime_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    bootstrap_message: str,
 ) -> None:
-    """Explicit Postgres mode should fail clearly instead of silently falling back."""
+    """Explicit Postgres mode should preserve actionable bootstrap failures."""
+
+    def fail_bootstrap() -> object:
+        raise PostgresAlertStoreBootstrapError(bootstrap_message)
+
     monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
-
-    def fake_build_postgres_default_session_alert_store() -> object:
-        raise RuntimeError("boom")
-
     monkeypatch.setattr(
-        "session_alert_store._build_postgres_default_session_alert_store",
-        fake_build_postgres_default_session_alert_store,
+        "session_alert_store_postgres.bootstrap_postgres_alert_store",
+        fail_bootstrap,
     )
 
-    with pytest.raises(RuntimeError, match="boom"):
+    with pytest.raises(
+        AlertStoreRuntimeConfigurationError,
+        match=bootstrap_message,
+    ) as error:
         get_default_session_alert_store()
+
+    assert isinstance(error.value.__cause__, PostgresAlertStoreBootstrapError)
+    assert str(error.value.__cause__) == bootstrap_message
 
 
 def test_get_default_session_alert_store_only_fails_for_missing_postgres_driver_when_postgres_is_selected(
@@ -385,8 +504,40 @@ def test_explicit_postgres_alert_backend_rejects_missing_or_invalid_url_without_
         database_url=database_url,
     )
 
-    with pytest.raises(RuntimeError, match=expected_message):
+    with pytest.raises(
+        AlertStoreRuntimeConfigurationError,
+        match=expected_message,
+    ):
         get_default_session_alert_store()
+
+
+def test_explicit_postgres_alert_backend_keeps_missing_schema_failure_visible_after_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A selected Postgres store should not turn later table failures into file reads."""
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store_postgres.bootstrap_postgres_alert_store",
+        MissingSchemaRuntimeAlertConnection,
+    )
+
+    store = get_default_session_alert_store()
+
+    assert isinstance(store, PostgresSessionAlertStore)
+    with pytest.raises(
+        RuntimeError,
+        match='relation "session_alert_events" does not exist',
+    ) as error:
+        store.append_alert(
+            _alert_event(
+                session_id="runtime-postgres-missing-schema",
+                timestamp_utc="2026-06-01 12:00:00",
+                title="Missing schema",
+                message="The alert table was not bootstrapped.",
+            )
+        )
+
+    assert not isinstance(error.value, AlertStoreRuntimeConfigurationError)
 
 
 def test_default_alert_service_entrypoint_uses_runtime_selected_backend(
@@ -470,6 +621,45 @@ def test_default_alert_store_proxy_keeps_file_backed_append_read_round_trip(
             detector_id="video_metrics",
             title="File mode alert",
             message="Persisted through the default file-backed alert store.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        )
+    ]
+
+
+def test_alert_history_stays_isolated_across_explicit_backend_reselection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Reselecting the backend must not combine file and PostgreSQL history."""
+    session_id = "runtime-alert-backend-isolation"
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, session_id)
+
+    DEFAULT_SESSION_ALERT_STORE.append_alert(
+        _alert_event(
+            session_id=session_id,
+            timestamp_utc="2026-06-02 10:00:00",
+            title="File-backed alert",
+            message="This history belongs only to the file-backed alert store.",
+        )
+    )
+
+    _select_in_memory_postgres_alert_backend(monkeypatch)
+    clear_default_session_alert_store_cache()
+
+    assert read_session_alert_events(session_id) == []
+
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "file")
+    clear_default_session_alert_store_cache()
+
+    assert read_session_alert_events(session_id) == [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-06-02 10:00:00",
+            detector_id="video_metrics",
+            title="File-backed alert",
+            message="This history belongs only to the file-backed alert store.",
             severity="warning",
             source_name="segment_0001.ts",
         )

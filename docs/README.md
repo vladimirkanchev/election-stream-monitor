@@ -113,9 +113,11 @@ Use these first depending on what you are doing:
 
 Use this shortcut map before editing code:
 
-For the current alert-storage rollout state, use:
+For the current persistence rollout state, use:
 
-- [architecture.md](./architecture.md) for the storage split and rollout decision
+- [session-persistence-audit.md](./session-persistence-audit.md) for rollout,
+  schema, rollback, backfill policy, and default-readiness evidence
+- [architecture.md](./architecture.md) for the concise storage split
 - [session-model.md](./session-model.md) for snapshot and persistence semantics
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
 
@@ -311,7 +313,7 @@ module families and the matching tests:
     - explicit runtime selection for the default alert store:
       `ESM_ALERT_STORE_BACKEND=file|postgres`
   - `src/session_alert_store_postgres.py`
-    - concrete PostgreSQL alert backend plus schema/bootstrap helpers
+    - concrete PostgreSQL alert backend, bootstrap, and test-only schema-reset helpers
   - `src/session_alert_store_postgres_config.py`
     - narrow env/config parsing for the PostgreSQL alert-store bootstrap path
   - `src/session_io.py`
@@ -323,7 +325,7 @@ module families and the matching tests:
     - compact session-alert report shaping and table formatting
     - source owner for the demo-report CLI and normalized alert-report test helpers
   - `tests/session_alert_test_support.py`
-    - shared alert/session helpers for alert-store, boundary, and report assertions
+    - shared alert/session helpers, including strict opt-in live-PostgreSQL setup
   - `tests/api_alert_test_support.py`
   - `tests/mcp_alert_test_support.py`
   - `tests/test_session_alert_store.py`
@@ -336,11 +338,11 @@ module families and the matching tests:
     - explicit `file` versus `postgres` backend-mode config coverage
   - `tests/test_session_alert_store_parity.py`
     - file-store versus PostgreSQL-store parity over the shared alert backend
-      and read-model layer, including filtered raw reads plus grouped filtered
-      and time-bounded parity
+      and read-model layer, including append order, normalized raw shape,
+      session-scoped filtering, empty-state behavior, and grouped reads
   - `tests/test_session_alert_store_postgres.py`
-    - PostgreSQL alert-store contract for schema/bootstrap plus the concrete
-      second backend's read/write drift-sensitive behavior
+    - PostgreSQL alert-store contract, including opt-in live schema/reset and
+      read-model smoke coverage
   - `tests/test_session_alert_store_postgres_config.py`
     - narrow env/config, cache-behavior, and URL-validation coverage for the
       PostgreSQL alert-store bootstrap path
@@ -350,6 +352,9 @@ module families and the matching tests:
     - local execution-path coverage for runner-written alerts through the
       shared alert backend plus the live weekly runtime/operator-flow runner
       confidence anchor
+  - `scripts/postgres_alert_weekly_confidence_support.py`
+    - shared explicit-PostgreSQL environment and current-interpreter runner for
+      the scheduled/manual alert-confidence bundles
   - `scripts/postgres_alert_weekly_backend_confidence.py`
     - opt-in weekly/manual live Postgres backend-confidence runner for store,
       raw/grouped FastAPI, and grouped MCP checks

@@ -1,17 +1,46 @@
-# Session Persistence Audit
+# Persistence Rollout Audit
 
-This audit captures the current session persistence surface for the ongoing
-session-store migration. Use it as the detailed storage inventory, ownership
-map, and migration reference.
+This audit captures the current session and alert persistence rollout. Use it
+as the detailed storage inventory, ownership map, and migration reference.
 
 Document split:
 
 - keep [contracts.md](./contracts.md) short and focused on stable payload and
-  seam contracts
+  seam contracts, including the public alert-backend selection and read rules
 - keep [session-model.md](./session-model.md) focused on session meaning and
   lifecycle semantics
-- keep this file detailed, especially for module ownership, table mapping,
-  runtime selection, and migration watchpoints
+- keep [testing-and-validation.md](./testing-and-validation.md) focused on
+  commands, environment setup, and routine versus live confidence lanes
+- keep [architecture.md](./architecture.md) to a concise default-versus-opt-in
+  runtime summary with links to the owning docs
+- keep this file as the detailed persistence owner for rollout readiness,
+  schema ownership, rollback, backfill, and migration watchpoints
+
+## Operational Policy Index
+
+Use the sections below as the authoritative persistence rollout reference:
+
+- [Readiness Evidence Baseline](#readiness-evidence-baseline) maps the current
+  proof, manual confidence, and known gaps before any default-switch decision.
+- [Default-Switch Decision Gates](#default-switch-decision-gates) defines the
+  evidence required before either PostgreSQL backend can become a default.
+- [Current Persistence Readiness Scorecard](#current-persistence-readiness-scorecard)
+  records what is ready, opt-in, manual, or blocked for sessions and alerts.
+- [Shared Operational Blockers](#shared-operational-blockers) defines the
+  measurable evidence still required for a coordinated default switch.
+- [Schema and Bootstrap Ownership](#schema-and-bootstrap-ownership) defines
+  table ownership, auto-create behavior, and the manual-first schema policy.
+- [Shared Persistence Failure Policy](#shared-persistence-failure-policy)
+  defines safe file-mode resolution and visible explicit-PostgreSQL failures.
+- [Alert-Store Rollback](#alert-store-rollback) through
+  [Alert Backend Cutover](#alert-backend-cutover) define rollback,
+  forward-only history, backend-specific reads, and cutover boundaries.
+- [Future Alert Backfill Criteria](#future-alert-backfill-criteria) and the
+  schema section define when a separate backfill or migration-tool branch is
+  required.
+
+Other persistence documents should link here for rollout policy rather than
+copying these rules.
 
 ## Session / Alert Backend Naming Audit
 
@@ -44,19 +73,19 @@ Current helper and lane naming is close, but not fully parallel:
 - sessions already have compact `just` entrypoints for:
   - `just test-session-store`
   - `just test-session-runtime`
-- alerts still rely more on focused pytest slices and weekly/manual scripts
-  than on matching `just` wrappers
+- alerts provide `just test-alert-postgres-live` for the complete manual
+  confidence pass; the focused scripts remain available when one weekly bundle
+  is the relevant seam
 
 Audit conclusion:
 
 - env naming is consistent enough to keep
 - runtime-selection wording is consistent enough to keep:
   file-backed default, PostgreSQL opt-in
-- session rollout docs are currently more explicit about forward-only and
-  no-backfill semantics than alert docs; treat that as rollout-stage truth,
-  not as a naming bug
-- the next alignment work should focus on lane naming, rollout wording, and
-  helper discoverability rather than renaming stable env vars
+- session and alert rollout docs both define forward-only, no-backfill
+  PostgreSQL paths while preserving their distinct maturity levels
+- future alignment should focus on lane naming and helper discoverability,
+  rather than renaming stable env vars or duplicating rollout policy
 
 ## Shared Rollout Vocabulary
 
@@ -69,19 +98,19 @@ Use this vocabulary consistently across session-store and alert-store docs:
 - `explicit backend selection`
   - the backend changes only after an env-backed runtime choice such as
     `ESM_SESSION_STORE_BACKEND=postgres` or `ESM_ALERT_STORE_BACKEND=postgres`
-- `live smoke`
-  - an opt-in real-database confidence lane, not routine local validation and
-    not the default protected PR lane
-- `forward-only session path`
-  - session PostgreSQL currently applies to newly created sessions after
-    explicit backend selection; it does not imply historical file-session
-    backfill
+- `live-smoke opt-in`
+  - a test-only gate for an opt-in real-database confidence lane, not backend
+    selection, routine local validation, or the default protected PR lane
+- `forward-only path`
+  - session PostgreSQL applies to newly created sessions, and alert PostgreSQL
+    applies to newly produced alerts, after explicit backend selection; neither
+    implies automatic historical backfill
 
 Vocabulary guardrails:
 
-- use `forward-only` only for session-store rollout unless alert docs later
-  gain the same historical-data policy
-- use `live smoke` for focused real-PostgreSQL confidence and reserve
+- use `forward-only` only for explicitly selected PostgreSQL session or alert
+  paths that do not backfill historical file-backed data
+- use `live-smoke opt-in` for focused real-PostgreSQL confidence and reserve
   `runtime confidence` for broader start/read/cancel worker-path checks
 - use `explicit backend selection` instead of vague wording such as
   "when PostgreSQL is enabled" when the env-driven runtime choice matters
@@ -91,8 +120,9 @@ Vocabulary guardrails:
 
 ## Readiness States
 
-Use these labels when describing session-store rollout status. Keep them short
-and behavioral.
+Use these labels when describing persistence rollout status. Keep them short
+and behavioral. This section and the scorecard below are the sole authority
+for readiness states; other docs should link here instead of redefining them.
 
 - `ready`
   - the current branch already proves the behavior well enough for its
@@ -123,29 +153,102 @@ Readiness guardrails:
 - reserve `future` for unshipped work, not partially supported work that
   already exists behind opt-in controls
 
-## Current Session-Store Readiness
+## Readiness Evidence Baseline
 
-| Area | State | Current meaning |
+This baseline records evidence, not a default-switch decision. `ready` below
+means the current opt-in contract is covered; it does not mean PostgreSQL is
+ready to replace the file-backed default.
+
+| Area | Verified evidence | Current boundary |
 | --- | --- | --- |
-| File-backed session runtime | `ready` | File-backed session storage remains the normal runtime default for routine local runs, protected PR CI, and current operator-facing session flows. |
-| Shared session-store contract | `ready` | File and PostgreSQL-backed session stores already agree on metadata, latest progress, ordered results, cancel intent, and snapshot shape. |
-| Session-store parity coverage | `ready` | Focused parity and contract tests already prove shared behavior without tying the branch to backend-specific file paths or SQL details. |
-| PostgreSQL session store | `opt-in` | PostgreSQL session storage is implemented and usable now, but it turns on only after explicit backend selection plus valid PostgreSQL configuration. |
-| Live PostgreSQL session confidence | `opt-in` | Narrow live store smoke and live runtime smoke exist for real-database confidence, but they stay outside routine local and protected PR lanes. |
-| Explicit PostgreSQL failure policy | `ready` | Explicit PostgreSQL mode fails clearly for bad URL, missing driver, bootstrap failure, and missing-schema cases instead of silently falling back. |
-| Live PostgreSQL setup | `manual` | Real PostgreSQL confidence still depends on deliberate database bootstrap, env selection, and direct opt-in commands. |
-| Alert PostgreSQL rollout | `opt-in` | Alert PostgreSQL is supported and validated as opt-in, but it is still narrower than the current session rollout. |
-| Alert/session default alignment | `blocked` | A full project-wide default switch still needs one coherent default-backend story across both session and alert persistence. |
-| Historical session data | `blocked` | Session PostgreSQL is still forward-only; older file-backed sessions are not automatically backfilled or dual-read by default. |
-| Rollback for a default switch | `blocked` | Explicit PostgreSQL failure handling is covered, but full default-switch rollback expectations are not finished yet. |
-| Operational confidence | `blocked` | Live database confidence is still targeted and manual rather than routine operational proof. |
-| Security and deployment review | `blocked` | A default PostgreSQL path still needs a broader review of connection handling, secret management, and shared-environment assumptions. |
+| Store parity | `tests/test_session_store_parity.py` and `tests/test_session_alert_store_parity.py` exercise the shared public contracts against file-backed and PostgreSQL-like stores. | Fast, deterministic doubles prove behavior, not live deployment readiness. |
+| Live store smoke | `tests/test_session_store_postgres.py` and `tests/test_session_alert_store_postgres.py` cover opt-in schema reset/bootstrap and public round trips against PostgreSQL. | Requires a disposable database and explicit real-smoke gates. |
+| Runtime smoke | `tests/test_api_boundary_sessions_runtime.py` covers session start/read/cancel; alert runner-to-operator confidence is covered by `tests/test_session_runner_execution_local.py` and live alert route tests. | Live paths are local or weekly/manual confidence, not protected PR work. |
+| Failure and rollback | Session and alert runtime/configuration suites cover safe file selection, visible explicit-PostgreSQL failures, missing-schema behavior, and cache reset. | They prove backend reselection, not a production rollback runbook. |
+| Historical data | Session and alert PostgreSQL paths are forward-only; no automatic backfill or dual-read implementation exists. | A later backfill decision needs its own mapping, validation, and recovery plan. |
+| Schema ownership | `session_store_postgres.py` owns session tables; `session_alert_store_postgres.py` owns alert tables. Focused bootstrap/reset tests cover current schema behavior. | `CREATE TABLE IF NOT EXISTS` is opt-in bootstrap convenience, not migration management. |
+| Documentation | This audit owns rollout policy; `contracts.md`, `session-model.md`, and `testing-and-validation.md` own public behavior, lifecycle meaning, and commands respectively. | Documentation is aligned to file-backed default plus PostgreSQL opt-in. |
+| Security and operations | Routine CI stays synthetic; opt-in local and weekly PostgreSQL lanes prove focused database behavior. | Secret handling, deployment configuration, backups, monitoring, recovery rehearsal, and shared-environment review remain default-switch blockers. |
+
+## Default-Switch Decision Gates
+
+Change a persistence default only when every applicable gate has `ready`
+evidence for the affected store. A project-wide switch requires the criteria
+for both session and alert persistence; a one-store switch needs an explicit
+compatibility and operations decision rather than inheriting readiness from the
+other store.
+
+| Gate | Evidence required before a default change |
+| --- | --- |
+| Contract parity | File and PostgreSQL stores preserve the documented public read/write contract, including ordering, empty states, and snapshot or alert shapes. |
+| Real PostgreSQL store smoke | A repeatable disposable-database smoke proves schema bootstrap/reset and representative public reads/writes against the real adapter. |
+| Runtime/operator smoke | The active runtime writes PostgreSQL-backed data and the relevant FastAPI, snapshot, CLI, or operator read path returns it coherently. |
+| Explicit failure and rollback | Explicit PostgreSQL failures remain visible; documented backend rollback is deliberate, does not silently fall back, and has focused regression coverage. |
+| Historical-data decision | The release explicitly chooses forward-only behavior or an approved backfill plan; no implicit dual-read or history merge is assumed. |
+| Schema deployment and upgrades | Table ownership, new-database bootstrap, existing-database upgrade, and rollback expectations are reproducible. A migration tool is adopted when the existing trigger criteria require one. |
+| Documentation alignment | Contracts, lifecycle semantics, validation commands, and this audit match the implemented selection and failure behavior. |
+| Security review | Connection secrets, least-privilege database access, transport assumptions, and local-versus-shared deployment boundaries have been reviewed for the intended environment. |
+| Operational monitoring and recovery | Provisioning, backups, restore verification, monitoring, incident diagnostics, and recovery rehearsal are defined for the intended deployment. |
+
+These are decision criteria, not an implementation plan or a requirement to
+add live PostgreSQL checks to routine protected PR CI.
+
+## Current Persistence Readiness Scorecard
+
+This table scores each store against the decision gates above. `ready` means
+the named criterion has current evidence; it does not authorize a default
+change by itself. Equal labels do not imply equal depth of runtime coverage.
+
+| Criterion | Session state | Alert state | Current evidence | Remaining blocker |
+| --- | --- | --- | --- | --- |
+| File-backed default | `ready` | `ready` | File-backed stores remain the normal runtime path for local runs, protected PR CI, and operator flows. | None for this criterion. |
+| Contract parity | `ready` | `ready` | The session parity suite covers metadata, progress, ordered results, cancel intent, and snapshots; the alert suite covers order, filtering, empty states, and read shapes. | None for this criterion. |
+| Real PostgreSQL store smoke | `opt-in` | `opt-in` | Both real-store suites exercise disposable-database bootstrap/reset and public round trips. | Deliberate database setup and explicit real-smoke selection remain required. |
+| Runtime/operator smoke | `opt-in` | `opt-in` | Sessions cover FastAPI start/read, detached-worker cancellation, and terminal readability. Alerts cover runner-written data through snapshots, FastAPI list/summary routes, and the weekly/manual operator bundle. | Alert confidence does not yet cover the full detached session-start path; neither lane is routine PR confidence. |
+| Explicit failure and rollback | `ready` | `ready` | Runtime configuration tests keep file mode safe, surface explicit PostgreSQL failures, and cover deliberate backend reselection. | Operational rollback rehearsal remains blocked below. |
+| Historical-data decision | `ready` | `ready` | Both paths are explicitly forward-only; neither silently backfills nor dual-reads old file data. | A later backfill, if needed, requires its own reviewed plan. |
+| Schema deployment and upgrades | `manual` | `manual` | Each store owns its table definitions and bootstrap behavior; session auto-create defaults off and alert auto-create defaults on after explicit selection. | Existing-database upgrades remain operator-managed until migration-tool triggers are met. |
+| Documentation alignment | `ready` | `ready` | Contracts, lifecycle semantics, validation commands, and this audit all describe file-backed default plus explicit PostgreSQL opt-in. | Keep future changes linked to this scorecard instead of duplicating policy. |
+| Security review | `blocked` | `blocked` | Current configuration and tests prove explicit selection and failure behavior. | Review secrets, least-privilege access, transport, and shared-runtime boundaries for the intended environment. |
+| Operational monitoring and recovery | `blocked` | `blocked` | Focused local and weekly/manual database confidence exists. | Define provisioning, backup/restore verification, monitoring, diagnostics, and recovery rehearsal. |
+
+### Shared Operational Blockers
+
+These blockers apply across session and alert persistence. They define the
+evidence needed for a default decision without prescribing a cloud provider or
+deployment platform.
+
+| Blocker | Current state | Completion evidence |
+| --- | --- | --- |
+| Secrets and connections | `blocked` | The intended environment defines secret injection and rotation, a least-privilege database role, transport requirements, and a check that credentials are not exposed in logs or operator output. |
+| Schema upgrades | `manual` | An upgrade from the current schema is repeatable on a disposable database, has a documented rollback or recovery path, and adopts versioned migration tooling when the existing trigger criteria are met. |
+| Backup and recovery | `blocked` | Backup scope and retention are documented, a restore is rehearsed against disposable infrastructure, and restored session snapshots and alert reads are verified through public store paths. |
+| Deployment configuration | `blocked` | Required environment settings, database availability ordering, startup failure behavior, health verification, and restart steps are documented for the intended runtime. |
+| Monitoring and diagnostics | `blocked` | Operators can detect connection, schema, and persistence read/write failures and have a documented first diagnostic path before data availability is affected silently. |
+| Rollback rehearsal | `blocked` | A stop, backend-reselection, restart, and verification exercise succeeds without silent fallback, dual reads, or implied history merging. The expected visibility of data in each backend is documented. |
+| Session/alert backend agreement | `blocked` | The supported backend combination is explicit, parent and detached-worker selection agree, and one integration smoke proves session snapshots and alert reads resolve the intended stores together. |
+
+### Frozen Follow-ups
+
+The scorecard closes this branch's readiness assessment. Keep the remaining
+work in separately scoped changes:
+
+- security and connection-handling review for the intended deployment
+- schema upgrade/backfill work, including migration tooling when its triggers
+  are reached
+- backup, restore, monitoring, and rollback rehearsal
+- coordinated session/alert backend agreement before any default switch
+
+None of these follow-ups changes the current file-backed default or requires
+live PostgreSQL validation in protected PR CI.
 
 Readiness boundary:
 
-This branch is ready for file-backed default plus explicit PostgreSQL opt-in.
-Do not describe PostgreSQL session storage as the default runtime path yet.
-Other docs should link to this readiness table instead of restating it.
+Both PostgreSQL stores are strong opt-in paths, not default runtime paths. The
+session path has broader detached-worker lifecycle coverage; the alert path
+has focused store and operator-read confidence. Both still require manual
+environment setup and share security and operational blockers. Other docs
+should link to this scorecard instead of restating it.
 
 ## Current Artifacts
 
@@ -345,7 +448,7 @@ Current progress behavior:
 
 - progress persistence now goes through `SessionStore` in lifecycle,
   execution, and terminal helpers
-- the file default is still active, so ordinary runs still
+- the file-backed default is still active, so ordinary runs still
   produce `progress.json`
 - explicit `ESM_SESSION_STORE_BACKEND=postgres` switches that same progress
   contract to PostgreSQL
@@ -373,7 +476,7 @@ session metadata, progress, results, or snapshot reads directly.
 | `src/session_runner_terminal.py` | `update_session_status(...)`, `write_session_progress(...)` | Terminal metadata/progress writes | High | none in this module; terminal persistence is part of the durable session read model. |
 | `src/session_store_file.py` | file-backed adapter over `session_exists(...)`, `read_session_snapshot(...)`, `read_session_result_events(...)`, `write_session_metadata(...)`, `write_session_progress(...)` | Compatibility backend for the `SessionStore` contract | High | none; this adapter is the intentional bridge for parity and rollback. |
 | `src/session_alert_store.py` | `get_session_dir(...)`, `session_exists(...)` | Alert-store known-session coupling | Medium | Alert rows stay on the alert-store contract; only the known-session check matters to the session-store migration. |
-| `src/session_alert_store_postgres.py` | shared `require_known_session(...)` adapter | PostgreSQL alert reads now use the shared alert-side known-session adapter backed by `SessionStore.session_exists(...)` | Medium | Do not migrate alert persistence in this phase; keep the dependency limited to the known-session question. |
+| `src/session_alert_store_postgres.py` | shared `require_known_session(...)` adapter | PostgreSQL alert reads now use the shared alert-side known-session adapter backed by `SessionStore.session_exists(...)` | Medium | Keep the dependency limited to the known-session question; alert backfill and dual-read remain out of scope. |
 | `src/stream_loader_http_hls.py` | `append_api_stream_seen_chunk_key(...)`, `read_api_stream_seen_chunk_keys(...)`, `is_session_cancel_requested(...)` | Replay-key persistence and cooperative cancellation | Low for this phase | These are runtime coordination paths, not the first durable session-store surface. Keep them separate until the main session read model is stable. |
 
 Practical migration rule:
@@ -420,6 +523,29 @@ The coupling is real but fairly concentrated:
   check, even after routing it through the shared adapter, because it assumes
   the active session-store backend describes the same session universe as the
   alert backend
+
+### Focused Live PostgreSQL Alert Contract
+
+The opt-in real-database alert-store smoke has one deliberately small target
+contract. It runs only with the explicit gate documented in
+[testing-and-validation.md](./testing-and-validation.md), against a disposable
+database because its isolation reset is destructive. It proves the PostgreSQL
+adapter and schema work together without repeating broader synthetic parity or
+runtime suites:
+
+| Concern | Live-smoke evidence | Keep outside this lane |
+| --- | --- | --- |
+| Schema lifecycle | Bootstrap and isolated reset leave a usable empty store. | Version-specific catalog inspection or migration-history coverage. |
+| Raw persistence | An appended alert can be read back through the public store method. | File-path or SQL-statement assertions already owned by unit tests. |
+| Ordering | Alerts with the same timestamp retain append order. | Broad event-order matrices already owned by parity tests. |
+| Filtering | A small mixed set produces the expected session/detector/severity subset through the shared read-model seam. | Every HTTP, MCP, and incident-filter combination. |
+| Public shape | The active PostgreSQL store feeds stable raw and grouped incident summary shapes. | Full session snapshots, CLI, frontend, or operator-flow coverage. |
+| Malformed rows | No live-database case: required columns and severity are constrained by the PostgreSQL schema. | Artificial table corruption; file-only tolerance remains covered by the synthetic parity suite. |
+
+This is a real-database confidence lane, not a second end-to-end suite.
+`tests/test_session_alert_store_parity.py` remains the fast cross-backend
+behavior owner; the weekly backend and runtime/operator bundles remain the
+owners of FastAPI, MCP, runner, snapshot, and CLI confidence.
 
 ### Ownership boundary decision
 
@@ -481,7 +607,7 @@ entry points:
 - `session_runner.run_local_session(...)` owns worker-process lifecycle writes
   and passes the store into lifecycle, execution, and terminal helpers.
 
-`FileSessionStore` should remain the file default at both entry
+`FileSessionStore` should remain the file-backed default at both entry
 points until the PostgreSQL store has parity coverage. API routers and CLI
 handlers should keep calling `session_service` and `session_runner`; they
 should not choose storage backends directly.
@@ -513,7 +639,7 @@ later PostgreSQL cutover.
 That runtime selection is now concrete for explicit PostgreSQL opt-in:
 `ESM_SESSION_STORE_BACKEND=postgres` builds a `PostgresSessionStore` through
 the same narrow bootstrap path, while ordinary runtime callers still stay on
-the file default unless the backend is deliberately switched.
+the file-backed default unless the backend is deliberately switched.
 
 The PostgreSQL bootstrap surface now has one narrow owner:
 
@@ -594,62 +720,60 @@ For opt-in live PostgreSQL work, keep isolation explicit: the same bootstrap
 module now supports dropping and recreating only the known session-store
 tables, and test helpers keep those checks out of ordinary local and PR lanes.
 
-The runtime validator now centralizes the branch rule:
+The session runtime validator now centralizes the session-specific rule:
 
 - missing or invalid backend env still falls back to `file`
 - explicit `postgres` selection keeps the parsed PostgreSQL settings attached
 - missing or non-PostgreSQL URLs fail only for explicit `postgres` mode
 - missing `psycopg` now fails only for explicit `postgres` mode and surfaces
   one actionable install message for local and CI environments
-- session-table auto-create is now opt-in; the default is to require an
-  explicit bootstrap helper or migration path rather than silently creating
-  durable tables at runtime
 
-Current schema ownership audit:
+## Schema and Bootstrap Ownership
+
+Runtime selection chooses a backend; PostgreSQL modules own their current
+schema and bootstrap behavior:
 
 - owning doc for schema/bootstrap/migration detail:
   `docs/session-persistence-audit.md`
   `docs/contracts.md` keeps the high-level contract summary and points here
   for table mapping, bootstrap policy, caller ownership, and migration policy
-- runtime backend selection owns whether PostgreSQL is used at all:
-  `src/session_store_runtime.py` chooses the file default or the explicit
-  PostgreSQL path
-- PostgreSQL bootstrap owns connection setup and optional schema creation:
+- runtime backend selection owns whether either PostgreSQL store is used at
+  all; the file-backed store remains the default
+- PostgreSQL bootstrap owns connection setup and current-table creation:
   `src/session_store_postgres.py` exposes
   `connect_postgres_session_store(...)`,
   `initialize_postgres_session_store(...)`, and
-  `bootstrap_postgres_session_store(...)`
-- app startup does not unconditionally own schema creation:
-  PostgreSQL tables are created only when explicit PostgreSQL mode is selected
-  and `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
-- current table creation policy is narrow:
-  app bootstrap may issue `CREATE TABLE IF NOT EXISTS` only under that
-  explicit opt-in flag, for the known session-store tables only
+  `bootstrap_postgres_session_store(...)`; `src/session_alert_store_postgres.py`
+  owns the alert equivalent, including `session_alert_events` table and index
+  DDL
+- table creation is bootstrap convenience, not automatic migration:
+  after explicit PostgreSQL selection, a store bootstrap path may issue
+  `CREATE TABLE IF NOT EXISTS` for its current owned tables only when its
+  auto-create setting allows it. Alert auto-create currently defaults on;
+  session auto-create remains explicit opt-in.
+- these defaults are rollout choices, not evidence of equal maturity or an
+  automatic migration path. Neither bootstrap path alters existing table
+  definitions, migrates rows, or backfills file-backed history.
 - schema reset is test-only today:
-  `reset_postgres_session_store_schema(...)` is used by the live smoke helpers,
-  not by normal runtime startup
+  `reset_postgres_session_store_schema(...)` and
+  `reset_postgres_alert_store_schema(...)` are used by live smoke helpers, not
+  normal runtime startup
 - current migration policy stays manual-first:
-  auto-create can bootstrap the known tables for deliberate opt-in runs, but
-  schema evolution and historical backfill still require explicit reviewed
-  change work
-- current runtime-selection rule follows the same boundary:
-  once explicit PostgreSQL mode is active, parent reads, cancel writes, and
-  detached-worker writes all operate against the PostgreSQL-backed known-session
-  universe rather than probing older file-backed session directories
-- current read-compatibility expectation is intentionally narrow:
-  explicit PostgreSQL mode is single-backend and does not perform hidden
-  dual-store reads across PostgreSQL and file-backed session directories
-- forward-only and backfill policy stays simple here:
-  enabling explicit PostgreSQL mode does not migrate older file-backed session
-  history, and any later backfill should land as its own reviewed migration
-  path with mapping, idempotency, rollback, validation, and dry-run criteria
-- practical meaning at this stage:
-  when the session-store schema changes, update the owned SQL/bootstrap code,
-  focused contract or smoke tests, and owning docs together; do not treat
-  runtime startup as an upgrader for existing databases
-- a migration tool becomes necessary when the project needs in-place upgrades
-  of existing PostgreSQL session databases, more than one ordered schema
-  revision, or a tracked rollback path between schema versions
+  for a schema change, update the owned SQL/bootstrap code, focused tests,
+  live-smoke expectations, and this owning documentation together. Existing
+  databases must be updated deliberately through reviewed operational work
+  before code relies on the new layout; bootstrap does not upgrade them.
+- explicit PostgreSQL mode is single-backend: parent reads, cancel writes, and
+  detached-worker writes use the selected PostgreSQL store without probing
+  older file-backed data. Any backfill remains separate reviewed migration
+  work with mapping, idempotency, rollback, validation, and dry-run criteria.
+- adopt a real migration tool before any of these becomes necessary:
+  - in-place upgrades of existing PostgreSQL session or alert databases
+  - support for more than one ordered schema revision
+  - data transformation or historical backfill
+  - tracked deployment upgrade and rollback history
+  - reproducible convergence across multiple environments
+  - routine destructive or compatibility-sensitive schema changes
 
 That is the current practical owner split for this branch: runtime config owns
 backend choice, PostgreSQL bootstrap owns optional table creation, and schema
@@ -677,7 +801,7 @@ That makes the migration boundary clearer:
 ## Cancellation Flow Audit
 
 Cancellation now routes through narrow `SessionStore` runtime-control methods.
-In the file default, those methods still persist the legacy marker file.
+In the file-backed default, those methods still persist the legacy marker file.
 The public request path and worker observation path are deliberately separate:
 
 | Stage | Current owner | Behavior to preserve |
@@ -685,7 +809,7 @@ The public request path and worker observation path are deliberately separate:
 | API request | `src/api/routers/sessions.py` | `POST /sessions/{session_id}/cancel` delegates to `session_service.cancel_session(...)`; missing sessions map to `404`, terminal sessions map to `409`. |
 | CLI request | `src/session_cli.py` | `cancel-session` uses the same service path, with a legacy missing-session fallback payload for CLI compatibility. |
 | Service validation | `src/session_service.py` | Reads the current snapshot through the default store, rejects terminal sessions, then writes cancel intent. |
-| Store-backed cancel write | `src/session_service.py` via `SessionStore.request_cancel(...)` | Writes idempotent cancel intent through the active store. In the file default this still produces `cancel_requested.json` with `{session_id, cancel_requested: true}`. |
+| Store-backed cancel write | `src/session_service.py` via `SessionStore.request_cancel(...)` | Writes idempotent cancel intent through the active store. In the file-backed default this still produces `cancel_requested.json` with `{session_id, cancel_requested: true}`. |
 | Local worker polling | `src/session_runner_execution.py` | Local slice loops check `SessionStore.is_cancel_requested(...)` before each slice and finalize to `cancelled` with `status_reason = cancel_requested`. |
 | HTTP/HLS loader polling | `src/stream_loader_http_hls.py` | Live stream loading checks `SessionStore.is_cancel_requested(...)` during playlist polling, reconnect backoff, segment download, and temp-file materialization. |
 | Terminal settlement | `src/session_runner_terminal.py` | Once the worker observes cancellation, metadata/progress settle to terminal `cancelled`; the transient `cancelling` summary is not the durable final state. |
@@ -940,7 +1064,7 @@ storage-independent public behavior. Keep both during the migration.
 
 | Test area | Current examples | What the tests encode | Migration use |
 | --- | --- | --- | --- |
-| File-backed session helpers | `tests/test_session_io.py` | JSON/JSONL writes, malformed-file tolerance, empty snapshot shape, result ordering, `latest_result`, cancel marker files, worker-log path | Keep for the file default and any compatibility fallback. Add storage-neutral equivalents for `SessionStore`. |
+| File-backed session helpers | `tests/test_session_io.py` | JSON/JSONL writes, malformed-file tolerance, empty snapshot shape, result ordering, `latest_result`, cancel marker files, worker-log path | Keep for the file-backed default and any compatibility fallback. Add storage-neutral equivalents for `SessionStore`. |
 | File-backed alert read behavior | `tests/test_alert_query_service_read.py`, `tests/test_session_alert_store.py` | Known-session checks through `session.json`, missing `alerts.jsonl` as empty alerts, corrupt-line tolerance | Keep while file alerts remain supported. Revisit known-session checks when PostgreSQL session metadata can answer existence. |
 | PostgreSQL alert parity | `tests/test_session_alert_store_postgres.py`, `tests/test_session_alert_store_parity.py`, runtime alert route tests | Alert rows preserve fields, order, timestamp string shape, and file/PostgreSQL parity | Use as the pattern for the session-store migration: same public contract, different backend. |
 | Shared session service | `tests/test_session_service_read_cancel.py`, `tests/test_session_service.py` | Missing snapshot -> `None`, cancel allowed/rejected states, transient `cancelling` summary, worker-log exclusion from public metadata | Expand around `SessionStore` so service behavior does not depend on raw files. |
@@ -988,7 +1112,7 @@ Current detached-worker runtime confidence is also intentionally split:
   log-handle setup, and parent-to-worker session-store environment inheritance,
   including explicit PostgreSQL env propagation.
 - `tests/test_session_store_runtime.py` covers runtime backend selection,
-  explicit PostgreSQL validation, rollback-safe file defaults, and cache
+  explicit PostgreSQL validation, rollback-safe file-backed defaults, and cache
   behavior.
 - `tests/test_api_boundary_sessions_runtime.py` now has an opt-in live
   PostgreSQL start/read smoke proving FastAPI can accept a session and later
@@ -1014,24 +1138,13 @@ Keep that live runtime contract intentionally small:
 - FastAPI cancel reaches the worker through durable store-backed cancel intent.
 - Terminal session state remains readable after worker settlement.
 
-Current rollback and failure-mode coverage:
+### Shared Persistence Failure Policy
 
-- `tests/test_session_store_runtime.py` owns default runtime selection,
-  rollback-safe file behavior, explicit PostgreSQL validation, bootstrap
-  failure propagation, and missing-schema visibility.
-- `tests/test_session_cli_tooling.py` and `tests/test_session_runner_local.py`
-  keep the detached worker and local runner aligned with the same rule:
-  non-PostgreSQL selections stay file-backed, while explicit PostgreSQL
-  failures abort instead of silently writing somewhere else.
-- `tests/test_session_store_postgres.py` owns the bootstrap helper itself,
-  including cached settings, URL validation, missing driver handling, and
-  connection failure.
-- Keep live PostgreSQL confidence opt-in behind the real DB env and explicit
-  `ESM_SESSION_STORE_BACKEND=postgres`.
+This is the authoritative failure-policy matrix for both session and alert
+storage. Backend-specific code may validate or bootstrap at different layers,
+but it must preserve this observable behavior.
 
-Failure policy truth table:
-
-| Runtime selection | PostgreSQL bootstrap state | Expected behavior | Why |
+| Selection | PostgreSQL state | Expected behavior | Why |
 | --- | --- | --- | --- |
 | backend unset | any stale, missing, or invalid PostgreSQL env | stay on the default file-backed store | safe fallback; PostgreSQL is still opt-in |
 | backend `file` | any stale, missing, or invalid PostgreSQL env | stay on the file-backed store | explicit file mode should ignore unrelated PostgreSQL bootstrap state |
@@ -1042,7 +1155,22 @@ Failure policy truth table:
 | backend `postgres` | connection/bootstrap failure | fail clearly and abort the explicit PostgreSQL path | protects against split or partial backend selection |
 | backend `postgres` with auto-create disabled | known tables missing | fail clearly when the store first touches missing tables | missing schema must stay visible until bootstrap or migration work fixes it |
 
-Current rule of thumb:
+Focused ownership:
+
+- `tests/test_session_store_runtime.py`, `tests/test_session_cli_tooling.py`,
+  and `tests/test_session_runner_local.py` cover session selection, worker/CLI
+  propagation, and rollback-safe file behavior.
+- `tests/test_session_alert_store_runtime.py` and
+  `tests/test_session_alert_store_runtime_config.py` cover equivalent alert
+  selection, explicit bootstrap failures, missing-schema visibility, and cache
+  rebuilding.
+- `tests/test_session_store_postgres.py` and
+  `tests/test_session_alert_store_postgres.py` cover the lower bootstrap,
+  driver, connection, and schema behavior.
+- Live PostgreSQL confidence stays opt-in behind the relevant real-DB flag,
+  explicit backend selection, and database URL.
+
+Rule of thumb:
 
 - safe fallback is allowed only while runtime selection still resolves to the
   default file-backed path
@@ -1053,26 +1181,87 @@ Current rule of thumb:
   local runner startup; explicit PostgreSQL bootstrap or missing-schema
   failures should stay visible instead of degrading to file mode
 
-Session versus alert runtime-config consistency today:
+At the runtime-store boundary, both paths translate actionable bootstrap
+failures to their persistence-specific configuration error. Later operational
+failures, such as missing tables, remain visible to the caller.
 
-- shared behavior:
-  - backend unset keeps the file-backed default
-  - explicit `file` ignores stale PostgreSQL env
-  - invalid backend values normalize back to the file-backed default
-  - explicit `postgres` must fail clearly rather than silently falling back
-- current intentional differences:
-  - session runtime selection validates explicit PostgreSQL URL shape before
-    store build, while alert runtime selection keeps only backend selection in
-    runtime config and leaves PostgreSQL URL/bootstrap validation to the alert
-    bootstrap seam
-  - session PostgreSQL auto-create defaults off and must be explicit;
-    alert PostgreSQL auto-create still defaults on in the current rollout stage
-  - session live-smoke gating includes a dedicated
-    `POSTGRES_SESSION_STORE_REAL_SMOKE` runtime/store flag; alert live-smoke
-    gating is currently used for focused real-DB alert confidence, not a
-    matching detached-worker session-runtime lane
+### Alert-Store Rollback
 
-Current confidence for that split:
+Rolling alert storage back to files is an operator-controlled backend change:
+
+- stop or restart the affected runtime with `ESM_ALERT_STORE_BACKEND=file`
+- clear the default alert-store cache only for in-process tests or tooling that
+  deliberately changes backend configuration
+- do not copy, merge, or dual-read PostgreSQL alert rows into file storage
+- do not switch to file storage during a failed explicit PostgreSQL operation
+
+Existing PostgreSQL alerts remain in PostgreSQL. After file mode is selected,
+later alert writes and reads use the file-backed path only; rollback does not
+merge histories, restore a combined view, or automatically backfill either
+store. A backfill or cross-store recovery tool would be separate, explicit
+migration work.
+
+### Alert Historical Data Policy
+
+PostgreSQL alert storage is forward-only in the current rollout: after
+`ESM_ALERT_STORE_BACKEND=postgres` is explicitly selected, it stores newly
+produced alert events only. Existing file-backed `alerts.jsonl` history is not
+imported or automatically migrated.
+
+This policy applies only to alert writes. It does not move session metadata,
+results, worker logs, media artifacts, or other persistence seams into
+PostgreSQL. Any historical alert backfill remains separate reviewed migration
+work.
+
+### Future Alert Backfill Criteria
+
+A later alert-history backfill branch must define and validate all of the
+following before it changes production data:
+
+- source discovery for eligible `alerts.jsonl` files, row validation, and a
+  stable source-to-PostgreSQL ordering rule
+- idempotent reruns with explicit duplicate handling
+- a dry-run mode and an audit report covering scanned, accepted, skipped,
+  duplicated, and failed rows
+- an operator rollback plan and post-migration verification of row counts,
+  ordering, and public alert-read shapes
+
+These are acceptance criteria for a future migration tool, not behavior
+implemented by the current alert-store rollout.
+
+### Alert Read Compatibility
+
+Alert reads use the explicitly selected backend only. PostgreSQL mode reads its
+own alert rows and does not discover older `alerts.jsonl` history; file mode
+reads `alerts.jsonl` and does not discover PostgreSQL alert rows. Switching
+backends can therefore make older alerts unavailable to that runtime, but it
+does not delete them or imply data loss. No automatic cross-store or dual-read
+behavior exists in the current rollout.
+
+### Alert Backend Cutover
+
+Choose `ESM_ALERT_STORE_BACKEND` before starting a monitoring session. Change
+it only between sessions: let the current session settle, then stop or restart
+the affected runtime with the new setting. Do not change alert backends during
+an active session, because its history could otherwise be divided between
+`alerts.jsonl` and PostgreSQL.
+
+### Intentional Maturity Differences
+
+The shared policy does not require identical implementation or rollout maturity:
+
+- session runtime selection validates explicit PostgreSQL URL shape before
+  store build, while alert runtime selection leaves URL and bootstrap
+  validation to the alert PostgreSQL configuration seam
+- session PostgreSQL auto-create defaults off and must be explicit; alert
+  PostgreSQL auto-create currently defaults on
+- session persistence has focused detached-worker, durable-cancel,
+  terminal-readability, and forward-only migration coverage
+- alert persistence has file/PostgreSQL parity, opt-in live-store smoke, and
+  runner-to-operator-read confidence; it remains a supported opt-in path, not
+  evidence that alerts are ready for the default persistence switch
+
+Current evidence for that split:
 
 - `tests/test_session_store_runtime.py` proves the stricter session runtime
   failure truth table directly at the runtime seam
@@ -1133,55 +1322,24 @@ For the current migration stage, the PostgreSQL row design should stay small:
 
 Do not normalize every detector metric into separate relational columns yet.
 
-## Docs That Mention Session Persistence
+## Persistence Documentation Map
 
-Most docs match the current stage: file-backed session persistence is still the
-default, the PostgreSQL session-store adapter now exists as an explicit opt-in,
-and alerts stay file-backed by default with PostgreSQL opt-in. The risk is
-future drift between the default path and the new backend.
+These documents describe different persistence concerns. Keep their scopes
+separate and link to this audit for rollout policy.
 
-| Doc area | Current claim style | Status now | Migration action |
-| --- | --- | --- | --- |
-| Root `README.md` | User-facing current state: session persistence defaults to the file-backed store; PostgreSQL session storage is available as explicit opt-in | Accurate for the current release stage | Keep README high-level and avoid schema/runbook detail. |
-| `docs/session-model.md` | Canonical session semantics plus current file names and JSON/JSONL behavior | Accurate, intentionally file-specific | Keep semantic sections stable; keep file-specific wording under the file default now that `SessionStore` owns the storage contract. |
-| `docs/contracts.md` | Snapshot contract and route behavior, with some file-backed implementation notes | Mostly storage-independent, with a few file examples | Preserve as the public contract reference. Replace implementation-specific "missing `session.json`" wording when known-session checks move behind a store. |
-| `docs/data-models.md` and `docs/fastapi-boundary.md` | Snapshot/API shape rather than storage implementation | Low drift risk | Keep focused on payload shape. Avoid adding PostgreSQL implementation details here unless the API changes. |
-| `docs/architecture.md` | Current runtime architecture: file-backed default session state plus opt-in PostgreSQL backends for sessions and alerts | Accurate but implementation-oriented | Keep it aligned to the shared default-versus-opt-in rollout wording rather than older alert-only PostgreSQL phrasing. |
-| `docs/testing-and-validation.md` | Current lanes and test ownership, including session-store parity and optional live PostgreSQL session-store confidence | Accurate with recent adapter/test updates | Keep the fast-versus-live split explicit as coverage grows. |
-| `docs/README.md` | Navigation to session model, contracts, and this audit | Aligned | Keep this audit linked while the migration is active. |
+| Doc area | Owns | Keep it focused on |
+| --- | --- | --- |
+| `README.md` | User-facing current state | High-level default/opt-in wording; no schema or runbook detail. |
+| `docs/session-model.md` | Lifecycle semantics | Session meaning and file-default notes, not rollout policy. |
+| `docs/contracts.md` | Public snapshots, alert reads, and backend-selection promises | Stable behavior; no table, rollback, or migration detail. |
+| `docs/data-models.md` and `docs/fastapi-boundary.md` | Payload and route shapes | Persistence only when those public shapes change. |
+| `docs/architecture.md` | Concise default-versus-opt-in architecture summary | Link here for maturity, schema, and rollout decisions. |
+| `docs/testing-and-validation.md` | Commands, environment variables, and confidence lanes | Routine versus live validation, separate from rollout policy. |
+| `docs/README.md` | Documentation navigation | Keep this audit discoverable while persistence rollout remains active. |
 
-Docs migration rule: keep docs honest about the current default, but avoid
-timeless phrasing that says "sessions are files" when the real contract is the
-snapshot/read model. During implementation, update docs in this order:
-`session-persistence-audit.md`, `session-model.md`, `contracts.md`,
-`testing-and-validation.md`, `architecture.md`, then `README.md` only for
-user-visible behavior.
-
-Doc ownership for the current session-store migration slice:
-
-- `docs/contracts.md`
-  - public session snapshot contract, backend-selection promises, and what
-    stays outside the public payload
-- `docs/session-model.md`
-  - lifecycle meaning, file-default runtime notes, and which artifacts still
-    remain file-backed in the current local runtime
-- `docs/testing-and-validation.md`
-  - focused test ownership, file-default local lanes, and opt-in live
-    PostgreSQL confidence
-- `docs/session-persistence-audit.md`
-  - PostgreSQL table mapping, migration notes, caller ownership, and
-    implementation inventory
-- `README.md`
-  - short current-state summary only; no schema, table, or migration detail
-
-Historical-data wording rule:
-
-- say "forward-only" when new PostgreSQL-backed sessions are created only
-  after explicit backend selection
-- say "backfill" only for a later explicit migration path that moves old
-  file-backed session history
-- do not say "session migration" as if historical file sessions are already
-  copied into PostgreSQL
+Use `forward-only` only for explicitly selected PostgreSQL writes that do not
+backfill historical file-backed data. Use `backfill` only for a later explicit
+migration path; do not imply historical data has already moved.
 
 ## Migration Boundary Notes
 

@@ -1,8 +1,20 @@
-"""Shared backend-equivalence tests for the alert-store seam.
+"""Shared file/PostgreSQL parity tests for alert storage.
 
-This file keeps file-backed and PostgreSQL alert storage aligned below the
-API/MCP/CLI boundaries. The assertions focus on raw, filtered, grouped, and
-time-bounded read-model behavior that must not drift when storage changes.
+This file owns the durable alert-store parity matrix below the API/MCP/CLI
+boundaries.
+
+The shared suite proves only public behavior that should stay identical across
+both backends:
+
+- append order as observed through raw reads
+- normalized raw read shape
+- filtered and grouped read-model behavior
+- empty and unknown-session semantics
+- the tolerated malformed-row subset where file corruption has no SQL analogue
+
+It intentionally does not own file-path details, SQL/bootstrap behavior, live
+database setup, or backend-specific cleanup concerns. Those stay in the
+backend-specific alert-store test files.
 """
 
 from __future__ import annotations
@@ -10,18 +22,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Literal, TypeVar
+from typing import Any, Literal
 
 import pytest
 
-from session_alert_incidents import (
-    AlertTimelinePayload,
-    IncidentSummaryPayload,
-    build_session_incident_summary,
-    build_session_timeline,
-)
+from session_alert_incidents import build_session_incident_summary, build_session_timeline
 from session_alert_store import (
-    AlertEventPayload,
     FileSessionAlertStore,
     SessionAlertsNotFoundError,
     SessionAlertStore,
@@ -33,7 +39,6 @@ from session_alert_store_postgres import (
     PostgresSessionAlertStore,
 )
 from session_alerts import (
-    AlertSummaryPayload,
     filter_session_alert_events,
     read_session_alert_events,
     summarize_session_alert_events,
@@ -41,30 +46,41 @@ from session_alerts import (
 from session_models import AlertEvent
 from tests.session_alert_test_support import (
     build_alert_event,
+    build_incident_summary_payload,
     build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
     write_known_session,
 )
 
-ParityResult = TypeVar(
-    "ParityResult",
-    list[AlertEventPayload],
-    AlertSummaryPayload,
-    AlertTimelinePayload,
-    IncidentSummaryPayload,
+ALERT_STORE_PARITY_MATRIX: tuple[str, ...] = (
+    "append order through raw reads",
+    "normalized raw read shape",
+    "filtered raw reads and summaries",
+    "grouped timelines and incident summaries",
+    "known-empty and unknown-session behavior",
+    "tolerated malformed-row subset where file corruption has no SQL equivalent",
+)
+
+ALERT_STORE_PARITY_PUBLIC_API: tuple[str, ...] = (
+    "SessionAlertStore.append_alert()",
+    "SessionAlertStore.read_session_alert_events()",
+    "session_alerts.read_session_alert_events()",
+    "session_alerts.filter_session_alert_events()",
+    "session_alerts.summarize_session_alert_events()",
+    "session_alert_incidents.build_session_timeline()",
+    "session_alert_incidents.build_session_incident_summary()",
 )
 
 
 class InMemoryPostgresParityCursor:
-    """Tiny cursor that simulates only the SQL used by the Postgres store."""
+    """Tiny cursor double for the Postgres alert-store SQL used in parity tests."""
 
     def __init__(self, connection: "InMemoryPostgresParityConnection") -> None:
         self._connection = connection
         self._rows: list[tuple[object, ...]] = []
 
     def __enter__(self) -> "InMemoryPostgresParityCursor":
-        """Return the same cursor inside the context manager block."""
         return self
 
     def __exit__(
@@ -73,7 +89,7 @@ class InMemoryPostgresParityCursor:
         exc: BaseException | None,
         tb: Any,
     ) -> None:
-        """Close the synthetic cursor without extra cleanup work."""
+        """Match psycopg cursor context-manager behavior without cleanup."""
 
     def execute(self, query: str, params: object | None = None) -> object:
         """Handle the insert and read queries used by the concrete Postgres store."""
@@ -96,14 +112,13 @@ class InMemoryPostgresParityCursor:
 
 
 class InMemoryPostgresParityConnection:
-    """Minimal in-memory connection for backend-equivalence tests."""
+    """In-memory Postgres connection double that preserves inserted alert rows."""
 
     def __init__(self) -> None:
         self._rows: list[tuple[object, ...]] = []
         self.commit_count = 0
 
     def cursor(self) -> InMemoryPostgresParityCursor:
-        """Return a cursor over the shared in-memory alert-row list."""
         return InMemoryPostgresParityCursor(self)
 
     def commit(self) -> None:
@@ -151,16 +166,42 @@ class InMemoryPostgresParityConnection:
 
 
 @dataclass(frozen=True)
-class StorePair:
-    """Stable backend pair used by the shared parity assertions."""
+class AlertStoreParityBackend:
+    """Backend-neutral fixture state for the shared alert-store contract tests."""
 
-    session_id: str
-    file_store: SessionAlertStore
-    postgres_store: SessionAlertStore
+    backend: Literal["file", "postgres"]
+    monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path
+
+    def build_store(
+        self,
+        *,
+        known_session_ids: tuple[str, ...] = (),
+        events: tuple[AlertEvent, ...] = (),
+        file_alert_rows_by_session: dict[str, list[str]] | None = None,
+    ) -> SessionAlertStore:
+        """Build one seeded backend while keeping assertions storage-agnostic."""
+        if self.backend == "file":
+            session_root = configure_session_alert_test(self.monkeypatch, self.tmp_path)
+            file_alert_rows_by_session = file_alert_rows_by_session or {}
+            for session_id in known_session_ids:
+                write_known_session(
+                    session_root,
+                    session_id,
+                    alert_rows=file_alert_rows_by_session.get(session_id),
+                )
+            store: SessionAlertStore = FileSessionAlertStore()
+        else:
+            _mark_known_postgres_sessions(self.monkeypatch, *known_session_ids)
+            store = _build_postgres_parity_store()
+
+        for event in events:
+            store.append_alert(event)
+        return store
 
 
 class KnownSessionExistenceStore:
-    """Small session-store spy for alert/session existence parity checks."""
+    """Session-store spy for alert/session existence coordination checks."""
 
     def __init__(self, *known_session_ids: str) -> None:
         self._known_session_ids = set(known_session_ids)
@@ -284,7 +325,7 @@ def _mark_known_postgres_sessions(
     monkeypatch: pytest.MonkeyPatch,
     *session_ids: str,
 ) -> None:
-    """Patch the shared known-session adapter for alert-only parity tests."""
+    """Patch PostgreSQL alert known-session checks without creating real sessions."""
     known_sessions = set(session_ids)
 
     def _require_known_session(candidate_session_id: str) -> None:
@@ -302,40 +343,57 @@ def _build_postgres_parity_store() -> PostgresSessionAlertStore:
     return PostgresSessionAlertStore(InMemoryPostgresParityConnection())
 
 
-def _build_store_pair(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    *,
-    session_id: str,
-    events: list[AlertEvent],
-) -> StorePair:
-    """Seed both backends with the same known session and alert history."""
-    session_root = configure_session_alert_test(monkeypatch, tmp_path)
-    write_known_session(session_root, session_id)
-    _mark_known_postgres_sessions(monkeypatch, session_id)
-
-    file_store = FileSessionAlertStore()
-    postgres_store = _build_postgres_parity_store()
-    for event in events:
-        file_store.append_alert(event)
-        postgres_store.append_alert(event)
-
-    return StorePair(
-        session_id=session_id,
-        file_store=file_store,
-        postgres_store=postgres_store,
+def _empty_incident_summary(session_id: str) -> dict[str, object]:
+    """Return the stable empty grouped-summary envelope used by read-model callers."""
+    return build_incident_summary_payload(
+        session_id,
+        total_alerts=0,
+        total_incidents=0,
+        counts_by_detector={},
+        counts_by_severity={},
+        top_incident_categories={},
+        first_alert_timestamp_utc=None,
+        last_alert_timestamp_utc=None,
+        narrative_summary=f"Session {session_id} had no alerts.",
     )
 
 
-def _assert_store_pair_parity(
-    pair: StorePair,
-    read: Callable[[SessionAlertStore], ParityResult],
-) -> ParityResult:
-    """Assert that both stores produce the same result through one seam reader."""
-    file_result = read(pair.file_store)
-    postgres_result = read(pair.postgres_store)
-    assert postgres_result == file_result
-    return file_result
+def test_alert_store_parity_contract_surface_stays_public_and_compact() -> None:
+    """The shared parity suite should stay anchored to the public alert-store API only."""
+    assert ALERT_STORE_PARITY_MATRIX == (
+        "append order through raw reads",
+        "normalized raw read shape",
+        "filtered raw reads and summaries",
+        "grouped timelines and incident summaries",
+        "known-empty and unknown-session behavior",
+        "tolerated malformed-row subset where file corruption has no SQL equivalent",
+    )
+    assert ALERT_STORE_PARITY_PUBLIC_API == (
+        "SessionAlertStore.append_alert()",
+        "SessionAlertStore.read_session_alert_events()",
+        "session_alerts.read_session_alert_events()",
+        "session_alerts.filter_session_alert_events()",
+        "session_alerts.summarize_session_alert_events()",
+        "session_alert_incidents.build_session_timeline()",
+        "session_alert_incidents.build_session_incident_summary()",
+    )
+
+
+@pytest.fixture(
+    params=("file", "postgres"),
+    ids=("file-store", "postgres-double"),
+)
+def alert_store_parity_backend(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> AlertStoreParityBackend:
+    """Provide one backend-neutral factory for the shared parity matrix."""
+    return AlertStoreParityBackend(
+        backend=request.param,
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+    )
 
 
 def _assert_unknown_session_failure(store: SessionAlertStore) -> None:
@@ -358,26 +416,26 @@ def _install_active_session_store(
 
 
 def test_file_and_postgres_alert_stores_match_raw_read_output_and_append_order(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
-    """Raw reads should stay append-ordered and backend-equivalent."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-raw-read",
-        events=[
+    """Raw reads should stay append-ordered and use the shared normalized row shape."""
+    session_id = "parity-raw-read"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=(
             build_alert_event(
-                "parity-raw-read",
+                session_id,
                 timestamp_utc="2026-05-19 12:00:20",
                 detector_id="video_metrics",
                 title="Persisted first",
                 message="Written first even with a later timestamp.",
                 severity="warning",
                 source_name="segment_0002.ts",
+                window_index=7,
+                window_start_sec=14.0,
             ),
             build_alert_event(
-                "parity-raw-read",
+                session_id,
                 timestamp_utc="2026-05-19 12:00:00",
                 detector_id="video_metrics",
                 title="Persisted second",
@@ -385,70 +443,90 @@ def test_file_and_postgres_alert_stores_match_raw_read_output_and_append_order(
                 severity="warning",
                 source_name="segment_0001.ts",
             ),
-        ],
+        ),
     )
 
-    alerts = _assert_store_pair_parity(
-        pair,
-        lambda store: read_session_alert_events(pair.session_id, store=store),
-    )
+    alerts = read_session_alert_events(session_id, store=store)
 
-    assert [alert["title"] for alert in alerts] == [
-        "Persisted first",
-        "Persisted second",
+    assert alerts == [
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:20",
+            detector_id="video_metrics",
+            title="Persisted first",
+            message="Written first even with a later timestamp.",
+            severity="warning",
+            source_name="segment_0002.ts",
+            window_index=7,
+            window_start_sec=14.0,
+        ),
+        build_normalized_alert(
+            session_id,
+            timestamp_utc="2026-05-19 12:00:00",
+            detector_id="video_metrics",
+            title="Persisted second",
+            message="Written second even with an earlier timestamp.",
+            severity="warning",
+            source_name="segment_0001.ts",
+        ),
     ]
 
 
 def test_file_and_postgres_alert_stores_match_known_empty_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Known sessions without alerts should stay empty across both stores."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-empty-session",
-        events=[],
+    session_id = "parity-empty-session"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
     )
 
-    alerts = _assert_store_pair_parity(
-        pair,
-        lambda store: read_session_alert_events(pair.session_id, store=store),
-    )
+    alerts = read_session_alert_events(session_id, store=store)
 
     assert alerts == []
 
 
+def test_file_and_postgres_alert_stores_match_known_empty_grouped_envelopes(
+    alert_store_parity_backend: AlertStoreParityBackend,
+) -> None:
+    """Known sessions without alerts should keep stable empty timeline and summary shapes."""
+    session_id = "parity-empty-grouped-session"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+    )
+
+    assert build_session_timeline(session_id, store=store) == {
+        "session_id": session_id,
+        "entries": [],
+    }
+    assert build_session_incident_summary(session_id, store=store) == _empty_incident_summary(
+        session_id,
+    )
+
+
 def test_file_and_postgres_alert_stores_match_unknown_session_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Unknown-session failures should stay aligned across both stores."""
-    configure_session_alert_test(monkeypatch, tmp_path)
-    _mark_known_postgres_sessions(monkeypatch)
-
-    file_store = FileSessionAlertStore()
-    postgres_store = _build_postgres_parity_store()
-
-    _assert_unknown_session_failure(file_store)
-    _assert_unknown_session_failure(postgres_store)
+    _assert_unknown_session_failure(alert_store_parity_backend.build_store())
 
 
 def test_file_and_postgres_alert_services_use_same_known_session_existence(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """Known empty sessions should read the same through the active SessionStore."""
+    """Known empty sessions should stay readable across both alert backends."""
     session_id = "parity-known-empty-via-session-store"
     configure_session_alert_test(monkeypatch, tmp_path)
     session_store = _install_active_session_store(monkeypatch, session_id)
+    _mark_known_postgres_sessions(monkeypatch, session_id)
 
     file_store = FileSessionAlertStore()
     postgres_store = _build_postgres_parity_store()
 
     assert read_session_alert_events(session_id, store=file_store) == []
     assert read_session_alert_events(session_id, store=postgres_store) == []
-    assert session_store.checked_session_ids == [session_id, session_id]
+    assert session_store.checked_session_ids == [session_id]
 
 
 def test_file_and_postgres_alert_services_use_same_unknown_session_existence(
@@ -459,6 +537,7 @@ def test_file_and_postgres_alert_services_use_same_unknown_session_existence(
     session_id = "parity-unknown-via-session-store"
     configure_session_alert_test(monkeypatch, tmp_path)
     session_store = _install_active_session_store(monkeypatch)
+    _mark_known_postgres_sessions(monkeypatch)
 
     file_store = FileSessionAlertStore()
     postgres_store = _build_postgres_parity_store()
@@ -467,7 +546,7 @@ def test_file_and_postgres_alert_services_use_same_unknown_session_existence(
         with pytest.raises(SessionAlertsNotFoundError, match=session_id):
             read_session_alert_events(session_id, store=store)
 
-    assert session_store.checked_session_ids == [session_id, session_id]
+    assert session_store.checked_session_ids == [session_id]
 
 
 def test_file_and_postgres_alert_services_match_known_session_alert_payloads(
@@ -478,9 +557,7 @@ def test_file_and_postgres_alert_services_match_known_session_alert_payloads(
     session_id = "parity-known-alerts-via-session-store"
     configure_session_alert_test(monkeypatch, tmp_path)
     session_store = _install_active_session_store(monkeypatch, session_id)
-
-    file_store = FileSessionAlertStore()
-    postgres_store = _build_postgres_parity_store()
+    _mark_known_postgres_sessions(monkeypatch, session_id)
     event = build_alert_event(
         session_id,
         timestamp_utc="2026-05-19 12:00:00",
@@ -490,6 +567,8 @@ def test_file_and_postgres_alert_services_match_known_session_alert_payloads(
         severity="warning",
         source_name="segment_0001.ts",
     )
+    file_store = FileSessionAlertStore()
+    postgres_store = _build_postgres_parity_store()
     file_store.append_alert(event)
     postgres_store.append_alert(event)
 
@@ -510,35 +589,30 @@ def test_file_and_postgres_alert_services_match_known_session_alert_payloads(
             source_name="segment_0001.ts",
         )
     ]
-    assert session_store.checked_session_ids == [session_id, session_id]
+    assert session_store.checked_session_ids == [session_id]
 
 
 def test_file_and_postgres_alert_stores_match_filtered_summary_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Filtered raw summaries should stay identical across both store backends."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-summary",
-        events=_filtered_parity_events("parity-summary"),
+    session_id = "parity-summary"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_filtered_parity_events(session_id)),
     )
 
-    summary = _assert_store_pair_parity(
-        pair,
-        lambda store: summarize_session_alert_events(
-            pair.session_id,
-            detector_id="video_metrics",
-            severity="warning",
-            start_time_utc="2026-05-19 12:00:05",
-            end_time_utc="2026-05-19 12:00:25",
-            store=store,
-        ),
+    summary = summarize_session_alert_events(
+        session_id,
+        detector_id="video_metrics",
+        severity="warning",
+        start_time_utc="2026-05-19 12:00:05",
+        end_time_utc="2026-05-19 12:00:25",
+        store=store,
     )
 
     assert summary == {
-        "session_id": "parity-summary",
+        "session_id": session_id,
         "total_alerts": 1,
         "counts_by_detector": {"video_metrics": 1},
         "counts_by_severity": {"warning": 1},
@@ -548,32 +622,27 @@ def test_file_and_postgres_alert_stores_match_filtered_summary_behavior(
 
 
 def test_file_and_postgres_alert_stores_match_filtered_raw_read_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Filtered raw reads should stay identical across both store backends."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-filtered-read",
-        events=_filtered_parity_events("parity-filtered-read"),
+    session_id = "parity-filtered-read"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_filtered_parity_events(session_id)),
     )
 
-    filtered_alerts = _assert_store_pair_parity(
-        pair,
-        lambda store: filter_session_alert_events(
-            pair.session_id,
-            detector_id="video_metrics",
-            severity="warning",
-            start_time_utc="2026-05-19 12:00:05",
-            end_time_utc="2026-05-19 12:00:25",
-            store=store,
-        ),
+    filtered_alerts = filter_session_alert_events(
+        session_id,
+        detector_id="video_metrics",
+        severity="warning",
+        start_time_utc="2026-05-19 12:00:05",
+        end_time_utc="2026-05-19 12:00:25",
+        store=store,
     )
 
     assert filtered_alerts == [
         build_normalized_alert(
-            "parity-filtered-read",
+            session_id,
             timestamp_utc="2026-05-19 12:00:20",
             detector_id="video_metrics",
             title="Late metric warning",
@@ -585,21 +654,16 @@ def test_file_and_postgres_alert_stores_match_filtered_raw_read_behavior(
 
 
 def test_file_and_postgres_alert_stores_match_grouped_timeline_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Grouped timeline behavior should stay stable across both stores."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-timeline",
-        events=_grouped_parity_events("parity-timeline"),
+    session_id = "parity-timeline"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_grouped_parity_events(session_id)),
     )
 
-    timeline = _assert_store_pair_parity(
-        pair,
-        lambda store: build_session_timeline(pair.session_id, store=store),
-    )
+    timeline = build_session_timeline(session_id, store=store)
 
     assert timeline["entries"] == [
         {
@@ -626,21 +690,16 @@ def test_file_and_postgres_alert_stores_match_grouped_timeline_behavior(
 
 
 def test_file_and_postgres_alert_stores_match_grouped_incident_summary_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Grouped incident summaries should stay backend-equivalent."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-incident-summary",
-        events=_grouped_parity_events("parity-incident-summary"),
+    session_id = "parity-incident-summary"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_grouped_parity_events(session_id)),
     )
 
-    summary = _assert_store_pair_parity(
-        pair,
-        lambda store: build_session_incident_summary(pair.session_id, store=store),
-    )
+    summary = build_session_incident_summary(session_id, store=store)
 
     assert summary["total_alerts"] == 3
     assert summary["total_incidents"] == 2
@@ -659,25 +718,20 @@ def test_file_and_postgres_alert_stores_match_grouped_incident_summary_behavior(
 
 
 def test_file_and_postgres_alert_stores_match_time_bounded_grouped_timeline_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Time-bounded grouped timelines should stay identical across both backends."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-time-bounded-timeline",
-        events=_grouped_parity_events("parity-time-bounded-timeline"),
+    session_id = "parity-time-bounded-timeline"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_grouped_parity_events(session_id)),
     )
 
-    timeline = _assert_store_pair_parity(
-        pair,
-        lambda store: build_session_timeline(
-            pair.session_id,
-            start_time_utc="2026-05-19 12:00:10",
-            end_time_utc="2026-05-19 12:01:00",
-            store=store,
-        ),
+    timeline = build_session_timeline(
+        session_id,
+        start_time_utc="2026-05-19 12:00:10",
+        end_time_utc="2026-05-19 12:01:00",
+        store=store,
     )
 
     assert timeline["entries"] == [
@@ -695,25 +749,20 @@ def test_file_and_postgres_alert_stores_match_time_bounded_grouped_timeline_beha
 
 
 def test_file_and_postgres_alert_stores_match_time_bounded_grouped_incident_summary_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Time-bounded grouped summaries should stay identical across both backends."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-time-bounded-incident-summary",
-        events=_grouped_parity_events("parity-time-bounded-incident-summary"),
+    session_id = "parity-time-bounded-incident-summary"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_grouped_parity_events(session_id)),
     )
 
-    summary = _assert_store_pair_parity(
-        pair,
-        lambda store: build_session_incident_summary(
-            pair.session_id,
-            start_time_utc="2026-05-19 12:00:10",
-            end_time_utc="2026-05-19 12:01:00",
-            store=store,
-        ),
+    summary = build_session_incident_summary(
+        session_id,
+        start_time_utc="2026-05-19 12:00:10",
+        end_time_utc="2026-05-19 12:01:00",
+        store=store,
     )
 
     assert summary["total_alerts"] == 1
@@ -726,25 +775,20 @@ def test_file_and_postgres_alert_stores_match_time_bounded_grouped_incident_summ
 
 
 def test_file_and_postgres_alert_stores_match_filtered_grouped_timeline_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Filtered grouped timelines should stay identical across both backends."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-filtered-timeline",
-        events=_filtered_grouped_parity_events("parity-filtered-timeline"),
+    session_id = "parity-filtered-timeline"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_filtered_grouped_parity_events(session_id)),
     )
 
-    timeline = _assert_store_pair_parity(
-        pair,
-        lambda store: build_session_timeline(
-            pair.session_id,
-            detector_id="video_metrics",
-            severity="warning",
-            store=store,
-        ),
+    timeline = build_session_timeline(
+        session_id,
+        detector_id="video_metrics",
+        severity="warning",
+        store=store,
     )
 
     assert timeline["entries"] == [
@@ -762,25 +806,20 @@ def test_file_and_postgres_alert_stores_match_filtered_grouped_timeline_behavior
 
 
 def test_file_and_postgres_alert_stores_match_filtered_grouped_incident_summary_behavior(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Filtered grouped summaries should stay identical across both backends."""
-    pair = _build_store_pair(
-        monkeypatch,
-        tmp_path,
-        session_id="parity-filtered-incident-summary",
-        events=_filtered_grouped_parity_events("parity-filtered-incident-summary"),
+    session_id = "parity-filtered-incident-summary"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_filtered_grouped_parity_events(session_id)),
     )
 
-    summary = _assert_store_pair_parity(
-        pair,
-        lambda store: build_session_incident_summary(
-            pair.session_id,
-            detector_id="video_metrics",
-            severity="warning",
-            store=store,
-        ),
+    summary = build_session_incident_summary(
+        session_id,
+        detector_id="video_metrics",
+        severity="warning",
+        store=store,
     )
 
     assert summary["total_alerts"] == 1
@@ -792,9 +831,35 @@ def test_file_and_postgres_alert_stores_match_filtered_grouped_incident_summary_
     assert summary["last_alert_timestamp_utc"] == "2026-05-19 12:10:00"
 
 
+def test_file_and_postgres_alert_stores_match_empty_filtered_incident_results(
+    alert_store_parity_backend: AlertStoreParityBackend,
+) -> None:
+    """Known sessions with non-matching grouped filters should degrade to stable empty values."""
+    session_id = "parity-empty-filtered-incidents"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_id,),
+        events=tuple(_grouped_parity_events(session_id)),
+    )
+
+    assert build_session_timeline(
+        session_id,
+        detector_id="unknown_detector",
+        store=store,
+    ) == {
+        "session_id": session_id,
+        "entries": [],
+    }
+    assert build_session_incident_summary(
+        session_id,
+        detector_id="unknown_detector",
+        store=store,
+    ) == _empty_incident_summary(
+        session_id,
+    )
+
+
 def test_file_malformed_rows_match_postgres_clean_subset_where_corruption_has_no_equivalent(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """File-only malformed rows should collapse to the same valid subset result."""
     session_id = "parity-malformed-subset"
@@ -804,36 +869,48 @@ def test_file_malformed_rows_match_postgres_clean_subset_where_corruption_has_no
     message = "This row should survive malformed neighbors."
     severity: Literal["warning"] = "warning"
     source_name = "segment_0001.ts"
-    session_root = configure_session_alert_test(monkeypatch, tmp_path)
-    write_known_session(
-        session_root,
+    valid_event = build_alert_event(
         session_id,
-        alert_rows=[
-            build_persisted_alert(
-                session_id,
-                timestamp_utc=timestamp_utc,
-                detector_id=detector_id,
-                title=title,
-                message=message,
-                severity=severity,
-                source_name=source_name,
-            ),
-            "{bad json",
-            build_persisted_alert(
-                session_id,
-                timestamp_utc="2026-05-19 12:00:10",
-                detector_id="",
-                title="Malformed row",
-                message="Missing detector_id makes this row invalid.",
-                severity="warning",
-                source_name="segment_0002.ts",
-            ),
-        ],
+        timestamp_utc=timestamp_utc,
+        detector_id=detector_id,
+        title=title,
+        message=message,
+        severity=severity,
+        source_name=source_name,
     )
-    _mark_known_postgres_sessions(monkeypatch, session_id)
+    if alert_store_parity_backend.backend == "file":
+        store = alert_store_parity_backend.build_store(
+            known_session_ids=(session_id,),
+            file_alert_rows_by_session={
+                session_id: [
+                    build_persisted_alert(
+                        session_id,
+                        timestamp_utc=timestamp_utc,
+                        detector_id=detector_id,
+                        title=title,
+                        message=message,
+                        severity=severity,
+                        source_name=source_name,
+                    ),
+                    "{bad json",
+                    build_persisted_alert(
+                        session_id,
+                        timestamp_utc="2026-05-19 12:00:10",
+                        detector_id="",
+                        title="Malformed row",
+                        message="Missing detector_id makes this row invalid.",
+                        severity="warning",
+                        source_name="segment_0002.ts",
+                    ),
+                ]
+            },
+        )
+    else:
+        store = alert_store_parity_backend.build_store(
+            known_session_ids=(session_id,),
+            events=(valid_event,),
+        )
 
-    file_store = FileSessionAlertStore()
-    postgres_store = _build_postgres_parity_store()
     expected_valid_alert = build_normalized_alert(
         session_id,
         timestamp_utc=timestamp_utc,
@@ -843,83 +920,138 @@ def test_file_malformed_rows_match_postgres_clean_subset_where_corruption_has_no
         severity=severity,
         source_name=source_name,
     )
-    postgres_store.append_alert(
-        build_alert_event(
-            session_id,
-            timestamp_utc=timestamp_utc,
-            detector_id=detector_id,
-            title=title,
-            message=message,
-            severity=severity,
-            source_name=source_name,
-        )
-    )
 
-    assert read_session_alert_events(
-        session_id,
-        store=file_store,
-    ) == read_session_alert_events(
-        session_id,
-        store=postgres_store,
-    ) == [expected_valid_alert]
-
-    assert summarize_session_alert_events(
-        session_id,
-        store=file_store,
-    ) == summarize_session_alert_events(
-        session_id,
-        store=postgres_store,
-    )
+    assert read_session_alert_events(session_id, store=store) == [expected_valid_alert]
+    assert summarize_session_alert_events(session_id, store=store) == {
+        "session_id": session_id,
+        "total_alerts": 1,
+        "counts_by_detector": {detector_id: 1},
+        "counts_by_severity": {severity: 1},
+        "first_alert_timestamp_utc": timestamp_utc,
+        "last_alert_timestamp_utc": timestamp_utc,
+    }
 
 
 def test_file_and_postgres_alert_stores_keep_multiple_sessions_isolated(
-    monkeypatch,
-    tmp_path: Path,
+    alert_store_parity_backend: AlertStoreParityBackend,
 ) -> None:
     """Session-scoped reads and summaries should stay isolated across both backends."""
-    session_root = configure_session_alert_test(monkeypatch, tmp_path)
-    write_known_session(session_root, "parity-session-a")
-    write_known_session(session_root, "parity-session-b")
-    _mark_known_postgres_sessions(monkeypatch, "parity-session-a", "parity-session-b")
-
-    file_store = FileSessionAlertStore()
-    postgres_store = _build_postgres_parity_store()
-    for event in [
-        build_alert_event(
-            "parity-session-a",
-            timestamp_utc="2026-05-19 21:00:00",
-            detector_id="video_metrics",
-            title="Session A alert",
-            message="Only session A should see this.",
-            severity="warning",
-            source_name="segment_a.ts",
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=("parity-session-a", "parity-session-b"),
+        events=(
+            build_alert_event(
+                "parity-session-a",
+                timestamp_utc="2026-05-19 21:00:00",
+                detector_id="video_metrics",
+                title="Session A alert",
+                message="Only session A should see this.",
+                severity="warning",
+                source_name="segment_a.ts",
+            ),
+            build_alert_event(
+                "parity-session-b",
+                timestamp_utc="2026-05-19 21:00:10",
+                detector_id="video_blur",
+                title="Session B alert",
+                message="Only session B should see this.",
+                severity="info",
+                source_name="segment_b.ts",
+            ),
         ),
-        build_alert_event(
-            "parity-session-b",
-            timestamp_utc="2026-05-19 21:00:10",
-            detector_id="video_blur",
-            title="Session B alert",
-            message="Only session B should see this.",
-            severity="info",
-            source_name="segment_b.ts",
-        ),
-    ]:
-        file_store.append_alert(event)
-        postgres_store.append_alert(event)
+    )
 
     for session_id, expected_title in [
         ("parity-session-a", "Session A alert"),
         ("parity-session-b", "Session B alert"),
     ]:
-        assert read_session_alert_events(session_id, store=file_store) == read_session_alert_events(
-            session_id,
-            store=postgres_store,
+        assert (
+            read_session_alert_events(session_id, store=store)[0]["title"]
+            == expected_title
         )
-        assert summarize_session_alert_events(
-            session_id,
-            store=file_store,
-        ) == summarize_session_alert_events(
-            session_id,
-            store=postgres_store,
+        assert summarize_session_alert_events(session_id, store=store)["total_alerts"] == 1
+
+
+def test_file_and_postgres_alert_stores_keep_filtered_queries_scoped_to_one_session(
+    alert_store_parity_backend: AlertStoreParityBackend,
+) -> None:
+    """Session-scoped filtered reads and grouped queries should ignore other sessions."""
+    session_a = "parity-filtered-session-a"
+    session_b = "parity-filtered-session-b"
+    store = alert_store_parity_backend.build_store(
+        known_session_ids=(session_a, session_b),
+        events=(
+            build_alert_event(
+                session_a,
+                timestamp_utc="2026-05-19 22:00:00",
+                detector_id="video_metrics",
+                title="Session A target incident",
+                message="The only warning-level metrics alert for session A.",
+                severity="warning",
+                source_name="segment_a_0001.ts",
+            ),
+            build_alert_event(
+                session_a,
+                timestamp_utc="2026-05-19 22:00:10",
+                detector_id="video_metrics",
+                title="Session A non-target incident",
+                message="Same detector but filtered out by severity.",
+                severity="info",
+                source_name="segment_a_0002.ts",
+            ),
+            build_alert_event(
+                session_b,
+                timestamp_utc="2026-05-19 22:01:00",
+                detector_id="video_metrics",
+                title="Session B target incident",
+                message="Should stay visible only in session B queries.",
+                severity="warning",
+                source_name="segment_b_0001.ts",
+            ),
+            build_alert_event(
+                session_b,
+                timestamp_utc="2026-05-19 22:01:20",
+                detector_id="video_blur",
+                title="Session B blur incident",
+                message="Separate incident category for session B.",
+                severity="warning",
+                source_name="segment_b_0002.ts",
+            ),
+        ),
+    )
+
+    filtered_alerts = filter_session_alert_events(
+        session_a,
+        detector_id="video_metrics",
+        severity="warning",
+        store=store,
+    )
+    session_b_timeline = build_session_timeline(
+        session_b,
+        detector_id="video_metrics",
+        severity="warning",
+        store=store,
+    )
+
+    assert filtered_alerts == [
+        build_normalized_alert(
+            session_a,
+            timestamp_utc="2026-05-19 22:00:00",
+            detector_id="video_metrics",
+            title="Session A target incident",
+            message="The only warning-level metrics alert for session A.",
+            severity="warning",
+            source_name="segment_a_0001.ts",
         )
-        assert read_session_alert_events(session_id, store=file_store)[0]["title"] == expected_title
+    ]
+    assert session_b_timeline["entries"] == [
+        {
+            "start_time_utc": "2026-05-19 22:01:00",
+            "end_time_utc": "2026-05-19 22:01:00",
+            "detector_id": "video_metrics",
+            "severity": "warning",
+            "title": "Session B target incident",
+            "alert_count": 1,
+            "source_names": ["segment_b_0001.ts"],
+            "sample_message": "Should stay visible only in session B queries.",
+        }
+    ]

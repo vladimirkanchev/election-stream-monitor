@@ -137,15 +137,20 @@ Use weekly or manual-depth validation only when the change materially reaches:
 - dependency or security audit work
 - live PostgreSQL backend or operator-flow confidence
 
-For the current session-store branch work, keep that deeper lane modest on
-purpose:
+### Deferred PostgreSQL CI Expansion
 
-- do not add a nightly-only validation lane yet
-- do not add an OS or Python-version matrix just for this slice
-- do not turn file-backed versus PostgreSQL-backed coverage into a broad PR
-  matrix before the focused parity and runtime lanes stop being enough
-- treat broader CI depth here as later expansion work, not as routine branch
-  polish
+Keep deeper PostgreSQL validation modest for now. The following are separate
+follow-up work, not routine PR requirements:
+
+- a PostgreSQL-version matrix
+- an operating-system or Python-version matrix
+- required live-database checks on PRs
+- broader performance and recovery validation
+
+Routine PR validation keeps the real PostgreSQL smoke gates disabled and uses
+synthetic, parity, configuration, and boundary coverage. The alert backend and
+runtime/operator PostgreSQL bundles remain scheduled weekly/manual confidence
+with disposable databases; they are not new protected PR requirements.
 
 Local validation is intentionally incomplete. It cannot prove:
 
@@ -235,7 +240,7 @@ Current focused ownership map:
 - `tests/test_session_store_runtime.py`
   - default store selection, fallback behavior, rollback-safe runtime config,
     and explicit proof that `postgres` is built only on deliberate opt-in
-  - explicit proof that unsupported backend values stay on the file default,
+  - explicit proof that unsupported backend values stay on the file-backed default,
     while missing URL, invalid URL shape, driver/bootstrap failure, and
     missing-schema behavior fail clearly only after explicit PostgreSQL selection
 - `tests/test_session_store_postgres.py`
@@ -276,35 +281,29 @@ Current focused ownership map:
   - useful for detector tuning and false-positive control, not for exact
     production truth promotion
 
-Use two explicit backend modes when validating this branch:
+### PostgreSQL Persistence Setup And Lane Map
 
-- everyday synthetic checks
-  - force `ESM_ALERT_STORE_BACKEND=file`
-  - leave `POSTGRES_ALERT_STORE_REAL_SMOKE` unset or `0`
-- live Postgres confidence
-  - set `ESM_ALERT_STORE_BACKEND=postgres`
-  - provide `ESM_POSTGRES_ALERT_DATABASE_URL`
-  - keep `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES` explicit when you want to
-    make bootstrap intent obvious; the current alert path defaults it on
-  - set `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
+Routine local and PR validation stays file-backed. The shared PostgreSQL
+settings below are only for deliberate live confidence against disposable
+databases. This guide owns commands and validation-lane selection;
+`docs/session-persistence-audit.md` owns the rollout and schema policy behind
+them.
 
-The fast PR/branch CI workflow now pins the synthetic path to the file-backed
-alert backend. The weekly workflow owns the real Postgres confidence jobs and
-overrides that default in its dedicated live-DB lanes.
+| Need | Session storage | Alert storage |
+| --- | --- | --- |
+| Backend selector | `ESM_SESSION_STORE_BACKEND=postgres` | `ESM_ALERT_STORE_BACKEND=postgres` |
+| Database URL | `ESM_POSTGRES_SESSION_DATABASE_URL` | `ESM_POSTGRES_ALERT_DATABASE_URL` |
+| Table auto-create | `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1` is explicit opt-in; default is off | `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` may be set explicitly; its current default is on only after PostgreSQL selection |
+| Live-smoke opt-in | `POSTGRES_SESSION_STORE_REAL_SMOKE=1` | `POSTGRES_ALERT_STORE_REAL_SMOKE=1` |
+| Routine validation | `just test-session-store`; add `just test-session-runtime` for worker-path changes | Focused synthetic alert slice; no live database required |
+| Deeper confidence | Local `just test-session-postgres-live`; weekly lifecycle for the slower file-backed runtime lane | Weekly/manual backend and runtime/operator scripts against a disposable database |
 
-Apply the same rule to the in-progress PostgreSQL session-store branch work:
-
-- treat the env shape as parallel where practical:
-  - backend selector
-  - PostgreSQL database URL
-  - optional auto-create flag
-  - real-smoke flag
-- keep `POSTGRES_SESSION_STORE_REAL_SMOKE` unset or `0` in normal local and PR validation
-- the live smoke stays disabled unless both `POSTGRES_SESSION_STORE_REAL_SMOKE=1` and `ESM_POSTGRES_SESSION_DATABASE_URL` are set
-- use the session-store isolation helper only in opt-in live PostgreSQL smoke runs
-- reset only the known session-store tables; do not point shared checks at a developer's long-lived database state
-- if you just ran `just test-session-postgres-live`, clear the PostgreSQL
-  session env before returning to the normal file-default lanes:
+Keep both live-smoke opt-ins unset or `0` in normal validation. They allow
+live tests to run but do not select a runtime backend; use the matching backend
+selector as well. Live session checks reset only known store tables; do not
+target a long-lived database. If
+you just ran `just test-session-postgres-live`, clear the PostgreSQL session
+environment before returning to the normal file-default lanes:
 
 ```bash
 unset ESM_SESSION_STORE_BACKEND
@@ -370,9 +369,6 @@ boundary in mind:
   - they may prove score shape, false-positive resistance, or burst consistency
   - they should not be promoted into exact alert truth until a reviewed runtime
     lane proves a stable subset worth promoting
-
-For current session-store migration work, use these as the smallest useful
-focused lanes before you reach for `just test-fast` or `just ci-local`:
 
 Current CI coverage audit for this area:
 
@@ -484,7 +480,7 @@ tests/test_api_boundary_sessions_cancel.py -q
     call the same narrow smoke bundles without making them protected CI work
   - use the shared rollout vocabulary consistently here:
     file-backed default, PostgreSQL opt-in, explicit backend selection, and
-    live smoke
+    live-smoke opt-in
   - it requires `ESM_SESSION_STORE_BACKEND=postgres`,
     `ESM_POSTGRES_SESSION_DATABASE_URL`,
     `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`, and
@@ -502,9 +498,10 @@ tests/test_api_boundary_sessions_cancel.py -q
     lanes already say the contract still holds
   - do not grow this lane into broader PostgreSQL rollout, backfill, or
     unrelated slow-runtime coverage
-  - use `docs/session-persistence-audit.md` for readiness states,
-    default-switch blockers, forward-only/backfill policy, and
-    schema/bootstrap ownership instead of repeating that rollout story here
+  - use the [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard)
+    for readiness states, default-switch blockers, forward-only/backfill
+    policy, and schema/bootstrap ownership instead of repeating that rollout
+    story here
 
 ```bash
 cd /home/vlad/Projects/election-stream-monitor && \
@@ -1253,45 +1250,32 @@ boundary, and the MCP adapter over the same service seam. If you change only
 one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
 
-The normal local pass stays synthetic by default. The opt-in live PostgreSQL
-alert smoke lane currently needs:
+The normal alert pass stays synthetic by default. For the opt-in live
+PostgreSQL alert smoke, use the alert entries in the setup map above. The
+store-level smoke resets alert-store-owned schema, so its URL must point to a
+disposable database; it skips when the required backend, URL, or live-smoke
+gate is absent.
 
-- `ESM_ALERT_STORE_BACKEND=postgres`
-- `POSTGRES_ALERT_STORE_REAL_SMOKE=1`
-- `ESM_POSTGRES_ALERT_DATABASE_URL=postgresql://...`
-- optional explicit `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1` when you want to
-  make bootstrap intent obvious; the current alert path defaults it on
-
-Use the same shared rollout vocabulary here too:
-
-- file-backed default
-- PostgreSQL opt-in
-- explicit backend selection
-- live smoke
-
-Use the same words, but not the same maturity claims:
-
-- alert PostgreSQL is opt-in like session PostgreSQL
-- alert validation should not inherit session forward-only, backfill, or
-  default-switch wording unless the alert rollout explicitly reaches that stage
+This guide records validation behavior only. The alert rollout, historical-data,
+rollback, and schema policy is owned by
+[session-persistence-audit.md](./session-persistence-audit.md).
 
 Alert lane meaning:
 
-- focused synthetic alert slice
-  - alert parity plus FastAPI/MCP/service boundary confidence without a live DB
-- opt-in live PostgreSQL alert smoke
-  - real-database alert-store confidence for bootstrap and append/read behavior
-- weekly/manual live PostgreSQL alert runtime/operator bundles
-  - broader runtime/operator confidence for grouped routes, MCP, snapshot
-    reads, and CLI behavior over the active backend
+| Lane | Use it when | What it proves | Database and CI ownership |
+| --- | --- | --- | --- |
+| Focused synthetic and parity | Normal alert-store, query, route, or MCP work | File/PostgreSQL-like parity plus FastAPI, MCP, and service boundaries without a real database | Default local and PR path; no live PostgreSQL variables required. |
+| Opt-in real PostgreSQL store smoke | The real alert adapter, schema, or read-model mapping changed | Schema/bootstrap, append/read, ordering, filtering, and raw/grouped report shapes | Manual against a disposable database. Use `just test-alert-postgres-live`; direct tests skip while `POSTGRES_ALERT_STORE_REAL_SMOKE` is unset. |
+| Weekly/manual backend confidence | Seeded real-database reader or MCP behavior needs deeper confirmation | Store round trips, timestamp/order checks, raw/grouped FastAPI routes, and MCP agreement | `postgres_alert_weekly_backend_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
+| Weekly/manual runtime/operator confidence | Runner-produced alerts or operator-facing reads changed | Runner-produced alerts remain coherent across snapshots, FastAPI reads, and CLI `read-session` behavior | `postgres_alert_weekly_runtime_operator_confidence.py`; scheduled weekly with a disposable `postgres:16` service. |
 
-Keep alert parity, alert live smoke, and broader runtime/operator-flow
-confidence as separate lanes rather than one large PostgreSQL bucket.
-
-The focused synthetic slice already owns the explicit failure policy too:
-runtime alert-store tests prove that unset or invalid PostgreSQL bootstrap
-input stays harmless in file mode and fails clearly only after explicit
-`ESM_ALERT_STORE_BACKEND=postgres` selection.
+Protected PR and branch CI intentionally stay on the focused synthetic path:
+the live-smoke gate is disabled and no PostgreSQL service starts. Direct
+real-PostgreSQL tests skip by default; the weekly/manual helpers require a
+disposable database URL and force explicit PostgreSQL selection plus the
+live-smoke gate. The focused synthetic slice covers runtime configuration;
+failure and rollback policy remains in the
+[persistence audit](./session-persistence-audit.md).
 
 Use the live smokes when you need confidence in the real database path:
 
@@ -1301,8 +1285,8 @@ Use the live smokes when you need confidence in the real database path:
 
 For this branch, the smallest useful live checks are:
 
-- store-level smoke:
-  - `tests/test_session_alert_store_postgres.py::test_real_postgres_alert_store_smoke_round_trip`
+- store-level smoke after the synthetic slice:
+  - `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/test_session_alert_store_postgres.py -k real_postgres_alert_store`
 - representative public-surface smoke:
   - `tests/test_api_session_alert_incidents.py::test_live_runtime_postgres_grouped_routes_follow_actual_startup_path`
 
@@ -1335,6 +1319,7 @@ Example local env for the live checks:
 ```bash
 export ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/election_stream_monitor'
 export ESM_ALERT_STORE_BACKEND=postgres
+export ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES=1
 export POSTGRES_ALERT_STORE_REAL_SMOKE=1
 ```
 
@@ -1344,8 +1329,8 @@ Quick connection sanity check before the longer bundles:
 .venv/bin/python -c "import psycopg; psycopg.connect('postgresql://postgres:postgres@localhost:5432/election_stream_monitor').close(); print('ok')"
 ```
 
-For weekly/manual rollout confidence, the live Postgres path is split into two
-focused bundles:
+For weekly/manual rollout confidence, the live PostgreSQL path is split into
+two focused bundles:
 
 - backend confidence
   - store bootstrap and real append/read round-trips
@@ -1353,30 +1338,55 @@ focused bundles:
   - raw/grouped FastAPI route checks
   - grouped MCP agreement over the active backend
 - runtime/operator-flow confidence
-  - runner-written alerts through the live PostgreSQL backend
-  - session snapshot reads over the active backend
+  - canonical runner-written alerts through the live PostgreSQL backend
+  - standalone session snapshot reads over the active backend
   - CLI `read-session` behavior over the active backend
+
+The backend bundle seeds alerts through the real store before exercising public
+readers. The runtime/operator bundle owns the stronger write-to-read seam:
+deterministic runner output is persisted through the selected PostgreSQL store,
+then compared across the session snapshot and FastAPI readers.
+
+Its canonical smoke proves only this compact operator contract:
+
+- runtime selection resolves the PostgreSQL alert store
+- the runner persists a small ordered alert sequence
+- the session snapshot and raw alert route expose that same normalized sequence
+- FastAPI raw alerts plus derived summary and timeline views remain coherent
+
+Detached worker startup, real video processing, MCP, and CLI behavior remain
+separate confidence seams so this smoke stays deterministic and fast.
 
 Use either bundle directly:
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
-python3 scripts/postgres_alert_weekly_backend_confidence.py
+.venv/bin/python scripts/postgres_alert_weekly_backend_confidence.py
 ```
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
-python3 scripts/postgres_alert_weekly_runtime_operator_confidence.py
+.venv/bin/python scripts/postgres_alert_weekly_runtime_operator_confidence.py
 ```
 
 Or run both with the umbrella helper:
 
 ```bash
 ESM_POSTGRES_ALERT_DATABASE_URL='postgresql://...' \
-python3 scripts/postgres_alert_weekly_confidence.py
+.venv/bin/python scripts/postgres_alert_weekly_confidence.py
 ```
 
 The umbrella helper runs both bundles in order.
+
+For the same complete local confidence pass, use:
+
+```bash
+just test-alert-postgres-live
+```
+
+It requires `ESM_POSTGRES_ALERT_DATABASE_URL` to name a disposable database.
+The helper itself forces explicit PostgreSQL selection and the live-smoke gate;
+it remains a local/weekly confidence lane, not a protected PR requirement.
 
 Use the backend bundle when:
 
@@ -1467,10 +1477,10 @@ Current alert persistence contract to preserve:
       connection/bootstrap path, and the concrete second store implementation
   - `src/session_alert_store_postgres_config.py`
     - owns the narrow env/config parsing for the PostgreSQL bootstrap path:
-      `ESM_ALERT_STORE_BACKEND`,
       `ESM_POSTGRES_ALERT_DATABASE_URL`,
-      `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES`, and
-      `POSTGRES_ALERT_STORE_REAL_SMOKE`
+      `ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES`
+    - `POSTGRES_ALERT_STORE_REAL_SMOKE` is the live-test gate owned by the
+      shared test support, not runtime bootstrap configuration
   - `src/session_alerts.py` and `src/session_alert_incidents.py`
     - public read-model entrypoints accept the store contract explicitly while still
       defaulting to the runtime-selected store implementation
@@ -1534,10 +1544,10 @@ The current test split is:
 - `tests/test_session_alert_store_runtime_config.py`
   - explicit runtime backend-mode config coverage for `file` versus `postgres`
 - `tests/test_session_alert_store_parity.py`
-  - shared file-store versus PostgreSQL-store parity for raw reads,
-    filtered raw reads, known-empty and unknown-session behavior, filtered
-    summaries, grouped timelines, grouped summaries, grouped filtered reads,
-    grouped time-bounded reads, and the file-only malformed-row subset path
+  - shared file-store versus PostgreSQL-store parity for append order,
+    normalized raw read shape, session-scoped filtering, summaries, grouped
+    timelines, grouped incident summaries, known-empty and unknown-session
+    behavior, and the file-only malformed-row subset path
 - `tests/test_session_alert_store_postgres.py`
   - PostgreSQL alert-store contract coverage for schema/bootstrap plus the
     concrete second backend's read/write drift-sensitive behavior

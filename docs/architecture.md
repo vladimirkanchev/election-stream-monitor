@@ -51,10 +51,9 @@ In practice that means:
   - a local FastAPI boundary
   - shared session services
   - a detached session worker for monitoring runs
-- durable session persistence still resolves to the file-backed store by
-  default
-- PostgreSQL session storage is available now, but only through explicit
-  backend selection plus valid bootstrap configuration
+- session and alert persistence resolve to file-backed stores by default;
+  their PostgreSQL stores require explicit backend selection and valid
+  bootstrap configuration
 - one React/Electron frontend
 - explicit detector registration
 - explicit alert rules
@@ -114,10 +113,12 @@ It is now:
     as `worker.log`.
 12. The frontend polls the session snapshot and updates playback and alerts.
 
-For the current project stage, that session persistence path is still
-file-backed by default at runtime. The `SessionStore` boundary and PostgreSQL
-bootstrap code now also support an explicit PostgreSQL session mode, but the
-project still treats file-backed runtime as the normal default path.
+For the current project stage, both persistence seams remain file-backed by
+default. Explicit PostgreSQL selection never silently falls back after a
+bootstrap failure. The [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard)
+owns default-switch evidence, schema ownership, and rollout blockers; commands
+and validation-lane selection live in
+[testing-and-validation.md](./testing-and-validation.md).
 
 The new MCP surface follows the same adapter pattern:
 
@@ -129,8 +130,8 @@ The new MCP surface follows the same adapter pattern:
   owns the explicit `file` versus `postgres` backend-mode selection for that
   default store through `ESM_ALERT_STORE_BACKEND`
 - [`src/session_alert_store_postgres.py`](../src/session_alert_store_postgres.py)
-  now freezes the PostgreSQL alert-table contract, owns the small
-  connection/bootstrap path, and includes the concrete
+  owns the current PostgreSQL alert-table and index definitions, the small
+  connection/bootstrap path, and the concrete
   `PostgresSessionAlertStore` second backend over the existing seam
 - [`src/session_alert_store_postgres_config.py`](../src/session_alert_store_postgres_config.py)
   owns the narrow Postgres alert-store env/config parsing used by that bootstrap path
@@ -167,9 +168,6 @@ Today that means:
 
 That split kept the current JSONL behavior intact while making the PostgreSQL
 alert store a bounded replacement instead of a larger read-model rewrite.
-Alert PostgreSQL mode is selected explicitly at runtime through the alert
-backend configuration, while file-backed alerts remain the tested default
-backend for this branch.
 
 The current PostgreSQL alert mapping is intentionally column-first rather than
 JSONB-first:

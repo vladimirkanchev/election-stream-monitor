@@ -2,7 +2,8 @@
 
 This file owns the concrete Postgres backend below the service and boundary
 layers: schema/bootstrap behavior, SQL mapping, row normalization,
-unknown-session parity, and the opt-in live store smoke path. File-backed
+unknown-session parity, and the opt-in live store smoke path. Live cases run
+only with an explicitly selected, disposable PostgreSQL database. File-backed
 alerts remain the default runtime backend outside this explicit seam.
 """
 
@@ -14,6 +15,15 @@ from typing import Any
 
 import pytest
 
+from session_alert_incidents import (
+    build_session_incident_summary,
+    build_session_timeline,
+)
+from session_alerts import (
+    filter_session_alert_events,
+    read_session_alert_events,
+    summarize_session_alert_events,
+)
 from session_alert_store import AlertEventPayload, SessionAlertsNotFoundError
 from session_alert_store_postgres import (
     POSTGRES_ALERT_EVENT_COLUMNS,
@@ -21,12 +31,14 @@ from session_alert_store_postgres import (
     POSTGRES_ALERT_EVENT_READ_ORDER,
     POSTGRES_ALERT_EVENTS_INSERT_SQL,
     POSTGRES_ALERT_EVENTS_READ_SQL,
+    POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS,
     POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS,
     POSTGRES_ALERT_TIMESTAMP_FORMAT,
     PostgresSessionAlertStore,
     bootstrap_postgres_alert_store,
     connect_postgres_alert_store,
     initialize_postgres_alert_store,
+    reset_postgres_alert_store_schema,
 )
 from session_alert_store_postgres_config import (
     POSTGRES_ALERT_DATABASE_URL_ENV,
@@ -35,6 +47,7 @@ from session_alert_store_postgres_config import (
 from session_models import AlertEvent, EventSeverity
 from tests.session_alert_test_support import (
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    build_isolated_postgres_alert_store,
     build_normalized_alert,
     build_unique_session_id,
     close_store_if_possible,
@@ -81,6 +94,7 @@ class RecordingConnection:
     def __init__(self, *, rows: list[object] | None = None) -> None:
         self.executed_statements: list[tuple[str, object | None]] = []
         self.committed = False
+        self.commit_count = 0
         self._rows = rows or []
 
     def cursor(self) -> RecordingCursor:
@@ -93,6 +107,7 @@ class RecordingConnection:
     def commit(self) -> None:
         """Record that the current store operation committed successfully."""
         self.committed = True
+        self.commit_count += 1
 
 
 class FailingCursor:
@@ -406,6 +421,22 @@ def test_initialize_postgres_alert_store_does_not_commit_after_mid_schema_failur
 
     assert connection.cursor_instance.calls == 2
     assert connection.committed is False
+
+
+def test_reset_postgres_alert_store_schema_recreates_known_schema_after_drop() -> None:
+    """Isolation reset should drop the alert table before recreating its schema."""
+    connection = RecordingConnection()
+
+    reset_postgres_alert_store_schema(connection)
+
+    expected_statements = [
+        *POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS,
+        *POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS,
+    ]
+    assert connection.executed_statements == [
+        (statement, None) for statement in expected_statements
+    ]
+    assert connection.commit_count == 2
 
 
 def test_bootstrap_postgres_alert_store_initializes_schema_when_enabled(
@@ -863,10 +894,80 @@ def test_postgres_session_alert_store_propagates_read_failures(
     not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     reason="Real PostgreSQL alert-store smoke test is opt-in.",
 )
+def test_real_postgres_alert_store_reset_clears_old_rows_and_remains_usable(
+    monkeypatch,
+) -> None:
+    """A destructive live reset should clear rows and restore normal public writes."""
+    session_id = build_unique_session_id("real-postgres-reset")
+    _mark_known_sessions(monkeypatch, session_id)
+    connection, store = build_isolated_postgres_alert_store()
+    try:
+        assert store.read_session_alert_events(session_id) == []
+
+        store.append_alert(
+            _sample_alert_event(
+                session_id=session_id,
+                title="Stale alert before reset",
+                message="This row must not survive schema reset.",
+            )
+        )
+        assert [alert["title"] for alert in store.read_session_alert_events(session_id)] == [
+            "Stale alert before reset"
+        ]
+
+        reset_postgres_alert_store_schema(connection)
+
+        assert store.read_session_alert_events(session_id) == []
+        store.append_alert(
+            _sample_alert_event(
+                session_id=session_id,
+                title="Fresh alert after reset",
+                message="The recreated schema accepts normal store writes.",
+            )
+        )
+        assert [alert["title"] for alert in store.read_session_alert_events(session_id)] == [
+            "Fresh alert after reset"
+        ]
+    finally:
+        close_store_if_possible(connection)
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL alert-store smoke test is opt-in.",
+)
+def test_real_postgres_alert_store_schema_initialization_is_idempotent(
+    monkeypatch,
+) -> None:
+    """Reapplying owned schema DDL should preserve a usable alert store."""
+    session_id = build_unique_session_id("real-postgres-idempotent-bootstrap")
+    _mark_known_sessions(monkeypatch, session_id)
+    connection, store = build_isolated_postgres_alert_store()
+    try:
+        initialize_postgres_alert_store(connection)
+        store.append_alert(
+            _sample_alert_event(
+                session_id=session_id,
+                title="Schema initialized twice",
+                message="The existing alert schema remained usable.",
+            )
+        )
+
+        assert [alert["title"] for alert in store.read_session_alert_events(session_id)] == [
+            "Schema initialized twice"
+        ]
+    finally:
+        close_store_if_possible(connection)
+
+
+@pytest.mark.skipif(
+    not REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    reason="Real PostgreSQL alert-store smoke test is opt-in.",
+)
 def test_real_postgres_alert_store_smoke_round_trip(
     monkeypatch,
 ) -> None:
-    """Canonical opt-in store-level smoke for schema init and one live round trip."""
+    """A live write should agree between the public store and raw read-model seam."""
     session_id = build_unique_session_id("real-postgres-smoke")
     _mark_known_sessions(monkeypatch, session_id)
     connection = connect_postgres_alert_store()
@@ -883,11 +984,12 @@ def test_real_postgres_alert_store_smoke_round_trip(
                 window_start_sec=None,
             )
         )
-        alerts = store.read_session_alert_events(session_id)
+        store_alerts = store.read_session_alert_events(session_id)
+        read_model_alerts = read_session_alert_events(session_id, store=store)
     finally:
         close_store_if_possible(connection)
 
-    assert alerts == [
+    expected_alerts = [
         _sample_normalized_alert(
             session_id=session_id,
             timestamp_utc="2026-05-19 20:00:00",
@@ -897,6 +999,8 @@ def test_real_postgres_alert_store_smoke_round_trip(
             window_start_sec=None,
         )
     ]
+    assert store_alerts == expected_alerts
+    assert read_model_alerts == expected_alerts
 
 
 @pytest.mark.skipif(
@@ -936,40 +1040,132 @@ def test_real_postgres_alert_store_preserves_exact_timestamp_round_trip(
 def test_real_postgres_alert_store_preserves_append_order_for_same_timestamp_alerts(
     monkeypatch,
 ) -> None:
-    """Live reads should stay append-ordered even when timestamps are identical."""
+    """Live reads should preserve append order, filters, and summary shapes."""
     session_id = build_unique_session_id("real-postgres-same-timestamp")
+    other_session_id = build_unique_session_id("real-postgres-other-session")
     shared_timestamp = "2026-05-19 20:20:00"
-    _mark_known_sessions(monkeypatch, session_id)
+    _mark_known_sessions(monkeypatch, session_id, other_session_id)
     connection = connect_postgres_alert_store()
     try:
         initialize_postgres_alert_store(connection)
         store = PostgresSessionAlertStore(connection)
-        store.append_alert(
+        events = (
             _sample_alert_event(
                 session_id=session_id,
                 timestamp_utc=shared_timestamp,
-                title="First persisted alert",
+                title="Repeated black alert",
                 message="Inserted first.",
                 source_name="segment-001.ts",
-            )
-        )
-        store.append_alert(
+            ),
             _sample_alert_event(
                 session_id=session_id,
                 timestamp_utc=shared_timestamp,
-                title="Second persisted alert",
+                title="Repeated black alert",
                 message="Inserted second.",
                 source_name="segment-002.ts",
-            )
+            ),
+            _sample_alert_event(
+                session_id=session_id,
+                timestamp_utc="2026-05-19 20:21:00",
+                detector_id="motion_blur",
+                title="Motion blur alert",
+                message="Inserted for a distinct filter result.",
+                severity="info",
+                source_name="segment-003.ts",
+            ),
+            _sample_alert_event(
+                session_id=other_session_id,
+                timestamp_utc=shared_timestamp,
+                title="Other session alert",
+                message="Must not appear in the target session read.",
+                source_name="other-segment.ts",
+            ),
         )
-        alerts = store.read_session_alert_events(session_id)
+        for event in events:
+            store.append_alert(event)
+
+        target_alerts = store.read_session_alert_events(session_id)
+        other_alerts = store.read_session_alert_events(other_session_id)
+        black_warning_alerts = filter_session_alert_events(
+            session_id,
+            detector_id="black_screen",
+            severity="warning",
+            store=store,
+        )
+        black_warning_timeline = build_session_timeline(
+            session_id,
+            detector_id="black_screen",
+            severity="warning",
+            store=store,
+        )
+        black_warning_summary = summarize_session_alert_events(
+            session_id,
+            detector_id="black_screen",
+            severity="warning",
+            store=store,
+        )
+        black_warning_incident_summary = build_session_incident_summary(
+            session_id,
+            detector_id="black_screen",
+            severity="warning",
+            store=store,
+        )
+        unmatched_alerts = filter_session_alert_events(
+            session_id,
+            detector_id="not-present",
+            store=store,
+        )
+        unmatched_timeline = build_session_timeline(
+            session_id,
+            detector_id="not-present",
+            store=store,
+        )
     finally:
         close_store_if_possible(connection)
 
-    assert [alert["title"] for alert in alerts] == [
-        "First persisted alert",
-        "Second persisted alert",
+    assert [alert["source_name"] for alert in target_alerts] == [
+        "segment-001.ts",
+        "segment-002.ts",
+        "segment-003.ts",
     ]
+    assert [alert["title"] for alert in other_alerts] == ["Other session alert"]
+    assert [alert["source_name"] for alert in black_warning_alerts] == [
+        "segment-001.ts",
+        "segment-002.ts",
+    ]
+    assert black_warning_timeline["entries"] == [
+        {
+            "start_time_utc": shared_timestamp,
+            "end_time_utc": shared_timestamp,
+            "detector_id": "black_screen",
+            "severity": "warning",
+            "title": "Repeated black alert",
+            "alert_count": 2,
+            "source_names": ["segment-001.ts", "segment-002.ts"],
+            "sample_message": "Inserted first.",
+        }
+    ]
+    expected_summary = {
+        "session_id": session_id,
+        "total_alerts": 2,
+        "counts_by_detector": {"black_screen": 2},
+        "counts_by_severity": {"warning": 2},
+        "first_alert_timestamp_utc": shared_timestamp,
+        "last_alert_timestamp_utc": shared_timestamp,
+    }
+    assert black_warning_summary == expected_summary
+    assert black_warning_incident_summary == {
+        **expected_summary,
+        "total_incidents": 1,
+        "top_incident_categories": {"Repeated black alert": 1},
+        "narrative_summary": (
+            f"Session {session_id} had 1 grouped incidents across 2 alerts, mostly from "
+            "black_screen, led by repeated black alert, with 2 warning alerts and 0 info "
+            "alerts."
+        ),
+    }
+    assert unmatched_alerts == []
+    assert unmatched_timeline == {"session_id": session_id, "entries": []}
 
 
 @pytest.mark.skipif(

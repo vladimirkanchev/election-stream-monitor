@@ -1,13 +1,14 @@
 """Shared helpers for alert-store, runtime-selection, and boundary tests.
 
-This module owns the small reusable seams that keep alert-store tests explicit
+This module owns small reusable seams that keep alert-store tests explicit
 without repeating session bootstrap, runtime-selection setup, or normalized
-alert payload literals across suites.
+alert payload literals. Live PostgreSQL helpers require explicit opt-in and
+are limited to disposable-database smoke tests.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import json
 import os
 from pathlib import Path
@@ -25,7 +26,12 @@ from session_alert_store import (
     clear_default_session_alert_store_cache,
     get_default_session_alert_store,
 )
-from session_alert_store_postgres import PostgresSessionAlertStore
+from session_alert_store_postgres import (
+    PostgresAlertStoreConnection,
+    PostgresSessionAlertStore,
+    connect_postgres_alert_store,
+    reset_postgres_alert_store_schema,
+)
 from session_alert_store_postgres_config import (
     POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV,
     POSTGRES_ALERT_DATABASE_URL_ENV,
@@ -36,10 +42,22 @@ from session_models import AlertEvent, EventSeverity
 AlertPayload = dict[str, object]
 AlertLogRow = AlertPayload | str
 SessionRootBuilder = Callable[[pytest.MonkeyPatch, Path], Path]
-REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED = (
-    os.getenv("POSTGRES_ALERT_STORE_REAL_SMOKE") == "1"
-    and bool(os.getenv(POSTGRES_ALERT_DATABASE_URL_ENV))
-)
+REAL_POSTGRES_ALERT_STORE_SMOKE_ENV = "POSTGRES_ALERT_STORE_REAL_SMOKE"
+
+
+def is_real_postgres_alert_store_smoke_enabled(
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """Return whether live-smoke opt-in, PostgreSQL selection, and a URL are set."""
+    values = os.environ if environ is None else environ
+    return (
+        values.get(REAL_POSTGRES_ALERT_STORE_SMOKE_ENV) == "1"
+        and values.get(ALERT_STORE_BACKEND_ENV, "").strip().lower() == "postgres"
+        and bool(values.get(POSTGRES_ALERT_DATABASE_URL_ENV, "").strip())
+    )
+
+
+REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED = is_real_postgres_alert_store_smoke_enabled()
 
 
 def build_snapshot_alert_report(snapshot: dict[str, object]) -> SessionAlertReport:
@@ -133,18 +151,31 @@ def build_live_runtime_postgres_store(
     session_id: str,
     session_root_builder: SessionRootBuilder | None = None,
 ) -> PostgresSessionAlertStore:
-    """Build a live runtime-selected Postgres store over a known persisted session."""
-    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
+    """Seed known session metadata, then select the live PostgreSQL alert store."""
     build_session_root = session_root_builder or configure_session_alert_test
     session_root = build_session_root(monkeypatch, tmp_path)
     write_known_session(session_root, session_id)
+    return select_live_runtime_postgres_alert_store(monkeypatch)
+
+
+def select_live_runtime_postgres_alert_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> PostgresSessionAlertStore:
+    """Select and return the real PostgreSQL alert store for an opt-in test.
+
+    The caller supplies the smoke flag and disposable database URL. This helper
+    aligns runtime selection, bootstrap intent, and default-store cache state.
+    """
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
     clear_default_session_alert_store_cache()
-    return cast(PostgresSessionAlertStore, get_default_session_alert_store())
+    store = get_default_session_alert_store()
+    assert isinstance(store, PostgresSessionAlertStore)
+    return store
 
 
 def close_store_if_possible(store: object) -> None:
-    """Close an optional live Postgres store or connection without concrete typing."""
+    """Close a live test store or its wrapped connection when available."""
     close = getattr(store, "close", None)
     if callable(close):
         close()
@@ -153,6 +184,20 @@ def close_store_if_possible(store: object) -> None:
     close = getattr(connection, "close", None)
     if callable(close):
         close()
+
+
+def build_isolated_postgres_alert_store() -> tuple[
+    PostgresAlertStoreConnection,
+    PostgresSessionAlertStore,
+]:
+    """Build a live-smoke store after destructively resetting a disposable database."""
+    connection = connect_postgres_alert_store()
+    try:
+        reset_postgres_alert_store_schema(connection)
+    except Exception:
+        close_store_if_possible(connection)
+        raise
+    return connection, PostgresSessionAlertStore(connection)
 
 
 def build_unique_session_id(prefix: str) -> str:

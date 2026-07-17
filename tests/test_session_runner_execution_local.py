@@ -14,13 +14,12 @@ from tests.session_alert_test_support import (
     build_normalized_alert,
     build_unique_session_id,
     close_store_if_possible,
+    select_live_runtime_postgres_alert_store,
 )
 from session_alert_store import (
     AlertEventPayload,
     clear_default_session_alert_store_cache,
-    get_default_session_alert_store,
 )
-from session_alert_store_postgres_config import POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV
 from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
 from session_io import initialize_session, read_session_snapshot
 from session_alerts import read_session_alert_events
@@ -72,14 +71,6 @@ def _select_runtime_postgres_store(monkeypatch, store: "MemoryRuntimeAlertStore"
         lambda: store,
     )
     clear_default_session_alert_store_cache()
-
-
-def _enable_live_runtime_postgres_backend(monkeypatch) -> object:
-    """Resolve the real default Postgres alert store for one opt-in runner test."""
-    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
-    monkeypatch.setenv(POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV, "1")
-    clear_default_session_alert_store_cache()
-    return get_default_session_alert_store()
 
 
 def _warning_alert_entry(
@@ -261,7 +252,7 @@ def test_process_discovered_slices_cancels_before_processing_next_slice(
 
     bundle_called = {"value": False}
 
-    def fake_bundle_runner(**kwargs):
+    def fake_bundle_runner(**_kwargs):
         bundle_called["value"] = True
         return {"results": [], "alerts": []}
 
@@ -635,14 +626,14 @@ def test_live_runtime_postgres_runner_written_alerts_stay_aligned_across_snapsho
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """Runner-written alerts should stay consistent across snapshot and HTTP reads in live Postgres mode."""
+    """Canonical live smoke for runner writes plus FastAPI raw and derived reads."""
     session_id = build_unique_session_id("session-execution-runtime-postgres-live")
     metadata, progress = _configure_local_execution_session(
         monkeypatch,
         tmp_path,
         session_id=session_id,
     )
-    store = _enable_live_runtime_postgres_backend(monkeypatch)
+    store = select_live_runtime_postgres_alert_store(monkeypatch)
     slices = [build_slice(tmp_path, "segment_0001.ts")]
     monkeypatch.setattr(
         session_runner_execution,
@@ -696,14 +687,14 @@ def test_live_runtime_postgres_runner_written_alerts_stay_aligned_across_snapsho
     finally:
         close_store_if_possible(store)
 
-    expected_alerts = _normalized_warning_alert_batch(metadata.session_id, *alert_rows)
-
-    assert snapshot["alerts"] == expected_alerts
     assert list_response.status_code == 200
-    assert list_response.json() == {
+    expected_alerts = _normalized_warning_alert_batch(metadata.session_id, *alert_rows)
+    alert_route_payload = list_response.json()
+    assert alert_route_payload == {
         "session_id": metadata.session_id,
         "alerts": expected_alerts,
     }
+    assert snapshot["alerts"] == alert_route_payload["alerts"] == expected_alerts
     assert summary_response.status_code == 200
     assert summary_response.json() == build_alert_summary_payload(
         metadata.session_id,

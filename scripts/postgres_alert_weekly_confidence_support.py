@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Shared helpers for weekly/manual live Postgres alert confidence runners."""
+"""Shared setup for scheduled and manual live PostgreSQL alert confidence.
+
+Each bundle requires a disposable database URL, forces PostgreSQL selection,
+and invokes pytest through the current Python interpreter. Missing setup fails
+before pytest; printed plans redact the database URL.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def require_database_url() -> str:
-    """Return the live Postgres URL or fail with one clear setup hint."""
+    """Return the explicit disposable database URL or exit with a setup hint."""
     database_url = os.environ.get("ESM_POSTGRES_ALERT_DATABASE_URL", "").strip()
     if database_url:
         return database_url
@@ -25,17 +30,18 @@ def require_database_url() -> str:
 
 
 def build_live_postgres_env(database_url: str) -> dict[str, str]:
-    """Return the shared opt-in env for weekly/manual live Postgres validation."""
+    """Build the forced PostgreSQL live-test environment for one bundle."""
     env = os.environ.copy()
     env.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
     env["POSTGRES_ALERT_STORE_REAL_SMOKE"] = "1"
-    env.setdefault("ESM_ALERT_STORE_BACKEND", "postgres")
+    # An explicitly requested live bundle must not silently inherit file mode.
+    env["ESM_ALERT_STORE_BACKEND"] = "postgres"
     env["ESM_POSTGRES_ALERT_DATABASE_URL"] = database_url
     return env
 
 
 def build_pytest_command(test_paths: tuple[str, ...]) -> list[str]:
-    """Return the focused pytest command for one live Postgres confidence group."""
+    """Build the focused pytest command with the invoking Python interpreter."""
     return [sys.executable, "-m", "pytest", "-q", *test_paths]
 
 
@@ -44,7 +50,7 @@ def print_run_plan(
     test_paths: tuple[str, ...],
     env: dict[str, str],
 ) -> None:
-    """Print the tests and env knobs used by one live confidence group."""
+    """Print a redacted plan for one live PostgreSQL confidence group."""
     print(f"Running {title}:")
     for test_path in test_paths:
         print(f"- {test_path}")
@@ -59,7 +65,7 @@ def run_live_postgres_test_group(
     title: str,
     test_paths: tuple[str, ...],
 ) -> int:
-    """Run one named live-Postgres confidence group and return the pytest exit code."""
+    """Run one named live PostgreSQL confidence group and return its exit code."""
     database_url = require_database_url()
     env = build_live_postgres_env(database_url)
     command = build_pytest_command(test_paths)
