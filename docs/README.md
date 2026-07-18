@@ -115,8 +115,9 @@ Use this shortcut map before editing code:
 
 For the current persistence rollout state, use:
 
-- [session-persistence-audit.md](./session-persistence-audit.md) for rollout,
-  schema, rollback, backfill policy, and default-readiness evidence
+- [session-persistence-audit.md](./session-persistence-audit.md) for rollout
+  state, schema, rollback, backfill policy, and the persistence readiness
+  scorecard
 - [architecture.md](./architecture.md) for the concise storage split
 - [session-model.md](./session-model.md) for snapshot and persistence semantics
 - [testing-and-validation.md](./testing-and-validation.md) for the synthetic-versus-live validation split
