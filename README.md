@@ -234,7 +234,7 @@ The diagram below shows the same flow in one picture.
 ### Who Owns What
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
-- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, alert/session reads, and the protected alerts routes in `share` mode.
+- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, and alert/session reads; operational routes require an API key in `share` mode.
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
 - **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session reads and writes now go through the shared session-store contract, but the default backend still writes under `data/sessions/`.

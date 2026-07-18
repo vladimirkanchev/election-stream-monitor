@@ -181,6 +181,8 @@ The first FastAPI authentication split follows the same boundary-oriented style:
 
 - [`src/api_auth.py`](../src/api_auth.py) owns request-authentication mechanics
   for the HTTP API boundary
+- [`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py) owns HTTP
+  API-key extraction, `401` mapping, and safe auth-failure logging
 - [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py) owns the
   alerts-router HTTP protection policy that composes authentication and rate
   limiting
@@ -190,15 +192,16 @@ The first FastAPI authentication split follows the same boundary-oriented style:
 - [`src/api_rate_limit.py`](../src/api_rate_limit.py) owns the current
   principal-aware fixed-window limiter and keeps its local in-memory store
   replaceable
-- the alerts router currently applies both pieces through a router dependency
-  instead of a global app-wide middleware
+- session and playback routers apply shared authentication through router
+  dependencies; the alerts router composes that authentication with its
+  limiter instead of using app-wide middleware
 - the current `429` rate-limit error vocabulary is defined and enforced at the
   same API boundary
 - shared application services remain auth-agnostic
 
 Current MCP versus FastAPI trust boundary:
 
-- the alerts-router FastAPI auth and rate limiting are HTTP-boundary concerns
+- FastAPI authentication and alert rate limiting are HTTP-boundary concerns
 - the current MCP server remains a local `stdio` adapter, not a remote
   authenticated service
 - that separation is intentional: today's FastAPI protection work should stay

@@ -1250,6 +1250,20 @@ boundary, and the MCP adapter over the same service seam. If you change only
 one of those layers, this is still the best quick confidence check because it
 proves the ownership split still lines up.
 
+Focused FastAPI share-policy validation:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider -q \
+  tests/test_api_boundary_settings_env.py \
+  tests/test_api_server_cli_runtime.py \
+  tests/test_api_server_cli_routes.py
+```
+
+Use this smaller lane after changing run-mode defaults, API-key enforcement,
+or the public-versus-protected route split. It does not prove rate-limit
+coverage, response bounds, non-loopback bind safety, or MCP network security.
+
 The normal alert pass stays synthetic by default. For the opt-in live
 PostgreSQL alert smoke, use the alert entries in the setup map above. The
 store-level smoke resets alert-store-owned schema, so its URL must point to a
@@ -1438,12 +1452,14 @@ checks for:
 - security audits
 - dependency consistency audits
 
-It exercises the current alerts-router protection contract end to end:
+The routine synthetic backend lane exercises the current FastAPI boundary
+protection contract:
 
 - `local` mode defaults keep auth and rate limiting off
 - `share` mode defaults turn auth and rate limiting on
 - share mode can auto-generate one startup API key when none is configured
-- protected scope
+- share-mode authentication for operational routes
+- alert-route rate limiting
 - structured `401` and `429` responses
 - local in-memory/per-process limiter behavior
 - coarse `Retry-After` behavior on `429`
@@ -1453,7 +1469,7 @@ not as proof of a distributed shared-store deployment model.
 
 The current functionality under that slice is:
 
-- FastAPI API-key authentication seam for the alerts router
+- FastAPI API-key authentication seam for session, alert, and playback routes
 - FastAPI in-memory principal-aware rate-limiting seam for the alerts router
 - raw session alert list queries
 - raw numeric alert summaries
@@ -1588,7 +1604,8 @@ The current test split is:
   - limiter unit coverage for fixed-window counting, principal separation,
     window reset, and IP-strategy subject building
 - `tests/test_api_boundary_settings_env.py`
-  - env parsing, run-mode defaults, and share-mode API-key generation coverage
+  - env parsing, run-mode defaults, share-mode API-key generation, and rejected
+    auth-disabling share overrides
 - `tests/test_api_boundary_settings_validation.py`
   - direct validator coverage plus FastAPI startup validation integration
 - `tests/test_api_boundary_error_contracts.py`
@@ -1598,13 +1615,15 @@ The current test split is:
     flow, fail-fast behavior, and CLI-only boundary posture decisions before
     any HTTP request exists
 - `tests/test_api_server_cli_routes.py`
-  - real alerts-router behavior under CLI-prepared `local` and `share` mode,
-    including open local access, `401`, `429`, and proof that CLI-prepared
-    share mode does not widen protection to public routes
+  - real session, alert, and playback behavior under CLI-prepared `local` and
+    `share` mode, including open local access, `401`, `429`, and proof that
+    CLI-prepared share mode does not widen protection to public routes
+  - one representative route from each protected family proves that a valid
+    share key reaches normal route handling while local mode stays keyless
   - also locks down that `/openapi.json` and `/detectors` remain outside the
-    current alerts-router auth boundary
-  - keeps generated-key and manual-key access aligned across more than one
-    protected alerts route shape
+    operational-router authentication boundary
+  - keeps generated-key and manual-key access aligned across protected route
+    families
 - `tests/test_api_server_cli_output.py`
   - startup summary output, generated-key guidance, manual-key non-leakage,
     and operator-facing `share` versus `local` startup distinction
@@ -1725,9 +1744,9 @@ The split is deliberate:
 - `tests/api_alert_test_support.py` keeps the route-policy files small by
   owning the repeated alert-route setup seams rather than leaving each policy
   file to build its own tiny test framework
-- the alerts-router HTTP protection composition lives in
-  `src/api/alert_route_policy.py`, so route tests patch the boundary seam there
-  rather than duplicating auth/rate-limit behavior inside route functions
+- shared HTTP authentication lives in `src/api/http_auth_policy.py`; alert
+  route tests use `src/api/alert_route_policy.py` only for rate-limit
+  composition rather than duplicating either policy in route functions
 - route-policy files prove router-scoped auth and limiter behavior once across
   the protected alerts surface, but are now split so authentication policy,
   limiter policy, and client-visible response contracts each have one obvious home

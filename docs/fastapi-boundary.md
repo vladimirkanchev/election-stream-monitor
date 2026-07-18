@@ -25,15 +25,15 @@ These endpoints already use:
 - explicit request/response schemas
 - structured error payloads
 - cleaned session snapshot semantics
-- router-scoped auth enforcement for the alerts surface
+- router-scoped authentication for operational HTTP routes
 
-The current alerts router can apply API-key authentication and principal-aware
-rate limiting. The limiter is still one local in-memory fixed window, so the
-enforcement is per-process rather than distributed. The owning HTTP protection
-composition lives in
-[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py), and the
-app validates enabled auth/rate-limit settings during startup so invalid
-boundary config fails before the first protected request.
+Session and playback routers use shared API-key authentication. The alerts
+router adds principal-aware rate limiting. The limiter is one local in-memory
+fixed window, so enforcement is per-process rather than distributed. Shared
+HTTP authentication lives in
+[`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py); alert-specific
+rate-limit composition remains in
+[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py).
 
 ### Runtime Mode And Network Exposure
 
@@ -50,10 +50,15 @@ directly to Uvicorn.
 | Credentials | No key is generated | Generates one strong process-local API key when no manual key is supplied and auth remains enabled |
 | Startup output | Mode, listen address, auth state, and rate-limit state | The same summary plus protected-sharing guidance; a generated key is printed once, while a manual key is not echoed |
 
-Lower-level `ESM_API_AUTH_ENABLED` and `ESM_API_RATE_LIMIT_ENABLED` settings
-can override either mode's defaults. Startup validation rejects enabled auth
-without usable keys, but it does not currently impose a relationship between
-run mode and bind address.
+`ESM_API_AUTH_ENABLED` can opt local mode into authentication, but it cannot
+disable authentication in `share` mode: that configuration fails before
+startup. `ESM_API_RATE_LIMIT_ENABLED` can still override the mode default.
+Startup validation also rejects enabled auth without usable keys, but it does
+not currently impose a relationship between run mode and bind address.
+
+Focused settings and CLI tests cover the supported false-like auth overrides,
+including conflicting manual API-key configuration, so this guarantee does not
+depend on startup documentation alone.
 
 **Current audit finding:** non-loopback exposure can happen without selecting
 `share`, for example through `api_server_cli local --host 0.0.0.0`. In that
@@ -74,7 +79,7 @@ enforces it.
 | --- | --- |
 | `local-public` | Available without authentication only to loopback local use. It is not permission to bind the route to a network-visible host. |
 | `share-public` | Deliberately available without authentication in share mode, such as a minimal reachability check. |
-| `share-protected` | Requires an API key and the applicable HTTP rate limit in share mode. |
+| `share-protected` | Requires an API key in share mode and uses a route-specific rate limit when one is assigned. |
 | `local-only` | Available for local use but intentionally unavailable in share mode. This is a route policy, not a transport type. |
 | `MCP-local-read-only` | Available only to a trusted local MCP client over stdio and limited to non-mutating tools. |
 | `disabled-remotely` | Intentionally has no remote/network transport. This describes the current MCP transport guarantee. |
@@ -87,40 +92,55 @@ remote exposure, and FastAPI HTTP protections do not apply to MCP stdio.
 Authentication settings are owned by
 [`src/api_boundary_config.py`](../src/api_boundary_config.py), API-key
 validation and principal creation by [`src/api_auth.py`](../src/api_auth.py),
-and HTTP error mapping by
-[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py). The
-alerts router applies `require_http_alert_principal` as a router dependency.
-There is no application-wide authentication middleware or endpoint-specific
-authentication dependency elsewhere today.
+and shared HTTP `401` mapping by
+[`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py). The alerts
+router applies `require_http_alert_principal`, which composes that shared
+authentication dependency with alert-specific rate limiting. There is no
+application-wide authentication middleware or endpoint-specific authentication
+dependency elsewhere today.
 
-The table states current behavior first. `Intended classification` is proposed
-future enforcement, not a claim that the route already has that protection.
-All HTTP routes can be network-visible today if either mode is started with a
-non-loopback host; the `Remote availability now` column describes the policy
-that applies in that case.
+The table states current behavior first. The authentication columns record
+whether an API key is required under each mode's configuration: local mode may
+opt into authentication, while share mode cannot opt out. The final policy
+column distinguishes active enforcement from decisions still deferred. All
+HTTP routes can be network-visible today if either mode is started with a
+non-loopback host. Rate-limit ownership is recorded in the next section.
 
-| Surface | Operation | Local policy now | Share policy now | Intended classification | Auth and rate limit today | Remote availability now | Owner |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `GET`, `HEAD /openapi.json` | diagnostic | `local-public` | `share-public` | `local-only` | None | Yes; unprotected | FastAPI framework |
-| `GET`, `HEAD /docs` | diagnostic | `local-public` | `share-public` | `local-only` | None | Yes; unprotected | FastAPI framework |
-| `GET`, `HEAD /docs/oauth2-redirect` | diagnostic | `local-public` | `share-public` | `local-only` | None | Yes; unprotected | FastAPI framework |
-| `GET`, `HEAD /redoc` | diagnostic | `local-public` | `share-public` | `local-only` | None | Yes; unprotected | FastAPI framework |
-| `GET /health` | diagnostic | `local-public` | `share-public` | `share-public` | None | Yes; public minimal-status route | Health router |
-| `GET /detectors` | read | `local-public` | `share-public` | `share-protected` | None | Yes; unprotected | Detectors router |
-| `POST /sessions` | mutation | `local-public` | `share-public` | `share-protected` | None | Yes; unprotected | Sessions router |
-| `GET /sessions/{session_id}` | read | `local-public` | `share-public` | `share-protected` | None | Yes; unprotected | Sessions router |
-| `POST /sessions/{session_id}/cancel` | control | `local-public` | `share-public` | `share-protected` | None | Yes; unprotected | Sessions router |
-| `GET /sessions/{session_id}/alerts` | read | `local-public` by default | `share-protected` by default | `share-protected` | Alert dependency; fixed window when enabled | Yes; protected by default in share | Alerts router |
-| `GET /sessions/{session_id}/alerts/summary` | read | `local-public` by default | `share-protected` by default | `share-protected` | Alert dependency; fixed window when enabled | Yes; protected by default in share | Alerts router |
-| `GET /sessions/{session_id}/alerts/timeline` | read | `local-public` by default | `share-protected` by default | `share-protected` | Alert dependency; fixed window when enabled | Yes; protected by default in share | Alerts router |
-| `GET /sessions/{session_id}/alerts/incident-summary` | read | `local-public` by default | `share-protected` by default | `share-protected` | Alert dependency; fixed window when enabled | Yes; protected by default in share | Alerts router |
-| `POST /playback/resolve` | control | `local-public` | `share-public` | `share-protected` | None | Yes; unprotected | Playback router |
+| Surface | Operation | Local policy now | Share policy now | Auth required locally | Auth required in share | Current policy owner | Enforcement status | Remote availability now |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `GET`, `HEAD /openapi.json` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
+| `GET`, `HEAD /docs` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
+| `GET`, `HEAD /docs/oauth2-redirect` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
+| `GET`, `HEAD /redoc` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
+| `GET /health` | diagnostic | `local-public` | `share-public` | No | No | Health router | Enforced: minimal `share-public` status | Yes; public minimal-status route |
+| `GET /detectors` | read | `local-public` | `share-public` | No | No | Detectors router | Decision pending: `share-protected` | Yes; unprotected |
+| `POST /sessions` | mutation | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Sessions router through `require_http_principal` | Enforced: `share-protected` | Yes; protected in share |
+| `GET /sessions/{session_id}` | read | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Sessions router through `require_http_principal` | Enforced: `share-protected` | Yes; protected in share |
+| `POST /sessions/{session_id}/cancel` | control | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Sessions router through `require_http_principal` | Enforced: `share-protected` | Yes; protected in share |
+| `GET /sessions/{session_id}/alerts` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
+| `GET /sessions/{session_id}/alerts/summary` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
+| `GET /sessions/{session_id}/alerts/timeline` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
+| `GET /sessions/{session_id}/alerts/incident-summary` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
+| `POST /playback/resolve` | control | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Playback router through `require_http_principal` | Enforced: `share-protected` | Yes; protected in share |
 
-`local-public` alert routes can become protected only when the lower-level
-auth setting is explicitly enabled. That existing alert-router dependency
-cannot protect the other routers. The later route-hardening task must apply a
-shared policy dependency to the operational routes or provide equally explicit
-per-router policy.
+Operational routers share `require_http_principal`, which accepts a local
+principal when local authentication is disabled and requires an API key in
+share mode. Alerts compose the same dependency with their router-specific
+limiter; sessions and playback have no limiter policy yet.
+
+The enforced `share-protected` set is limited to the operational routes shown
+in the matrix. Detector catalog, framework documentation, and health-route
+policy remain separate decisions.
+
+### Intentionally Public Surfaces
+
+This change intentionally preserves `GET /health` as a minimal
+`share-public` reachability response. It also leaves the detector catalog and
+FastAPI documentation surfaces unchanged: `/detectors`, `/docs`, and
+`/openapi.json` remain outside the operational-router authentication scope.
+Their future share-mode policy remains a separate decision recorded in the
+matrix; this branch does not treat their current public status as an
+implementation defect.
 
 ### Rate-Limit And Resource Controls
 
@@ -132,15 +152,15 @@ The default identity is the authenticated API-key fingerprint; the optional
 `ip` strategy instead uses the request host. When auth is disabled locally,
 the principal strategy uses one shared local identity.
 
-| Route family | Rate limited today | Existing input or result control | Missing resource control to record |
+| Route family | Rate limit and identity today | Existing input or result control | Missing resource control to record |
 | --- | --- | --- | --- |
-| Framework docs, OpenAPI, health | No | Small static or constant responses | No route-specific abuse control; share-mode exposure is addressed by the intended route policy |
-| Detector catalog | No | Optional `mode` is a fixed enum; catalog is registry-backed | No request budget if exposed remotely |
-| Session start | No | `mode` is a fixed enum; source validation rejects blank, unsupported, missing, and disallowed remote sources | No request budget, body-size cap, or detector-count cap before a detached worker is started |
-| Session read | No | Session identifier is the only route input | Snapshot may contain unbounded persisted alerts and results; no response cap or pagination |
-| Session cancel | No | Session identifier is the only route input | No request budget for a state-changing control operation |
-| Alert list, summary, timeline, incident summary | Yes, only through the alerts-router dependency | `severity` is a fixed enum; time ranges are parsed and ordered; invalid values return validation errors | Raw lists and grouped timelines have no pagination or response-size cap; summaries still scan the selected session's alerts |
-| Playback resolution | No | `mode` is a fixed enum; source and remote-host trust validation run before resolution | No request budget or body-size cap; resolution can inspect local media paths or validate remote stream URLs |
+| Framework docs, OpenAPI, health | None | Small static or constant responses | No route-specific abuse control; share-mode exposure is addressed by the intended route policy |
+| Detector catalog | None | Optional `mode` is a fixed enum; catalog is registry-backed | No request budget if exposed remotely |
+| Session start | None | `mode` is a fixed enum; source validation rejects blank, unsupported, missing, and disallowed remote sources | No request budget, body-size cap, or detector-count cap before a detached worker is started |
+| Session read | None | Session identifier is the only route input | Snapshot may contain unbounded persisted alerts and results; no response cap or pagination |
+| Session cancel | None | Session identifier is the only route input | No request budget for a state-changing control operation |
+| Alert list, summary, timeline, incident summary | Shared fixed window: 100 requests / 60 seconds when enabled. `principal` uses an API-key fingerprint or the local principal; `ip` uses the request host. | `severity` is a fixed enum; time ranges are parsed and ordered; invalid values return validation errors | Raw lists and grouped timelines have no pagination or response-size cap; summaries still scan the selected session's alerts |
+| Playback resolution | None | `mode` is a fixed enum; source and remote-host trust validation run before resolution | No request budget or body-size cap; resolution can inspect local media paths or validate remote stream URLs |
 
 The protected alerts routes return the standard `429` envelope plus a
 whole-window `Retry-After` header. Tests confirm that one exhausted alert
@@ -165,27 +185,27 @@ control belongs in this local-first project now.
 | Surface or concern | Current behavior | Intended decision | Classification |
 | --- | --- | --- | --- |
 | Mode and bind address | `local` accepts non-loopback `--host` values while auth and rate limiting remain off by default | Treat non-loopback binding as an explicit sharing decision; reject or safely promote an unprotected `local` bind | Confirmed unsafe exposure |
-| Session start, read, and cancel | No authentication or rate limiting in `share` mode | Make all three `share-protected`; apply proportionate limits to start and cancel, and bound large reads separately | Confirmed unsafe exposure |
-| Playback resolution | No authentication or rate limiting in `share` mode | Make the route `share-protected`; retain source and remote-host validation and add an applicable request budget | Confirmed unsafe exposure |
+| Session start, read, and cancel | API-key authentication applies in `share`; no rate or result-size policy applies yet | Preserve `share-protected`; apply proportionate limits to start and cancel, and bound large reads separately | Acceptable local-first limitation |
+| Playback resolution | API-key authentication applies in `share`; no rate policy applies yet | Preserve `share-protected`; retain source and remote-host validation and add an applicable request budget | Acceptable local-first limitation |
 | Alert and incident reads | API-key and fixed-window protection already apply in `share`; raw and timeline responses are unbounded | Preserve `share-protected`; add pagination or response bounds before broader remote use | Acceptable local-first limitation |
 | Detector catalog | Unauthenticated in `share` mode | Treat detector metadata as `share-protected` for one consistent remote API boundary | Policy gap requiring a decision |
 | `/docs`, `/redoc`, OAuth redirect, and `/openapi.json` | Enabled without authentication in `share` mode | Keep available as `local-public`, but disable in `share` mode | Policy gap requiring a decision |
 | `/health` | Returns a small unauthenticated response | Keep `share-public`, limited to minimal reachability/readiness status with no configuration, dependency, or secret detail | Policy gap requiring a decision |
-| Share-mode security overrides | Lower-level environment settings can disable auth or rate limiting after `share` supplies secure defaults | Protected sharing must not start network-visible with required controls disabled unless a future explicit unsafe-development override is designed and named | Policy gap requiring a decision |
+| Share-mode authentication override | `ESM_API_AUTH_ENABLED=false` is rejected before startup; rate limiting remains independently configurable | Preserve mandatory share-mode authentication; decide later whether rate limiting also becomes mandatory | Implemented share-mode guarantee |
 | HTTP limiter scope | In-memory and per process | Keep for the current single-process runtime; require shared enforcement only before multi-worker or distributed deployment | Later deployment concern |
 | MCP tools | Four read-only alert tools run over trusted local `stdio`, without HTTP auth or HTTP rate limiting | Keep `MCP-local-read-only` and `disabled-remotely`; do not add a network transport in this branch | Acceptable local-first limitation |
 | Future remote MCP | No network transport exists | Treat remote MCP as a new security boundary requiring separate authentication, authorization, request/result bounds, and error review | Later deployment concern |
 
 The immediate implementation backlog is therefore bounded to bind/mode
-enforcement, share-mode protection for operational HTTP routes, framework-doc
-availability, minimal health output, and proportionate HTTP resource controls.
+enforcement, framework-doc availability, minimal health output, and
+proportionate HTTP resource controls.
 Distributed throttling and remote MCP remain deployment-stage work rather than
 defects in the current local transport model.
 
 ### Policy And Regression Ownership
 
 This document owns the HTTP route, run-mode, and share-mode security policy,
-including the intended matrix and its open decisions. The MCP transport and
+including the enforced matrix and its open decisions. The MCP transport and
 tool policy belongs in [mcp-server.md](./mcp-server.md#current-tool-inventory).
 `contracts.md`, `architecture.md`, testing guidance, and the root README
 should link here rather than repeat the matrix.
@@ -193,8 +213,8 @@ should link here rather than repeat the matrix.
 | Guarantee to protect after implementation | Regression-test owner |
 | --- | --- |
 | Loopback-only local mode and safe non-loopback/share startup | `tests/test_api_server_cli_runtime.py` |
-| Share-mode route availability, authentication scope, and framework-doc availability | `tests/test_api_server_cli_routes.py` |
-| API-key failure and success envelopes for protected routes | `tests/test_api_alert_route_auth_policy.py`, expanded or renamed when protection is no longer alerts-only |
+| Share-mode admission, `401` envelopes, and intentional public-route classification | `tests/test_api_server_cli_routes.py` |
+| Alert-specific auth logging and limiter ordering | `tests/test_api_alert_route_auth_policy.py` |
 | Rate-limit envelopes and route-family budgets | `tests/test_api_alert_route_rate_limit_policy.py`, expanded or renamed with the protected route scope |
 | Session/read/playback input and response bounds | A focused route-resource-policy test module added with the resource-control implementation |
 | Local stdio-only MCP transport, exact tool allowlist, and read-only capability | `tests/test_mcp_server_contracts.py` |
@@ -243,9 +263,13 @@ The current CLI-focused test slice reflects that role:
   listen-address reflection for manual `share` and `local` startup
 - route tests protect the real `local`/`share` boundary behavior without
   treating the CLI as the primary desktop runtime path
-- route tests also keep the current public-surface split explicit:
-  protected alerts routes versus open `/health`, `/docs`, `/openapi.json`,
-  and `/detectors`
+- route tests keep the public-surface split explicit: protected session,
+  alert, and playback operations versus open `/health`, `/docs`,
+  `/openapi.json`, and `/detectors`
+- representative session, alert, and playback routes prove the shared policy
+  in both modes: local calls need no key, share calls without a key return
+  `401`, and share calls with a generated or configured key reach normal route
+  handling
 
 ## Session Ownership
 

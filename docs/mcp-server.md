@@ -34,24 +34,24 @@ Today that also means:
 
 ## Current Tool Inventory
 
-The server registers exactly these four tools. All use the same required
-`session_id` plus optional `detector_id`, `severity`, `start_time_utc`, and
-`end_time_utc` filters.
+The server registers exactly these four tools. Each input schema requires a
+string `session_id` and accepts optional `detector_id`, `severity`,
+`start_time_utc`, and `end_time_utc` filters. The exact tool allowlist and
+schema basics are protected by `tests/test_mcp_server_contracts.py`.
 
 | Tool | Classification | Capability and returned data | Shared dependency | Result-size control | Error and secret exposure | Remote availability |
 | --- | --- | --- | --- | --- | --- | --- |
-| `query_session_alerts` | `MCP-local-read-only` | Read-only raw alert events for one session | `session_alerts.filter_session_alert_events()` | No pagination or result cap | Returns persisted alert content; known-session and filter errors are readable tool errors | `disabled-remotely`; local `stdio` only |
-| `summarize_session_alerts` | `MCP-local-read-only` | Read-only counts and time bounds for one session's alerts | `session_alerts.summarize_session_alert_events()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate alert data; validation errors are readable tool errors | `disabled-remotely`; local `stdio` only |
-| `query_session_alert_timeline` | `MCP-local-read-only` | Read-only grouped incident entries for one session | `session_alert_incidents.build_session_timeline()` | No pagination or result cap | Returns persisted incident titles, messages, and sources; validation errors are readable tool errors | `disabled-remotely`; local `stdio` only |
-| `summarize_session_alert_incidents` | `MCP-local-read-only` | Read-only grouped incident counts and narrative summary | `session_alert_incidents.build_session_incident_summary()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate incident data; validation errors are readable tool errors | `disabled-remotely`; local `stdio` only |
+| `query_session_alerts` | `MCP-local-read-only` | Read-only raw alert events for one session | `session_alerts.filter_session_alert_events()` | No pagination or result cap | Returns persisted alert content. Known-session, filter, and storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
+| `summarize_session_alerts` | `MCP-local-read-only` | Read-only counts and time bounds for one session's alerts | `session_alerts.summarize_session_alert_events()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate alert data. Validation or storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
+| `query_session_alert_timeline` | `MCP-local-read-only` | Read-only grouped incident entries for one session | `session_alert_incidents.build_session_timeline()` | No pagination or result cap | Returns persisted incident titles, messages, and sources. Validation or storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
+| `summarize_session_alert_incidents` | `MCP-local-read-only` | Read-only grouped incident counts and narrative summary | `session_alert_incidents.build_session_incident_summary()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate incident data. Validation or storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
 
 No tool starts, cancels, edits, deletes, or resolves playback for a session.
-The tool layer does not return API keys or read environment settings, but it
-does deliberately pass user-facing validation text through as MCP tool errors.
-That is suitable only for the current local-trust process boundary. A future
-networked MCP transport must add its own authentication, request and result
-bounds, and reviewed error-sanitization policy; FastAPI `X-API-Key` checks and
-HTTP rate limiting do not apply to it.
+The tool layer deliberately passes user-facing validation and storage-failure
+text through as MCP tool errors. That is suitable only for the current
+local-trust process boundary. A future networked MCP transport must add its
+own authentication, request and result bounds, and reviewed error-sanitization
+policy; FastAPI `X-API-Key` checks and HTTP rate limiting do not apply to it.
 
 ## How To Run It
 

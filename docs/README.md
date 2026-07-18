@@ -165,6 +165,7 @@ For the current persistence rollout state, use:
     transport and tool policy; [fastapi-boundary.md](./fastapi-boundary.md)
     explains why HTTP and MCP protections are separate
   - `src/api_auth.py`
+  - `src/api/http_auth_policy.py`
   - `src/api_rate_limit.py`
   - `src/api/alert_route_policy.py`
   - `src/esm_mcp/`
