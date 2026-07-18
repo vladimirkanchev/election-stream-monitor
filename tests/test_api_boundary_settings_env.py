@@ -111,6 +111,24 @@ def test_get_api_auth_settings_keeps_manual_key_in_share_mode(monkeypatch) -> No
     assert settings.generated_api_key is None
 
 
+@pytest.mark.parametrize("auth_override", ("false", "0", "off"))
+def test_get_api_auth_settings_rejects_share_mode_auth_disabling_overrides(
+    monkeypatch,
+    auth_override: str,
+) -> None:
+    """Reject false-like auth overrides before a share server can start."""
+
+    monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
+    monkeypatch.setenv("ESM_API_AUTH_ENABLED", auth_override)
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", "manual-demo-key")
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="Share mode requires FastAPI authentication",
+    ):
+        get_api_auth_settings()
+
+
 def test_get_api_auth_settings_rejects_invalid_env_auth_mode(monkeypatch) -> None:
     """Invalid auth-mode environment overrides should fail during settings load."""
 

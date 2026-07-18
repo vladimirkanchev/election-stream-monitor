@@ -6,15 +6,23 @@ Keep this module focused on:
 - request/response schema binding
 - HTTP-oriented error mapping
 - route-level ownership of the FastAPI session surface
+- shared authentication inherited by every session route
+
+Whether a caller must present a key is resolved by the active local/share
+runtime policy, not by individual route handlers.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from api.errors import (
     CancelFailedError,
     SessionNotFoundError,
     SessionStartFailedError,
     ValidationFailedError,
+)
+from api.http_auth_policy import (
+    AUTHENTICATION_FAILURE_RESPONSES,
+    require_http_principal,
 )
 from api.schemas import (
     ApiErrorResponse,
@@ -32,13 +40,17 @@ from session_service import (
     start_session as start_session_service,
 )
 
-router = APIRouter(tags=["sessions"])
+router = APIRouter(
+    tags=["sessions"],
+    dependencies=[Depends(require_http_principal)],
+)
 
 
 @router.post(
     "/sessions",
     response_model=SessionSummaryResponse,
     responses={
+        **AUTHENTICATION_FAILURE_RESPONSES,
         400: {"model": ApiErrorResponse, "description": "Validation failed"},
         422: {"model": ApiErrorResponse, "description": "Request validation failed"},
         500: {"model": ApiErrorResponse, "description": "Session start failed"},
@@ -64,6 +76,7 @@ async def start_session(payload: StartSessionRequest) -> SessionSummaryResponse:
     "/sessions/{session_id}",
     response_model=SessionSnapshotResponse,
     responses={
+        **AUTHENTICATION_FAILURE_RESPONSES,
         404: {"model": ApiErrorResponse, "description": "Session not found"},
     },
 )
@@ -82,6 +95,7 @@ async def get_session(session_id: str) -> SessionSnapshotResponse:
     "/sessions/{session_id}/cancel",
     response_model=CancelSessionResponse,
     responses={
+        **AUTHENTICATION_FAILURE_RESPONSES,
         404: {"model": ApiErrorResponse, "description": "Session not found"},
         409: {
             "model": ApiErrorResponse,

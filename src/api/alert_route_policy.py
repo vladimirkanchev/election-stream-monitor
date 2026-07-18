@@ -16,20 +16,18 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import Header, Request
+from fastapi import Depends, Request
 
-from api.errors import AuthenticationFailedError, RateLimitExceededError
+from api.errors import RateLimitExceededError
+from api.http_auth_policy import (
+    AUTHENTICATION_FAILURE_RESPONSES,
+    require_http_principal,
+)
 from api.schemas import (
-    ApiAuthenticationErrorResponse,
     ApiErrorResponse,
     ApiRateLimitErrorResponse,
 )
-from api_auth import (
-    API_KEY_HEADER_NAME,
-    AuthPrincipal,
-    AuthenticationError,
-    authenticate_api_request,
-)
+from api_auth import AuthPrincipal
 from api_rate_limit import (
     RateLimitError,
     enforce_resolved_rate_limit,
@@ -43,10 +41,7 @@ logger = logging.getLogger(__name__)
 # route declaration.
 ALERT_ROUTE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": ApiErrorResponse, "description": "Validation failed"},
-    401: {
-        "model": ApiAuthenticationErrorResponse,
-        "description": "Authentication failed",
-    },
+    **AUTHENTICATION_FAILURE_RESPONSES,
     429: {
         "model": ApiRateLimitErrorResponse,
         "description": "Rate limit exceeded",
@@ -58,7 +53,7 @@ ALERT_ROUTE_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 async def require_http_alert_principal(
     request: Request,
-    x_api_key: str | None = Header(default=None, alias=API_KEY_HEADER_NAME),
+    principal: AuthPrincipal = Depends(require_http_principal),
 ) -> AuthPrincipal:
     """Authenticate and rate-limit one protected alert-route request.
 
@@ -68,32 +63,8 @@ async def require_http_alert_principal(
     principal back to FastAPI's dependency system.
     """
 
-    principal = _authenticate_http_alert_request(request=request, x_api_key=x_api_key)
     _enforce_http_alert_rate_limit(request=request, principal=principal)
     return principal
-
-
-def _authenticate_http_alert_request(
-    *,
-    request: Request,
-    x_api_key: str | None,
-) -> AuthPrincipal:
-    """Authenticate one alert-route request against the shared auth seam.
-
-    HTTP-specific `401` mapping and warning-level boundary logging stay here
-    so the underlying auth module can remain a transport-agnostic
-    credential-validation seam.
-    """
-
-    try:
-        return authenticate_api_request(x_api_key=x_api_key)
-    except AuthenticationError as err:
-        logger.warning(
-            "auth_failed path=%s reason=%s",
-            request.url.path,
-            str(err),
-        )
-        raise AuthenticationFailedError(str(err)) from err
 
 
 def _enforce_http_alert_rate_limit(
