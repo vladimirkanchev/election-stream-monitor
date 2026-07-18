@@ -1,8 +1,8 @@
 """FastAPI boundary configuration and startup validation.
 
 This module owns the user-facing `local`/`share` runtime policy plus the
-lower-level auth and limiter settings that back the protected FastAPI alerts
-boundary.
+lower-level authentication and limiter settings used by protected FastAPI
+routes.
 
 It deliberately keeps three related concerns together:
 
@@ -242,10 +242,7 @@ def get_api_auth_settings() -> ApiAuthSettings:
     """
 
     run_mode = get_fastapi_run_mode_settings().mode
-    enabled = _parse_bool_env(
-        "ESM_API_AUTH_ENABLED",
-        _get_default_api_auth_enabled(run_mode),
-    )
+    enabled = _resolve_api_auth_enabled(run_mode)
     allowed_api_keys, generated_api_key = _resolve_api_auth_allowed_keys(
         run_mode=run_mode,
         enabled=enabled,
@@ -312,6 +309,21 @@ def _get_default_api_auth_enabled(run_mode: FastApiRunMode) -> bool:
     if run_mode == "share":
         return True
     raise ApiBoundaryConfigurationError(f"Unsupported FastAPI run mode: {run_mode}")
+
+
+def _resolve_api_auth_enabled(run_mode: FastApiRunMode) -> bool:
+    """Resolve auth enablement without permitting an open share-mode server."""
+
+    enabled = _parse_bool_env(
+        "ESM_API_AUTH_ENABLED",
+        _get_default_api_auth_enabled(run_mode),
+    )
+    if run_mode == "share" and not enabled:
+        raise ApiBoundaryConfigurationError(
+            "Share mode requires FastAPI authentication; "
+            "ESM_API_AUTH_ENABLED cannot be disabled"
+        )
+    return enabled
 
 
 def _resolve_api_auth_allowed_keys(

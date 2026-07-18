@@ -23,9 +23,9 @@ from api_boundary_config import validate_fastapi_boundary_settings
 async def _app_lifespan(_: FastAPI):
     """Validate current FastAPI boundary settings before serving requests.
 
-    The alerts-router auth and limiter seams are config-driven. Running their
-    validation here keeps bad enabled config from surfacing only after the
-    first protected request reaches the boundary.
+    Authentication and limiter behavior is config-driven. Validating it here
+    keeps invalid protected-boundary settings from surfacing only after the
+    first request.
     """
 
     validate_fastapi_boundary_settings()

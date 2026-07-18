@@ -7,8 +7,8 @@ auth-agnostic.
 
 The current implementation supports API-key validation and intentionally leaves
 room for a later JWT-backed principal path without forcing the route layer to
-change signatures. The alerts router is the current enforcement point for this
-seam.
+change signatures. Protected route families share this seam while retaining
+their own authorization and resource-control policies.
 """
 
 from __future__ import annotations

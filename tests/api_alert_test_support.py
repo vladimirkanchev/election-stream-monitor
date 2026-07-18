@@ -54,7 +54,7 @@ def build_internal_error_payload(detail: str) -> dict[str, str]:
 
 
 def build_authentication_failed_payload(detail: str) -> dict[str, str]:
-    """Return the stable API payload for one alert-route auth failure."""
+    """Return the stable API payload for one protected-route auth failure."""
     return {
         "detail": "Authentication failed",
         "error_code": "authentication_failed",
@@ -122,7 +122,7 @@ def install_alert_route_auth_success(
     *,
     expected_key: str | None = None,
 ) -> None:
-    """Patch the alert router auth seam to accept one request in tests."""
+    """Patch the shared HTTP auth seam to accept one request in tests."""
 
     def fake_authenticate_api_request(*, x_api_key: str | None, settings=None) -> AuthPrincipal:
         if expected_key is not None:
@@ -130,19 +130,19 @@ def install_alert_route_auth_success(
         return build_test_auth_principal()
 
     monkeypatch.setattr(
-        "api.alert_route_policy.authenticate_api_request",
+        "api.http_auth_policy.authenticate_api_request",
         fake_authenticate_api_request,
     )
 
 
 def install_alert_route_auth_failure(monkeypatch, *, detail: str) -> None:
-    """Patch the alert router auth seam to reject one request in tests."""
+    """Patch the shared HTTP auth seam to reject one request in tests."""
 
     def fake_authenticate_api_request(*, x_api_key: str | None, settings=None) -> AuthPrincipal:
         raise AuthenticationError(detail)
 
     monkeypatch.setattr(
-        "api.alert_route_policy.authenticate_api_request",
+        "api.http_auth_policy.authenticate_api_request",
         fake_authenticate_api_request,
     )
 

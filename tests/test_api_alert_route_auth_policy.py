@@ -150,7 +150,7 @@ def test_authentication_failures_log_safe_boundary_context(monkeypatch, caplog) 
     """Auth-boundary logs should include path and reason without leaking raw keys."""
     install_real_alert_route_auth(monkeypatch, enabled=True)
 
-    with caplog.at_level(logging.WARNING, logger="api.alert_route_policy"):
+    with caplog.at_level(logging.WARNING, logger="api.http_auth_policy"):
         response = request(
             "GET",
             "/sessions/session-123/alerts",
@@ -168,7 +168,7 @@ def test_blank_api_key_auth_failures_log_missing_key_reason(monkeypatch, caplog)
     """Whitespace-only keys should log the missing-key branch without leaking raw input."""
     install_real_alert_route_auth(monkeypatch, enabled=True)
 
-    with caplog.at_level(logging.WARNING, logger="api.alert_route_policy"):
+    with caplog.at_level(logging.WARNING, logger="api.http_auth_policy"):
         response = request(
             "GET",
             "/sessions/session-123/alerts",

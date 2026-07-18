@@ -83,9 +83,6 @@ Today the runtime is local-first:
 - the UI, alert routes, grouped incident routes, and MCP tools all read alerts
   through that shared backend
 
-FastAPI auth and rate limiting are available for shared access modes. MCP remains a separate local `stdio` tool surface.
-
-
 ## Current Readiness
 
 This works best for:
@@ -107,7 +104,9 @@ Still not:
 MCP is still a local `stdio` tool surface over local alert and session data.
 FastAPI auth and rate limiting currently protect the alerts HTTP routes in
 `share` mode, not the whole local runtime. PostgreSQL-backed alerts now use
-the same shared alert backend, but file remains the default.
+the same shared alert backend, but file remains the default. The detailed
+current-versus-intended HTTP policy is in
+[docs/fastapi-boundary.md](./docs/fastapi-boundary.md#http-route-security-matrix).
 
 For local startup, use [Running The Project](./README.md#running-the-project).
 For live Postgres validation and weekly confidence runs, use
@@ -235,7 +234,7 @@ The diagram below shows the same flow in one picture.
 ### Who Owns What
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
-- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, alert/session reads, and the protected alerts routes in `share` mode.
+- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, and alert/session reads; operational routes require an API key in `share` mode.
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
 - **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session reads and writes now go through the shared session-store contract, but the default backend still writes under `data/sessions/`.

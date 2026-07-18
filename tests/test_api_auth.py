@@ -1,7 +1,7 @@
 """Focused unit tests for the FastAPI authentication seam.
 
 These tests intentionally stay below the route layer. They protect the shared
-auth decision logic directly so the alert-route policy can stay thin and
+auth decision logic directly so HTTP route policies can stay thin and
 transport-focused.
 
 The file owns:
@@ -10,8 +10,8 @@ The file owns:
 - API-key success and failure cases
 - lightweight guards around unsupported or misconfigured auth modes
 
-Route-level `401` mapping and protected-scope behavior live in the alert-route
-adapter tests.
+Route-level `401` mapping and protected-scope behavior live in the HTTP route
+policy tests.
 """
 
 import hashlib

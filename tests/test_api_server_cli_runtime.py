@@ -232,23 +232,6 @@ def test_prepare_cli_runtime_switching_from_share_to_local_clears_generated_key(
     assert local_runtime.rate_limit_settings.enabled is False
 
 
-def test_prepare_cli_runtime_share_mode_with_auth_and_limiter_disabled_is_fully_open(
-    monkeypatch,
-) -> None:
-    """Share mode should stay fully open when both protection layers are explicitly disabled."""
-
-    monkeypatch.setenv("ESM_API_AUTH_ENABLED", "false")
-    monkeypatch.setenv("ESM_API_RATE_LIMIT_ENABLED", "false")
-
-    runtime = prepare_cli_runtime(
-        mode="share",
-        manual_api_key="manual-demo-key",
-    )
-
-    assert runtime.auth_settings.enabled is False
-    assert runtime.rate_limit_settings.enabled is False
-
-
 def test_prepare_cli_runtime_rejects_manual_share_key_with_comma(monkeypatch) -> None:
     """Manual share-mode CLI input should reject comma-separated multi-key values."""
 
@@ -262,19 +245,19 @@ def test_prepare_cli_runtime_rejects_manual_share_key_with_comma(monkeypatch) ->
         )
 
 
-def test_prepare_cli_runtime_share_mode_honors_explicit_auth_override(monkeypatch) -> None:
-    """Explicit auth overrides should still be able to suppress share-mode protection."""
+def test_prepare_cli_runtime_share_mode_rejects_disabled_auth_override(monkeypatch) -> None:
+    """Share mode must fail before an auth-disabling override opens HTTP routes."""
 
     monkeypatch.setenv("ESM_API_AUTH_ENABLED", "false")
 
-    runtime = prepare_cli_runtime(
-        mode="share",
-        manual_api_key=None,
-    )
-
-    assert runtime.auth_settings.enabled is False
-    assert runtime.auth_settings.allowed_api_keys == ()
-    assert runtime.auth_settings.generated_api_key is None
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="Share mode requires FastAPI authentication",
+    ):
+        prepare_cli_runtime(
+            mode="share",
+            manual_api_key=None,
+        )
 
 
 def test_prepare_cli_runtime_generated_share_key_is_copy_paste_safe(monkeypatch) -> None:

@@ -177,22 +177,22 @@ Purpose:
 Current scope:
 
 - this contract applies to the FastAPI HTTP API only
+- this section describes enforced behavior today; the full current-versus-
+  intended share-mode policy is owned by
+  [fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix)
 - the current stdio MCP server remains a local-trust transport and is not
   authenticated by this contract
-- the current protected FastAPI scope is the alerts router:
-  - `GET /sessions/{session_id}/alerts`
-  - `GET /sessions/{session_id}/alerts/summary`
-  - `GET /sessions/{session_id}/alerts/timeline`
-  - `GET /sessions/{session_id}/alerts/incident-summary`
-- other FastAPI routers are not yet protected by this contract
+- API-key authentication protects the operational routes marked enforced in
+  the [FastAPI route matrix](./fastapi-boundary.md#http-route-security-matrix)
+- the four session-alert routes alone add the current router-scoped rate limiter
 
 Current credential shape:
 
 - clients send one API key in the `X-API-Key` request header
 - missing or invalid credentials should be treated as authentication failures
 - blank or whitespace-only `X-API-Key` values are treated as missing credentials
-- when FastAPI auth is disabled in configuration, the alerts router currently
-  accepts requests without credentials
+- when FastAPI auth is disabled in local configuration, protected router
+  dependencies accept a local principal without a credential
 
 Current authenticated caller shape:
 
@@ -228,6 +228,8 @@ Current authentication failure shape:
 Implementation note:
 
 - the FastAPI auth seam lives in [`src/api_auth.py`](../src/api_auth.py)
+- [`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py) owns HTTP
+  header extraction, safe authentication-failure logging, and `401` mapping
 - the alerts-router HTTP protection composition lives in
   [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
 - auth settings are centralized in
@@ -239,8 +241,8 @@ Implementation note:
 - when FastAPI auth is enabled in configuration, the auth seam validates the
   presented `X-API-Key` against configured allowed API keys and returns an
   authenticated principal rather than exposing the raw key downstream
-- the current alerts router enforces that seam through a router dependency
-  rather than FastAPI middleware
+- session and playback routers use the shared auth dependency; the alerts
+  router composes it with rate limiting rather than using app-wide middleware
 
 ## FastAPI Rate Limiting Contract v1
 
@@ -254,13 +256,15 @@ Purpose:
 Current scope:
 
 - this contract applies to the FastAPI HTTP API only
-- FastAPI run mode now selects the default protected-boundary posture:
-  - `local` defaults auth and rate limiting off
-  - `share` defaults auth and rate limiting on
+- FastAPI run mode now selects the default boundary posture:
+  - `local` defaults authentication and the alert-route limiter off
+  - `share` defaults authentication and the alert-route limiter on
 - `share` mode can auto-generate one process-local API key at startup when no
   manual key is configured
 - the current stdio MCP server remains outside this rate-limiting contract
-- the current protected FastAPI scope matches the alerts router:
+- authentication protects the operational route set defined by the
+  [FastAPI route matrix](./fastapi-boundary.md#http-route-security-matrix)
+- the limiter currently applies only to the alerts router:
   - `GET /sessions/{session_id}/alerts`
   - `GET /sessions/{session_id}/alerts/summary`
   - `GET /sessions/{session_id}/alerts/timeline`
@@ -353,8 +357,9 @@ Implementation note:
   rather than pushing counting logic into route bodies or shared alert services
 - invalid configured auth or limiter settings now fail during FastAPI startup
   rather than waiting for the first protected request
-- unrelated public routes such as `/health`, `/docs`, and `/openapi.json`
-  intentionally stay outside the alerts-router auth/rate-limit boundary
+- `/health`, `/docs`, and `/openapi.json` currently stay outside both
+  operational-route authentication and alert rate limiting; session and
+  playback routes require authentication but do not have a limiter yet
 
 Future remote MCP note:
 

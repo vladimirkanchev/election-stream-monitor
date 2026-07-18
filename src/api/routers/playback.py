@@ -1,6 +1,17 @@
-from fastapi import APIRouter
+"""FastAPI adapter for playback-source resolution.
+
+The router owns request validation and HTTP error mapping. It inherits the
+shared authentication dependency so playback resolution is protected in share
+mode while source-resolution rules remain in their dedicated modules.
+"""
+
+from fastapi import APIRouter, Depends
 
 from api.errors import PlaybackUnavailableError, ValidationFailedError
+from api.http_auth_policy import (
+    AUTHENTICATION_FAILURE_RESPONSES,
+    require_http_principal,
+)
 from api.schemas import (
     ApiErrorResponse,
     ResolvePlaybackRequest,
@@ -10,13 +21,17 @@ from playback_sources import resolve_playback_source
 from source_validation import validate_source_input
 from stream_loader import build_api_stream_playback_contract
 
-router = APIRouter(tags=["playback"])
+router = APIRouter(
+    tags=["playback"],
+    dependencies=[Depends(require_http_principal)],
+)
 
 
 @router.post(
     "/playback/resolve",
     response_model=ResolvePlaybackResponse,
     responses={
+        **AUTHENTICATION_FAILURE_RESPONSES,
         400: {
             "model": ApiErrorResponse,
             "description": "Validation failed or playback source unavailable",
@@ -28,6 +43,8 @@ router = APIRouter(tags=["playback"])
     },
 )
 async def resolve_playback(payload: ResolvePlaybackRequest) -> ResolvePlaybackResponse:
+    """Validate one source and return its operator-facing playback contract."""
+
     try:
         validated_input_path = validate_source_input(payload.mode, payload.input_path)
     except (OSError, ValueError) as err:
