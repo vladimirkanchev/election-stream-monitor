@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  ELECTRON_FASTAPI_LOOPBACK_HOST,
+  resolveElectronFastApiRuntimeConfig,
+} from "./fastApiLocalRuntimeConfig.mjs";
 import { createFastApiStartupOrchestrator } from "./fastApiStartupOrchestrator.mjs";
 
 function createMockChild() {
@@ -23,6 +27,31 @@ function createMockChild() {
 }
 
 describe("FastAPI startup orchestrator", () => {
+  it("keeps the Electron-managed backend on loopback by default", () => {
+    const config = resolveElectronFastApiRuntimeConfig({});
+
+    expect(config).toEqual({
+      host: ELECTRON_FASTAPI_LOOPBACK_HOST,
+      port: 8000,
+      baseUrl: "http://127.0.0.1:8000",
+      hasExternalBaseUrl: false,
+    });
+  });
+
+  it("uses an external base URL as a client target without changing the bind host", () => {
+    const config = resolveElectronFastApiRuntimeConfig({
+      ELECTION_API_BASE_URL: "http://192.0.2.25:8000",
+      ELECTION_API_PORT: "8123",
+    });
+
+    expect(config).toEqual({
+      host: ELECTRON_FASTAPI_LOOPBACK_HOST,
+      port: 8123,
+      baseUrl: "http://192.0.2.25:8000",
+      hasExternalBaseUrl: true,
+    });
+  });
+
   it("starts the local backend and marks readiness through the composed policy", async () => {
     const child = createMockChild();
     const spawnProcess = vi.fn().mockReturnValue(child);

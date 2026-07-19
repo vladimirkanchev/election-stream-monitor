@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { handleBridgeOperation } from "./bridgeResponses.mjs";
 import { registerFastApiBridgeHandlers } from "./bridgeHandlerRegistry.mjs";
 import { createFastApiClient } from "./fastApiClient.mjs";
+import { resolveElectronFastApiRuntimeConfig } from "./fastApiLocalRuntimeConfig.mjs";
 import { createFastApiStartupOrchestrator } from "./fastApiStartupOrchestrator.mjs";
 import {
   createRemoteHlsProxyRegistry,
@@ -48,10 +49,9 @@ const frontendRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(frontendRoot, "..");
 const preloadPath = path.join(__dirname, "preload.mjs");
 const remoteHlsProxyRegistry = createRemoteHlsProxyRegistry();
-const FASTAPI_HOST = "127.0.0.1";
-const FASTAPI_PORT = Number(process.env.ELECTION_API_PORT ?? "8000");
-const FASTAPI_BASE_URL =
-  process.env.ELECTION_API_BASE_URL ?? `http://${FASTAPI_HOST}:${FASTAPI_PORT}`;
+const fastApiRuntimeConfig = resolveElectronFastApiRuntimeConfig();
+const { host: FASTAPI_HOST, port: FASTAPI_PORT, baseUrl: FASTAPI_BASE_URL } =
+  fastApiRuntimeConfig;
 const FASTAPI_STARTUP_TIMEOUT_MS = 10_000;
 const FASTAPI_HEALTHCHECK_INTERVAL_MS = 250;
 
@@ -97,7 +97,7 @@ const fastApiStartup = createFastApiStartupOrchestrator({
   repoRoot,
   host: FASTAPI_HOST,
   port: FASTAPI_PORT,
-  hasExternalBaseUrl: Boolean(process.env.ELECTION_API_BASE_URL),
+  hasExternalBaseUrl: fastApiRuntimeConfig.hasExternalBaseUrl,
   startupTimeoutMs: FASTAPI_STARTUP_TIMEOUT_MS,
   healthcheckIntervalMs: FASTAPI_HEALTHCHECK_INTERVAL_MS,
   apiGetHealth,

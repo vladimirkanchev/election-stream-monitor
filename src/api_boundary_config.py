@@ -219,6 +219,17 @@ def get_fastapi_run_mode_settings() -> FastApiRunModeSettings:
     )
 
 
+def is_fastapi_documentation_enabled() -> bool:
+    """Return whether FastAPI's framework documentation may be served.
+
+    Local development keeps `/docs`, `/redoc`, and `/openapi.json` available.
+    Share mode hides those discovery surfaces by default; a future remote API
+    integration can add an explicit opt-in without weakening that default.
+    """
+
+    return get_fastapi_run_mode_settings().mode == "local"
+
+
 def clear_fastapi_boundary_settings_caches() -> None:
     """Clear cached FastAPI run-mode, auth, and limiter settings.
 

@@ -1,22 +1,32 @@
-
 """FastAPI application setup and shared exception handling.
 
 This module keeps the HTTP app assembly small and explicit:
 
 - validate startup configuration for the current protected boundary
+- hide framework documentation outside trusted local mode
 - attach the current routers
 - serialize shared API-domain errors in one stable envelope
 """
 
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.errors import ApiDomainError
 from api.routers import alerts, detectors, health, playback, sessions
-from api_boundary_config import validate_fastapi_boundary_settings
+from api_boundary_config import (
+    is_fastapi_documentation_enabled,
+    validate_fastapi_boundary_settings,
+)
+
+
+_HttpRequestHandler = Callable[[Request], Awaitable[Response]]
+_LOCAL_ONLY_FRAMEWORK_PATHS = frozenset(
+    {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+)
 
 
 @asynccontextmanager
@@ -37,6 +47,25 @@ app = FastAPI(
     version="0.6.2",
     lifespan=_app_lifespan,
 )
+
+
+@app.middleware("http")
+async def hide_framework_documentation_in_share_mode(
+    request: Request,
+    call_next: _HttpRequestHandler,
+) -> Response:
+    """Hide framework documentation in share mode with a generic 404.
+
+    The guard is request-time because the CLI selects its mode after app import.
+    """
+
+    if (
+        request.url.path in _LOCAL_ONLY_FRAMEWORK_PATHS
+        and not is_fastapi_documentation_enabled()
+    ):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return await call_next(request)
+
 
 app.include_router(health.router)
 app.include_router(detectors.router)
