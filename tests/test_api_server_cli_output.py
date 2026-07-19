@@ -193,8 +193,8 @@ def test_run_from_args_manual_share_mode_output_does_not_claim_generated_key_beh
 @pytest.mark.parametrize(
     ("mode", "host", "port", "api_key"),
     [
-        ("share", "127.0.0.1", 8456, "manual-demo-key"),
-        ("local", "0.0.0.0", 9456, None),
+        ("share", "0.0.0.0", 8456, "manual-demo-key"),
+        ("local", "127.0.0.2", 9456, None),
     ],
 )
 def test_run_from_args_reflects_custom_listen_address_in_manual_share_and_local_modes(
@@ -231,10 +231,10 @@ def test_run_from_args_prints_local_mode_summary_without_share_guidance() -> Non
 
     output, seen_calls = run_cli_and_capture_output(
         mode="local",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=9001,
     )
-    _assert_local_mode_listen_summary(output, host="0.0.0.0", port=9001)
+    _assert_local_mode_listen_summary(output, host="127.0.0.1", port=9001)
     assert "Generated API key:" not in output
     assert "X-API-Key" not in output
-    assert_server_runner_called_once(seen_calls, host="0.0.0.0", port=9001)
+    assert_server_runner_called_once(seen_calls, host="127.0.0.1", port=9001)

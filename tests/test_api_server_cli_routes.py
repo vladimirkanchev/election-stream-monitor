@@ -1,25 +1,14 @@
-"""Focused route-level tests for CLI-prepared FastAPI run modes.
+"""HTTP-boundary tests for local and share-mode route policy.
 
-These cases prove that `prepare_cli_runtime(...)` does not only resolve
-settings correctly, but also drives the real protected operational-route
-behavior for local and share mode.
-
-The file intentionally stays at the HTTP boundary level:
-
-- request succeeds or fails through real routes
-- auth and limiter interaction is visible as `401` and `429`
-- router-level auth covers session and playback operations in share mode
-- CLI-prepared share mode keeps intentional public routes outside that boundary
-- public FastAPI schema and detector-discovery surfaces remain outside the
-  operational-router authentication boundary
+These cases cover authentication, alert limiting, intentional public routes,
+and local-only framework documentation. CLI setup and output are tested
+separately.
 """
 
 from __future__ import annotations
 
 from collections.abc import Generator
-from typing import cast
 
-import httpx
 import pytest
 
 from api.app import app
@@ -50,35 +39,6 @@ def _clear_boundary_settings_caches() -> Generator[None, None, None]:
     reset_boundary_test_state()
     yield
     restore_boundary_test_state(original_values)
-
-
-def _assert_public_routes_remain_open() -> None:
-    """Assert intentional public routes stay outside operational-router auth.
-
-    This is the highest-value CLI route-scope regression in the file because
-    it proves CLI-prepared share mode keeps the minimal health/docs boundary
-    public before the more specific route checks below.
-    """
-    health_response = request("GET", "/health")
-    docs_response = request("GET", "/docs")
-
-    assert health_response.status_code == 200
-    assert health_response.json() == {"status": "ok"}
-    assert docs_response.status_code == 200
-
-
-def _assert_public_get_route_is_open(path: str) -> httpx.Response:
-    """Assert one public GET route remains outside the share-mode auth boundary.
-
-    The helper keeps the public-route tests transport-focused while leaving the
-    route-specific payload assertion in the individual scenario that cares
-    about it.
-    """
-
-    response = request("GET", path)
-
-    assert response.status_code == 200
-    return response
 
 
 @pytest.mark.parametrize(
@@ -248,10 +208,10 @@ def test_prepare_cli_runtime_protected_route_families_allow_local_and_valid_shar
     assert share_response.status_code == expected_status
 
 
-def test_prepare_cli_runtime_share_mode_keeps_public_routes_open(
+def test_prepare_cli_runtime_share_mode_keeps_health_route_open(
     monkeypatch,
 ) -> None:
-    """Share mode should keep the minimal health and docs surfaces public."""
+    """Share mode should retain only the minimal public health response."""
 
     prepare_runtime_with_empty_alert_routes(
         monkeypatch,
@@ -259,17 +219,21 @@ def test_prepare_cli_runtime_share_mode_keeps_public_routes_open(
         manual_api_key=None,
     )
 
-    _assert_public_routes_remain_open()
+    response = request("GET", "/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
 
 
-def test_prepare_cli_runtime_share_mode_keeps_openapi_schema_public(
+@pytest.mark.parametrize(
+    "path",
+    ["/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"],
+)
+def test_prepare_cli_runtime_share_mode_hides_framework_documentation(
     monkeypatch,
+    path: str,
 ) -> None:
-    """CLI-prepared share mode should leave the machine-readable API schema public.
-
-    This protects the developer-facing schema surface that powers `/docs` and
-    other contract inspection tooling.
-    """
+    """Share mode should not expose framework route-discovery endpoints."""
 
     prepare_runtime_with_empty_alert_routes(
         monkeypatch,
@@ -277,11 +241,22 @@ def test_prepare_cli_runtime_share_mode_keeps_openapi_schema_public(
         manual_api_key=None,
     )
 
-    response = _assert_public_get_route_is_open("/openapi.json")
-    openapi_document = cast(dict[str, object], response.json())
-    paths = cast(dict[str, object], openapi_document["paths"])
+    response = request("GET", path)
 
-    assert "/sessions/{session_id}/alerts" in paths
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Not Found"}
+
+
+@pytest.mark.parametrize("path", ["/openapi.json", "/docs", "/redoc"])
+def test_prepare_cli_runtime_local_mode_keeps_framework_documentation_available(
+    monkeypatch,
+    path: str,
+) -> None:
+    """Local mode should preserve FastAPI documentation for trusted development."""
+
+    prepare_runtime_with_empty_alert_routes(monkeypatch, mode="local")
+
+    assert request("GET", path).status_code == 200
 
 
 def test_prepare_cli_runtime_share_mode_keeps_detectors_route_open(
@@ -299,8 +274,10 @@ def test_prepare_cli_runtime_share_mode_keeps_detectors_route_open(
         manual_api_key=None,
     )
 
-    detectors = _assert_public_get_route_is_open("/detectors").json()
+    response = request("GET", "/detectors")
 
+    assert response.status_code == 200
+    detectors = response.json()
     assert isinstance(detectors, list)
 
 
