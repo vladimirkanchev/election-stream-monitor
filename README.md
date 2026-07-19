@@ -102,10 +102,10 @@ Still not:
 - broad detector coverage for real election-stream failure modes
 
 MCP is still a local `stdio` tool surface over local alert and session data.
-FastAPI auth and rate limiting currently protect the alerts HTTP routes in
-`share` mode, not the whole local runtime. PostgreSQL-backed alerts now use
-the same shared alert backend, but file remains the default. The detailed
-current-versus-intended HTTP policy is in
+In `share` mode, FastAPI requires an API key for session, playback, and alert
+operations; alert routes also use the current local rate limiter.
+PostgreSQL-backed alerts use the same shared alert backend, but file remains
+the default. The detailed current-versus-intended HTTP policy is in
 [docs/fastapi-boundary.md](./docs/fastapi-boundary.md#http-route-security-matrix).
 
 For local startup, use [Running The Project](./README.md#running-the-project).
@@ -118,8 +118,8 @@ FastAPI currently supports two access modes:
 
 - `local` for normal desktop and development use, with auth and rate limiting
   off by default
-- `share` for temporary local or demo sharing, with API-key auth and rate
-  limiting on by default
+- `share` for temporary local or demo sharing, with API-key auth for
+  operational routes and rate limiting for alert routes
 
 For the exact startup commands and key examples, see
 [Running The Project](./README.md#running-the-project).
@@ -455,7 +455,10 @@ PYTHONPATH=src python -m api_server_cli local
 
 `local` mode is the normal desktop and development path. Auth and rate
 limiting are off by default, and these examples use the default file-backed
-alert backend.
+alert backend. Its `--host` value must remain loopback; use `share` for an
+intentional network-visible bind. See the
+[FastAPI boundary policy](./docs/fastapi-boundary.md#bind-policy-contract) for
+the exact IPv4, IPv6, wildcard, and hostname rules.
 
 Browser-only frontend for UI work:
 
@@ -472,9 +475,10 @@ Temporary shared demo access:
 PYTHONPATH=src python -m api_server_cli share
 ```
 
-`share` mode turns on API-key auth and rate limiting. If you do not pass a
-manual key, the CLI generates one and prints it once. `share` mode is for
-temporary local or demo sharing, not production deployment.
+`share` mode requires an API key for operational routes and enables alert-route
+rate limiting. If you do not pass a manual key, the CLI generates one and
+prints it once. It is for temporary local or demo sharing, not production
+deployment.
 
 Explicit shared-demo key:
 
@@ -716,8 +720,11 @@ Remote media fetching is intentionally limited:
 
 The current backend security scope is still intentionally narrow:
 
-- FastAPI `share` mode adds API-key auth and rate limiting on the alert routes
+- FastAPI `share` mode requires API keys for session, playback, and alert
+  operations; alert routes additionally use the local rate limiter
 - FastAPI `local` mode keeps auth and rate limiting off
+- `api_server_cli local` accepts loopback binds only; use `share` for an
+  intentional network-visible bind
 - MCP remains a local `stdio` read-only tool surface over local alert/session
   data, outside FastAPI auth and rate limiting
 - PostgreSQL-backed alerts do not change that boundary by themselves; they only
@@ -728,7 +735,8 @@ Owning files:
 
 - [src/source_validation.py](./src/source_validation.py) for remote input and trust rules
 - [src/api_boundary_config.py](./src/api_boundary_config.py) for `local` / `share` defaults and boundary settings
-- [src/api/alert_route_policy.py](./src/api/alert_route_policy.py) for FastAPI auth and rate-limiting on alerts routes
+- [src/api_server_cli.py](./src/api_server_cli.py) for CLI bind admission and run-mode setup
+- [src/api/alert_route_policy.py](./src/api/alert_route_policy.py) for alert-route authentication and rate limiting
 - [src/esm_mcp/](./src/esm_mcp/) for the local MCP server and tools
 
 ## Working Style

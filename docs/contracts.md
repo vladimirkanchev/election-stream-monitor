@@ -357,9 +357,10 @@ Implementation note:
   rather than pushing counting logic into route bodies or shared alert services
 - invalid configured auth or limiter settings now fail during FastAPI startup
   rather than waiting for the first protected request
-- `/health`, `/docs`, and `/openapi.json` currently stay outside both
-  operational-route authentication and alert rate limiting; session and
-  playback routes require authentication but do not have a limiter yet
+- `/health` and `/detectors` remain outside operational-route authentication
+  and alert rate limiting; framework documentation is local-only and returns
+  `404` in share mode. Session and playback routes require authentication but
+  do not have a limiter yet
 
 Future remote MCP note:
 
