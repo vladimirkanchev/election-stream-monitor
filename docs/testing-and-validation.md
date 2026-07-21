@@ -1624,8 +1624,8 @@ The current test split is:
     keyless local access; alert `429` behavior; minimal public health; and
     local-only framework documentation
 - `tests/test_api_server_cli_output.py`
-  - startup summaries, generated-key guidance, manual-key non-leakage, and
-    custom host/port reflection
+  - startup summaries, one-time generated-key disclosure, manual-key
+    non-leakage across output/log sinks, and custom host/port reflection
 - `tests/test_api_alert_route_auth_policy.py`
   - shared FastAPI alerts-router authentication policy, stable `401`
     behavior, cross-route invalid/missing-key consistency, and proof that the

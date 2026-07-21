@@ -47,8 +47,8 @@ network-visible host.
 | Custom bind address | Canonical loopback values only | Loopback, wildcard, and network-visible values through `--host` |
 | Authentication default | Disabled | Enabled |
 | Rate-limit default | Disabled | Enabled |
-| Credentials | No key is generated | Generates one strong process-local API key when no manual key is supplied and auth remains enabled |
-| Startup output | Mode, listen address, auth state, and rate-limit state | The same summary plus protected-sharing guidance; a generated key is printed once, while a manual key is not echoed |
+| Credentials | No key is generated | Generates one process-local API key from 24 random bytes (192 bits) only when neither the CLI nor environment configuration supplies one and auth remains enabled |
+| Startup output | Mode, listen address, auth state, and rate-limit state | The same summary plus protected-sharing guidance; a generated key may be displayed intentionally, while a manual key is not echoed |
 
 `ESM_API_AUTH_ENABLED` can opt local mode into authentication, but it cannot
 disable authentication in `share` mode: that configuration fails before
@@ -60,6 +60,46 @@ or Uvicorn handoff.
 Focused settings and CLI tests cover the supported false-like auth overrides,
 including conflicting manual API-key configuration, so this guarantee does not
 depend on startup documentation alone.
+
+### Secret-Bearing Surface Audit
+
+This audit distinguishes the one intentional direct-terminal disclosure of a
+generated share key from unsafe disclosure through logs, errors, artifacts, or
+persisted configuration.
+
+| Surface | Secret flow | Current protection | Gap or follow-up |
+| --- | --- | --- | --- |
+| Manual API key | `--api-key` or `ESM_API_AUTH_ALLOWED_KEYS` enters `ApiAuthSettings` and the request-auth seam | CLI input takes precedence over the environment; an omitted flag preserves an environment key; blank explicit entries fail without echoing their value | Generated-key output is handled separately. |
+| Generated share key | `secrets.token_urlsafe(24)` creates an in-memory `ApiAuthSettings` key when share auth has no configured key | The key is process-local and appears once in direct CLI output; generated commands use a placeholder, and normal auth telemetry never logs the key | A later deployment path should use managed secrets rather than terminal disclosure. |
+| Request header | `X-API-Key` is normalized and compared inside `api_auth.py` | Auth-failure logs record only a route path and fixed reason code; the authenticated principal carries a fingerprint rather than the raw key | Successful-request telemetry is not added in this branch. |
+| PostgreSQL URL | Session and alert database URL env values flow through typed settings into the selected PostgreSQL driver | Configuration validation names settings without values; connection and bootstrap failures are sanitized | Detailed diagnostic and worker handling is owned by [session-persistence-audit.md](./session-persistence-audit.md#credential-diagnostics). |
+| Detached worker | `session_service` copies the parent environment and redirects worker stdout/stderr to the session worker log | The worker preserves persistence selection but excludes FastAPI API-key settings; persistence errors are sanitized before they reach worker diagnostics | A later deployment path can narrow inherited environment variables further. |
+| CI and test helpers | Tests use fixture credentials; weekly PostgreSQL jobs pass a disposable service URL to helpers | Alert weekly helpers redact their printed plan and GitHub masks configured secrets in CI output | Keep real deployment credentials out of workflow literals and add redaction tests for any helper that reports connection failures. |
+
+### Secret-Handling Contract
+
+The following enforced contract covers supported FastAPI and worker paths.
+PostgreSQL-specific diagnostic handling is summarized here and detailed in the
+[persistence audit](./session-persistence-audit.md#credential-diagnostics).
+
+| Channel | Required behavior |
+| --- | --- |
+| Logs, exceptions, tracebacks, worker logs, CI artifacts, and routine diagnostics | Never contain a raw API key, request header value, database password, or complete credential-bearing PostgreSQL URL. A sanitized failure may retain the backend, setting name, host, and error class. |
+| Manual API keys | Are never echoed in CLI output, logs, errors, or generated commands. A blank or malformed explicitly supplied key is a configuration error, not a request to generate another key. |
+| Generated share key | Uses 24 random bytes (192 bits) in process memory only, is not written to environment variables or files, and may appear exactly once in direct interactive CLI stdout. Example commands must use a placeholder rather than repeat the raw key. |
+| Configuration errors | Identify the invalid setting and actionable expected form without showing the supplied value. The same rule applies to CLI parsing, runtime settings, and bootstrap errors. |
+| PostgreSQL diagnostics | Redact URL credentials and sensitive query values before they reach observable errors or diagnostics. Safe endpoint context may remain when useful. |
+
+Key resolution is deterministic: `--api-key` overrides
+`ESM_API_AUTH_ALLOWED_KEYS`; when neither is configured, enabled share mode
+generates one process-local key. Omitted configuration is distinct from an
+explicit blank value, which fails before startup without echoing the value.
+
+`--api-key` remains a local operator convenience, not a recommended deployment
+secret transport: operating systems may expose command arguments to the local
+user or process inspector. It must still obey the no-log and no-echo rules
+above. A future secret-manager or deployment integration can provide a safer
+injection mechanism without changing this HTTP contract.
 
 ### Bind And Startup Ownership
 
@@ -385,8 +425,9 @@ For temporary protected demo/shared access:
 PYTHONPATH=src python -m api_server_cli share
 ```
 
-If you omit `--api-key` in `share` mode, the CLI generates one API key and
-prints it once together with `X-API-Key` usage guidance.
+If neither `--api-key` nor `ESM_API_AUTH_ALLOWED_KEYS` is set in `share` mode,
+the CLI generates one API key and prints it once together with `X-API-Key`
+usage guidance.
 
 The backend still uses the current flat `src/` module layout, so
 `PYTHONPATH=src` remains the intended raw-checkout startup path for this CLI.
