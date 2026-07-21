@@ -5,6 +5,7 @@ This file owns grouped MCP tool-level error mapping:
 - missing-session failures
 - invalid time-range failures
 - invalid timestamp-format failures
+- sanitized storage failures
 - timeline/summary parity where both grouped tools should expose the same MCP
   error contract
 
@@ -20,7 +21,10 @@ import esm_mcp.alert_tools as alert_tools
 import pytest
 from session_alert_store import clear_default_session_alert_store_cache
 from session_alerts import SessionAlertsNotFoundError
-from tests.mcp_alert_test_support import call_mcp_tool
+from tests.mcp_alert_test_support import (
+    assert_mcp_storage_failure_is_sanitized,
+    call_mcp_tool,
+)
 from tests.mcp_server_incidents_test_support import (
     assert_mcp_tool_error,
     write_incident_tool_session,
@@ -163,7 +167,7 @@ def test_grouped_mcp_tools_report_invalid_timestamp_format_as_tool_error(
 def test_grouped_mcp_tools_report_runtime_postgres_read_failure_as_tool_error(
     monkeypatch,
 ) -> None:
-    """Grouped MCP tools should surface post-startup runtime Postgres failures clearly."""
+    """Grouped tools should hide post-startup PostgreSQL read diagnostics."""
     select_runtime_postgres_store(
         monkeypatch,
         FailingReadAlertStore(
@@ -181,8 +185,8 @@ def test_grouped_mcp_tools_report_runtime_postgres_read_failure_as_tool_error(
         {"session_id": "session-runtime-postgres-mcp-grouped-error"},
     )
 
-    assert_mcp_tool_error(timeline_result, expected_message="database grouped read failed")
-    assert_mcp_tool_error(summary_result, expected_message="database grouped read failed")
+    assert_mcp_tool_error(timeline_result, expected_message="Alert storage is unavailable")
+    assert_mcp_tool_error(summary_result, expected_message="Alert storage is unavailable")
 
 
 @pytest.mark.skipif(
@@ -193,7 +197,7 @@ def test_grouped_mcp_tools_report_live_runtime_postgres_read_failure_after_succe
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Grouped MCP tools should keep their error contract after live Postgres startup succeeds."""
+    """Live PostgreSQL read failures should use the safe grouped-tool error."""
     session_id = build_unique_session_id(
         "session-runtime-postgres-mcp-grouped-live-error"
     )
@@ -230,9 +234,50 @@ def test_grouped_mcp_tools_report_live_runtime_postgres_read_failure_after_succe
 
     assert_mcp_tool_error(
         timeline_result,
-        expected_message="live database grouped read failed",
+        expected_message="Alert storage is unavailable",
     )
     assert_mcp_tool_error(
         summary_result,
-        expected_message="live database grouped read failed",
+        expected_message="Alert storage is unavailable",
+    )
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "service_attr", "error_type"),
+    [
+        ("query_session_alert_timeline", "build_session_timeline", RuntimeError),
+        ("query_session_alert_timeline", "build_session_timeline", ValueError),
+        (
+            "summarize_session_alert_incidents",
+            "build_session_incident_summary",
+            RuntimeError,
+        ),
+        (
+            "summarize_session_alert_incidents",
+            "build_session_incident_summary",
+            ValueError,
+        ),
+    ],
+)
+def test_grouped_mcp_tools_hide_storage_diagnostics(
+    monkeypatch,
+    tool_name: str,
+    service_attr: str,
+    error_type: type[Exception],
+) -> None:
+    """Grouped tools must not disclose backend details from failed reads."""
+    leaked_detail = (
+        "read failed for postgresql://alerts:db-secret@db.example/esm "
+        "password=tool-secret path=/srv/esm/incidents"
+    )
+
+    def failing_service(*_: object, **__: object) -> object:
+        raise error_type(leaked_detail)
+
+    monkeypatch.setattr(alert_tools, service_attr, failing_service)
+    result = call_mcp_tool(tool_name, {"session_id": "session-storage-failure"})
+
+    assert_mcp_storage_failure_is_sanitized(
+        result,
+        forbidden_values=("db-secret", "tool-secret", "postgresql://", "/srv/esm"),
     )

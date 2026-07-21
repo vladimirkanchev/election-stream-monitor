@@ -1668,9 +1668,8 @@ The current test split is:
   - structural MCP registration and launch-wiring coverage, including stable
     tool names/count, read-only server instructions, schema basics, and stdio
     launch wiring
-- `tests/mcp_server_alerts_test_support.py`
-  - tiny shared setup and result helpers for the split raw MCP behavior/error suites
-  - intentionally limited to filesystem seams plus success/error assertion helpers
+- `tests/mcp_alert_test_support.py`
+  - small shared MCP result helpers, including sanitized storage-error checks
 - `tests/test_mcp_server_alerts_behavior.py`
   - MCP raw alert-query and raw-summary behavior through the real in-memory
     MCP session
@@ -1681,7 +1680,7 @@ The current test split is:
 - `tests/test_mcp_server_alerts_errors.py`
   - raw MCP tool-level error mapping
   - includes missing-session failures, invalid time-range failures, and combined
-    raw invalid-timestamp parity
+    raw invalid-timestamp parity plus sanitized unexpected storage failures
   - keeps raw MCP list/summary error translation parity explicit
 - `tests/mcp_fastapi_parity_test_support.py`
   - tiny shared setup, fetch, and meaning-level assertion helpers for the split
@@ -1689,15 +1688,8 @@ The current test split is:
   - intentionally limited to protected FastAPI route setup, parity fixture
     setup, and cross-surface meaning plumbing
 - `tests/test_mcp_fastapi_boundary_split.py`
-  - explicit FastAPI-versus-stdio MCP trust-boundary and cross-surface smoke coverage
-  - keeps the raw MCP boundary checks grouped together and the grouped MCP
-    boundary checks grouped together so the trust rule is easier to review
-  - includes the regression that FastAPI `share` CLI runtime preparation must
-    not pull stdio MCP raw or grouped tools into the HTTP auth/rate-limit boundary
-  - also keeps raw MCP list/summary tools grouped together under direct FastAPI
-    auth/rate-limit boundary checks
-  - and keeps grouped MCP tools usable even when both `share` prep and direct
-    FastAPI protections are applied before the MCP read
+  - FastAPI-versus-stdio MCP trust-boundary coverage: all four tools remain
+    usable outside HTTP protections and leave persisted session data unchanged
 - `tests/test_mcp_fastapi_parity_behavior.py`
   - FastAPI/MCP meaning parity for normal shared-fixture reads
   - includes unfiltered and filtered raw/grouped reads, known empty sessions,
@@ -1709,9 +1701,6 @@ The current test split is:
     open-ended time bounds, and same-timestamp grouped ordering
   - keeps the higher-risk boundary and ordering seams separate from ordinary
     parity behavior
-- `tests/mcp_server_incidents_test_support.py`
-  - tiny shared setup and result helpers for the split grouped MCP behavior/error suites
-  - intentionally limited to grouped-session setup plus success/error assertion helpers
 - `tests/test_mcp_server_incidents_behavior.py`
   - MCP grouped timeline and incident-summary behavior
   - includes known-session empty grouped payloads, filtered grouped MCP
@@ -1725,7 +1714,7 @@ The current test split is:
 - `tests/test_mcp_server_incidents_errors.py`
   - grouped MCP tool-level error mapping
   - includes missing-session failures plus grouped invalid time-range and
-    invalid timestamp-format parity
+    invalid timestamp-format parity plus sanitized unexpected storage failures
   - keeps grouped timeline/summary error translation parity explicit
 
 Keep new tests near those ownership boundaries instead of adding a larger

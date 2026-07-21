@@ -1,16 +1,7 @@
-"""Shared MCP tool implementations for the alert-query surface.
+"""MCP adapters for local read-only raw-alert and incident-query tools.
 
-Keep the tool functions in a small dedicated module so:
-
-- `server.py` stays focused on registration and launch
-- tool behavior can be tested or reused without rebuilding the server
-- raw alert query logic lives in `session_alerts.py`
-- grouped incident read models live in `session_alert_incidents.py`
-
-The MCP surface intentionally mirrors the FastAPI split:
-
-- raw alert-event list and raw numeric summary
-- grouped incident timeline and grouped incident summary
+The adapters call the shared alert read models, keep server registration in
+``server.py``, and map only reviewed input errors into MCP responses.
 """
 
 from api.schemas import (
@@ -25,8 +16,21 @@ from session_alert_adapter import (
     call_alert_service,
 )
 from session_alert_incidents import build_session_incident_summary, build_session_timeline
-from session_alerts import filter_session_alert_events, summarize_session_alert_events
+from session_alerts import (
+    ALERT_TIMESTAMP_FORMAT,
+    filter_session_alert_events,
+    summarize_session_alert_events,
+)
 from session_models import EventSeverity
+
+_MCP_ALERT_STORAGE_UNAVAILABLE_MESSAGE = "Alert storage is unavailable"
+_MCP_SAFE_VALIDATION_MESSAGES = frozenset(
+    {
+        "start_time_utc must be earlier than or equal to end_time_utc",
+        f"start_time_utc must use UTC timestamp format {ALERT_TIMESTAMP_FORMAT!r}",
+        f"end_time_utc must use UTC timestamp format {ALERT_TIMESTAMP_FORMAT!r}",
+    }
+)
 
 
 def _call_tool_alert_service(
@@ -40,21 +44,27 @@ def _call_tool_alert_service(
 ) -> object:
     """Call one shared alert service using the standard MCP filter/error mapping.
 
-    The tool layer keeps transport-specific failure wording here and leaves the
-    underlying query and grouping semantics in the shared alert service modules.
+    Validation and missing-session errors remain readable tool feedback. Other
+    storage failures become one safe MCP error instead of exposing driver,
+    filesystem, or configuration diagnostics through the stdio boundary.
     """
-    return call_alert_service(
-        service_fn,
-        session_id=session_id,
-        filter_kwargs=build_alert_filter_kwargs(
-            detector_id=detector_id,
-            severity=severity,
-            start_time_utc=start_time_utc,
-            end_time_utc=end_time_utc,
-        ),
-        map_not_found=_map_tool_not_found,
-        map_validation_error=_map_tool_validation_error,
-    )
+    try:
+        return call_alert_service(
+            service_fn,
+            session_id=session_id,
+            filter_kwargs=build_alert_filter_kwargs(
+                detector_id=detector_id,
+                severity=severity,
+                start_time_utc=start_time_utc,
+                end_time_utc=end_time_utc,
+            ),
+            map_not_found=_map_tool_not_found,
+            map_validation_error=_map_tool_validation_error,
+        )
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError(_MCP_ALERT_STORAGE_UNAVAILABLE_MESSAGE) from None
 
 
 def _map_tool_not_found(session_id: str) -> Exception:
@@ -63,8 +73,11 @@ def _map_tool_not_found(session_id: str) -> Exception:
 
 
 def _map_tool_validation_error(err: ValueError) -> Exception:
-    """Translate one shared-service validation failure into a readable tool error."""
-    return ValueError(str(err))
+    """Expose only reviewed filter errors; hide unexpected backend detail."""
+    message = str(err)
+    if message in _MCP_SAFE_VALIDATION_MESSAGES:
+        return ValueError(message)
+    return ValueError(_MCP_ALERT_STORAGE_UNAVAILABLE_MESSAGE)
 
 
 def query_session_alerts_tool(
@@ -74,12 +87,7 @@ def query_session_alerts_tool(
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
 ) -> SessionAlertQueryResponse:
-    """Return persisted session alerts after applying optional filters.
-
-    This helper intentionally translates shared-service failures into ordinary
-    tool-facing `ValueError`s so the MCP SDK can surface them as structured
-    tool errors without exposing backend-specific exception classes.
-    """
+    """Return filtered persisted alerts with safe MCP error mapping."""
     alerts = _call_tool_alert_service(
         filter_session_alert_events,
         session_id=session_id,
@@ -103,11 +111,7 @@ def summarize_session_alerts_tool(
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
 ) -> SessionAlertSummaryResponse:
-    """Return counts and time bounds for persisted session alerts.
-
-    This is the MCP-facing equivalent of the FastAPI summary adapter: small
-    transport error mapping on top of the shared alert-query service.
-    """
+    """Return counts and time bounds for filtered persisted alerts."""
     return SessionAlertSummaryResponse.model_validate(
         _call_tool_alert_service(
             summarize_session_alert_events,
@@ -127,11 +131,7 @@ def query_session_alert_timeline_tool(
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
 ) -> SessionAlertTimelineResponse:
-    """Return grouped incident timeline entries for one session.
-
-    This tool mirrors the FastAPI timeline adapter: shared-service call plus
-    lightweight MCP-facing error mapping only.
-    """
+    """Return filtered grouped incident timeline entries for one session."""
     return SessionAlertTimelineResponse.model_validate(
         _call_tool_alert_service(
             build_session_timeline,
@@ -151,11 +151,7 @@ def summarize_session_alert_incidents_tool(
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
 ) -> SessionIncidentSummaryResponse:
-    """Return grouped incident summary data for one session.
-
-    This stays distinct from the raw alert-count summary tool by calling the
-    grouped incident summary service directly.
-    """
+    """Return filtered grouped incident counts and narrative summary."""
     return SessionIncidentSummaryResponse.model_validate(
         _call_tool_alert_service(
             build_session_incident_summary,

@@ -1,16 +1,7 @@
-"""MCP server exposing read-only session alert tools.
+"""Local stdio MCP server for read-only session-alert queries.
 
-This adapter sits beside the FastAPI boundary and calls the shared alert query
-service directly. It does not reimplement alert parsing or route through HTTP.
-
-The current tool set is intentionally small and local-first:
-
-- raw alert query and raw numeric summary
-- grouped incident timeline and grouped incident summary
-- stdio transport for desktop and local coding clients
-
-The current server is intentionally local-trust. FastAPI API-key auth and
-FastAPI rate limiting do not apply to this stdio transport.
+It calls shared read models directly; FastAPI authentication and rate limiting
+do not apply to this separate local-process boundary.
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -31,8 +22,8 @@ from session_models import EventSeverity
 
 SERVER_NAME = "Election Stream Monitor MCP"
 SERVER_INSTRUCTIONS = (
-    "Read-only tools for querying persisted session alerts from the local-first "
-    "Election Stream Monitor backend."
+    "Local stdio-only, read-only tools for querying persisted session alerts "
+    "from the local-first Election Stream Monitor backend."
 )
 
 
@@ -130,15 +121,7 @@ def _register_incident_alert_tools(mcp_server: FastMCP) -> None:
 
 
 def build_mcp_server() -> FastMCP:
-    """Return the project's MCP server with the current alert-query tools.
-
-    The current server intentionally stays small:
-
-    - stdio-first transport for local clients
-    - local-trust transport rather than remote auth/rate-limit enforcement
-    - read-only tools only
-    - one shared alert-query seam reused from the FastAPI milestone
-    """
+    """Build the current local read-only MCP alert-query server."""
     mcp_server = FastMCP(
         SERVER_NAME,
         instructions=SERVER_INSTRUCTIONS,
@@ -152,15 +135,7 @@ server = build_mcp_server()
 
 
 def main() -> None:
-    """Run the project's MCP server over stdio.
-
-    Stdio is the intended default transport for the current local-first stage
-    because it fits Codex and similar desktop/local MCP clients without
-    introducing extra HTTP hosting concerns yet. If the project later exposes
-    MCP over a remote transport, that boundary should add its own auth and
-    rate-limit enforcement instead of coupling directly to FastAPI-specific
-    request handling.
-    """
+    """Run the local MCP server over its only supported transport: stdio."""
     server.run(transport="stdio")
 
 

@@ -2091,10 +2091,8 @@ Current HTTP routes:
 - `GET /sessions/{session_id}/alerts`
 - `GET /sessions/{session_id}/alerts/summary`
 
-Current MCP tools:
-
-- `query_session_alerts`
-- `summarize_session_alerts`
+The complete MCP tool inventory, transport policy, result bounds, and MCP
+error contract are maintained in [mcp-server.md](./mcp-server.md#current-tool-inventory).
 
 Shared filter inputs:
 
@@ -2131,7 +2129,7 @@ Current split test ownership:
 - `tests/test_mcp_server_alerts_errors.py`
   - raw MCP-facing error mapping over the shared raw alert query seam
   - includes the expectation that raw MCP list and summary tools keep the same
-    malformed-timestamp error contract
+    malformed-timestamp error contract and hide unexpected storage diagnostics
 - `tests/mcp_fastapi_parity_test_support.py`
   - tiny shared setup and meaning-assertion helpers for the split FastAPI/MCP
     parity suites
@@ -2140,14 +2138,8 @@ Current split test ownership:
 - `tests/test_mcp_fastapi_boundary_split.py`
   - FastAPI-versus-stdio MCP local-trust boundary behavior for the current
     project stage
-  - includes the expectation that raw MCP list and summary tools stay outside
-    direct FastAPI auth/rate-limit state together
-  - keeps the current raw MCP boundary checks grouped together and the grouped
-  MCP boundary checks grouped together so trust-boundary regressions are easy
-    to localize
-  - includes the expectation that grouped MCP tools remain outside the HTTP
-    trust boundary even if both CLI `share` prep and direct FastAPI protection
-    env are applied before the MCP read
+  - keeps all four tools outside FastAPI auth/rate-limit state and verifies
+    they do not modify persisted session data
 - `tests/test_mcp_fastapi_parity_behavior.py`
   - one shared-fixture parity expectation for normal reads: protected FastAPI
     routes and local MCP tools should preserve equivalent raw alert totals and
@@ -2283,7 +2275,8 @@ Current split test ownership:
 - `tests/test_mcp_server_incidents_errors.py`
   - grouped MCP-facing error mapping over the shared grouped incident seam
   - includes the expectation that grouped timeline and grouped summary tools
-    keep the same invalid-range and malformed-timestamp error contracts
+    keep the same invalid-range and malformed-timestamp error contracts while
+    hiding unexpected storage diagnostics
 
 Current MCP tool expectations:
 
@@ -2299,6 +2292,8 @@ Current MCP tool expectations:
   bounds, and deterministic same-timestamp grouped ordering
 - enabling FastAPI auth/rate limiting or preparing FastAPI `share` mode must
   not pull stdio MCP tools into the HTTP trust boundary
+- unexpected MCP storage failures must not disclose backend diagnostics; use
+  the detailed tool error policy in [mcp-server.md](./mcp-server.md)
 
 Current alert query response shape:
 
@@ -2393,10 +2388,9 @@ Current HTTP routes:
 - `GET /sessions/{session_id}/alerts/timeline`
 - `GET /sessions/{session_id}/alerts/incident-summary`
 
-Current MCP tools:
-
-- `query_session_alert_timeline`
-- `summarize_session_alert_incidents`
+The grouped MCP tool inventory and transport policy are maintained in
+[mcp-server.md](./mcp-server.md#current-tool-inventory). This section owns the
+shared grouped response semantics used by both HTTP and MCP clients.
 
 Shared filter inputs:
 

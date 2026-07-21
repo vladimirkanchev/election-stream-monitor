@@ -41,6 +41,23 @@ def _tool_named(tools, tool_name: str):
     return next(tool for tool in tools.tools if tool.name == tool_name)
 
 
+def _assert_shared_alert_filter_schema(tool) -> None:
+    """Assert the current common session-alert request shape for one MCP tool."""
+    assert tool.inputSchema["required"] == ["session_id"]
+    assert set(tool.inputSchema["properties"]) == {
+        "session_id",
+        "detector_id",
+        "severity",
+        "start_time_utc",
+        "end_time_utc",
+    }
+
+
+def _assert_exact_output_fields(tool, expected_fields: set[str]) -> None:
+    """Assert one MCP output exposes only its current public top-level fields."""
+    assert set(tool.outputSchema["properties"]) == expected_fields
+
+
 def test_mcp_server_registers_alert_tools() -> None:
     """The server should advertise the stable read-only MCP tool surface.
 
@@ -50,33 +67,44 @@ def test_mcp_server_registers_alert_tools() -> None:
     behavior files.
     """
     tools = list_mcp_tools()
-    tool_names = sorted(tool.name for tool in tools.tools)
-    assert tool_names == [
-        "query_session_alert_timeline",
-        "query_session_alerts",
-        "summarize_session_alert_incidents",
-        "summarize_session_alerts",
-    ]
-    assert "Read-only tools" in SERVER_INSTRUCTIONS
+    assert "Local stdio-only, read-only tools" in SERVER_INSTRUCTIONS
 
     query_tool = _tool_named(tools, "query_session_alerts")
     summary_tool = _tool_named(tools, "summarize_session_alerts")
     timeline_tool = _tool_named(tools, "query_session_alert_timeline")
     incident_summary_tool = _tool_named(tools, "summarize_session_alert_incidents")
 
-    assert query_tool.inputSchema["required"] == ["session_id"]
-    assert "severity" in query_tool.inputSchema["properties"]
-    assert query_tool.outputSchema["properties"]["session_id"]["type"] == "string"
-    assert query_tool.outputSchema["properties"]["alerts"]["type"] == "array"
+    _assert_shared_alert_filter_schema(query_tool)
+    _assert_exact_output_fields(query_tool, {"session_id", "alerts"})
+    assert set(
+        query_tool.outputSchema["$defs"]["AlertEventResponse"]["properties"]
+    ) == {
+        "session_id",
+        "timestamp_utc",
+        "detector_id",
+        "title",
+        "message",
+        "severity",
+        "source_name",
+        "window_index",
+        "window_start_sec",
+    }
 
-    assert summary_tool.inputSchema["required"] == ["session_id"]
-    assert "start_time_utc" in summary_tool.inputSchema["properties"]
-    assert summary_tool.outputSchema["properties"]["counts_by_detector"]["type"] == "object"
-    assert summary_tool.outputSchema["properties"]["total_alerts"]["type"] == "integer"
+    _assert_shared_alert_filter_schema(summary_tool)
+    _assert_exact_output_fields(
+        summary_tool,
+        {
+            "session_id",
+            "total_alerts",
+            "counts_by_detector",
+            "counts_by_severity",
+            "first_alert_timestamp_utc",
+            "last_alert_timestamp_utc",
+        },
+    )
 
-    assert timeline_tool.inputSchema["required"] == ["session_id"]
-    assert "start_time_utc" in timeline_tool.inputSchema["properties"]
-    assert timeline_tool.outputSchema["properties"]["entries"]["type"] == "array"
+    _assert_shared_alert_filter_schema(timeline_tool)
+    _assert_exact_output_fields(timeline_tool, {"session_id", "entries"})
     assert (
         timeline_tool.outputSchema["properties"]["entries"]["items"]["$ref"]
         == "#/$defs/SessionAlertTimelineEntryResponse"
@@ -88,14 +116,21 @@ def test_mcp_server_registers_alert_tools() -> None:
         == "string"
     )
 
-    assert incident_summary_tool.inputSchema["required"] == ["session_id"]
-    assert "severity" in incident_summary_tool.inputSchema["properties"]
-    assert incident_summary_tool.outputSchema["properties"]["top_incident_categories"]["type"] == "object"
-    assert (
-        incident_summary_tool.outputSchema["properties"]["total_incidents"]["type"]
-        == "integer"
+    _assert_shared_alert_filter_schema(incident_summary_tool)
+    _assert_exact_output_fields(
+        incident_summary_tool,
+        {
+            "session_id",
+            "total_alerts",
+            "total_incidents",
+            "counts_by_detector",
+            "counts_by_severity",
+            "top_incident_categories",
+            "first_alert_timestamp_utc",
+            "last_alert_timestamp_utc",
+            "narrative_summary",
+        },
     )
-    assert "narrative_summary" in incident_summary_tool.outputSchema["properties"]
 
 
 def test_mcp_server_registers_exactly_four_current_read_only_tools() -> None:
