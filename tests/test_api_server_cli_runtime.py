@@ -47,10 +47,10 @@ def _clear_boundary_settings_caches() -> Generator[None, None, None]:
         ("local", None, False, False, (), False),
         ("share", None, True, True, None, True),
         ("share", "demo-manual-key", True, True, ("demo-manual-key",), False),
-        ("share", "   ", True, True, None, True),
     ],
 )
 def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
+    monkeypatch,
     mode: Literal["local", "share"],
     manual_api_key: str | None,
     auth_enabled: bool,
@@ -59,6 +59,9 @@ def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
     generated: bool,
 ) -> None:
     """Mode and key-source combinations should resolve a stable boundary posture."""
+
+    if mode == "share" and manual_api_key is None:
+        monkeypatch.delenv("ESM_API_AUTH_ALLOWED_KEYS", raising=False)
 
     runtime = prepare_cli_runtime(mode=mode, manual_api_key=manual_api_key)
 
@@ -74,6 +77,40 @@ def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
         return
     assert runtime.auth_settings.generated_api_key is None
     assert runtime.auth_settings.allowed_api_keys == expected_keys
+
+
+def test_prepare_cli_runtime_uses_environment_key_when_cli_key_is_omitted(
+    monkeypatch,
+) -> None:
+    """An omitted CLI key should preserve the configured environment key."""
+
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", "environment-key")
+
+    runtime = prepare_cli_runtime(mode="share", manual_api_key=None)
+
+    assert runtime.auth_settings.allowed_api_keys == ("environment-key",)
+    assert runtime.auth_settings.generated_api_key is None
+
+
+def test_prepare_cli_runtime_manual_key_overrides_environment_key(monkeypatch) -> None:
+    """The explicit CLI key should take precedence for this startup process."""
+
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", "environment-key")
+
+    runtime = prepare_cli_runtime(mode="share", manual_api_key="cli-key")
+
+    assert runtime.auth_settings.allowed_api_keys == ("cli-key",)
+    assert runtime.auth_settings.generated_api_key is None
+
+
+def test_prepare_cli_runtime_rejects_blank_manual_share_key() -> None:
+    """An explicit blank CLI key must not silently trigger key generation."""
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="Manual share-mode API key must not be blank",
+    ):
+        prepare_cli_runtime(mode="share", manual_api_key="   ")
 
 
 def test_prepare_cli_runtime_share_mode_honors_explicit_rate_limit_override(

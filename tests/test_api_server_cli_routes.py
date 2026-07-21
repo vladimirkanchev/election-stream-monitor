@@ -8,6 +8,7 @@ separately.
 from __future__ import annotations
 
 from collections.abc import Generator
+import logging
 
 import pytest
 
@@ -141,6 +142,50 @@ def test_prepare_cli_runtime_share_mode_requires_auth_for_operational_routes(
 
     assert response.status_code == 401
     assert response.json() == build_authentication_failed_payload("Missing API key")
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        (
+            "POST",
+            "/sessions",
+            {"mode": "video_files", "input_path": "clip.mp4", "selected_detectors": []},
+        ),
+        ("GET", "/sessions/session-123", None),
+        ("POST", "/sessions/session-123/cancel", None),
+        ("GET", "/sessions/session-123/alerts", None),
+        (
+            "POST",
+            "/playback/resolve",
+            {"mode": "video_files", "input_path": "clip.mp4", "current_item": None},
+        ),
+    ],
+)
+def test_operational_route_auth_logs_use_only_safe_failure_context(
+    monkeypatch,
+    caplog,
+    method: str,
+    path: str,
+    payload: dict[str, object] | None,
+) -> None:
+    """Every protected router should log a fixed code, never a request key."""
+
+    prepare_runtime_with_empty_alert_routes(monkeypatch, mode="share")
+    presented_key = "untrusted-operational-key"
+
+    with caplog.at_level(logging.WARNING, logger="api.http_auth_policy"):
+        response = request(
+            method,
+            path,
+            json=payload,
+            headers={"X-API-Key": presented_key},
+        )
+
+    assert response.status_code == 401
+    assert f"path={path}" in caplog.text
+    assert "reason_code=invalid_api_key" in caplog.text
+    assert presented_key not in caplog.text
 
 
 @pytest.mark.parametrize(

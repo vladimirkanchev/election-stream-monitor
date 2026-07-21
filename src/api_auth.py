@@ -23,6 +23,13 @@ from api_boundary_config import ApiAuthSettings, get_api_auth_settings
 API_KEY_HEADER_NAME = "X-API-Key"
 API_KEY_FINGERPRINT_LENGTH = 12
 AuthType = Literal["local", "api_key", "jwt"]
+AuthenticationFailureReason = Literal[
+    "missing_api_key",
+    "invalid_api_key",
+    "auth_configuration_invalid",
+    "unsupported_auth_mode",
+    "authentication_failed",
+]
 
 
 @dataclass(frozen=True)
@@ -47,6 +54,17 @@ class AuthenticationError(Exception):
     `401` contract. Keeping the error transport-agnostic here avoids coupling
     the underlying credential checks to FastAPI-specific response mechanics.
     """
+
+    def __init__(
+        self,
+        detail: str,
+        *,
+        reason_code: AuthenticationFailureReason = "authentication_failed",
+    ) -> None:
+        """Keep client detail separate from the fixed diagnostic reason code."""
+
+        super().__init__(detail)
+        self.reason_code = reason_code
 
 
 def authenticate_api_request(
@@ -82,17 +100,18 @@ def _authenticate_api_key(
     """
     presented_key = _normalize_presented_api_key(x_api_key)
     if presented_key is None:
-        raise AuthenticationError("Missing API key")
+        raise AuthenticationError("Missing API key", reason_code="missing_api_key")
     if not settings.allowed_api_keys:
         raise AuthenticationError(
-            "API key authentication is enabled but no allowed API keys are configured"
+            "API key authentication is enabled but no allowed API keys are configured",
+            reason_code="auth_configuration_invalid",
         )
 
     for configured_key in settings.allowed_api_keys:
         if hmac.compare_digest(presented_key, configured_key):
             return _build_api_key_principal(configured_key)
 
-    raise AuthenticationError("Invalid API key")
+    raise AuthenticationError("Invalid API key", reason_code="invalid_api_key")
 
 
 def _authenticate_enabled_request(
@@ -110,7 +129,10 @@ def _authenticate_enabled_request(
             x_api_key=x_api_key,
             settings=settings,
         )
-    raise AuthenticationError("Unsupported API authentication mode")
+    raise AuthenticationError(
+        "Unsupported API authentication mode",
+        reason_code="unsupported_auth_mode",
+    )
 
 
 def _build_local_principal() -> AuthPrincipal:

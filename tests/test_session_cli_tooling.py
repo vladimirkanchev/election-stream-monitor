@@ -754,6 +754,38 @@ def test_run_session_worker_path_surfaces_explicit_postgres_failures_without_fal
     )
 
 
+def test_run_session_worker_cli_redacts_postgres_bootstrap_diagnostics(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Worker CLI failures should not expose database credentials in worker logs."""
+    diagnostic = "bootstrap failed for postgresql://session:secret@db.example/esm"
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, VALID_POSTGRES_SESSION_URL)
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        lambda: (_ for _ in ()).throw(PostgresSessionStoreBootstrapError(diagnostic)),
+    )
+
+    with pytest.raises(RuntimeError) as error:
+        _run_worker_cli_after_store_cache_clear(
+            monkeypatch,
+            capsys,
+            session_id="session-worker-runtime-postgres-redacted-diagnostic",
+        )
+
+    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
+    assert "session:secret" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+    captured = capsys.readouterr()
+    assert all(
+        "session:secret" not in sink
+        for sink in (captured.out, captured.err, caplog.text)
+    )
+
+
 def test_resolve_playback_source_returns_remote_url_for_api_stream(monkeypatch, capsys) -> None:
     """Resolve-playback-source should return passthrough remote URLs for tooling use."""
     _set_argv(

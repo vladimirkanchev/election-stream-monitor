@@ -147,25 +147,33 @@ def test_invalid_key_failure_does_not_block_later_valid_authenticated_request(
 
 
 def test_authentication_failures_log_safe_boundary_context(monkeypatch, caplog) -> None:
-    """Auth-boundary logs should include path and reason without leaking raw keys."""
-    install_real_alert_route_auth(monkeypatch, enabled=True)
+    """Auth logs should retain path and code without recording key material."""
+    configured_key = "configured-alert-key-secret"
+    presented_key = "presented-alert-key-secret"
+    install_real_alert_route_auth(
+        monkeypatch,
+        enabled=True,
+        allowed_api_keys=(configured_key,),
+    )
 
     with caplog.at_level(logging.WARNING, logger="api.http_auth_policy"):
         response = request(
             "GET",
             "/sessions/session-123/alerts",
-            headers=build_api_key_headers("secret-raw-key"),
+            headers=build_api_key_headers(presented_key),
         )
 
     assert response.status_code == 401
     assert "auth_failed" in caplog.text
     assert "/sessions/session-123/alerts" in caplog.text
-    assert "Invalid API key" in caplog.text
-    assert "secret-raw-key" not in caplog.text
+    assert "reason_code=invalid_api_key" in caplog.text
+    assert "Invalid API key" not in caplog.text
+    assert configured_key not in caplog.text
+    assert presented_key not in caplog.text
 
 
 def test_blank_api_key_auth_failures_log_missing_key_reason(monkeypatch, caplog) -> None:
-    """Whitespace-only keys should log the missing-key branch without leaking raw input."""
+    """Whitespace-only keys should log a missing-key code without raw input."""
     install_real_alert_route_auth(monkeypatch, enabled=True)
 
     with caplog.at_level(logging.WARNING, logger="api.http_auth_policy"):
@@ -177,7 +185,22 @@ def test_blank_api_key_auth_failures_log_missing_key_reason(monkeypatch, caplog)
 
     assert response.status_code == 401
     assert "auth_failed" in caplog.text
-    assert "Missing API key" in caplog.text
+    assert "reason_code=missing_api_key" in caplog.text
+    assert "Missing API key" not in caplog.text
+
+
+def test_authentication_logs_do_not_use_untrusted_error_detail(monkeypatch, caplog) -> None:
+    """A future auth error detail must not become credential-bearing log text."""
+    leaked_detail = "provider rejected api_key=unexpected-secret"
+    install_alert_route_auth_failure(monkeypatch, detail=leaked_detail)
+
+    with caplog.at_level(logging.WARNING, logger="api.http_auth_policy"):
+        response = request("GET", "/sessions/session-123/alerts")
+
+    assert response.status_code == 401
+    assert "reason_code=authentication_failed" in caplog.text
+    assert leaked_detail not in caplog.text
+    assert "unexpected-secret" not in caplog.text
 
 
 def test_get_session_alerts_returns_401_before_rate_limit_when_authentication_fails(

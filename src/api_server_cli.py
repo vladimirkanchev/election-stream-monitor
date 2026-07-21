@@ -68,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     share_parser.add_argument(
         "--api-key",
         default=None,
-        help="manual API key for share mode; if omitted, one is generated",
+        help="manual API key for share mode; overrides ESM_API_AUTH_ALLOWED_KEYS",
     )
 
     return parser
@@ -180,26 +180,23 @@ def _apply_runtime_env(
 
     os.environ["ESM_FASTAPI_RUN_MODE"] = mode
     normalized_manual_api_key = _normalize_manual_api_key(manual_api_key)
-    if normalized_manual_api_key is None:
-        os.environ.pop("ESM_API_AUTH_ALLOWED_KEYS", None)
-        return
-    os.environ["ESM_API_AUTH_ALLOWED_KEYS"] = normalized_manual_api_key
+    if normalized_manual_api_key is not None:
+        os.environ["ESM_API_AUTH_ALLOWED_KEYS"] = normalized_manual_api_key
 
 
 def _normalize_manual_api_key(manual_api_key: str | None) -> str | None:
     """Normalize one manual share-mode key before exposing it to auth settings.
 
-    Share mode treats blank or whitespace-only keys as absent so the generated
-    key path can still produce a usable protected startup. Non-blank keys are
-    stripped for copy/paste friendliness before entering the env-driven
-    settings seam.
+    An omitted CLI option leaves environment configuration in control. An
+    explicitly blank value is invalid rather than a request to generate a new
+    key, which keeps startup credentials predictable.
     """
 
     if manual_api_key is None:
         return None
     normalized = manual_api_key.strip()
     if not normalized:
-        return None
+        raise ApiBoundaryConfigurationError("Manual share-mode API key must not be blank")
     if "," in normalized:
         raise ApiBoundaryConfigurationError(
             "Manual share-mode API key must be one key value and may not contain commas"
@@ -256,7 +253,7 @@ def _build_startup_summary_lines(
                     "Send it in the X-API-Key header.",
                     (
                         "Example: "
-                        f"curl -H 'X-API-Key: {runtime.auth_settings.generated_api_key}' "
+                        "curl -H 'X-API-Key: <generated-api-key>' "
                         f"http://{host}:{port}/sessions/<session_id>/alerts"
                     ),
                 ]
