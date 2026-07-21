@@ -129,8 +129,10 @@ def test_run_from_args_prints_generated_share_mode_key_and_starts_server() -> No
         port=8123,
     )
     _assert_share_mode_listen_summary(output, host="127.0.0.1", port=8123)
-    assert "Generated API key:" in output
-    assert "X-API-Key" in output
+    match = re.search(r"^Generated API key:\n(?P<api_key>\S+)$", output, re.M)
+    assert match is not None
+    assert output.count(match.group("api_key")) == 1
+    assert "X-API-Key: <generated-api-key>" in output
     assert "production-distributed hardened" in output
     assert_server_runner_called_once(seen_calls, host="127.0.0.1", port=8123)
 
@@ -163,17 +165,26 @@ def test_run_from_args_prints_manual_share_mode_key_summary() -> None:
     _assert_manual_share_mode_summary(output, host="127.0.0.1", port=8000)
 
 
-def test_run_from_args_manual_share_mode_summary_does_not_leak_manual_key() -> None:
-    """Manual share-mode startup output should never print the provided raw key."""
+def test_run_from_args_manual_share_mode_summary_does_not_leak_manual_key(
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Manual keys must stay absent from operator output and logs."""
 
+    manual_key = "manual-demo-key"
     output, _ = run_cli_and_capture_output(
         mode="share",
         host="127.0.0.1",
         port=8000,
-        api_key="manual-demo-key",
+        api_key=manual_key,
     )
+    captured = capsys.readouterr()
+
     _assert_manual_share_mode_summary(output, host="127.0.0.1", port=8000)
-    assert "manual-demo-key" not in output
+    assert all(
+        manual_key not in sink
+        for sink in (output, captured.out, captured.err, caplog.text)
+    )
 
 
 def test_run_from_args_manual_share_mode_output_does_not_claim_generated_key_behavior() -> None:

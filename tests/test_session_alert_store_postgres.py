@@ -34,6 +34,7 @@ from session_alert_store_postgres import (
     POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS,
     POSTGRES_ALERT_STORE_SCHEMA_STATEMENTS,
     POSTGRES_ALERT_TIMESTAMP_FORMAT,
+    PostgresAlertStoreBootstrapError,
     PostgresSessionAlertStore,
     bootstrap_postgres_alert_store,
     connect_postgres_alert_store,
@@ -628,10 +629,19 @@ def test_connect_postgres_alert_store_uses_validated_database_url_with_driver_su
 
 def test_connect_postgres_alert_store_wraps_driver_connection_errors(
     monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Driver connection failures should become one stable bootstrap error."""
+    """Connection failures should retain redacted endpoint context only."""
+    database_user = "alert-store-user"
+    database_password = "alert-store-password"
+    query_key = "alert-store-query-key"
+    database_url = (
+        f"postgresql://{database_user}:{database_password}@db.example/esm"
+        f"?api_key={query_key}&application_name=esm"
+    )
     fake_psycopg = FakePsycopgModule(
-        connect_error=FakePsycopgModule.Error("database unavailable")
+        connect_error=FakePsycopgModule.Error(f"database unavailable: {database_url}")
     )
     monkeypatch.setattr(
         "session_alert_store_postgres.importlib.import_module",
@@ -641,23 +651,35 @@ def test_connect_postgres_alert_store_wraps_driver_connection_errors(
     with pytest.raises(
         RuntimeError,
         match="Could not connect to the PostgreSQL alert store",
-    ):
+    ) as error:
         connect_postgres_alert_store(
             PostgresAlertStoreSettings(
-                database_url="postgresql://alerts:secret@db.example/esm",
+                database_url=database_url,
                 auto_create_tables=True,
             )
         )
 
+    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
+    assert database_user not in str(error.value)
+    assert database_password not in str(error.value)
+    assert query_key not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
     assert fake_psycopg.connect_calls == [
-        "postgresql://alerts:secret@db.example/esm"
+        database_url
     ]
+    captured = capsys.readouterr()
+    assert all(
+        secret not in sink
+        for secret in (database_user, database_password, query_key)
+        for sink in (captured.out, captured.err, caplog.text)
+    )
 
 
 def test_bootstrap_postgres_alert_store_surfaces_schema_init_failures_after_connect(
     monkeypatch,
 ) -> None:
-    """Bootstrap should not hide schema-init failures after a successful connect."""
+    """Bootstrap should preserve safe schema-init detail after a successful connect."""
     settings = PostgresAlertStoreSettings(
         database_url="postgresql://alerts:secret@db.example/esm",
         auto_create_tables=True,
@@ -675,7 +697,10 @@ def test_bootstrap_postgres_alert_store_surfaces_schema_init_failures_after_conn
     def fake_initialize(resolved_connection: RecordingConnection) -> None:
         assert resolved_connection is connection
         seen.append("initialize")
-        raise RuntimeError("schema bootstrap failed")
+        raise RuntimeError(
+            "schema bootstrap failed for "
+            "postgresql://alerts:secret@db.example/esm?api_key=query-key"
+        )
 
     monkeypatch.setattr(
         "session_alert_store_postgres.connect_postgres_alert_store",
@@ -686,9 +711,17 @@ def test_bootstrap_postgres_alert_store_surfaces_schema_init_failures_after_conn
         fake_initialize,
     )
 
-    with pytest.raises(RuntimeError, match="schema bootstrap failed"):
+    with pytest.raises(PostgresAlertStoreBootstrapError) as error:
         bootstrap_postgres_alert_store(settings)
 
+    assert "schema bootstrap failed" in str(error.value)
+    assert "postgresql://<redacted>@db.example/esm?api_key=<redacted>" in str(
+        error.value
+    )
+    assert "secret" not in str(error.value)
+    assert "query-key" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
     assert seen == ["connect", "initialize"]
 
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Protocol, TypedDict, cast
 
 from logger import get_logger
+from postgres_diagnostics import redact_postgres_diagnostic
 from session_alert_store_runtime_config import (
     AlertStoreRuntimeConfigurationError,
     AlertStoreRuntimeSettings,
@@ -144,7 +145,9 @@ def _build_postgres_default_session_alert_store() -> SessionAlertStore:
     try:
         return PostgresSessionAlertStore(bootstrap_postgres_alert_store())
     except PostgresAlertStoreBootstrapError as err:
-        raise AlertStoreRuntimeConfigurationError(str(err)) from err
+        detail = redact_postgres_diagnostic(str(err))
+
+    raise AlertStoreRuntimeConfigurationError(detail)
 
 
 class _DefaultSessionAlertStoreProxy:

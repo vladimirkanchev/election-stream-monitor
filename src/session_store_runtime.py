@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from postgres_diagnostics import redact_postgres_diagnostic
 from session_store import SessionStore
 from session_store_file import DEFAULT_FILE_SESSION_STORE
 from session_store_postgres import (
@@ -62,4 +63,6 @@ def _build_postgres_default_session_store() -> SessionStore:
     try:
         return PostgresSessionStore(bootstrap_postgres_session_store())
     except PostgresSessionStoreBootstrapError as err:
-        raise SessionStoreRuntimeConfigurationError(str(err)) from err
+        detail = redact_postgres_diagnostic(str(err))
+
+    raise SessionStoreRuntimeConfigurationError(detail)

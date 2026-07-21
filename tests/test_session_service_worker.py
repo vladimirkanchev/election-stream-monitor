@@ -8,6 +8,8 @@ from typing import cast
 import pytest
 
 import session_service
+from session_alert_store_postgres_config import POSTGRES_ALERT_DATABASE_URL_ENV
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
 from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
 from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 from tests.session_service_test_support import context_managed_handle, spawn_worker
@@ -55,9 +57,11 @@ def test_spawn_detached_session_worker_preserves_detached_process_settings(
 
     assert recorded["args"] == (command,)
     kwargs = cast(dict[str, object], recorded["kwargs"])
+    expected_env = os.environ.copy()
+    expected_env.pop("ESM_API_AUTH_ALLOWED_KEYS", None)
     assert kwargs == {
         "cwd": str(Path(session_service.__file__).resolve().parent),
-        "env": os.environ.copy(),
+        "env": expected_env,
         "stdout": log_handle,
         "stderr": log_handle,
         "shell": False,
@@ -116,6 +120,12 @@ def test_build_detached_session_worker_env_preserves_session_store_runtime_env(
         POSTGRES_SESSION_DATABASE_URL_ENV,
         "postgresql://session:secret@db.example/esm",
     )
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(
+        POSTGRES_ALERT_DATABASE_URL_ENV,
+        "postgresql://alerts:secret@db.example/esm",
+    )
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", "share-api-key")
     monkeypatch.setenv("UNRELATED_PARENT_FLAG", "kept")
 
     worker_env = session_service._build_detached_session_worker_env()
@@ -125,6 +135,12 @@ def test_build_detached_session_worker_env_preserves_session_store_runtime_env(
         worker_env[POSTGRES_SESSION_DATABASE_URL_ENV]
         == "postgresql://session:secret@db.example/esm"
     )
+    assert worker_env[ALERT_STORE_BACKEND_ENV] == "postgres"
+    assert (
+        worker_env[POSTGRES_ALERT_DATABASE_URL_ENV]
+        == "postgresql://alerts:secret@db.example/esm"
+    )
+    assert "ESM_API_AUTH_ALLOWED_KEYS" not in worker_env
     assert worker_env["UNRELATED_PARENT_FLAG"] == "kept"
 
 

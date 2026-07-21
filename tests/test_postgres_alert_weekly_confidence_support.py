@@ -21,6 +21,7 @@ import postgres_alert_weekly_confidence as weekly_confidence  # noqa: E402
 import postgres_alert_weekly_confidence_support as live_confidence_support  # noqa: E402
 from postgres_alert_weekly_confidence_support import (  # noqa: E402
     build_live_postgres_env,
+    print_run_plan,
     require_database_url,
     run_live_postgres_test_group,
 )
@@ -62,6 +63,25 @@ def test_live_postgres_bundle_requires_an_explicit_database_url(
         require_database_url()
 
     assert "Set ESM_POSTGRES_ALERT_DATABASE_URL" in capsys.readouterr().err
+
+
+def test_live_postgres_run_plan_never_prints_the_database_url(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Live helper plans should expose setup state without a database credential."""
+    database_url = "postgresql://alerts:secret@db.example/esm?token=query-token"
+
+    print_run_plan(
+        "test bundle",
+        ("tests/test_example.py",),
+        build_live_postgres_env(database_url),
+    )
+
+    output = capsys.readouterr().out
+    assert "ESM_POSTGRES_ALERT_DATABASE_URL=<set>" in output
+    assert database_url not in output
+    assert "secret" not in output
+    assert "query-token" not in output
 
 
 def test_live_postgres_group_uses_the_invoking_python_and_propagates_failure(
