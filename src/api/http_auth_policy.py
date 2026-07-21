@@ -41,8 +41,8 @@ async def require_http_principal(
         return authenticate_api_request(x_api_key=x_api_key)
     except AuthenticationError as err:
         logger.warning(
-            "auth_failed path=%s reason=%s",
+            "auth_failed path=%s reason_code=%s",
             request.url.path,
-            str(err),
+            err.reason_code,
         )
         raise AuthenticationFailedError(str(err)) from err

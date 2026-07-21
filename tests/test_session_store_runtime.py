@@ -29,6 +29,7 @@ from session_store_runtime import (
 from session_store_runtime_config import (
     DEFAULT_SESSION_STORE_BACKEND,
     SESSION_STORE_BACKEND_ENV,
+    SessionStoreRuntimeConfigurationError,
     SessionStoreRuntimeSettings,
     get_session_store_runtime_settings,
     validate_session_store_runtime_settings,
@@ -509,6 +510,27 @@ def test_default_session_store_surfaces_exact_failure_contracts_for_explicit_pos
         database_url=database_url,
         bootstrap_message=bootstrap_message,
     )
+
+
+def test_default_session_store_redacts_bootstrap_diagnostics_at_runtime_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runtime boundary should not reintroduce a raw bootstrap diagnostic."""
+    diagnostic = "bootstrap failed for postgresql://session:secret@db.example/esm"
+    monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, VALID_POSTGRES_SESSION_URL)
+    monkeypatch.setattr(
+        "session_store_runtime.bootstrap_postgres_session_store",
+        lambda: (_ for _ in ()).throw(PostgresSessionStoreBootstrapError(diagnostic)),
+    )
+
+    with pytest.raises(SessionStoreRuntimeConfigurationError) as error:
+        get_default_session_store()
+
+    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
+    assert "session:secret" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
 
 
 def test_default_session_store_keeps_missing_schema_visible_when_explicit_postgres_mode_disables_auto_create(

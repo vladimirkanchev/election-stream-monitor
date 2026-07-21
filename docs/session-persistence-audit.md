@@ -1184,6 +1184,25 @@ At the runtime-store boundary, both paths translate actionable bootstrap
 failures to their persistence-specific configuration error. Later operational
 failures, such as missing tables, remain visible to the caller.
 
+### Credential Diagnostics
+
+PostgreSQL URLs enter through `ESM_POSTGRES_SESSION_DATABASE_URL` and
+`ESM_POSTGRES_ALERT_DATABASE_URL`, remain in the selected store settings, and
+are passed only to the PostgreSQL driver. The configuration validators report
+the relevant environment-variable name without echoing the configured value.
+The live-alert helper prints `ESM_POSTGRES_ALERT_DATABASE_URL=<set>` instead.
+
+Connection, bootstrap, and runtime wrappers sanitize embedded PostgreSQL URLs
+and credential assignments, then avoid chaining raw driver errors. The shared
+sanitizer retains safe endpoint context while removing user info and sensitive
+query values. Detached workers retain persistence settings but exclude FastAPI
+API-key settings before writing stderr to the per-session worker log.
+
+Operator-facing errors, worker logs, helper output, and exception chains may
+identify the backend, setting, host, or error class, but never a database
+password, API key, or credential-bearing URL. The related HTTP key policy is
+owned by [FastAPI boundary](./fastapi-boundary.md#secret-handling-contract).
+
 ### Alert-Store Rollback
 
 Rolling alert storage back to files is an operator-controlled backend change:

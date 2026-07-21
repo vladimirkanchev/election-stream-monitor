@@ -229,7 +229,8 @@ Implementation note:
 
 - the FastAPI auth seam lives in [`src/api_auth.py`](../src/api_auth.py)
 - [`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py) owns HTTP
-  header extraction, safe authentication-failure logging, and `401` mapping
+  header extraction, route-path plus fixed-reason-code failure logging, and
+  `401` mapping; it never logs the presented or configured key
 - the alerts-router HTTP protection composition lives in
   [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
 - auth settings are centralized in
@@ -260,7 +261,7 @@ Current scope:
   - `local` defaults authentication and the alert-route limiter off
   - `share` defaults authentication and the alert-route limiter on
 - `share` mode can auto-generate one process-local API key at startup when no
-  manual key is configured
+  CLI or environment key is configured
 - the current stdio MCP server remains outside this rate-limiting contract
 - authentication protects the operational route set defined by the
   [FastAPI route matrix](./fastapi-boundary.md#http-route-security-matrix)
@@ -357,9 +358,10 @@ Implementation note:
   rather than pushing counting logic into route bodies or shared alert services
 - invalid configured auth or limiter settings now fail during FastAPI startup
   rather than waiting for the first protected request
-- `/health`, `/docs`, and `/openapi.json` currently stay outside both
-  operational-route authentication and alert rate limiting; session and
-  playback routes require authentication but do not have a limiter yet
+- `/health` and `/detectors` remain outside operational-route authentication
+  and alert rate limiting; framework documentation is local-only and returns
+  `404` in share mode. Session and playback routes require authentication but
+  do not have a limiter yet
 
 Future remote MCP note:
 

@@ -453,8 +453,29 @@ def test_explicit_postgres_alert_backend_surfaces_bootstrap_failures_at_runtime_
     ) as error:
         get_default_session_alert_store()
 
-    assert isinstance(error.value.__cause__, PostgresAlertStoreBootstrapError)
-    assert str(error.value.__cause__) == bootstrap_message
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+
+
+def test_explicit_postgres_alert_backend_redacts_bootstrap_diagnostics_at_runtime_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The runtime boundary should not reintroduce a raw bootstrap diagnostic."""
+    diagnostic = "bootstrap failed for postgresql://alerts:secret@db.example/esm"
+
+    monkeypatch.setenv(ALERT_STORE_BACKEND_ENV, "postgres")
+    monkeypatch.setattr(
+        "session_alert_store_postgres.bootstrap_postgres_alert_store",
+        lambda: (_ for _ in ()).throw(PostgresAlertStoreBootstrapError(diagnostic)),
+    )
+
+    with pytest.raises(AlertStoreRuntimeConfigurationError) as error:
+        get_default_session_alert_store()
+
+    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
+    assert "alerts:secret" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
 
 
 def test_get_default_session_alert_store_only_fails_for_missing_postgres_driver_when_postgres_is_selected(

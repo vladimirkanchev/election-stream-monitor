@@ -6,8 +6,8 @@ This entrypoint keeps the project-stage startup story explicit:
 - `share` enables the protected sharing preset for temporary demo access
 
 The CLI owns only lightweight startup policy and operator-facing guidance.
-The underlying FastAPI auth, limiter, and request handling remain in their
-existing boundary modules.
+It validates bind exposure before delegating auth, limiter, and request
+handling to the existing boundary modules.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from typing import Callable, TextIO
 import uvicorn
 
 from api.app import app
+from api_bind_policy import BindHostClass, classify_bind_host
 from api_boundary_config import (
     ApiAuthSettings,
     ApiBoundaryConfigurationError,
@@ -35,14 +36,7 @@ from api_boundary_config import (
 
 @dataclass(frozen=True)
 class FastApiCliRuntime:
-    """Resolved runtime policy used by the user-facing FastAPI CLI.
-
-    This is the small bridge object between:
-
-    - CLI mode selection
-    - boundary settings resolution
-    - startup summary output
-    """
+    """Resolved mode, authentication, and limiter settings for one CLI startup."""
 
     mode: FastApiRunMode
     auth_settings: ApiAuthSettings
@@ -74,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     share_parser.add_argument(
         "--api-key",
         default=None,
-        help="manual API key for share mode; if omitted, one is generated",
+        help="manual API key for share mode; overrides ESM_API_AUTH_ALLOWED_KEYS",
     )
 
     return parser
@@ -96,13 +90,15 @@ def run_from_args(
 ) -> None:
     """Apply one parsed startup mode and hand off to Uvicorn.
 
-    This keeps the user-facing startup path linear:
+    This keeps the user-facing startup path linear and fail-fast:
 
-    1. resolve runtime policy
-    2. print the startup summary
-    3. start the ASGI server
+    1. validate the requested bind exposure
+    2. resolve runtime policy
+    3. print the startup summary
+    4. start the ASGI server
     """
 
+    _validate_cli_bind_policy(mode=args.mode, host=args.host)
     runtime = prepare_cli_runtime(
         mode=args.mode,
         manual_api_key=getattr(args, "api_key", None),
@@ -114,6 +110,26 @@ def run_from_args(
         stdout=stdout,
     )
     _run_server(server_runner, host=args.host, port=args.port)
+
+
+def _validate_cli_bind_policy(*, mode: FastApiRunMode, host: str) -> None:
+    """Reject malformed hosts and local binds that are not loopback-only.
+
+    Validation runs before settings resolution or the Uvicorn handoff, so an
+    invalid request cannot alter process-local runtime configuration.
+    """
+
+    host_class = classify_bind_host(host)
+    if host_class is BindHostClass.INVALID:
+        raise ApiBoundaryConfigurationError(
+            "FastAPI bind host must be a numeric address or valid ASCII hostname "
+            "without brackets, ports, or surrounding whitespace"
+        )
+    if mode == "local" and host_class is not BindHostClass.LOOPBACK:
+        raise ApiBoundaryConfigurationError(
+            "Local FastAPI mode only permits loopback bind hosts. "
+            "Use `api_server_cli share --host <host>` for intentional network exposure"
+        )
 
 
 def prepare_cli_runtime(
@@ -164,26 +180,23 @@ def _apply_runtime_env(
 
     os.environ["ESM_FASTAPI_RUN_MODE"] = mode
     normalized_manual_api_key = _normalize_manual_api_key(manual_api_key)
-    if normalized_manual_api_key is None:
-        os.environ.pop("ESM_API_AUTH_ALLOWED_KEYS", None)
-        return
-    os.environ["ESM_API_AUTH_ALLOWED_KEYS"] = normalized_manual_api_key
+    if normalized_manual_api_key is not None:
+        os.environ["ESM_API_AUTH_ALLOWED_KEYS"] = normalized_manual_api_key
 
 
 def _normalize_manual_api_key(manual_api_key: str | None) -> str | None:
     """Normalize one manual share-mode key before exposing it to auth settings.
 
-    Share mode treats blank or whitespace-only keys as absent so the generated
-    key path can still produce a usable protected startup. Non-blank keys are
-    stripped for copy/paste friendliness before entering the env-driven
-    settings seam.
+    An omitted CLI option leaves environment configuration in control. An
+    explicitly blank value is invalid rather than a request to generate a new
+    key, which keeps startup credentials predictable.
     """
 
     if manual_api_key is None:
         return None
     normalized = manual_api_key.strip()
     if not normalized:
-        return None
+        raise ApiBoundaryConfigurationError("Manual share-mode API key must not be blank")
     if "," in normalized:
         raise ApiBoundaryConfigurationError(
             "Manual share-mode API key must be one key value and may not contain commas"
@@ -240,7 +253,7 @@ def _build_startup_summary_lines(
                     "Send it in the X-API-Key header.",
                     (
                         "Example: "
-                        f"curl -H 'X-API-Key: {runtime.auth_settings.generated_api_key}' "
+                        "curl -H 'X-API-Key: <generated-api-key>' "
                         f"http://{host}:{port}/sessions/<session_id>/alerts"
                     ),
                 ]

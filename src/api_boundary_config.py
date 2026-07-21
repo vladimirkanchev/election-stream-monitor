@@ -30,6 +30,8 @@ FASTAPI_RUN_MODE: FastApiRunMode = "local"
 API_AUTH_ENABLED = False
 API_AUTH_MODE: ApiAuthMode = "api_key"
 API_AUTH_ALLOWED_KEYS: tuple[str, ...] = ()
+# `token_urlsafe` receives random bytes, so this preserves 192 bits of entropy.
+GENERATED_SHARE_API_KEY_TOKEN_BYTES = 24
 ApiRateLimitStrategy = Literal["principal", "ip"]
 SUPPORTED_API_RATE_LIMIT_STRATEGIES: tuple[ApiRateLimitStrategy, ...] = (
     "principal",
@@ -73,7 +75,8 @@ class ApiAuthSettings:
 
     The shape stays intentionally auth-neutral so the route boundary can carry
     one caller-identity settings object today for API keys and later for other
-    auth models without redesigning the transport seam.
+    auth models without redesigning the transport seam. A generated key exists
+    only for this cached settings lifetime and must not be logged or persisted.
     """
 
     enabled: bool
@@ -155,18 +158,24 @@ def _parse_auth_mode_env(name: str, default: ApiAuthMode) -> ApiAuthMode:
     return cast(ApiAuthMode, normalized)
 
 
-def _parse_csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
-    """Parse one comma-separated environment value into a tuple of strings."""
+def _parse_api_auth_allowed_keys_env() -> tuple[str, ...]:
+    """Return configured API keys or reject explicitly blank entries.
 
+    An unset variable means no configured key. A present-but-empty value is a
+    configuration mistake, not a request to generate another share-mode key.
+    """
+
+    name = "ESM_API_AUTH_ALLOWED_KEYS"
     raw_value = os.getenv(name)
     if raw_value is None:
-        return default
-    values = tuple(
-        part.strip()
-        for part in raw_value.split(",")
-        if part.strip()
-    )
-    return values or default
+        return API_AUTH_ALLOWED_KEYS
+
+    values = tuple(part.strip() for part in raw_value.split(","))
+    if any(not value for value in values):
+        raise ApiBoundaryConfigurationError(
+            f"{name} must contain one or more non-blank comma-separated API keys"
+        )
+    return values
 
 
 def _parse_rate_limit_strategy_env(
@@ -217,6 +226,17 @@ def get_fastapi_run_mode_settings() -> FastApiRunModeSettings:
             FASTAPI_RUN_MODE,
         ),
     )
+
+
+def is_fastapi_documentation_enabled() -> bool:
+    """Return whether FastAPI's framework documentation may be served.
+
+    Local development keeps `/docs`, `/redoc`, and `/openapi.json` available.
+    Share mode hides those discovery surfaces by default; a future remote API
+    integration can add an explicit opt-in without weakening that default.
+    """
+
+    return get_fastapi_run_mode_settings().mode == "local"
 
 
 def clear_fastapi_boundary_settings_caches() -> None:
@@ -299,6 +319,10 @@ def validate_api_auth_settings(settings: ApiAuthSettings) -> None:
         raise ApiBoundaryConfigurationError(
             "FastAPI auth is enabled but no allowed API keys are configured"
         )
+    if any(not api_key.strip() for api_key in settings.allowed_api_keys):
+        raise ApiBoundaryConfigurationError(
+            "FastAPI auth contains a blank allowed API key"
+        )
 
 
 def _get_default_api_auth_enabled(run_mode: FastApiRunMode) -> bool:
@@ -334,14 +358,11 @@ def _resolve_api_auth_allowed_keys(
     """Resolve configured API keys plus any generated share-mode key.
 
     Share mode is intentionally lightweight. When auth is active there and no
-    manual key is configured, generate one strong process-local key so the
-    protected mode remains usable without a separate user-management step.
+    configured key exists, generate one strong process-local key so protected
+    sharing remains usable without a separate user-management step.
     """
 
-    configured_keys = _parse_csv_env(
-        "ESM_API_AUTH_ALLOWED_KEYS",
-        API_AUTH_ALLOWED_KEYS,
-    )
+    configured_keys = _parse_api_auth_allowed_keys_env()
     if configured_keys or not enabled or run_mode != "share":
         return configured_keys, None
 
@@ -350,9 +371,9 @@ def _resolve_api_auth_allowed_keys(
 
 
 def _generate_share_mode_api_key() -> str:
-    """Return one strong API key for the current share-mode process."""
+    """Return one 192-bit API key for the current share-mode settings lifetime."""
 
-    return f"esm_share_{secrets.token_urlsafe(24)}"
+    return f"esm_share_{secrets.token_urlsafe(GENERATED_SHARE_API_KEY_TOKEN_BYTES)}"
 
 
 def _get_default_api_rate_limit_enabled(run_mode: FastApiRunMode) -> bool:

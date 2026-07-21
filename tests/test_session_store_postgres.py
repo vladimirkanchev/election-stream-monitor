@@ -925,6 +925,49 @@ def test_bootstrap_postgres_session_store_initializes_schema_when_enabled(
     assert seen == ["connect", "initialize"]
 
 
+def test_bootstrap_postgres_session_store_redacts_schema_failure_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Schema bootstrap failures should not retain driver credential diagnostics."""
+    settings = _postgres_settings(auto_create_tables=True)
+    connection = RecordingConnection()
+    database_user = "session-store-user"
+    database_password = "session-store-password"
+    query_token = "session-store-query-token"
+    assignment_password = "session-store-assignment-password"
+    database_url = (
+        f"postgresql://{database_user}:{database_password}@db.example/esm"
+        f"?token={query_token}"
+    )
+
+    monkeypatch.setattr(
+        "session_store_postgres.connect_postgres_session_store",
+        lambda resolved_settings: connection,
+    )
+    monkeypatch.setattr(
+        "session_store_postgres.initialize_postgres_session_store",
+        lambda resolved_connection: (_ for _ in ()).throw(
+            RuntimeError(
+                f"schema failed for {database_url}; password={assignment_password}"
+            )
+        ),
+    )
+
+    with pytest.raises(PostgresSessionStoreBootstrapError) as error:
+        bootstrap_postgres_session_store(settings)
+
+    assert "Could not initialize the PostgreSQL session-store schema" in str(error.value)
+    assert "postgresql://<redacted>@db.example/esm?token=<redacted>" in str(
+        error.value
+    )
+    assert database_user not in str(error.value)
+    assert database_password not in str(error.value)
+    assert query_token not in str(error.value)
+    assert assignment_password not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+
+
 def test_bootstrap_postgres_session_store_skips_schema_init_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1117,10 +1160,16 @@ def test_connect_postgres_session_store_uses_validated_database_url_with_driver_
 
 def test_connect_postgres_session_store_wraps_driver_connection_errors(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Driver connection failures should become one stable bootstrap error."""
+    """Connection failures should retain redacted endpoint context only."""
+    database_url = (
+        "postgresql://encoded%20user:secret%3Avalue@db.example:5432/esm"
+        "?sslpassword=query-secret&application_name=esm"
+    )
     fake_psycopg = FakePsycopgModule(
-        connect_error=FakePsycopgModule.Error("database unavailable")
+        connect_error=FakePsycopgModule.Error(f"database unavailable: {database_url}")
     )
     monkeypatch.setattr(
         "session_store_postgres.load_postgres_session_store_driver",
@@ -1130,10 +1179,22 @@ def test_connect_postgres_session_store_wraps_driver_connection_errors(
     with pytest.raises(
         PostgresSessionStoreBootstrapError,
         match="Could not connect to the PostgreSQL session store",
-    ):
-        connect_postgres_session_store(_postgres_settings())
+    ) as error:
+        connect_postgres_session_store(_postgres_settings(database_url=database_url))
 
-    assert fake_psycopg.connect_calls == [VALID_POSTGRES_SESSION_URL]
+    assert "postgresql://<redacted>@db.example:5432/esm" in str(error.value)
+    assert "encoded%20user" not in str(error.value)
+    assert "secret%3Avalue" not in str(error.value)
+    assert "query-secret" not in str(error.value)
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+    assert fake_psycopg.connect_calls == [database_url]
+    captured = capsys.readouterr()
+    assert all(
+        secret not in sink
+        for secret in ("encoded%20user", "secret%3Avalue", "query-secret")
+        for sink in (captured.out, captured.err, caplog.text)
+    )
 
 
 # Keep the opt-in live smoke limited to real-database store guarantees.

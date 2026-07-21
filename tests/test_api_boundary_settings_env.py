@@ -13,10 +13,14 @@ boundary settings validation file.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Generator
+
 import pytest
 
 from config import (
     ApiBoundaryConfigurationError,
+    clear_fastapi_boundary_settings_caches,
     get_api_auth_settings,
     get_api_rate_limit_settings,
     get_fastapi_run_mode_settings,
@@ -29,7 +33,7 @@ from tests.api_boundary_env_test_support import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_boundary_settings_caches() -> None:
+def _clear_boundary_settings_caches() -> Generator[None, None, None]:
     """Keep cached FastAPI boundary settings isolated between env tests."""
 
     original_values = snapshot_boundary_env()
@@ -79,10 +83,10 @@ def test_get_api_auth_settings_defaults_follow_run_mode(
     assert settings.enabled is expected_enabled
 
 
-def test_get_api_auth_settings_generates_share_mode_api_key_when_missing(
+def test_get_api_auth_settings_generates_share_mode_api_key_when_unconfigured(
     monkeypatch,
 ) -> None:
-    """Share mode should auto-provision one API key when no manual key is supplied."""
+    """Share mode should generate one API key only when none is configured."""
 
     monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
     monkeypatch.delenv("ESM_API_AUTH_ENABLED", raising=False)
@@ -97,6 +101,37 @@ def test_get_api_auth_settings_generates_share_mode_api_key_when_missing(
     assert settings.generated_api_key.startswith("esm_share_")
 
 
+def test_get_api_auth_settings_generates_one_in_memory_key_per_settings_lifetime(
+    monkeypatch,
+) -> None:
+    """Generated keys should use the fixed entropy budget without environment storage."""
+
+    token_sizes: list[int] = []
+    tokens = iter(("first-token", "second-token"))
+
+    def fake_token_urlsafe(size: int) -> str:
+        token_sizes.append(size)
+        return next(tokens)
+
+    monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
+    monkeypatch.delenv("ESM_API_AUTH_ALLOWED_KEYS", raising=False)
+    monkeypatch.setattr(
+        "api_boundary_config.secrets.token_urlsafe",
+        fake_token_urlsafe,
+    )
+
+    first_settings = get_api_auth_settings()
+    assert get_api_auth_settings() is first_settings
+    assert first_settings.generated_api_key == "esm_share_first-token"
+    assert "ESM_API_AUTH_ALLOWED_KEYS" not in os.environ
+
+    clear_fastapi_boundary_settings_caches()
+    second_settings = get_api_auth_settings()
+
+    assert second_settings.generated_api_key == "esm_share_second-token"
+    assert token_sizes == [24, 24]
+
+
 def test_get_api_auth_settings_keeps_manual_key_in_share_mode(monkeypatch) -> None:
     """Share mode should prefer an explicitly configured key over auto-generation."""
 
@@ -109,6 +144,40 @@ def test_get_api_auth_settings_keeps_manual_key_in_share_mode(monkeypatch) -> No
     assert settings.enabled is True
     assert settings.allowed_api_keys == ("manual-demo-key",)
     assert settings.generated_api_key is None
+
+
+@pytest.mark.parametrize(
+    "configured_keys",
+    ("", "   ", "alpha,", ",beta", "alpha,  ,beta"),
+)
+def test_get_api_auth_settings_rejects_blank_configured_key_entries(
+    monkeypatch,
+    configured_keys: str,
+) -> None:
+    """Present but blank key entries must not silently trigger generation."""
+
+    monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", configured_keys)
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="ESM_API_AUTH_ALLOWED_KEYS must contain one or more non-blank",
+    ):
+        get_api_auth_settings()
+
+
+def test_get_api_auth_settings_does_not_echo_invalid_configured_key(monkeypatch) -> None:
+    """Configuration failures should identify the setting without exposing its value."""
+
+    configured_keys = "sensitive-key,"
+    monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", configured_keys)
+
+    with pytest.raises(ApiBoundaryConfigurationError) as raised:
+        get_api_auth_settings()
+
+    assert "ESM_API_AUTH_ALLOWED_KEYS" in str(raised.value)
+    assert configured_keys not in str(raised.value)
 
 
 @pytest.mark.parametrize("auth_override", ("false", "0", "off"))

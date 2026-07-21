@@ -90,6 +90,7 @@ py-modules = [
     "playback_sources",
     "playlist_collector",
     "playlist_utils",
+    "postgres_diagnostics",
     "processor",
     "session_cli",
     "session_alert_adapter",

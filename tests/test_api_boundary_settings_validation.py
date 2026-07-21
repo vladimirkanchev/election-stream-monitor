@@ -54,6 +54,25 @@ def test_validate_api_auth_settings_rejects_enabled_auth_without_allowed_keys() 
         )
 
 
+@pytest.mark.parametrize("allowed_api_keys", (("",), ("valid-key", "  ")))
+def test_validate_api_auth_settings_rejects_blank_allowed_keys(
+    allowed_api_keys: tuple[str, ...],
+) -> None:
+    """Programmatic settings must not bypass the configured-key contract."""
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="FastAPI auth contains a blank allowed API key",
+    ):
+        validate_api_auth_settings(
+            ApiAuthSettings(
+                enabled=True,
+                mode="api_key",
+                allowed_api_keys=allowed_api_keys,
+            )
+        )
+
+
 def test_validate_api_auth_settings_rejects_unimplemented_auth_mode() -> None:
     """Startup validation should reject auth modes the current runtime cannot serve."""
 

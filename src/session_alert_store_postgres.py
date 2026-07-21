@@ -27,6 +27,7 @@ from session_alert_store_postgres_config import (
     validate_postgres_alert_store_settings,
 )
 from session_models import AlertEvent, EventSeverity
+from postgres_diagnostics import redact_postgres_database_url, redact_postgres_diagnostic
 POSTGRES_ALERT_EVENTS_TABLE_NAME = "session_alert_events"
 POSTGRES_ALERT_EVENT_COLUMNS: tuple[str, ...] = (
     "session_id",
@@ -185,7 +186,7 @@ class PostgresSessionAlertStore(SessionAlertStore):
 def connect_postgres_alert_store(
     settings: PostgresAlertStoreSettings | None = None,
 ) -> PostgresAlertStoreConnection:
-    """Open one PostgreSQL connection for the explicit alert-store bootstrap path."""
+    """Open the explicit alert store with redacted failure context only."""
     resolved_settings = settings or get_postgres_alert_store_settings()
     database_url = _validated_postgres_alert_database_url(resolved_settings)
 
@@ -201,10 +202,14 @@ def connect_postgres_alert_store(
             PostgresAlertStoreConnection,
             psycopg.connect(database_url),
         )
-    except psycopg.Error as err:
-        raise PostgresAlertStoreBootstrapError(
-            "Could not connect to the PostgreSQL alert store"
-        ) from err
+    except psycopg.Error:
+        # Raise after this block so the raw driver diagnostic is not chained.
+        pass
+
+    raise PostgresAlertStoreBootstrapError(
+        "Could not connect to the PostgreSQL alert store at "
+        f"{redact_postgres_database_url(database_url)}"
+    )
 
 
 def initialize_postgres_alert_store(connection: PostgresAlertStoreConnection) -> None:
@@ -245,9 +250,19 @@ def bootstrap_postgres_alert_store(
     """
     resolved_settings = settings or get_postgres_alert_store_settings()
     connection = connect_postgres_alert_store(resolved_settings)
-    if resolved_settings.auto_create_tables:
+    if not resolved_settings.auto_create_tables:
+        return connection
+
+    try:
         initialize_postgres_alert_store(connection)
-    return connection
+    except Exception as error:
+        detail = redact_postgres_diagnostic(str(error))
+    else:
+        return connection
+
+    raise PostgresAlertStoreBootstrapError(
+        f"Could not initialize the PostgreSQL alert-store schema: {detail}"
+    )
 
 
 def _event_insert_params(event: AlertEvent) -> tuple[object, ...]:

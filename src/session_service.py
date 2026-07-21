@@ -25,6 +25,7 @@ from source_validation import validate_source_input
 from stream_loader import build_api_stream_start_session_contract
 
 TERMINAL_SESSION_STATUSES = {"completed", "cancelled", "failed"}
+_DETACHED_WORKER_EXCLUDED_ENV_NAMES = ("ESM_API_AUTH_ALLOWED_KEYS",)
 logger = get_logger(__name__)
 
 
@@ -191,11 +192,14 @@ def _spawn_detached_session_worker(
 def _build_detached_session_worker_env() -> dict[str, str]:
     """Return the parent environment used for detached worker startup.
 
-    Keeping the full environment avoids runtime drift and helps ensure parent
-    process reads/cancels and detached-worker writes resolve the same active
-    session-store backend.
+    Persistence settings remain available so parent reads/cancels and worker
+    writes choose the same backends. FastAPI credentials are excluded because
+    the worker does not serve HTTP requests and writes stderr to `worker.log`.
     """
-    return os.environ.copy()
+    worker_env = os.environ.copy()
+    for name in _DETACHED_WORKER_EXCLUDED_ENV_NAMES:
+        worker_env.pop(name, None)
+    return worker_env
 
 
 def _spawn_session_worker(

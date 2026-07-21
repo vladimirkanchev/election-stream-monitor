@@ -1256,13 +1256,16 @@ Focused FastAPI share-policy validation:
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 .venv/bin/pytest -p no:cacheprovider -q \
   tests/test_api_boundary_settings_env.py \
+  tests/test_api_bind_policy.py \
   tests/test_api_server_cli_runtime.py \
-  tests/test_api_server_cli_routes.py
+  tests/test_api_server_cli_routes.py \
+  tests/test_api_server_cli_output.py
 ```
 
 Use this smaller lane after changing run-mode defaults, API-key enforcement,
-or the public-versus-protected route split. It does not prove rate-limit
-coverage, response bounds, non-loopback bind safety, or MCP network security.
+bind admission, or the public-versus-protected route split. It proves the
+configuration policy without opening real sockets; it does not prove actual
+network reachability, response bounds, or MCP network security.
 
 The normal alert pass stays synthetic by default. For the opt-in live
 PostgreSQL alert smoke, use the alert entries in the setup map above. The
@@ -1610,25 +1613,19 @@ The current test split is:
   - direct validator coverage plus FastAPI startup validation integration
 - `tests/test_api_boundary_error_contracts.py`
   - non-429 FastAPI boundary error-header regression coverage
+- `tests/test_api_bind_policy.py`
+  - deterministic loopback, wildcard, non-loopback, and malformed-host
+    classification without DNS resolution
 - `tests/test_api_server_cli_runtime.py`
-  - explicit `local`/`share` CLI runtime preparation, overrides, generated-key
-    flow, fail-fast behavior, and CLI-only boundary posture decisions before
-    any HTTP request exists
+  - `local`/`share` runtime preparation, fail-fast configuration, and bind
+    admission before the Uvicorn handoff
 - `tests/test_api_server_cli_routes.py`
-  - real session, alert, and playback behavior under CLI-prepared `local` and
-    `share` mode, including open local access, `401`, `429`, and proof that
-    CLI-prepared share mode does not widen protection to public routes
-  - one representative route from each protected family proves that a valid
-    share key reaches normal route handling while local mode stays keyless
-  - also locks down that `/openapi.json` and `/detectors` remain outside the
-    operational-router authentication boundary
-  - keeps generated-key and manual-key access aligned across protected route
-    families
+  - authenticated session, alert, and playback behavior in `share` mode;
+    keyless local access; alert `429` behavior; minimal public health; and
+    local-only framework documentation
 - `tests/test_api_server_cli_output.py`
-  - startup summary output, generated-key guidance, manual-key non-leakage,
-    and operator-facing `share` versus `local` startup distinction
-  - also covers custom host/port reflection for both manual `share` and `local`
-    startup paths
+  - startup summaries, one-time generated-key disclosure, manual-key
+    non-leakage across output/log sinks, and custom host/port reflection
 - `tests/test_api_alert_route_auth_policy.py`
   - shared FastAPI alerts-router authentication policy, stable `401`
     behavior, cross-route invalid/missing-key consistency, and proof that the
@@ -1851,7 +1848,7 @@ Dedicated backend typecheck:
 
 ```bash
 uv sync --extra typecheck
-MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_bind_policy.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
 Use `uv sync --extra typecheck` to make sure the local typecheck env has the
@@ -1890,7 +1887,7 @@ Advisory backend pyright check:
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e .[typecheck]
-.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_bind_policy.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
 Use this as a non-blocking editor-aligned signal if you want pyright feedback

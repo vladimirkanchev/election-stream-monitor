@@ -37,43 +37,119 @@ rate-limit composition remains in
 
 ### Runtime Mode And Network Exposure
 
-The CLI applies runtime-mode policy and binding separately. Both `local` and
-`share` default to `127.0.0.1`, but both currently accept `--host` and pass it
-directly to Uvicorn.
+The CLI applies runtime-mode policy and binding together. Both `local` and
+`share` default to `127.0.0.1`; only `share` may intentionally bind a
+network-visible host.
 
 | Concern | `local` | `share` |
 | --- | --- | --- |
 | Default bind address | `127.0.0.1` | `127.0.0.1` |
-| Custom bind address | Accepted through `--host`, including non-loopback addresses | Accepted through `--host`, including non-loopback addresses |
+| Custom bind address | Canonical loopback values only | Loopback, wildcard, and network-visible values through `--host` |
 | Authentication default | Disabled | Enabled |
 | Rate-limit default | Disabled | Enabled |
-| Credentials | No key is generated | Generates one strong process-local API key when no manual key is supplied and auth remains enabled |
-| Startup output | Mode, listen address, auth state, and rate-limit state | The same summary plus protected-sharing guidance; a generated key is printed once, while a manual key is not echoed |
+| Credentials | No key is generated | Generates one process-local API key from 24 random bytes (192 bits) only when neither the CLI nor environment configuration supplies one and auth remains enabled |
+| Startup output | Mode, listen address, auth state, and rate-limit state | The same summary plus protected-sharing guidance; a generated key may be displayed intentionally, while a manual key is not echoed |
 
 `ESM_API_AUTH_ENABLED` can opt local mode into authentication, but it cannot
 disable authentication in `share` mode: that configuration fails before
 startup. `ESM_API_RATE_LIMIT_ENABLED` can still override the mode default.
-Startup validation also rejects enabled auth without usable keys, but it does
-not currently impose a relationship between run mode and bind address.
+Startup validation also rejects enabled auth without usable keys. The CLI
+separately rejects non-loopback or malformed local binds before runtime setup
+or Uvicorn handoff.
 
 Focused settings and CLI tests cover the supported false-like auth overrides,
 including conflicting manual API-key configuration, so this guarantee does not
 depend on startup documentation alone.
 
-**Current audit finding:** non-loopback exposure can happen without selecting
-`share`, for example through `api_server_cli local --host 0.0.0.0`. In that
-case local-mode auth and rate limiting remain disabled by default. Therefore,
-the eventual access policy must consider route, run mode, and bind address
-together; `local` must not be interpreted as an enforced loopback-only mode.
+### Secret-Bearing Surface Audit
 
-This is a documented current-state gap. The later bind/exposure hardening task
-will decide and enforce the permitted host-and-mode combinations.
+This audit distinguishes the one intentional direct-terminal disclosure of a
+generated share key from unsafe disclosure through logs, errors, artifacts, or
+persisted configuration.
+
+| Surface | Secret flow | Current protection | Gap or follow-up |
+| --- | --- | --- | --- |
+| Manual API key | `--api-key` or `ESM_API_AUTH_ALLOWED_KEYS` enters `ApiAuthSettings` and the request-auth seam | CLI input takes precedence over the environment; an omitted flag preserves an environment key; blank explicit entries fail without echoing their value | Generated-key output is handled separately. |
+| Generated share key | `secrets.token_urlsafe(24)` creates an in-memory `ApiAuthSettings` key when share auth has no configured key | The key is process-local and appears once in direct CLI output; generated commands use a placeholder, and normal auth telemetry never logs the key | A later deployment path should use managed secrets rather than terminal disclosure. |
+| Request header | `X-API-Key` is normalized and compared inside `api_auth.py` | Auth-failure logs record only a route path and fixed reason code; the authenticated principal carries a fingerprint rather than the raw key | Successful-request telemetry is not added in this branch. |
+| PostgreSQL URL | Session and alert database URL env values flow through typed settings into the selected PostgreSQL driver | Configuration validation names settings without values; connection and bootstrap failures are sanitized | Detailed diagnostic and worker handling is owned by [session-persistence-audit.md](./session-persistence-audit.md#credential-diagnostics). |
+| Detached worker | `session_service` copies the parent environment and redirects worker stdout/stderr to the session worker log | The worker preserves persistence selection but excludes FastAPI API-key settings; persistence errors are sanitized before they reach worker diagnostics | A later deployment path can narrow inherited environment variables further. |
+| CI and test helpers | Tests use fixture credentials; weekly PostgreSQL jobs pass a disposable service URL to helpers | Alert weekly helpers redact their printed plan and GitHub masks configured secrets in CI output | Keep real deployment credentials out of workflow literals and add redaction tests for any helper that reports connection failures. |
+
+### Secret-Handling Contract
+
+The following enforced contract covers supported FastAPI and worker paths.
+PostgreSQL-specific diagnostic handling is summarized here and detailed in the
+[persistence audit](./session-persistence-audit.md#credential-diagnostics).
+
+| Channel | Required behavior |
+| --- | --- |
+| Logs, exceptions, tracebacks, worker logs, CI artifacts, and routine diagnostics | Never contain a raw API key, request header value, database password, or complete credential-bearing PostgreSQL URL. A sanitized failure may retain the backend, setting name, host, and error class. |
+| Manual API keys | Are never echoed in CLI output, logs, errors, or generated commands. A blank or malformed explicitly supplied key is a configuration error, not a request to generate another key. |
+| Generated share key | Uses 24 random bytes (192 bits) in process memory only, is not written to environment variables or files, and may appear exactly once in direct interactive CLI stdout. Example commands must use a placeholder rather than repeat the raw key. |
+| Configuration errors | Identify the invalid setting and actionable expected form without showing the supplied value. The same rule applies to CLI parsing, runtime settings, and bootstrap errors. |
+| PostgreSQL diagnostics | Redact URL credentials and sensitive query values before they reach observable errors or diagnostics. Safe endpoint context may remain when useful. |
+
+Key resolution is deterministic: `--api-key` overrides
+`ESM_API_AUTH_ALLOWED_KEYS`; when neither is configured, enabled share mode
+generates one process-local key. Omitted configuration is distinct from an
+explicit blank value, which fails before startup without echoing the value.
+
+`--api-key` remains a local operator convenience, not a recommended deployment
+secret transport: operating systems may expose command arguments to the local
+user or process inspector. It must still obey the no-log and no-echo rules
+above. A future secret-manager or deployment integration can provide a safer
+injection mechanism without changing this HTTP contract.
+
+### Bind And Startup Ownership
+
+The current startup paths are intentionally distinct. This inventory records
+where a host can enter the system so later bind enforcement does not disrupt
+the Electron desktop path.
+
+| Startup path | Bind or target owner | Current behavior | Relevant confidence |
+| --- | --- | --- | --- |
+| `python -m api_server_cli local|share` | `api_server_cli` parses and classifies `--host` before Uvicorn handoff | Both modes default to `127.0.0.1`; `local` accepts only canonical loopback values, while `share` accepts valid network-visible binds | `tests/test_api_bind_policy.py`, `tests/test_api_server_cli_runtime.py`, `tests/test_api_server_cli_output.py` |
+| Electron desktop runtime | `frontend/electron/fastApiLocalRuntimeConfig.mjs` fixes the spawned backend host to `127.0.0.1` | Starts a local Uvicorn child through the startup orchestrator; normal desktop startup has no user-selected bind host and the backend's local mode remains keyless by default | `frontend/electron/fastApiStartupOrchestrator.test.mjs`, `tests/test_api_server_cli_routes.py` |
+| Electron external-backend override | `ELECTION_API_BASE_URL` | Electron does not spawn a local backend and sends bridge requests to the supplied URL | Electron client and startup-policy tests |
+| Raw Uvicorn command | operator shell | `uvicorn api.app:app --app-dir src` bypasses CLI mode and host handling; application lifespan validates auth and limiter settings only | backend-only development path |
+
+`src/api_boundary_config.py` owns current run-mode, authentication, and
+rate-limit validation. It does not receive a bind host, so it cannot currently
+enforce a host-and-mode relationship. The FastAPI application lifespan calls
+that validation for every startup path, but it cannot distinguish the CLI,
+Electron, or raw-Uvicorn launcher.
+
+### Bind-Policy Contract
+
+The following policy is enforced by the supported `api_server_cli` startup
+path before settings resolution, startup output, or Uvicorn handoff.
+
+| Mode | Host class | Required outcome |
+| --- | --- | --- |
+| `local` | Canonical loopback: any IPv4 address in `127.0.0.0/8`, IPv6 `::1`, or exact `localhost` | Allowed; API-key authentication remains off by default. |
+| `local` | Wildcard or non-loopback: `0.0.0.0`, `::`, private or public IPs, custom hostnames, IPv4-mapped IPv6, malformed values, or whitespace-padded values | Rejected before startup with guidance to use `share` for intentional network exposure. |
+| `share` | Loopback | Allowed; API-key authentication is required. |
+| `share` | Wildcard or non-loopback, including `0.0.0.0`, `::`, private/public IPs, and valid hostnames | Allowed; API-key authentication is required. |
+
+`localhost` is the sole hostname accepted by `local` mode. The implementation
+must not resolve arbitrary hostnames and infer safety from the result: DNS or
+host-file configuration can vary between machines. Bracketed IPv6 URL syntax,
+such as `[::1]`, is not a CLI bind host and should be rejected rather than
+silently normalized. The policy also treats IPv4-mapped IPv6 forms as
+non-loopback to avoid ambiguous bind behavior.
+
+Electron remains compliant because its managed backend is pinned to
+`127.0.0.1`. A raw `uvicorn api.app:app` command has no
+run-mode input, so it is a backend-development escape hatch rather than a
+supported network-sharing launcher; operators who need non-loopback exposure
+must use `api_server_cli share`.
 
 ### Security Classification Vocabulary
 
-Use these terms in route, MCP, test, and deployment notes. They describe the
-intended access contract; they do not claim that every current route already
-enforces it.
+Use these terms in route, MCP, test, and deployment notes. The route matrix
+marks each entry as enforced or still pending; do not infer enforcement from
+the vocabulary alone.
 
 | State | Meaning |
 | --- | --- |
@@ -102,16 +178,16 @@ dependency elsewhere today.
 The table states current behavior first. The authentication columns record
 whether an API key is required under each mode's configuration: local mode may
 opt into authentication, while share mode cannot opt out. The final policy
-column distinguishes active enforcement from decisions still deferred. All
-HTTP routes can be network-visible today if either mode is started with a
-non-loopback host. Rate-limit ownership is recorded in the next section.
+column distinguishes active enforcement from decisions still deferred. Network
+exposure through the supported CLI requires `share` mode; rate-limit ownership
+is recorded in the next section.
 
 | Surface | Operation | Local policy now | Share policy now | Auth required locally | Auth required in share | Current policy owner | Enforcement status | Remote availability now |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `GET`, `HEAD /openapi.json` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
-| `GET`, `HEAD /docs` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
-| `GET`, `HEAD /docs/oauth2-redirect` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
-| `GET`, `HEAD /redoc` | diagnostic | `local-public` | `share-public` | No | No | FastAPI framework | Decision pending: `local-only` | Yes; unprotected |
+| `GET`, `HEAD /openapi.json` | diagnostic | `local-public` | `local-only` | No | N/A: endpoint returns `404` | FastAPI framework plus app documentation guard | Enforced: `local-only` | No in share mode |
+| `GET`, `HEAD /docs` | diagnostic | `local-public` | `local-only` | No | N/A: endpoint returns `404` | FastAPI framework plus app documentation guard | Enforced: `local-only` | No in share mode |
+| `GET`, `HEAD /docs/oauth2-redirect` | diagnostic | `local-public` | `local-only` | No | N/A: endpoint returns `404` | FastAPI framework plus app documentation guard | Enforced: `local-only` | No in share mode |
+| `GET`, `HEAD /redoc` | diagnostic | `local-public` | `local-only` | No | N/A: endpoint returns `404` | FastAPI framework plus app documentation guard | Enforced: `local-only` | No in share mode |
 | `GET /health` | diagnostic | `local-public` | `share-public` | No | No | Health router | Enforced: minimal `share-public` status | Yes; public minimal-status route |
 | `GET /detectors` | read | `local-public` | `share-public` | No | No | Detectors router | Decision pending: `share-protected` | Yes; unprotected |
 | `POST /sessions` | mutation | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Sessions router through `require_http_principal` | Enforced: `share-protected` | Yes; protected in share |
@@ -129,18 +205,16 @@ share mode. Alerts compose the same dependency with their router-specific
 limiter; sessions and playback have no limiter policy yet.
 
 The enforced `share-protected` set is limited to the operational routes shown
-in the matrix. Detector catalog, framework documentation, and health-route
-policy remain separate decisions.
+in the matrix. Framework documentation is `local-only`; detector catalog and
+health-route policy remain separate decisions.
 
 ### Intentionally Public Surfaces
 
 This change intentionally preserves `GET /health` as a minimal
-`share-public` reachability response. It also leaves the detector catalog and
-FastAPI documentation surfaces unchanged: `/detectors`, `/docs`, and
-`/openapi.json` remain outside the operational-router authentication scope.
-Their future share-mode policy remains a separate decision recorded in the
-matrix; this branch does not treat their current public status as an
-implementation defect.
+`share-public` reachability response. It keeps `/detectors` outside the
+operational-router authentication scope pending a separate policy decision.
+Framework documentation endpoints are disabled in share mode and remain
+available locally; a future remote API integration may add an explicit opt-in.
 
 ### Rate-Limit And Resource Controls
 
@@ -154,7 +228,7 @@ the principal strategy uses one shared local identity.
 
 | Route family | Rate limit and identity today | Existing input or result control | Missing resource control to record |
 | --- | --- | --- | --- |
-| Framework docs, OpenAPI, health | None | Small static or constant responses | No route-specific abuse control; share-mode exposure is addressed by the intended route policy |
+| Framework docs, OpenAPI, health | None | Small static or constant responses | Framework docs are local-only; health remains a minimal public status route |
 | Detector catalog | None | Optional `mode` is a fixed enum; catalog is registry-backed | No request budget if exposed remotely |
 | Session start | None | `mode` is a fixed enum; source validation rejects blank, unsupported, missing, and disallowed remote sources | No request budget, body-size cap, or detector-count cap before a detached worker is started |
 | Session read | None | Session identifier is the only route input | Snapshot may contain unbounded persisted alerts and results; no response cap or pagination |
@@ -176,7 +250,7 @@ session start, cancellation, playback resolution, and potentially large read
 responses still need their own proportionate request, input, or result bounds.
 The later resource-abuse task owns those implementation choices.
 
-### Security Gaps And Intended Decisions
+### Remaining Security Gaps And Decisions
 
 This register compares current behavior with the intended access policy. Its
 classifications set branch priority; they do not imply that every hosted-system
@@ -184,21 +258,22 @@ control belongs in this local-first project now.
 
 | Surface or concern | Current behavior | Intended decision | Classification |
 | --- | --- | --- | --- |
-| Mode and bind address | `local` accepts non-loopback `--host` values while auth and rate limiting remain off by default | Treat non-loopback binding as an explicit sharing decision; reject or safely promote an unprotected `local` bind | Confirmed unsafe exposure |
+| Mode and bind address | Supported CLI enforces loopback-only `local` binds; `share` permits explicit network-visible binds with authentication | Keep non-loopback binding behind explicit `share` selection; keep raw Uvicorn documented as a development escape hatch | Implemented policy; raw-Uvicorn limitation remains |
 | Session start, read, and cancel | API-key authentication applies in `share`; no rate or result-size policy applies yet | Preserve `share-protected`; apply proportionate limits to start and cancel, and bound large reads separately | Acceptable local-first limitation |
 | Playback resolution | API-key authentication applies in `share`; no rate policy applies yet | Preserve `share-protected`; retain source and remote-host validation and add an applicable request budget | Acceptable local-first limitation |
 | Alert and incident reads | API-key and fixed-window protection already apply in `share`; raw and timeline responses are unbounded | Preserve `share-protected`; add pagination or response bounds before broader remote use | Acceptable local-first limitation |
 | Detector catalog | Unauthenticated in `share` mode | Treat detector metadata as `share-protected` for one consistent remote API boundary | Policy gap requiring a decision |
-| `/docs`, `/redoc`, OAuth redirect, and `/openapi.json` | Enabled without authentication in `share` mode | Keep available as `local-public`, but disable in `share` mode | Policy gap requiring a decision |
+| `/docs`, `/redoc`, OAuth redirect, and `/openapi.json` | Available locally and return `404` in `share` mode | Keep framework discovery local-only; add remote opt-in only for a deliberate integration need | Implemented policy |
 | `/health` | Returns a small unauthenticated response | Keep `share-public`, limited to minimal reachability/readiness status with no configuration, dependency, or secret detail | Policy gap requiring a decision |
 | Share-mode authentication override | `ESM_API_AUTH_ENABLED=false` is rejected before startup; rate limiting remains independently configurable | Preserve mandatory share-mode authentication; decide later whether rate limiting also becomes mandatory | Implemented share-mode guarantee |
 | HTTP limiter scope | In-memory and per process | Keep for the current single-process runtime; require shared enforcement only before multi-worker or distributed deployment | Later deployment concern |
 | MCP tools | Four read-only alert tools run over trusted local `stdio`, without HTTP auth or HTTP rate limiting | Keep `MCP-local-read-only` and `disabled-remotely`; do not add a network transport in this branch | Acceptable local-first limitation |
 | Future remote MCP | No network transport exists | Treat remote MCP as a new security boundary requiring separate authentication, authorization, request/result bounds, and error review | Later deployment concern |
 
-The immediate implementation backlog is therefore bounded to bind/mode
-enforcement, framework-doc availability, minimal health output, and
-proportionate HTTP resource controls.
+The immediate implementation backlog is therefore bounded to minimal health
+output and proportionate HTTP resource controls. Bind/mode enforcement and
+framework-doc availability are implemented in the supported CLI/application
+path.
 Distributed throttling and remote MCP remain deployment-stage work rather than
 defects in the current local transport model.
 
@@ -212,7 +287,7 @@ should link here rather than repeat the matrix.
 
 | Guarantee to protect after implementation | Regression-test owner |
 | --- | --- |
-| Loopback-only local mode and safe non-loopback/share startup | `tests/test_api_server_cli_runtime.py` |
+| Host classification, loopback-only local mode, and safe share startup | `tests/test_api_bind_policy.py`, `tests/test_api_server_cli_runtime.py` |
 | Share-mode admission, `401` envelopes, and intentional public-route classification | `tests/test_api_server_cli_routes.py` |
 | Alert-specific auth logging and limiter ordering | `tests/test_api_alert_route_auth_policy.py` |
 | Rate-limit envelopes and route-family budgets | `tests/test_api_alert_route_rate_limit_policy.py`, expanded or renamed with the protected route scope |
@@ -264,8 +339,8 @@ The current CLI-focused test slice reflects that role:
 - route tests protect the real `local`/`share` boundary behavior without
   treating the CLI as the primary desktop runtime path
 - route tests keep the public-surface split explicit: protected session,
-  alert, and playback operations versus open `/health`, `/docs`,
-  `/openapi.json`, and `/detectors`
+  alert, and playback operations versus open `/health` and `/detectors`, with
+  framework docs available locally but hidden in share mode
 - representative session, alert, and playback routes prove the shared policy
   in both modes: local calls need no key, share calls without a key return
   `401`, and share calls with a generated or configured key reach normal route
@@ -322,14 +397,9 @@ Electron now:
 - waits briefly for `/health` during startup
 - uses one shared runtime policy for unavailable-backend behavior
 
-The next step is to harden and validate that startup model rather than decide
-whether it should exist.
-
-That means:
-
-- validating startup/readiness ownership with focused Electron tests
-- deciding whether any development-only escape hatch is still needed
-- tightening docs and runtime policy as the model settles
+The supported Electron and CLI paths now have focused startup-policy coverage.
+Raw Uvicorn remains a documented backend-development escape hatch rather than
+a network-sharing path.
 
 ## Run Locally
 
@@ -355,8 +425,9 @@ For temporary protected demo/shared access:
 PYTHONPATH=src python -m api_server_cli share
 ```
 
-If you omit `--api-key` in `share` mode, the CLI generates one API key and
-prints it once together with `X-API-Key` usage guidance.
+If neither `--api-key` nor `ESM_API_AUTH_ALLOWED_KEYS` is set in `share` mode,
+the CLI generates one API key and prints it once together with `X-API-Key`
+usage guidance.
 
 The backend still uses the current flat `src/` module layout, so
 `PYTHONPATH=src` remains the intended raw-checkout startup path for this CLI.
@@ -369,7 +440,7 @@ useful for backend-focused development and debugging.
 tooling and debugging, but it is not a peer startup path to Electron. It is a
 shared-service adapter for backend-focused workflows.
 
-Open the interactive docs at:
+In local mode, open the interactive docs at:
 
 - `http://127.0.0.1:8000/docs`
 

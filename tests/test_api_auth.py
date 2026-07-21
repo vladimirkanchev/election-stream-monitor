@@ -75,7 +75,7 @@ def test_authenticate_api_request_accepts_generated_share_mode_key() -> None:
 
 def test_authenticate_api_request_rejects_missing_api_key() -> None:
     """Enabled API-key mode should reject a missing credential."""
-    with pytest.raises(AuthenticationError, match="Missing API key"):
+    with pytest.raises(AuthenticationError, match="Missing API key") as caught:
         authenticate_api_request(
             x_api_key=None,
             settings=ApiAuthSettings(
@@ -84,6 +84,7 @@ def test_authenticate_api_request_rejects_missing_api_key() -> None:
                 allowed_api_keys=("alpha-secret",),
             ),
         )
+    assert caught.value.reason_code == "missing_api_key"
 
 
 def test_authenticate_api_request_treats_blank_api_key_as_missing() -> None:
@@ -101,7 +102,7 @@ def test_authenticate_api_request_treats_blank_api_key_as_missing() -> None:
 
 def test_authenticate_api_request_rejects_invalid_api_key() -> None:
     """Unknown keys should fail cleanly without producing a principal."""
-    with pytest.raises(AuthenticationError, match="Invalid API key"):
+    with pytest.raises(AuthenticationError, match="Invalid API key") as caught:
         authenticate_api_request(
             x_api_key="wrong-secret",
             settings=ApiAuthSettings(
@@ -110,6 +111,7 @@ def test_authenticate_api_request_rejects_invalid_api_key() -> None:
                 allowed_api_keys=("alpha-secret",),
             ),
         )
+    assert caught.value.reason_code == "invalid_api_key"
 
 
 def test_authenticate_api_request_rejects_enabled_mode_without_keys() -> None:
@@ -117,7 +119,7 @@ def test_authenticate_api_request_rejects_enabled_mode_without_keys() -> None:
     with pytest.raises(
         AuthenticationError,
         match="API key authentication is enabled but no allowed API keys are configured",
-    ):
+    ) as caught:
         authenticate_api_request(
             x_api_key="alpha-secret",
             settings=ApiAuthSettings(
@@ -126,11 +128,15 @@ def test_authenticate_api_request_rejects_enabled_mode_without_keys() -> None:
                 allowed_api_keys=(),
             ),
         )
+    assert caught.value.reason_code == "auth_configuration_invalid"
 
 
 def test_authenticate_api_request_rejects_unsupported_mode() -> None:
     """The shared auth seam should reject modes that are not implemented yet."""
-    with pytest.raises(AuthenticationError, match="Unsupported API authentication mode"):
+    with pytest.raises(
+        AuthenticationError,
+        match="Unsupported API authentication mode",
+    ) as caught:
         authenticate_api_request(
             x_api_key="alpha-secret",
             settings=ApiAuthSettings(
@@ -139,3 +145,4 @@ def test_authenticate_api_request_rejects_unsupported_mode() -> None:
                 allowed_api_keys=("alpha-secret",),
             ),
         )
+    assert caught.value.reason_code == "unsupported_auth_mode"

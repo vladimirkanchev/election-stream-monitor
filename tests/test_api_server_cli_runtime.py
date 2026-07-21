@@ -1,27 +1,22 @@
-"""Focused tests for CLI runtime selection and mode-driven boundary state.
+"""Tests for CLI runtime selection and bind admission before server handoff.
 
-This file owns `prepare_cli_runtime(...)` behavior:
-
-- mode defaults
-- manual versus generated key resolution
-- override precedence
-- fail-fast validation
-- recovery after bad startup attempts
-- CLI-specific boundary posture decisions before any HTTP request exists
-
-Route-level behavior and startup output live in neighboring files.
+Route behavior and operator-facing output belong in neighboring test modules.
 """
 
 from __future__ import annotations
 
+import argparse
+import io
 import re
 from collections.abc import Generator
 from typing import Literal
+from unittest.mock import ANY, Mock
 
 import pytest
 
-from api_server_cli import prepare_cli_runtime
+from api_server_cli import prepare_cli_runtime, run_from_args
 from config import ApiBoundaryConfigurationError
+from api_boundary_config import get_api_auth_settings
 from tests.api_boundary_env_test_support import (
     reset_boundary_test_state,
     restore_boundary_test_state,
@@ -52,10 +47,10 @@ def _clear_boundary_settings_caches() -> Generator[None, None, None]:
         ("local", None, False, False, (), False),
         ("share", None, True, True, None, True),
         ("share", "demo-manual-key", True, True, ("demo-manual-key",), False),
-        ("share", "   ", True, True, None, True),
     ],
 )
 def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
+    monkeypatch,
     mode: Literal["local", "share"],
     manual_api_key: str | None,
     auth_enabled: bool,
@@ -63,18 +58,10 @@ def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
     expected_keys: tuple[str, ...] | None,
     generated: bool,
 ) -> None:
-    """CLI runtime preparation should resolve one predictable boundary posture.
+    """Mode and key-source combinations should resolve a stable boundary posture."""
 
-    The small parameter matrix keeps the same assertions for:
-
-    - open local startup
-    - generated-key share startup
-    - manual-key share startup
-    - blank-manual-key fallback to generated-key startup
-    This file intentionally stops at the prepared runtime object. Questions
-    about which real routes stay open or protected belong in the neighboring
-    CLI route tests.
-    """
+    if mode == "share" and manual_api_key is None:
+        monkeypatch.delenv("ESM_API_AUTH_ALLOWED_KEYS", raising=False)
 
     runtime = prepare_cli_runtime(mode=mode, manual_api_key=manual_api_key)
 
@@ -90,6 +77,40 @@ def test_prepare_cli_runtime_resolves_mode_defaults_and_share_key_source(
         return
     assert runtime.auth_settings.generated_api_key is None
     assert runtime.auth_settings.allowed_api_keys == expected_keys
+
+
+def test_prepare_cli_runtime_uses_environment_key_when_cli_key_is_omitted(
+    monkeypatch,
+) -> None:
+    """An omitted CLI key should preserve the configured environment key."""
+
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", "environment-key")
+
+    runtime = prepare_cli_runtime(mode="share", manual_api_key=None)
+
+    assert runtime.auth_settings.allowed_api_keys == ("environment-key",)
+    assert runtime.auth_settings.generated_api_key is None
+
+
+def test_prepare_cli_runtime_manual_key_overrides_environment_key(monkeypatch) -> None:
+    """The explicit CLI key should take precedence for this startup process."""
+
+    monkeypatch.setenv("ESM_API_AUTH_ALLOWED_KEYS", "environment-key")
+
+    runtime = prepare_cli_runtime(mode="share", manual_api_key="cli-key")
+
+    assert runtime.auth_settings.allowed_api_keys == ("cli-key",)
+    assert runtime.auth_settings.generated_api_key is None
+
+
+def test_prepare_cli_runtime_rejects_blank_manual_share_key() -> None:
+    """An explicit blank CLI key must not silently trigger key generation."""
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="Manual share-mode API key must not be blank",
+    ):
+        prepare_cli_runtime(mode="share", manual_api_key="   ")
 
 
 def test_prepare_cli_runtime_share_mode_honors_explicit_rate_limit_override(
@@ -288,3 +309,78 @@ def test_prepare_cli_runtime_share_mode_rejects_invalid_rate_limit_strategy_over
             mode="share",
             manual_api_key=None,
         )
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["0.0.0.0", "::", "192.168.1.20", "demo.example.test", "::ffff:127.0.0.1"],
+)
+def test_run_from_args_rejects_network_visible_local_bind_before_server_handoff(
+    host: str,
+) -> None:
+    """Local mode must fail before startup reaches the Uvicorn handoff."""
+
+    server_runner = Mock()
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="Local FastAPI mode only permits loopback bind hosts",
+    ):
+        run_from_args(
+            argparse.Namespace(mode="local", host=host, port=8000, api_key=None),
+            stdout=io.StringIO(),
+            server_runner=server_runner,
+        )
+
+    server_runner.assert_not_called()
+
+
+@pytest.mark.parametrize("host", ["[::1]", "127.0.0.1:8000", " bad-host"])
+def test_run_from_args_rejects_invalid_bind_before_server_handoff(host: str) -> None:
+    """Malformed bind values must fail in both modes rather than reach Uvicorn."""
+
+    server_runner = Mock()
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="FastAPI bind host must be a numeric address or valid ASCII hostname",
+    ):
+        run_from_args(
+            argparse.Namespace(mode="share", host=host, port=8000, api_key=None),
+            stdout=io.StringIO(),
+            server_runner=server_runner,
+        )
+
+    server_runner.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("mode", "host", "expected_auth_enabled"),
+    [
+        ("local", "::1", False),
+        ("share", "0.0.0.0", True),
+        ("share", "::", True),
+        ("share", "2001:db8::10", True),
+    ],
+)
+def test_run_from_args_admits_policy_permitted_binds_without_opening_a_socket(
+    mode: Literal["local", "share"],
+    host: str,
+    expected_auth_enabled: bool,
+) -> None:
+    """Permitted loopback and share binds should reach only the fake handoff.
+
+    This tests CLI admission, not whether a particular machine can bind the
+    address. `share` must resolve API-key authentication before the handoff.
+    """
+
+    server_runner = Mock()
+
+    run_from_args(
+        argparse.Namespace(mode=mode, host=host, port=8000, api_key=None),
+        stdout=io.StringIO(),
+        server_runner=server_runner,
+    )
+
+    server_runner.assert_called_once_with(ANY, host=host, port=8000)
+    assert get_api_auth_settings().enabled is expected_auth_enabled

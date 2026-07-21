@@ -35,6 +35,7 @@ from session_store import (
     build_empty_session_snapshot_payload,
     build_session_snapshot_payload,
 )
+from postgres_diagnostics import redact_postgres_database_url, redact_postgres_diagnostic
 
 from session_store_postgres_config import (
     PostgresSessionStoreConfigurationError,
@@ -611,17 +612,21 @@ def load_postgres_session_store_driver() -> ModuleType:
 def connect_postgres_session_store(
     settings: PostgresSessionStoreSettings | None = None,
 ) -> PostgresSessionStoreConnection:
-    """Open one PostgreSQL connection for bootstrap and store operations."""
+    """Open one PostgreSQL connection with redacted failure context only."""
     resolved_settings = settings or get_postgres_session_store_settings()
     database_url = _validated_postgres_session_database_url(resolved_settings)
     psycopg = load_postgres_session_store_driver()
 
     try:
         return psycopg.connect(database_url)
-    except psycopg.Error as err:
-        raise PostgresSessionStoreBootstrapError(
-            "Could not connect to the PostgreSQL session store"
-        ) from err
+    except psycopg.Error:
+        # Raise after this block so the raw driver diagnostic is not chained.
+        pass
+
+    raise PostgresSessionStoreBootstrapError(
+        "Could not connect to the PostgreSQL session store at "
+        f"{redact_postgres_database_url(database_url)}"
+    )
 
 
 def initialize_postgres_session_store(connection: PostgresSessionStoreConnection) -> None:
@@ -643,12 +648,26 @@ def reset_postgres_session_store_schema(connection: PostgresSessionStoreConnecti
 def bootstrap_postgres_session_store(
     settings: PostgresSessionStoreSettings | None = None,
 ) -> PostgresSessionStoreConnection:
-    """Open the PostgreSQL backend and bootstrap known tables only on opt-in."""
+    """Open the explicit backend and optionally bootstrap its current schema.
+
+    Table creation is a convenience for an explicitly selected store. It does
+    not upgrade or transform existing databases.
+    """
     resolved_settings = settings or get_postgres_session_store_settings()
     connection = connect_postgres_session_store(resolved_settings)
-    if should_auto_create_postgres_session_store_tables(resolved_settings):
+    if not should_auto_create_postgres_session_store_tables(resolved_settings):
+        return connection
+
+    try:
         initialize_postgres_session_store(connection)
-    return connection
+    except Exception as error:
+        detail = redact_postgres_diagnostic(str(error))
+    else:
+        return connection
+
+    raise PostgresSessionStoreBootstrapError(
+        f"Could not initialize the PostgreSQL session-store schema: {detail}"
+    )
 
 
 def _validated_postgres_session_database_url(
