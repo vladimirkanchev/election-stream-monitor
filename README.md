@@ -476,32 +476,26 @@ PYTHONPATH=src python -m api_server_cli share
 ```
 
 `share` mode requires an API key for operational routes and enables alert-route
-rate limiting. If you do not pass a manual key, the CLI generates one and
-prints it once. It is for temporary local or demo sharing, not production
-deployment.
+rate limiting. If neither `--api-key` nor `ESM_API_AUTH_ALLOWED_KEYS` supplies
+a key, the CLI generates one and prints it once. It is for temporary local or
+demo sharing, not production deployment.
 
 Explicit shared-demo key:
 
 ```bash
 . .venv/bin/activate
-PYTHONPATH=src python -m api_server_cli share --api-key my-demo-key
+ESM_API_AUTH_ALLOWED_KEYS=my-demo-key PYTHONPATH=src python -m api_server_cli share
 ```
 
-Use any long random string for `my-demo-key`.
+For a temporary local demo, `--api-key` remains supported but can be visible to
+local process inspection. The full key-handling policy is in the
+[FastAPI boundary guide](./docs/fastapi-boundary.md#secret-handling-contract).
 
 If you want Electron to use a separately started `share` backend:
 
 ```bash
 ELECTION_API_BASE_URL=http://127.0.0.1:8002 npm run dev
 ```
-
-Stronger key generator:
-
-```bash
-python -c "import secrets; print('esm_demo_' + secrets.token_urlsafe(24))"
-```
-
-Then pass that value with `--api-key`.
 
 Local MCP server:
 
