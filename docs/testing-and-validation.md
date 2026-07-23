@@ -1495,6 +1495,22 @@ The current functionality under that slice is:
 - grouped incident summaries
 - stdio MCP launch wiring over the same shared service seam
 
+For MCP-only bounds, allowlist, error, and local-trust changes, use the
+smaller deterministic slice:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider -q \
+  tests/test_mcp_server_contracts.py \
+  tests/test_mcp_server_alerts_errors.py \
+  tests/test_mcp_server_incidents_errors.py \
+  tests/test_mcp_fastapi_boundary_split.py \
+  tests/test_api_read_resource_policy.py
+```
+
+It covers MCP's local stdio boundary and shared response/storage-work bounds;
+it does not test a remote MCP transport because none exists.
+
 Current alert persistence contract to preserve:
 
 - contract owner:

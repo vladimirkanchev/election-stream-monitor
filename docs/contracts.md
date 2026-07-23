@@ -2003,9 +2003,16 @@ Shared filter inputs:
 - optional `start_time_utc`
 - optional `end_time_utc`
 
+At the FastAPI and MCP boundaries, outer whitespace is trimmed and blank
+values are rejected. Session and detector IDs are limited to 128 characters;
+timestamp filters are limited to 64 characters.
+
 Raw alert lists and grouped timelines also accept `limit` and `offset` on both
 FastAPI and MCP. `limit` defaults to 100 and is capped at 250; `offset`
 defaults to 0. Paging preserves the existing alert or grouped-entry order.
+Each shared alert or incident read has a 5,000-row storage-work ceiling and
+fails rather than returning a partial page or summary. The detailed local MCP
+error and transport policy is owned by [mcp-server.md](./mcp-server.md).
 Session snapshot reads keep their complete payload meaning and fail with a
 structured `422` if the serialized HTTP response would exceed 2 MiB; they are
 not silently truncated.

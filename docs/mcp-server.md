@@ -53,37 +53,35 @@ also lock the generic storage-error response.
 
 ## Current Tool Inventory
 
-The server registers exactly these four tools. Each input schema requires a
-string `session_id` and accepts optional `detector_id`, `severity`,
-`start_time_utc`, and `end_time_utc` filters. The exact tool allowlist and
-schema basics are protected by `tests/test_mcp_server_contracts.py`.
+The server registers exactly these four tools. All are
+`MCP-local-read-only`, use local `stdio` only, and call the active alert
+backend through shared read models. File-backed storage remains the default;
+PostgreSQL requires explicit runtime selection. MCP reads one backend and
+never merges history across them.
 
-Every tool is read-only and reaches the active alert backend through its shared
-read-model service. File-backed alert storage is the default; PostgreSQL is
-used only after explicit runtime selection. MCP reads one selected backend and
-does not discover or merge history from the other backend.
+| Tool | Returned data | Shared dependency | Response bound |
+| --- | --- | --- | --- |
+| `query_session_alerts` | Raw alert events | `session_alerts.filter_session_alert_events()` | Offset page: default 100, maximum 250 |
+| `summarize_session_alerts` | Counts and time bounds | `session_alerts.summarize_session_alert_events()` | Compact summary |
+| `query_session_alert_timeline` | Grouped incident entries | `session_alert_incidents.build_session_timeline()` | Offset page: default 100, maximum 250 |
+| `summarize_session_alert_incidents` | Grouped counts and narrative | `session_alert_incidents.build_session_incident_summary()` | Compact summary |
 
-| Tool | Classification | Capability and returned data | Shared dependency | Result-size control | Error and secret exposure | Remote availability |
-| --- | --- | --- | --- | --- | --- | --- |
-| `query_session_alerts` | `MCP-local-read-only` | Read-only raw alert events for one session | `session_alerts.filter_session_alert_events()` | Stable offset page; `limit` defaults to 100 and is capped at 250 | Returns persisted alert content. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
-| `summarize_session_alerts` | `MCP-local-read-only` | Read-only counts and time bounds for one session's alerts | `session_alerts.summarize_session_alert_events()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate alert data. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
-| `query_session_alert_timeline` | `MCP-local-read-only` | Read-only grouped incident entries for one session | `session_alert_incidents.build_session_timeline()` | Stable grouped-entry offset page; `limit` defaults to 100 and is capped at 250 | Returns persisted incident titles, messages, and sources. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
-| `summarize_session_alert_incidents` | `MCP-local-read-only` | Read-only grouped incident counts and narrative summary | `session_alert_incidents.build_session_incident_summary()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate incident data. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
-
-No tool starts, cancels, edits, deletes, or resolves playback for a session.
-Validation and missing-session errors remain readable. Unexpected storage
-failures use `Alert storage is unavailable`, so tool responses do not expose
-paths, driver detail, PostgreSQL URLs, or key values. A future networked MCP
-transport still needs its own authentication, request and result bounds;
-FastAPI `X-API-Key` checks and HTTP rate limiting do not apply to stdio.
+Every shared query reads at most 5,000 stored rows and fails instead of
+returning a partial result. Validation and missing-session errors remain
+readable. Unexpected storage failures use `Alert storage is unavailable`, so
+responses do not expose paths, driver detail, PostgreSQL URLs, or key values.
+No tool starts, cancels, edits, deletes, or resolves playback. The exact
+allowlist, schemas, and stdio launch are protected by
+`tests/test_mcp_server_contracts.py`.
 
 ## Request Validation And Current Bounds
 
 Every tool requires a string `session_id` and accepts the same optional
 `detector_id`, enum `severity`, `start_time_utc`, and `end_time_utc` filters.
-The tool schema validates argument shape; the shared read-model service
-validates UTC timestamp format and rejects an end time earlier than its start.
-Input strings and time ranges have no maximum length or span yet.
+The tool schema trims outer whitespace and requires nonblank values. Session
+and detector IDs are capped at 128 characters; timestamp filters are capped
+at 64. The shared read-model service validates UTC timestamp format and
+rejects an end time earlier than its start. Time-span caps remain deferred.
 
 ## Returned Data And Current Bounds
 
@@ -96,15 +94,16 @@ paths, but alert messages and source names remain sensitive local monitoring
 content.
 
 Raw and timeline tools use the same `offset` and `limit` contract as FastAPI.
-Paging limits returned data only: shared services still load and filter the
-selected rows, and summaries still scan them.
+The 5,000-row ceiling bounds application/store work; it does not guarantee
+that every future backend query scans no more than 5,000 rows. Backend-native
+filtering and indexing can be strengthened as alert history grows.
 
 ## Deferred Hardening
 
-Request length, time-span, and store-level scan caps remain bounded follow-ups
-before any network transport is considered. Storage-error
-sanitization is implemented for the current stdio boundary; no remote MCP,
-authentication infrastructure, or mutation tool is introduced here.
+Broader request/body-size and time-span caps remain bounded follow-ups before
+any network transport is considered. Storage-error sanitization is implemented
+for the current stdio boundary; no remote MCP, authentication infrastructure,
+or mutation tool is introduced here.
 
 ## How To Run It
 
