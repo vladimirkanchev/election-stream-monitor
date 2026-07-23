@@ -3,7 +3,7 @@
 This module keeps the first limiter implementation small and explicit:
 
 - one settings seam
-- one subject-selection rule
+- caller subject selection with optional route-family namespaces
 - one in-memory fixed-window store
 
 The route layer can call into it after authentication succeeds, while shared
@@ -40,25 +40,15 @@ class RateLimitError(Exception):
 
 @dataclass(frozen=True)
 class ResolvedRateLimitContext:
-    """Fully resolved limiter context for one current FastAPI request.
-
-    This keeps the public seam explicit: by the time the route boundary wants
-    to enforce, log, or map one limiter outcome, it should not have to
-    re-derive the active settings or the chosen subject identity.
-    """
+    """Resolved settings, safe caller subject, and optional route-family budget."""
 
     settings: ApiRateLimitSettings
     subject: str
+    budget_name: str | None = None
 
 
 class RateLimiterBackend(Protocol):
-    """Minimal storage/backend seam for FastAPI rate-limit enforcement.
-
-    The current implementation stays local and in-memory, but the route
-    boundary should depend only on the ability to check and increment one
-    subject budget. That keeps a later shared backend swap straightforward
-    without introducing factories or a larger abstraction model now.
-    """
+    """Storage seam for checking and incrementing one caller budget."""
 
     def check_and_increment(
         self,
@@ -159,19 +149,15 @@ def enforce_api_rate_limit(
     settings: ApiRateLimitSettings | None = None,
     limiter: RateLimiterBackend | None = None,
     now_monotonic: float | None = None,
+    budget_name: str | None = None,
 ) -> None:
-    """Enforce the configured FastAPI rate limit for one authenticated caller.
-
-    This function is the transport-agnostic public seam. Callers supply a
-    principal and optional request host, and the limiter module decides how to
-    derive the subject key and whether the current request still fits inside
-    the configured budget.
-    """
+    """Enforce one configured caller budget, optionally namespaced by route family."""
 
     context = resolve_api_rate_limit_context(
         principal=principal,
         request_host=request_host,
         settings=settings,
+        budget_name=budget_name,
     )
     if context is None:
         return
@@ -188,25 +174,23 @@ def resolve_api_rate_limit_context(
     principal: AuthPrincipal,
     request_host: str | None = None,
     settings: ApiRateLimitSettings | None = None,
+    budget_name: str | None = None,
 ) -> ResolvedRateLimitContext | None:
-    """Resolve the current FastAPI limiter subject and settings.
-
-    Returning a small immutable context keeps the route boundary readable and
-    avoids recomputing the active settings and subject identity for logging or
-    HTTP-specific error shaping.
-    """
+    """Resolve settings and a safe caller subject for one optional budget family."""
 
     active_settings = settings or get_api_rate_limit_settings()
     if not active_settings.enabled:
         return None
 
+    subject = build_rate_limit_subject(
+        principal=principal,
+        strategy=active_settings.strategy,
+        request_host=request_host,
+    )
     return ResolvedRateLimitContext(
         settings=active_settings,
-        subject=build_rate_limit_subject(
-            principal=principal,
-            strategy=active_settings.strategy,
-            request_host=request_host,
-        ),
+        subject=_prefix_rate_limit_subject(subject, budget_name),
+        budget_name=budget_name,
     )
 
 
@@ -250,6 +234,14 @@ def build_rate_limit_subject(
     if strategy == "ip":
         return f"ip:{request_host or UNKNOWN_REQUEST_HOST}"
     raise RateLimitError("Unsupported API rate-limit strategy")
+
+
+def _prefix_rate_limit_subject(subject: str, budget_name: str | None) -> str:
+    """Keep independent route-family budgets separate for the same caller."""
+
+    if budget_name is None:
+        return subject
+    return f"budget:{budget_name}:{subject}"
 
 
 def _build_principal_rate_limit_subject(principal: AuthPrincipal) -> str:

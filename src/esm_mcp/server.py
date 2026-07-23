@@ -7,6 +7,8 @@ do not apply to this separate local-process boundary.
 from mcp.server.fastmcp import FastMCP
 
 from api.schemas import (
+    ReadPageLimit,
+    ReadPageOffset,
     SessionAlertQueryResponse,
     SessionAlertSummaryResponse,
     SessionAlertTimelineResponse,
@@ -18,6 +20,7 @@ from esm_mcp.alert_tools import (
     summarize_session_alert_incidents_tool,
     summarize_session_alerts_tool,
 )
+from read_resource_policy import DEFAULT_READ_PAGE_LIMIT
 from session_models import EventSeverity
 
 SERVER_NAME = "Election Stream Monitor MCP"
@@ -40,14 +43,18 @@ def _register_raw_alert_query_tools(mcp_server: FastMCP) -> None:
         severity: EventSeverity | None = None,
         start_time_utc: str | None = None,
         end_time_utc: str | None = None,
+        limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
+        offset: ReadPageOffset = 0,
     ) -> SessionAlertQueryResponse:
-        """Return persisted session alerts after applying optional filters."""
+        """Return one page of persisted session alerts after optional filtering."""
         return query_session_alerts_tool(
             session_id,
             detector_id=detector_id,
             severity=severity,
             start_time_utc=start_time_utc,
             end_time_utc=end_time_utc,
+            limit=limit,
+            offset=offset,
         )
 
     @mcp_server.tool(
@@ -89,14 +96,18 @@ def _register_incident_alert_tools(mcp_server: FastMCP) -> None:
         severity: EventSeverity | None = None,
         start_time_utc: str | None = None,
         end_time_utc: str | None = None,
+        limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
+        offset: ReadPageOffset = 0,
     ) -> SessionAlertTimelineResponse:
-        """Return grouped incident timeline entries after optional filtering."""
+        """Return one page of grouped incident entries after optional filtering."""
         return query_session_alert_timeline_tool(
             session_id,
             detector_id=detector_id,
             severity=severity,
             start_time_utc=start_time_utc,
             end_time_utc=end_time_utc,
+            limit=limit,
+            offset=offset,
         )
 
     @mcp_server.tool(

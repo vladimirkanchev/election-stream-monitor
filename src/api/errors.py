@@ -112,6 +112,19 @@ class RateLimitExceededError(ApiDomainError):
         )
 
 
+class ResponseLimitExceededError(ApiDomainError):
+    """Error raised when a complete response exceeds its boundary without truncation."""
+
+    def __init__(self, *, resource: str, max_bytes: int) -> None:
+        super().__init__(
+            detail=f"{resource} exceeds the supported response size",
+            error_code="response_limit_exceeded",
+            status_code=422,
+            status_reason="response_limit_exceeded",
+            status_detail=f"Maximum serialized response size is {max_bytes} bytes.",
+        )
+
+
 def _build_retry_after_headers(retry_after_seconds: int | None) -> dict[str, str] | None:
     """Return the optional HTTP headers for one coarse rate-limit rejection.
 

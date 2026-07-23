@@ -1,4 +1,4 @@
-"""FastAPI adapter for playback-source resolution.
+"""FastAPI adapter for bounded playback-source resolution.
 
 The router owns request validation and HTTP error mapping. It inherits the
 shared authentication dependency so playback resolution is protected in share
@@ -8,12 +8,11 @@ mode while source-resolution rules remain in their dedicated modules.
 from fastapi import APIRouter, Depends
 
 from api.errors import PlaybackUnavailableError, ValidationFailedError
-from api.http_auth_policy import (
-    AUTHENTICATION_FAILURE_RESPONSES,
-    require_http_principal,
-)
+from api.http_auth_policy import AUTHENTICATION_FAILURE_RESPONSES
+from api.playback_route_policy import require_http_playback_principal
 from api.schemas import (
     ApiErrorResponse,
+    ApiRateLimitErrorResponse,
     ResolvePlaybackRequest,
     ResolvePlaybackResponse,
 )
@@ -23,7 +22,7 @@ from stream_loader import build_api_stream_playback_contract
 
 router = APIRouter(
     tags=["playback"],
-    dependencies=[Depends(require_http_principal)],
+    dependencies=[Depends(require_http_playback_principal)],
 )
 
 
@@ -39,6 +38,10 @@ router = APIRouter(
         422: {
             "model": ApiErrorResponse,
             "description": "Request validation failed",
+        },
+        429: {
+            "model": ApiRateLimitErrorResponse,
+            "description": "Rate limit exceeded",
         },
     },
 )

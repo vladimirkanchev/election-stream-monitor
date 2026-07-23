@@ -13,28 +13,20 @@ of thin route declarations over the shared alert services.
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import Depends, Request
 
-from api.errors import RateLimitExceededError
 from api.http_auth_policy import (
     AUTHENTICATION_FAILURE_RESPONSES,
     require_http_principal,
 )
+from api.http_rate_limit_policy import enforce_http_rate_limit
 from api.schemas import (
     ApiErrorResponse,
     ApiRateLimitErrorResponse,
 )
 from api_auth import AuthPrincipal
-from api_rate_limit import (
-    RateLimitError,
-    enforce_resolved_rate_limit,
-    resolve_api_rate_limit_context,
-)
-
-logger = logging.getLogger(__name__)
 
 # Keep the protected-route response metadata here so auth/rate-limit contract
 # changes do not require repeating the same response dictionary in every alert
@@ -80,39 +72,4 @@ def _enforce_http_alert_rate_limit(
     alerts boundary.
     """
 
-    request_host = _get_request_host(request)
-    context = resolve_api_rate_limit_context(
-        principal=principal,
-        request_host=request_host,
-    )
-    if context is None:
-        return
-
-    try:
-        enforce_resolved_rate_limit(context=context)
-    except RateLimitError as err:
-        logger.info(
-            "rate_limit_exceeded path=%s strategy=%s subject=%s auth_type=%s reason=%s",
-            request.url.path,
-            context.settings.strategy,
-            context.subject,
-            principal.auth_type,
-            str(err),
-        )
-        raise RateLimitExceededError(
-            str(err),
-            retry_after_seconds=context.settings.window_seconds,
-        ) from err
-
-
-def _get_request_host(request: Request) -> str | None:
-    """Return one best-effort request host for the current HTTP boundary.
-
-    The current limiter can fall back to host-based identity under the `ip`
-    strategy, so the boundary resolves the host once here instead of
-    scattering request-client handling across auth and limiter code.
-    """
-
-    if request.client is None:
-        return None
-    return request.client.host
+    enforce_http_rate_limit(request=request, principal=principal)

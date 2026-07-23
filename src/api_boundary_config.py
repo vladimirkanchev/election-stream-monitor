@@ -41,6 +41,10 @@ API_RATE_LIMIT_ENABLED = False
 API_RATE_LIMIT_STRATEGY: ApiRateLimitStrategy = "principal"
 API_RATE_LIMIT_WINDOW_SEC = 60
 API_RATE_LIMIT_MAX_REQUESTS = 100
+API_RATE_LIMIT_MAX_REQUESTS_CEILING = 200
+SESSION_CONTROL_RATE_LIMIT_MAX_REQUESTS = 12
+SESSION_START_RATE_LIMIT_MAX_REQUESTS = 6
+PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS = 30
 
 
 class ApiBoundaryConfigurationError(RuntimeError):
@@ -89,14 +93,12 @@ class ApiAuthSettings:
 class ApiRateLimitSettings:
     """Structured FastAPI rate-limiting settings.
 
-    The contract stays small on purpose:
+    This shared base is used directly by alert reads and by fixed-budget route
+    families that inherit its enablement, identity strategy, and window:
 
     - one enable flag
     - one caller-identification strategy
-    - one fixed-window budget
-
-    That keeps the current limiter implementation readable while leaving room
-    for later principal models or shared-backend work.
+    - one fixed-window setting set
     """
 
     enabled: bool
@@ -196,8 +198,13 @@ def _parse_rate_limit_strategy_env(
     return cast(ApiRateLimitStrategy, normalized)
 
 
-def _parse_positive_int_env(name: str, default: int) -> int:
-    """Parse one positive integer environment value for boundary settings."""
+def _parse_positive_int_env(
+    name: str,
+    default: int,
+    *,
+    maximum: int | None = None,
+) -> int:
+    """Parse one bounded positive integer environment value for boundary settings."""
 
     raw_value = os.getenv(name)
     if raw_value is None:
@@ -208,6 +215,8 @@ def _parse_positive_int_env(name: str, default: int) -> int:
         raise ApiBoundaryConfigurationError(f"{name} must be a positive integer") from None
     if parsed <= 0:
         raise ApiBoundaryConfigurationError(f"{name} must be a positive integer")
+    if maximum is not None and parsed > maximum:
+        raise ApiBoundaryConfigurationError(f"{name} must not exceed {maximum}")
     return parsed
 
 
@@ -250,6 +259,9 @@ def clear_fastapi_boundary_settings_caches() -> None:
     get_fastapi_run_mode_settings.cache_clear()
     get_api_auth_settings.cache_clear()
     get_api_rate_limit_settings.cache_clear()
+    get_session_control_rate_limit_settings.cache_clear()
+    get_session_start_rate_limit_settings.cache_clear()
+    get_playback_resolution_rate_limit_settings.cache_clear()
 
 
 @lru_cache(maxsize=1)
@@ -277,11 +289,7 @@ def get_api_auth_settings() -> ApiAuthSettings:
 
 @lru_cache(maxsize=1)
 def get_api_rate_limit_settings() -> ApiRateLimitSettings:
-    """Return the current FastAPI rate-limiting settings.
-
-    This keeps strategy and window parsing out of route code so the limiter
-    seam can stay focused on caller identification and request counting.
-    """
+    """Return the shared limiter settings used by alert reads and route families."""
 
     run_mode = get_fastapi_run_mode_settings().mode
     return ApiRateLimitSettings(
@@ -300,8 +308,52 @@ def get_api_rate_limit_settings() -> ApiRateLimitSettings:
         max_requests=_parse_positive_int_env(
             "ESM_API_RATE_LIMIT_MAX_REQUESTS",
             API_RATE_LIMIT_MAX_REQUESTS,
+            maximum=API_RATE_LIMIT_MAX_REQUESTS_CEILING,
         ),
     )
+
+
+def _fixed_rate_limit_settings(max_requests: int) -> ApiRateLimitSettings:
+    """Return the shared limiter policy with one fixed family ceiling."""
+
+    base_settings = get_api_rate_limit_settings()
+    return ApiRateLimitSettings(
+        enabled=base_settings.enabled,
+        strategy=base_settings.strategy,
+        window_seconds=base_settings.window_seconds,
+        max_requests=max_requests,
+    )
+
+
+@lru_cache(maxsize=1)
+def get_session_control_rate_limit_settings() -> ApiRateLimitSettings:
+    """Return the shared session-control budget for start and cancel requests.
+
+    The budget follows the current local/share enablement, identity strategy,
+    and window settings. Its fixed ceiling is separate from alert reads; the
+    stricter start guard preserves capacity for cancellation.
+    """
+
+    return _fixed_rate_limit_settings(SESSION_CONTROL_RATE_LIMIT_MAX_REQUESTS)
+
+
+@lru_cache(maxsize=1)
+def get_session_start_rate_limit_settings() -> ApiRateLimitSettings:
+    """Return the stricter spawn guard applied only to session starts."""
+
+    return _fixed_rate_limit_settings(SESSION_START_RATE_LIMIT_MAX_REQUESTS)
+
+
+@lru_cache(maxsize=1)
+def get_playback_resolution_rate_limit_settings() -> ApiRateLimitSettings:
+    """Return the dedicated budget for source-resolution work.
+
+    Playback validation can touch the filesystem and, when explicitly enabled,
+    DNS. It therefore stays separate from session control and alert reads while
+    sharing the current mode, caller identity, and fixed window.
+    """
+
+    return _fixed_rate_limit_settings(PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS)
 
 
 def validate_api_auth_settings(settings: ApiAuthSettings) -> None:

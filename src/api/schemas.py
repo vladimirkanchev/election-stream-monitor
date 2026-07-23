@@ -7,9 +7,11 @@ stable response vocabulary while the shared service layer remains plain-Python
 and transport-agnostic.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
+
+from read_resource_policy import MAX_READ_PAGE_LIMIT
 
 
 ApiInputMode = Literal["video_segments", "video_files", "api_stream"]
@@ -22,14 +24,23 @@ ApiSessionStatus = Literal[
     "failed",
 ]
 ApiAlertSeverity = Literal["info", "warning"]
+_SessionInputPath = Annotated[str, Field(min_length=1, max_length=4096)]
+_DetectorIdentifier = Annotated[str, Field(min_length=1, max_length=128)]
+_PlaybackInputPath = Annotated[str, Field(min_length=1, max_length=4096)]
+_PlaybackCurrentItem = Annotated[str, Field(min_length=1, max_length=1024)]
+ReadPageLimit = Annotated[int, Field(ge=1, le=MAX_READ_PAGE_LIMIT)]
+ReadPageOffset = Annotated[int, Field(ge=0)]
 
 
 class StartSessionRequest(BaseModel):
-    """Request payload for starting one monitoring session."""
+    """Bounded request payload for starting one monitoring session."""
 
     mode: ApiInputMode
-    input_path: str
-    selected_detectors: list[str] = Field(default_factory=list)
+    input_path: _SessionInputPath
+    selected_detectors: list[_DetectorIdentifier] = Field(
+        default_factory=list,
+        max_length=32,
+    )
 
 
 class CancelSessionResponse(BaseModel):
@@ -43,11 +54,11 @@ class CancelSessionResponse(BaseModel):
 
 
 class ResolvePlaybackRequest(BaseModel):
-    """Request payload for resolving one playback source."""
+    """Bounded request payload for resolving one playback source."""
 
     mode: ApiInputMode
-    input_path: str
-    current_item: str | None = None
+    input_path: _PlaybackInputPath
+    current_item: _PlaybackCurrentItem | None = None
 
 
 class ResolvePlaybackResponse(BaseModel):

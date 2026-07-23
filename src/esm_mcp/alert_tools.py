@@ -1,15 +1,20 @@
-"""MCP adapters for local read-only raw-alert and incident-query tools.
+"""MCP adapters for bounded local raw-alert and incident-query tools.
 
 The adapters call the shared alert read models, keep server registration in
 ``server.py``, and map only reviewed input errors into MCP responses.
 """
 
+from typing import TypeVar
+
 from api.schemas import (
+    ReadPageLimit,
+    ReadPageOffset,
     SessionAlertQueryResponse,
     SessionAlertSummaryResponse,
     SessionAlertTimelineResponse,
     SessionIncidentSummaryResponse,
 )
+from read_resource_policy import DEFAULT_READ_PAGE_LIMIT, paginate_read_items
 from session_alert_adapter import (
     AlertServiceCallable,
     build_alert_filter_kwargs,
@@ -23,6 +28,8 @@ from session_alerts import (
 )
 from session_models import EventSeverity
 
+ServiceResult = TypeVar("ServiceResult")
+
 _MCP_ALERT_STORAGE_UNAVAILABLE_MESSAGE = "Alert storage is unavailable"
 _MCP_SAFE_VALIDATION_MESSAGES = frozenset(
     {
@@ -34,14 +41,14 @@ _MCP_SAFE_VALIDATION_MESSAGES = frozenset(
 
 
 def _call_tool_alert_service(
-    service_fn: AlertServiceCallable[object],
+    service_fn: AlertServiceCallable[ServiceResult],
     *,
     session_id: str,
     detector_id: str | None,
     severity: EventSeverity | None,
     start_time_utc: str | None,
     end_time_utc: str | None,
-) -> object:
+) -> ServiceResult:
     """Call one shared alert service using the standard MCP filter/error mapping.
 
     Validation and missing-session errors remain readable tool feedback. Other
@@ -86,8 +93,10 @@ def query_session_alerts_tool(
     severity: EventSeverity | None = None,
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
+    limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
+    offset: ReadPageOffset = 0,
 ) -> SessionAlertQueryResponse:
-    """Return filtered persisted alerts with safe MCP error mapping."""
+    """Return one stable page of filtered alerts with safe error mapping."""
     alerts = _call_tool_alert_service(
         filter_session_alert_events,
         session_id=session_id,
@@ -99,7 +108,7 @@ def query_session_alerts_tool(
     return SessionAlertQueryResponse.model_validate(
         {
             "session_id": session_id,
-            "alerts": alerts,
+            "alerts": paginate_read_items(alerts, limit=limit, offset=offset),
         }
     )
 
@@ -130,17 +139,27 @@ def query_session_alert_timeline_tool(
     severity: EventSeverity | None = None,
     start_time_utc: str | None = None,
     end_time_utc: str | None = None,
+    limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
+    offset: ReadPageOffset = 0,
 ) -> SessionAlertTimelineResponse:
-    """Return filtered grouped incident timeline entries for one session."""
+    """Return one stable page of grouped incident entries for one session."""
+    timeline = _call_tool_alert_service(
+        build_session_timeline,
+        session_id=session_id,
+        detector_id=detector_id,
+        severity=severity,
+        start_time_utc=start_time_utc,
+        end_time_utc=end_time_utc,
+    )
     return SessionAlertTimelineResponse.model_validate(
-        _call_tool_alert_service(
-            build_session_timeline,
-            session_id=session_id,
-            detector_id=detector_id,
-            severity=severity,
-            start_time_utc=start_time_utc,
-            end_time_utc=end_time_utc,
-        )
+        {
+            **timeline,
+            "entries": paginate_read_items(
+                timeline["entries"],
+                limit=limit,
+                offset=offset,
+            ),
+        }
     )
 
 
