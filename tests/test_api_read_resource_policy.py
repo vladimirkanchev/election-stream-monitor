@@ -1,8 +1,9 @@
-"""Focused response-bound tests for collection-oriented API and MCP reads."""
+"""Focused API and MCP tests for collection-response and store-work bounds."""
 
 from collections.abc import Iterator
 
 import pytest
+from session_alert_store import AlertReadLimitExceededError
 
 from tests.api_boundary_env_test_support import (
     reset_boundary_test_state,
@@ -83,6 +84,83 @@ def test_alert_read_pages_reject_values_outside_the_public_bounds(query: str) ->
     assert response.json()["error_code"] == "validation_failed"
 
 
+def test_alert_routes_expose_the_shared_storage_read_ceiling(monkeypatch) -> None:
+    """HTTP should report an oversized shared alert read without partial output."""
+    monkeypatch.setattr(
+        "api.routers.alerts.filter_session_alert_events",
+        lambda *_, **__: (_ for _ in ()).throw(AlertReadLimitExceededError(2)),
+    )
+
+    response = request("GET", "/sessions/session-read-ceiling/alerts")
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "Alert query exceeds the supported storage read limit",
+        "error_code": "alert_query_limit_exceeded",
+        "status_reason": "alert_query_limit_exceeded",
+        "status_detail": "Maximum stored alert rows per query is 2.",
+    }
+
+
+@pytest.mark.parametrize(
+    ("path", "field_name"),
+    [
+        (f"/sessions/{'x' * 129}/alerts", "session_id"),
+        ("/sessions/%20%20/alerts", "session_id"),
+        ("/sessions/session-input-bounds/alerts?detector_id=%20%20", "detector_id"),
+        (
+            f"/sessions/session-input-bounds/alerts?start_time_utc={'x' * 65}",
+            "start_time_utc",
+        ),
+    ],
+)
+def test_alert_routes_reject_blank_or_oversized_identifier_filters(
+    path: str,
+    field_name: str,
+) -> None:
+    """Alert routes should reject abusive identifiers and filters before service reads."""
+    response = request("GET", path)
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_failed"
+    assert field_name in response.json()["status_detail"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"session_id": "   "},
+        {"session_id": "x" * 129},
+        {"session_id": "session-input-bounds", "detector_id": "x" * 129},
+        {
+            "session_id": "session-input-bounds",
+            "start_time_utc": "x" * 65,
+        },
+    ],
+)
+def test_mcp_tool_rejects_invalid_identifier_filters_before_reading_alerts(
+    monkeypatch,
+    arguments: dict[str, object],
+) -> None:
+    """MCP schema bounds must reject abusive filters before service reads."""
+    service_called = False
+
+    def fail_if_called(*_: object, **__: object) -> list[object]:
+        nonlocal service_called
+        service_called = True
+        return []
+
+    monkeypatch.setattr(
+        "esm_mcp.alert_tools.filter_session_alert_events",
+        fail_if_called,
+    )
+
+    result = call_mcp_tool("query_session_alerts", arguments)
+
+    assert result.isError is True
+    assert service_called is False
+
+
 def test_timeline_route_pages_grouped_entries_without_changing_order(monkeypatch) -> None:
     session_id = "session-paged-timeline"
     entries = [_timeline_entry(index) for index in range(105)]
@@ -134,6 +212,46 @@ def test_mcp_raw_and_timeline_tools_use_the_same_page_contract(monkeypatch) -> N
         "Incident 2",
         "Incident 3",
     ]
+
+
+def test_mcp_raw_alert_tool_applies_default_and_maximum_pages(monkeypatch) -> None:
+    """MCP raw-alert pages should match the FastAPI collection contract."""
+    session_id = "session-mcp-page-bounds"
+    alerts = [_alert(session_id, index) for index in range(260)]
+    monkeypatch.setattr(
+        "esm_mcp.alert_tools.filter_session_alert_events",
+        lambda session_id, **filters: alerts,
+    )
+
+    default_result = call_mcp_tool("query_session_alerts", {"session_id": session_id})
+    maximum_result = call_mcp_tool(
+        "query_session_alerts",
+        {"session_id": session_id, "limit": 250},
+    )
+
+    assert default_result.isError is False
+    assert [item["title"] for item in default_result.structuredContent["alerts"]] == [
+        f"Alert {index}" for index in range(100)
+    ]
+    assert maximum_result.isError is False
+    assert len(maximum_result.structuredContent["alerts"]) == 250
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"session_id": "session-invalid-page", "limit": 0},
+        {"session_id": "session-invalid-page", "limit": 251},
+        {"session_id": "session-invalid-page", "offset": -1},
+    ],
+)
+def test_mcp_raw_alert_tool_rejects_values_outside_page_bounds(
+    arguments: dict[str, object],
+) -> None:
+    """MCP should reject invalid pages before invoking the alert read service."""
+    result = call_mcp_tool("query_session_alerts", arguments)
+
+    assert result.isError is True
 
 
 def test_session_snapshot_rejects_a_response_above_the_serialized_limit(monkeypatch) -> None:

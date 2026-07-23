@@ -1,14 +1,17 @@
-"""Local stdio MCP server for read-only session-alert queries.
+"""Local stdio MCP server for bounded, read-only session-alert queries.
 
-It calls shared read models directly; FastAPI authentication and rate limiting
-do not apply to this separate local-process boundary.
+The tools use shared read models but remain outside the FastAPI HTTP boundary.
+Their transport and capability policy is owned by ``docs/mcp-server.md``.
 """
 
 from mcp.server.fastmcp import FastMCP
 
 from api.schemas import (
+    AlertTimestampFilter,
+    DetectorIdentifier,
     ReadPageLimit,
     ReadPageOffset,
+    SessionIdentifier,
     SessionAlertQueryResponse,
     SessionAlertSummaryResponse,
     SessionAlertTimelineResponse,
@@ -38,11 +41,11 @@ def _register_raw_alert_query_tools(mcp_server: FastMCP) -> None:
         structured_output=True,
     )
     def query_session_alerts(
-        session_id: str,
-        detector_id: str | None = None,
+        session_id: SessionIdentifier,
+        detector_id: DetectorIdentifier | None = None,
         severity: EventSeverity | None = None,
-        start_time_utc: str | None = None,
-        end_time_utc: str | None = None,
+        start_time_utc: AlertTimestampFilter | None = None,
+        end_time_utc: AlertTimestampFilter | None = None,
         limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
         offset: ReadPageOffset = 0,
     ) -> SessionAlertQueryResponse:
@@ -62,11 +65,11 @@ def _register_raw_alert_query_tools(mcp_server: FastMCP) -> None:
         structured_output=True,
     )
     def summarize_session_alerts(
-        session_id: str,
-        detector_id: str | None = None,
+        session_id: SessionIdentifier,
+        detector_id: DetectorIdentifier | None = None,
         severity: EventSeverity | None = None,
-        start_time_utc: str | None = None,
-        end_time_utc: str | None = None,
+        start_time_utc: AlertTimestampFilter | None = None,
+        end_time_utc: AlertTimestampFilter | None = None,
     ) -> SessionAlertSummaryResponse:
         """Return counts and time bounds for persisted session alerts."""
         return summarize_session_alerts_tool(
@@ -79,23 +82,18 @@ def _register_raw_alert_query_tools(mcp_server: FastMCP) -> None:
 
 
 def _register_incident_alert_tools(mcp_server: FastMCP) -> None:
-    """Register MCP tools for grouped incident timeline and summary views.
-
-    These tools reuse the same shared incident-building logic as the FastAPI
-    routes so operators and coding agents see one consistent grouped read
-    model.
-    """
+    """Register MCP tools for grouped incident timeline and summary reads."""
 
     @mcp_server.tool(
         description="Return grouped incident timeline entries for one monitoring session.",
         structured_output=True,
     )
     def query_session_alert_timeline(
-        session_id: str,
-        detector_id: str | None = None,
+        session_id: SessionIdentifier,
+        detector_id: DetectorIdentifier | None = None,
         severity: EventSeverity | None = None,
-        start_time_utc: str | None = None,
-        end_time_utc: str | None = None,
+        start_time_utc: AlertTimestampFilter | None = None,
+        end_time_utc: AlertTimestampFilter | None = None,
         limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
         offset: ReadPageOffset = 0,
     ) -> SessionAlertTimelineResponse:
@@ -115,11 +113,11 @@ def _register_incident_alert_tools(mcp_server: FastMCP) -> None:
         structured_output=True,
     )
     def summarize_session_alert_incidents(
-        session_id: str,
-        detector_id: str | None = None,
+        session_id: SessionIdentifier,
+        detector_id: DetectorIdentifier | None = None,
         severity: EventSeverity | None = None,
-        start_time_utc: str | None = None,
-        end_time_utc: str | None = None,
+        start_time_utc: AlertTimestampFilter | None = None,
+        end_time_utc: AlertTimestampFilter | None = None,
     ) -> SessionIncidentSummaryResponse:
         """Return grouped incident counts, categories, and narrative summary."""
         return summarize_session_alert_incidents_tool(

@@ -19,6 +19,7 @@ from typing import Protocol, TypedDict, cast
 
 from logger import get_logger
 from postgres_diagnostics import redact_postgres_diagnostic
+from read_resource_policy import validate_optional_row_limit
 from session_alert_store_runtime_config import (
     AlertStoreRuntimeConfigurationError,
     AlertStoreRuntimeSettings,
@@ -34,6 +35,7 @@ logger = get_logger(__name__)
 ALERT_LOG_FILENAME = "alerts.jsonl"
 __all__ = [
     "ALERT_LOG_FILENAME",
+    "AlertReadLimitExceededError",
     "AlertEventPayload",
     "clear_default_session_alert_store_cache",
     "DEFAULT_SESSION_ALERT_STORE",
@@ -63,6 +65,14 @@ class SessionAlertsNotFoundError(ValueError):
     """Raised when a read targets a session with no known persisted metadata."""
 
 
+class AlertReadLimitExceededError(ValueError):
+    """Raised when a bounded alert read would exceed its safe row ceiling."""
+
+    def __init__(self, max_rows: int) -> None:
+        self.max_rows = max_rows
+        super().__init__(f"Alert query exceeds the maximum of {max_rows} stored rows")
+
+
 class SessionAlertStore(Protocol):
     """Minimal contract for appending and reading raw session alerts."""
 
@@ -70,8 +80,13 @@ class SessionAlertStore(Protocol):
         """Persist one validated alert event."""
         ...
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
-        """Return validated raw alert rows for one session."""
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
+        """Return validated raw rows, stopping at the optional storage ceiling."""
         ...
 
 
@@ -85,10 +100,16 @@ class FileSessionAlertStore:
             event.to_dict(),
         )
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
-        """Return file-backed validated raw alert rows for one known session."""
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
+        """Return file-backed rows, stopping before work exceeds ``max_rows``."""
         return _read_alert_jsonl(
-            _get_alerts_file_path(session_id, require_known_session_check=True)
+            _get_alerts_file_path(session_id, require_known_session_check=True),
+            max_rows=max_rows,
         )
 
 
@@ -161,9 +182,17 @@ class _DefaultSessionAlertStoreProxy:
         """Append one alert through the currently selected default store backend."""
         get_default_session_alert_store().append_alert(event)
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
-        """Read alerts through the currently selected default store backend."""
-        return get_default_session_alert_store().read_session_alert_events(session_id)
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
+        """Read alerts through the selected backend with an optional row ceiling."""
+        return get_default_session_alert_store().read_session_alert_events(
+            session_id,
+            max_rows=max_rows,
+        )
 
 
 DEFAULT_SESSION_ALERT_STORE: SessionAlertStore = _DefaultSessionAlertStoreProxy()
@@ -194,28 +223,42 @@ def _append_jsonl(file_path: Path, payload: dict[str, object]) -> None:
         file.write(json.dumps(payload) + "\n")
 
 
-def _read_alert_jsonl(file_path: Path) -> list[AlertEventPayload]:
-    """Read a JSONL alert log and skip unreadable or malformed rows."""
+def _read_alert_jsonl(
+    file_path: Path,
+    *,
+    max_rows: int | None = None,
+) -> list[AlertEventPayload]:
+    """Stream a JSONL alert log and stop before the optional row ceiling."""
+    validate_optional_row_limit(max_rows)
     if not file_path.exists():
         return []
 
     try:
-        lines = file_path.read_text(encoding="utf-8").splitlines()
+        file = file_path.open(encoding="utf-8")
     except OSError:
         logger.warning("Ignoring unreadable alert log: %s", file_path)
         return []
 
     alerts: list[AlertEventPayload] = []
-    for line_number, line in enumerate(lines, start=1):
-        if not line.strip():
-            continue
-        parsed = _parse_alert_log_line(
-            line,
-            file_path=file_path,
-            line_number=line_number,
-        )
-        if parsed is not None:
-            alerts.append(parsed)
+    candidate_rows = 0
+    try:
+        with file:
+            for line_number, line in enumerate(file, start=1):
+                if not line.strip():
+                    continue
+                candidate_rows += 1
+                if max_rows is not None and candidate_rows > max_rows:
+                    raise AlertReadLimitExceededError(max_rows)
+                parsed = _parse_alert_log_line(
+                    line,
+                    file_path=file_path,
+                    line_number=line_number,
+                )
+                if parsed is not None:
+                    alerts.append(parsed)
+    except OSError:
+        logger.warning("Ignoring unreadable alert log: %s", file_path)
+        return []
     return alerts
 
 

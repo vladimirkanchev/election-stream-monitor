@@ -21,6 +21,7 @@ from session_alert_report import SessionAlertReport, build_session_alert_report
 from session_alert_incidents import AlertTimelineEntryPayload, IncidentSummaryPayload
 from session_alerts import AlertSummaryPayload
 from session_alert_store import (
+    AlertReadLimitExceededError,
     AlertEventPayload,
     SessionAlertStore,
     clear_default_session_alert_store_cache,
@@ -75,8 +76,15 @@ class StaticAlertStore(SessionAlertStore):
     def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
         raise AssertionError("append_alert should not be called in read-only seam tests")
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
         assert session_id == self._session_id
+        if max_rows is not None and len(self._alerts) > max_rows:
+            raise AlertReadLimitExceededError(max_rows)
         return self._alerts
 
 
@@ -90,7 +98,12 @@ class FailingReadAlertStore(SessionAlertStore):
     def append_alert(self, event: AlertEvent) -> None:  # pragma: no cover - defensive only
         raise AssertionError("append_alert should not be called in this read-path test")
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
         assert session_id == self._session_id
         raise RuntimeError(self._message)
 

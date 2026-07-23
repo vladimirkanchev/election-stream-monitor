@@ -1,23 +1,14 @@
-"""Negative-path tests for raw MCP alert-query tools.
+"""Raw MCP alert-tool error-mapping tests.
 
-This file owns raw MCP tool-level error mapping:
-
-- missing-session failures
-- invalid time-range failures
-- invalid timestamp-format failures
-- sanitized storage failures
-- list/summary parity where both raw tools should expose the same MCP error contract
-
-Keeping these checks apart from the usable payload file makes raw MCP adapter
-drift easier to spot: payload regressions fail in one place, error-translation
-regressions fail in another.
+These tests cover reviewed client errors and sanitized storage failures;
+successful payload behavior lives in ``test_mcp_server_alerts_behavior.py``.
 """
 
 from collections.abc import Iterator
 
 import esm_mcp.alert_tools as alert_tools
 import pytest
-from session_alert_store import clear_default_session_alert_store_cache
+from session_alert_store import AlertReadLimitExceededError, clear_default_session_alert_store_cache
 from session_alerts import SessionAlertsNotFoundError
 from tests.mcp_alert_test_support import (
     assert_mcp_storage_failure_is_sanitized,
@@ -105,6 +96,21 @@ def test_summarize_session_alerts_tool_reports_invalid_time_range_as_tool_error(
         },
         service_error=ValueError(expected_message),
         expected_message=expected_message,
+    )
+
+
+def test_query_session_alerts_tool_reports_the_shared_storage_read_ceiling(
+    monkeypatch,
+) -> None:
+    """MCP should expose the reviewed ceiling message without HTTP-specific behavior."""
+    _assert_raw_tool_maps_service_error(
+        monkeypatch,
+        tool_name="query_session_alerts",
+        service_attr="filter_session_alert_events",
+        session_id="session-mcp-read-ceiling",
+        tool_arguments={},
+        service_error=AlertReadLimitExceededError(2),
+        expected_message="Alert query exceeds the maximum of 2 stored rows",
     )
 
 

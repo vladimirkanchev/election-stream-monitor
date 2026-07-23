@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from session_alerts import SessionAlertsNotFoundError, read_session_alert_events
+from session_alert_store import AlertReadLimitExceededError
+from session_alerts import (
+    SessionAlertsNotFoundError,
+    filter_session_alert_events,
+    read_session_alert_events,
+)
 from tests.session_alert_test_support import (
     StaticAlertStore,
     build_normalized_alert,
@@ -66,6 +71,34 @@ def test_read_session_alert_events_returns_valid_rows_and_ignores_corrupt_lines(
     ]
 
 
+def test_filtered_reads_reject_alert_logs_above_the_shared_work_ceiling(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Read models should stop before a large file-backed history is fully loaded."""
+    monkeypatch.setattr("session_alerts.MAX_ALERT_QUERY_ROWS", 2)
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    session_dir = write_known_session(session_root, "session-read-ceiling")
+    write_alert_log(
+        session_dir,
+        [
+            build_persisted_alert(
+                "session-read-ceiling",
+                timestamp_utc=f"2026-05-06 10:00:0{index}",
+                detector_id="video_metrics",
+                title=f"Alert {index}",
+                message="Bounded read fixture.",
+                severity="warning",
+                source_name=f"segment_{index:04d}.ts",
+            )
+            for index in range(3)
+        ],
+    )
+
+    with pytest.raises(AlertReadLimitExceededError, match="maximum of 2"):
+        filter_session_alert_events("session-read-ceiling")
+
+
 def test_read_session_alert_events_returns_empty_list_when_alert_log_is_missing(
     monkeypatch,
     tmp_path: Path,
@@ -98,18 +131,18 @@ def test_read_session_alert_events_returns_empty_list_when_alert_log_is_unreadab
             )
         ],
     )
-    original_read_text = Path.read_text
+    original_open = Path.open
 
-    def fake_read_text(
+    def fake_open(
         self: Path,
-        encoding: str | None = None,
-        errors: str | None = None,
-    ) -> str:
+        *args: object,
+        **kwargs: object,
+    ) -> object:
         if self.parent.name == "session-unreadable" and self.name == "alerts.jsonl":
             raise OSError("simulated unreadable file")
-        return original_read_text(self, encoding=encoding, errors=errors)
+        return original_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    monkeypatch.setattr(Path, "open", fake_open)
 
     assert read_session_alert_events("session-unreadable") == []
 

@@ -24,11 +24,14 @@ from typing import TypeVar
 from fastapi import APIRouter, Depends
 
 from api.alert_route_policy import ALERT_ROUTE_RESPONSES, require_http_alert_principal
-from api.errors import SessionNotFoundError, ValidationFailedError
+from api.errors import AlertQueryLimitExceededError, SessionNotFoundError, ValidationFailedError
 from api.schemas import (
+    AlertTimestampFilter,
     ApiAlertSeverity,
+    DetectorIdentifier,
     ReadPageLimit,
     ReadPageOffset,
+    SessionIdentifier,
     SessionAlertTimelineResponse,
     SessionAlertQueryResponse,
     SessionIncidentSummaryResponse,
@@ -41,6 +44,7 @@ from session_alert_adapter import (
     call_alert_service,
 )
 from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alert_store import AlertReadLimitExceededError
 from session_alerts import filter_session_alert_events, summarize_session_alert_events
 
 ServiceResult = TypeVar("ServiceResult")
@@ -93,6 +97,8 @@ def _map_http_not_found(session_id: str) -> Exception:
 
 def _map_http_validation_error(err: ValueError) -> Exception:
     """Translate one shared-service validation failure into the API contract."""
+    if isinstance(err, AlertReadLimitExceededError):
+        return AlertQueryLimitExceededError(max_rows=err.max_rows)
     return ValidationFailedError(str(err))
 
 
@@ -102,11 +108,11 @@ def _map_http_validation_error(err: ValueError) -> Exception:
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alerts(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
     limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
     offset: ReadPageOffset = 0,
 ) -> SessionAlertQueryResponse:
@@ -138,11 +144,11 @@ async def get_session_alerts(
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_summary(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
 ) -> SessionAlertSummaryResponse:
     """Return a deterministic summary of persisted alerts for one session.
 
@@ -167,11 +173,11 @@ async def get_session_alert_summary(
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_timeline(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
     limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
     offset: ReadPageOffset = 0,
 ) -> SessionAlertTimelineResponse:
@@ -206,11 +212,11 @@ async def get_session_alert_timeline(
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_incident_summary(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
 ) -> SessionIncidentSummaryResponse:
     """Return grouped incident summary data for one session.
 

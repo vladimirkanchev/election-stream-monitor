@@ -9,7 +9,7 @@ and transport-agnostic.
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from read_resource_policy import MAX_READ_PAGE_LIMIT
 
@@ -25,7 +25,18 @@ ApiSessionStatus = Literal[
 ]
 ApiAlertSeverity = Literal["info", "warning"]
 _SessionInputPath = Annotated[str, Field(min_length=1, max_length=4096)]
-_DetectorIdentifier = Annotated[str, Field(min_length=1, max_length=128)]
+SessionIdentifier = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+]
+DetectorIdentifier = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+]
+AlertTimestampFilter = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=64),
+]
 _PlaybackInputPath = Annotated[str, Field(min_length=1, max_length=4096)]
 _PlaybackCurrentItem = Annotated[str, Field(min_length=1, max_length=1024)]
 ReadPageLimit = Annotated[int, Field(ge=1, le=MAX_READ_PAGE_LIMIT)]
@@ -37,7 +48,7 @@ class StartSessionRequest(BaseModel):
 
     mode: ApiInputMode
     input_path: _SessionInputPath
-    selected_detectors: list[_DetectorIdentifier] = Field(
+    selected_detectors: list[DetectorIdentifier] = Field(
         default_factory=list,
         max_length=32,
     )

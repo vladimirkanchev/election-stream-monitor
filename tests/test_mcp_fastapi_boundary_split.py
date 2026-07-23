@@ -1,20 +1,7 @@
-"""Focused tests for the FastAPI-versus-stdio MCP trust-boundary split.
+"""Tests for the separate FastAPI HTTP and local stdio MCP trust boundaries.
 
-This file owns the current local-trust rule for MCP:
-
-- enabling FastAPI auth and rate limiting must not affect stdio MCP tools
-- preparing the explicit FastAPI ``share`` runtime must not affect stdio MCP
-- grouped MCP tools remain usable even if both ``share`` prep and direct
-  FastAPI protection env are touched
-- one small smoke run proves protected HTTP and local MCP can still read the
-  same persisted alert data together
-- every current MCP tool leaves persisted session data unchanged
-
-Cross-surface meaning parity now lives in
-``tests/test_mcp_fastapi_parity_behavior.py`` and
-``tests/test_mcp_fastapi_parity_edges.py``. The one shared boundary-state and
-protected-route setup seam reused here lives in
-``tests/mcp_fastapi_parity_test_support.py``.
+FastAPI protection must not alter local MCP reads, and the MCP allowlist must
+not mutate persisted data. Cross-surface payload parity has dedicated suites.
 """
 
 from __future__ import annotations

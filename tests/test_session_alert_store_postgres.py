@@ -24,8 +24,13 @@ from session_alerts import (
     read_session_alert_events,
     summarize_session_alert_events,
 )
-from session_alert_store import AlertEventPayload, SessionAlertsNotFoundError
+from session_alert_store import (
+    AlertEventPayload,
+    AlertReadLimitExceededError,
+    SessionAlertsNotFoundError,
+)
 from session_alert_store_postgres import (
+    POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
     POSTGRES_ALERT_EVENT_COLUMNS,
     POSTGRES_ALERT_EVENT_NULLABLE_COLUMNS,
     POSTGRES_ALERT_EVENT_READ_ORDER,
@@ -803,6 +808,26 @@ def test_postgres_session_alert_store_reads_alert_rows_in_persisted_order(
         (POSTGRES_ALERT_EVENTS_READ_SQL, ("session-123",))
     ]
     assert [alert["title"] for alert in alerts] == ["First alert", "Second alert"]
+
+
+def test_postgres_session_alert_store_stops_at_the_requested_read_ceiling(
+    monkeypatch,
+) -> None:
+    """Bounded reads should ask PostgreSQL for one extra row, not the full history."""
+    store, connection = _postgres_store(
+        rows=[
+            _sample_alert_row(title=f"Alert {index}")
+            for index in range(3)
+        ]
+    )
+    _mark_known_sessions(monkeypatch, "session-123")
+
+    with pytest.raises(AlertReadLimitExceededError, match="maximum of 2"):
+        store.read_session_alert_events("session-123", max_rows=2)
+
+    assert connection.executed_statements == [
+        (POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL, ("session-123", 3))
+    ]
 
 
 def test_postgres_session_alert_store_normalizes_nullable_window_fields(

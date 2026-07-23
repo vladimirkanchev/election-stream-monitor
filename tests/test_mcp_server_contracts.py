@@ -1,17 +1,7 @@
-"""Focused structural tests for MCP tool registration and launch wiring.
+"""Structural MCP tests for the allowlist, schemas, and stdio launch path.
 
-This file owns the MCP surface that should stay stable even before any real
-tool call happens:
-
-- registered tool names and count
-- input/output schema basics, including bounded raw and timeline pages
-- read-only MCP surface intent in server instructions
-- stdio launch wiring
-- installed console entrypoint metadata
-
-Scenario-level raw alert, grouped incident, and FastAPI-boundary behavior
-lives in the dedicated MCP behavior suites so this file can stay short,
-structural, and easy to review.
+Payload behavior, error mapping, and the FastAPI/MCP boundary each live in
+their focused suites.
 """
 
 import importlib
@@ -23,7 +13,7 @@ from tests.mcp_alert_test_support import list_mcp_tools
 
 
 def _current_read_only_tool_names() -> set[str]:
-    """Return the exact stable MCP tool names for the current read-only surface."""
+    """Return the exact read-only MCP allowlist."""
     return {
         "query_session_alerts",
         "summarize_session_alerts",
@@ -38,7 +28,7 @@ def _tool_named(tools, tool_name: str):
 
 
 def _assert_shared_alert_filter_schema(tool, *, paged: bool = False) -> None:
-    """Assert the current common session-alert request shape for one MCP tool."""
+    """Assert common bounded session-alert inputs for one MCP tool."""
     assert tool.inputSchema["required"] == ["session_id"]
     expected_properties = {
         "session_id",
@@ -59,6 +49,23 @@ def _assert_shared_alert_filter_schema(tool, *, paged: bool = False) -> None:
             "type": "integer",
         }
         assert tool.inputSchema["properties"]["offset"]["minimum"] == 0
+    assert tool.inputSchema["properties"]["session_id"] == {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Session Id",
+        "type": "string",
+    }
+    bounded_filters = (
+        ("detector_id", 128),
+        ("start_time_utc", 64),
+        ("end_time_utc", 64),
+    )
+    for filter_name, maximum in bounded_filters:
+        assert tool.inputSchema["properties"][filter_name]["anyOf"][0] == {
+            "maxLength": maximum,
+            "minLength": 1,
+            "type": "string",
+        }
 
 
 def _assert_exact_output_fields(tool, expected_fields: set[str]) -> None:
@@ -67,7 +74,7 @@ def _assert_exact_output_fields(tool, expected_fields: set[str]) -> None:
 
 
 def test_mcp_server_registers_alert_tools() -> None:
-    """The server should expose the stable read-only tool and paging schemas."""
+    """The server exposes the stable read-only schemas and page bounds."""
     tools = list_mcp_tools()
     assert "Local stdio-only, read-only tools" in SERVER_INSTRUCTIONS
 

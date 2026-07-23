@@ -1,7 +1,6 @@
-"""Focused contract tests for the file-backed alert store seam.
+"""Focused contract tests for the concrete file-backed alert store.
 
-These tests lock the current file-backed store behavior before a PostgreSQL
-implementation is introduced.
+Backend-neutral behavior is covered by the shared parity suite.
 """
 
 from pathlib import Path
@@ -109,6 +108,23 @@ def test_file_session_alert_store_requires_known_session(
 
     with pytest.raises(SessionAlertsNotFoundError):
         _file_store().read_session_alert_events("missing-store-session")
+
+
+@pytest.mark.parametrize("max_rows", [0, -1, True])
+def test_file_session_alert_store_rejects_invalid_read_ceiling_without_alert_rows(
+    monkeypatch,
+    tmp_path: Path,
+    max_rows: int,
+) -> None:
+    """Internal row ceilings should be validated before an empty-file return."""
+    session_root = configure_session_alert_test(monkeypatch, tmp_path)
+    write_known_session(session_root, "store-invalid-read-ceiling")
+
+    with pytest.raises(ValueError, match="max_rows must be a positive integer"):
+        _file_store().read_session_alert_events(
+            "store-invalid-read-ceiling",
+            max_rows=max_rows,
+        )
 
 
 def test_file_session_alert_store_supports_append_read_round_trip(
@@ -323,18 +339,18 @@ def test_file_session_alert_store_returns_empty_list_when_alert_log_is_unreadabl
             )
         ],
     )
-    original_read_text = Path.read_text
+    original_open = Path.open
 
-    def fake_read_text(
+    def fake_open(
         self: Path,
-        encoding: str | None = None,
-        errors: str | None = None,
-    ) -> str:
+        *args: object,
+        **kwargs: object,
+    ) -> object:
         if self.parent.name == "store-unreadable" and self.name == "alerts.jsonl":
             raise OSError("simulated unreadable alert log")
-        return original_read_text(self, encoding=encoding, errors=errors)
+        return original_open(self, *args, **kwargs)
 
-    monkeypatch.setattr(Path, "read_text", fake_read_text)
+    monkeypatch.setattr(Path, "open", fake_open)
 
     assert _file_store().read_session_alert_events("store-unreadable") == []
 

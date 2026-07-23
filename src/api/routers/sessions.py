@@ -33,6 +33,7 @@ from api.schemas import (
     ApiRateLimitErrorResponse,
     CancelSessionResponse,
     SessionSnapshotResponse,
+    SessionIdentifier,
     SessionSummaryResponse,
     StartSessionRequest,
 )
@@ -91,7 +92,7 @@ async def start_session(payload: StartSessionRequest) -> SessionSummaryResponse:
     },
     dependencies=[Depends(require_http_principal)],
 )
-async def get_session(session_id: str) -> SessionSnapshotResponse:
+async def get_session(session_id: SessionIdentifier) -> SessionSnapshotResponse:
     """Read one complete snapshot or reject it when its HTTP response is too large."""
     try:
         snapshot = read_session_snapshot_or_none(session_id)
@@ -122,7 +123,7 @@ async def get_session(session_id: str) -> SessionSnapshotResponse:
     },
     dependencies=[Depends(require_http_session_cancel_principal)],
 )
-async def cancel_session(session_id: str) -> CancelSessionResponse:
+async def cancel_session(session_id: SessionIdentifier) -> CancelSessionResponse:
     """Request session cancellation through the shared service seam."""
     try:
         summary = cancel_session_service(session_id)

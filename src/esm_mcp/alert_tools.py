@@ -1,7 +1,7 @@
-"""MCP adapters for bounded local raw-alert and incident-query tools.
+"""Bounded local MCP adapters for raw-alert and incident reads.
 
-The adapters call the shared alert read models, keep server registration in
-``server.py``, and map only reviewed input errors into MCP responses.
+Registration stays in ``server.py``. These adapters expose reviewed input
+errors and hide unexpected storage diagnostics at the stdio boundary.
 """
 
 from typing import TypeVar
@@ -26,6 +26,7 @@ from session_alerts import (
     filter_session_alert_events,
     summarize_session_alert_events,
 )
+from session_alert_store import AlertReadLimitExceededError
 from session_models import EventSeverity
 
 ServiceResult = TypeVar("ServiceResult")
@@ -81,6 +82,8 @@ def _map_tool_not_found(session_id: str) -> Exception:
 
 def _map_tool_validation_error(err: ValueError) -> Exception:
     """Expose only reviewed filter errors; hide unexpected backend detail."""
+    if isinstance(err, AlertReadLimitExceededError):
+        return ValueError(str(err))
     message = str(err)
     if message in _MCP_SAFE_VALIDATION_MESSAGES:
         return ValueError(message)
