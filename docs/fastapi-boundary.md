@@ -27,13 +27,14 @@ These endpoints already use:
 - cleaned session snapshot semantics
 - router-scoped authentication for operational HTTP routes
 
-Session and playback routers use shared API-key authentication. The alerts
-router adds principal-aware rate limiting. The limiter is one local in-memory
-fixed window, so enforcement is per-process rather than distributed. Shared
-HTTP authentication lives in
+Operational routers use shared API-key authentication. Alert, session-control,
+and playback policies select their own principal-aware rate-limit budgets. The
+limiter is one local in-memory fixed window, so enforcement is per-process
+rather than distributed. Shared HTTP authentication lives in
 [`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py); alert-specific
 rate-limit composition remains in
-[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py).
+[`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py), with the
+other route-family policies alongside it.
 
 ### Runtime Mode And Network Exposure
 
@@ -197,12 +198,13 @@ is recorded in the next section.
 | `GET /sessions/{session_id}/alerts/summary` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
 | `GET /sessions/{session_id}/alerts/timeline` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
 | `GET /sessions/{session_id}/alerts/incident-summary` | read | `local-public` by default | `share-protected` by default | No by default; alerts dependency accepts a local principal | Yes by default; alerts dependency requires an API key | Alerts router through `require_http_alert_principal` | Enforced: `share-protected` | Yes; protected by default in share |
-| `POST /playback/resolve` | control | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Playback router through `require_http_principal` | Enforced: `share-protected` | Yes; protected in share |
+| `POST /playback/resolve` | control | `local-public` by default | `share-protected` | No by default; shared dependency accepts a local principal | Yes | Playback router through `require_http_playback_principal` | Enforced: `share-protected` | Yes; protected in share |
 
 Operational routers share `require_http_principal`, which accepts a local
 principal when local authentication is disabled and requires an API key in
-share mode. Alerts compose the same dependency with their router-specific
-limiter; sessions and playback have no limiter policy yet.
+share mode. Alerts use their shared read budget; session start and cancellation
+use separate control budgets; playback resolution has its own budget. Session
+reads remain authentication-only.
 
 The enforced `share-protected` set is limited to the operational routes shown
 in the matrix. Framework documentation is `local-only`; detector catalog and
@@ -218,37 +220,69 @@ available locally; a future remote API integration may add an explicit opt-in.
 
 ### Rate-Limit And Resource Controls
 
-Only the alerts router currently invokes the limiter. When enabled, it uses a
-local in-memory fixed window, shared across the four alert routes. The default
-budget is 100 requests per 60 seconds, configurable through
-`ESM_API_RATE_LIMIT_MAX_REQUESTS` and `ESM_API_RATE_LIMIT_WINDOW_SEC`.
-The default identity is the authenticated API-key fingerprint; the optional
-`ip` strategy instead uses the request host. When auth is disabled locally,
-the principal strategy uses one shared local identity.
+This contract records enforced HTTP bounds and the remaining local-first
+limitations. Session start and cancellation, playback resolution, snapshot
+size, and raw/timeline paging are bounded; session-read budgets and store-level
+scan limits remain deferred.
 
-| Route family | Rate limit and identity today | Existing input or result control | Missing resource control to record |
+Validation and response bounds apply in both modes so an accidental local
+request cannot create an invalid or misleading result. Request budgets are on
+by default only in authenticated `share` mode; local mode stays unthrottled by
+default and may opt in through the existing limiter setting. A configured
+budget may be lower than the default but not higher than the stated ceiling.
+
+| Route family | Share-mode budget, per authenticated principal | Always-on input, scan, or response bound | Failure behavior |
 | --- | --- | --- | --- |
-| Framework docs, OpenAPI, health | None | Small static or constant responses | Framework docs are local-only; health remains a minimal public status route |
-| Detector catalog | None | Optional `mode` is a fixed enum; catalog is registry-backed | No request budget if exposed remotely |
-| Session start | None | `mode` is a fixed enum; source validation rejects blank, unsupported, missing, and disallowed remote sources | No request budget, body-size cap, or detector-count cap before a detached worker is started |
-| Session read | None | Session identifier is the only route input | Snapshot may contain unbounded persisted alerts and results; no response cap or pagination |
-| Session cancel | None | Session identifier is the only route input | No request budget for a state-changing control operation |
-| Alert list, summary, timeline, incident summary | Shared fixed window: 100 requests / 60 seconds when enabled. `principal` uses an API-key fingerprint or the local principal; `ip` uses the request host. | `severity` is a fixed enum; time ranges are parsed and ordered; invalid values return validation errors | Raw lists and grouped timelines have no pagination or response-size cap; summaries still scan the selected session's alerts |
-| Playback resolution | None | `mode` is a fixed enum; source and remote-host trust validation run before resolution | No request budget or body-size cap; resolution can inspect local media paths or validate remote stream URLs |
+| Session start | Implemented shared `session-control` budget: 12 requests / 60 seconds. Implemented start-only guard: 6 requests / 60 seconds. | Implemented: `input_path` up to 4 KiB; at most 32 detector IDs, each up to 128 characters. Deferred: JSON body cap. | Implemented: `422` for field or detector-count limits; `429` for an exhausted share budget. Deferred: `413` for body too large. |
+| Session read | Deferred: 60 requests / 60 seconds; ceiling 120 | Implemented: serialized snapshot up to 2 MiB; a larger snapshot fails rather than silently omitting alerts or results | Implemented: `422` beyond the response bound. Deferred: `429` for an exhausted share budget. |
+| Session cancel | Implemented shared `session-control` budget: 12 requests / 60 seconds | No request body; existing lifecycle-state validation remains | `404` for an unknown session; `409` when the current state cannot be cancelled; `429` for an exhausted share budget. |
+| Raw alert list | Implemented shared alert-read budget: 100 requests / 60 seconds; ceiling 200 | Implemented stable offset page: `limit` defaults to 100 and may not exceed 250; `offset` defaults to 0 | `422` for invalid page values; `400` for invalid filters; `429` for an exhausted shared alert budget. |
+| Alert summary | Implemented shared alert-read budget | Deferred: at most 5,000 matching alert rows may be scanned | `400` for invalid filters; deferred `422` when a query exceeds the scan bound; `429` for an exhausted shared alert budget. |
+| Alert timeline | Implemented shared alert-read budget | Implemented stable grouped-entry page: `limit` defaults to 100 and may not exceed 250; `offset` defaults to 0 | `422` for invalid page values; `400` for invalid filters; `429` for an exhausted shared alert budget. |
+| Incident summary | Implemented shared alert-read budget | Deferred: at most 5,000 matching alert rows may be scanned before grouping | `400` for invalid filters; deferred `422` when a query exceeds the scan bound; `429` for an exhausted shared alert budget. |
+| Playback resolution | Implemented `playback-resolution` budget: 30 requests / 60 seconds | Implemented: `input_path` up to 4 KiB; `current_item` up to 1 KiB. Deferred: JSON body cap and bounded DNS/filesystem work. | Implemented: `422` for field limits and `429` for an exhausted share budget. Deferred: `413` for body size. |
 
-The protected alerts routes return the standard `429` envelope plus a
-whole-window `Retry-After` header. Tests confirm that one exhausted alert
-budget does not affect health, documentation, detector, or OpenAPI routes.
+`413` means the submitted JSON body exceeded the transport size limit. `422`
+means the request was well-formed but exceeded a declared field, page, scan, or
+response contract. `429` means the caller exhausted its fixed-window budget
+and retains the existing `Retry-After` header. These errors must use the shared
+API envelope and must not expose persistence details.
 
-The limiter is intentionally local-first, in-memory, and per process. It is
-appropriate for current single-process desktop-backed runs, but it is not a
-shared-store or multi-worker throttling contract.
+The snapshot guard fails rather than truncates because the current contract has
+no `truncated` marker or paging semantics. It bounds serialization and transfer
+size, not the store work that builds the snapshot. A compact or paged projection
+requires a coordinated frontend contract change. The limiter is in-memory and
+per process; shared enforcement is a deployment-stage concern.
 
-**Current audit finding:** authentication and rate limiting are separate
-controls. Even after share-mode authentication is extended beyond alerts,
-session start, cancellation, playback resolution, and potentially large read
-responses still need their own proportionate request, input, or result bounds.
-The later resource-abuse task owns those implementation choices.
+### Rate-Limit Budget Ownership
+
+The current implementation uses three operation-family budgets, not one global
+budget or a separate configurable policy for every endpoint. A fourth
+`session-read` budget is planned but not enforced yet. Each implemented family
+reuses the same limiter backend and principal/IP identity resolution, but
+prefixes the resolved subject with its family name. One caller therefore has
+independent budgets for different implemented cost classes without exposing a
+raw key in limiter state or logs.
+
+| Budget family | Routes | Default / ceiling per 60 seconds | Rationale |
+| --- | --- | --- | --- |
+| `session-control` | `POST /sessions`, `POST /sessions/{id}/cancel` | Implemented: 12 fixed requests | Keeps state-changing operations separate from polling and reads. Session start also uses the implemented 6-request start-only spawn guard, reserving at least half of the control budget for cancellation. |
+| `session-read` | `GET /sessions/{id}` | Planned: 60 / 120 | Intended to support ordinary Electron polling without allowing it to consume control capacity; no limiter is enforced yet. |
+| `alert-read` | Raw alerts, raw summary, timeline, incident summary | 100 / 200 | Preserves the existing shared alert-router budget and keeps related read-model requests in one predictable group. |
+| `playback-resolution` | `POST /playback/resolve` | Implemented: 30 fixed requests | Separates local-path inspection and remote-source validation from monitoring and alert reads. |
+
+Implemented family budgets activate by default in `share` mode and remain
+disabled by default in local mode. The planned session-read budget is not part
+of current enforcement. All current and future rate-limit dependencies must
+resolve the caller identity once, then enforce only the applicable family; a
+read or playback request must never consume `session-control` capacity.
+
+The later implementation should expose at most one configurable budget per
+remaining family, retain the existing 60-second fixed window initially, and
+reject values above the documented ceilings. It should not create
+endpoint-specific settings or a second limiter implementation. Focused
+regression tests prove that routes in one implemented family share a budget,
+while requests in other implemented families do not.
 
 ### Remaining Security Gaps And Decisions
 
@@ -259,9 +293,9 @@ control belongs in this local-first project now.
 | Surface or concern | Current behavior | Intended decision | Classification |
 | --- | --- | --- | --- |
 | Mode and bind address | Supported CLI enforces loopback-only `local` binds; `share` permits explicit network-visible binds with authentication | Keep non-loopback binding behind explicit `share` selection; keep raw Uvicorn documented as a development escape hatch | Implemented policy; raw-Uvicorn limitation remains |
-| Session start, read, and cancel | API-key authentication applies in `share`; no rate or result-size policy applies yet | Preserve `share-protected`; apply proportionate limits to start and cancel, and bound large reads separately | Acceptable local-first limitation |
-| Playback resolution | API-key authentication applies in `share`; no rate policy applies yet | Preserve `share-protected`; retain source and remote-host validation and add an applicable request budget | Acceptable local-first limitation |
-| Alert and incident reads | API-key and fixed-window protection already apply in `share`; raw and timeline responses are unbounded | Preserve `share-protected`; add pagination or response bounds before broader remote use | Acceptable local-first limitation |
+| Session start, read, and cancel | API-key authentication applies in `share`; start/cancel have fixed budgets and bounded start fields; snapshot transfer is capped at 2 MiB | Preserve `share-protected`; add the deferred read budget and a compact/paged store projection before broader deployment | Acceptable local-first limitation |
+| Playback resolution | API-key authentication, fixed 30/60 budget, and bounded source strings apply in `share`; local mode remains unthrottled by default | Preserve `share-protected`; add body, DNS, and filesystem-work limits only with a practical synchronous-work design | Acceptable local-first limitation |
+| Alert and incident reads | API-key and fixed-window protection apply in `share`; raw and timeline responses use 100-default/250-maximum offset pages | Preserve `share-protected`; add store-level filtering/scan bounds for summary and grouped reads before broader remote use | Acceptable local-first limitation |
 | Detector catalog | Unauthenticated in `share` mode | Treat detector metadata as `share-protected` for one consistent remote API boundary | Policy gap requiring a decision |
 | `/docs`, `/redoc`, OAuth redirect, and `/openapi.json` | Available locally and return `404` in `share` mode | Keep framework discovery local-only; add remote opt-in only for a deliberate integration need | Implemented policy |
 | `/health` | Returns a small unauthenticated response | Keep `share-public`, limited to minimal reachability/readiness status with no configuration, dependency, or secret detail | Policy gap requiring a decision |
@@ -290,8 +324,8 @@ should link here rather than repeat the matrix.
 | Host classification, loopback-only local mode, and safe share startup | `tests/test_api_bind_policy.py`, `tests/test_api_server_cli_runtime.py` |
 | Share-mode admission, `401` envelopes, and intentional public-route classification | `tests/test_api_server_cli_routes.py` |
 | Alert-specific auth logging and limiter ordering | `tests/test_api_alert_route_auth_policy.py` |
-| Rate-limit envelopes and route-family budgets | `tests/test_api_alert_route_rate_limit_policy.py`, expanded or renamed with the protected route scope |
-| Session/read/playback input and response bounds | A focused route-resource-policy test module added with the resource-control implementation |
+| Rate-limit envelopes and route-family budgets | `tests/test_api_alert_route_rate_limit_policy.py`, `tests/test_api_session_route_rate_limit_policy.py`, and `tests/test_api_playback_route_policy.py` |
+| Session/read/playback input and response bounds | `tests/test_api_read_resource_policy.py` and `tests/test_api_playback_route_policy.py` |
 | Local stdio-only MCP transport, exact tool allowlist, and read-only capability | `tests/test_mcp_server_contracts.py` |
 | MCP alert and incident behavior, including error mapping | Existing `tests/test_mcp_server_*_behavior.py` and `tests/test_mcp_server_*_errors.py` modules |
 

@@ -184,7 +184,8 @@ Current scope:
   authenticated by this contract
 - API-key authentication protects the operational routes marked enforced in
   the [FastAPI route matrix](./fastapi-boundary.md#http-route-security-matrix)
-- the four session-alert routes alone add the current router-scoped rate limiter
+- alert reads, session control, and playback resolution use separate
+  route-family budgets
 
 Current credential shape:
 
@@ -242,63 +243,20 @@ Implementation note:
 - when FastAPI auth is enabled in configuration, the auth seam validates the
   presented `X-API-Key` against configured allowed API keys and returns an
   authenticated principal rather than exposing the raw key downstream
-- session and playback routers use the shared auth dependency; the alerts
-  router composes it with rate limiting rather than using app-wide middleware
+- session and playback route policies compose shared authentication with their
+  own budgets; alerts do the same without app-wide middleware
 
 ## FastAPI Rate Limiting Contract v1
 
-Purpose:
+This contract applies only to FastAPI HTTP. `local` mode leaves authentication
+and route-family budgets off by default; `share` enables both. The current MCP
+server is a separate local `stdio` boundary and does not inherit HTTP controls.
 
-- define the first rate-limiting seam for the HTTP API
-- keep request throttling explicit at the FastAPI boundary
-- reuse authenticated caller identity instead of raw API keys where possible
-- make a later move from local in-memory counting to a shared backend store easier
-
-Current scope:
-
-- this contract applies to the FastAPI HTTP API only
-- FastAPI run mode now selects the default boundary posture:
-  - `local` defaults authentication and the alert-route limiter off
-  - `share` defaults authentication and the alert-route limiter on
-- `share` mode can auto-generate one process-local API key at startup when no
-  CLI or environment key is configured
-- the current stdio MCP server remains outside this rate-limiting contract
-- authentication protects the operational route set defined by the
-  [FastAPI route matrix](./fastapi-boundary.md#http-route-security-matrix)
-- the limiter currently applies only to the alerts router:
-  - `GET /sessions/{session_id}/alerts`
-  - `GET /sessions/{session_id}/alerts/summary`
-  - `GET /sessions/{session_id}/alerts/timeline`
-  - `GET /sessions/{session_id}/alerts/incident-summary`
-- when FastAPI rate limiting is enabled in configuration, the alerts router
-  enforces this contract through the same router boundary that already owns
-  authentication
-
-Current caller identity rule:
-
-- when FastAPI auth is enabled, rate limiting should identify callers by the
-  authenticated principal rather than the raw presented API key
-- the current default strategy is principal-based and prefers
-  `principal.key_id` as the stable caller identity
-- when FastAPI auth is disabled, the limiter falls back to one deterministic
-  local identity for the current process
-- the alternate `ip` strategy is also supported and uses the request host
-  rather than authenticated principal identity
-
-Current limit model:
-
-- one fixed-window limit model
-- one maximum request count in one configured time window
-- current settings live in
-  [`src/api_boundary_config.py`](../src/api_boundary_config.py):
-  - `enabled`
-  - `strategy`
-  - `window_seconds`
-  - `max_requests`
-- current default intended values are:
-  - `strategy = "principal"`
-  - `window_seconds = 60`
-  - `max_requests = 100`
+The default limiter identifies an authenticated caller by a safe API-key
+fingerprint. With local authentication disabled it uses one deterministic local
+identity; the optional `ip` strategy uses the request host. The exact protected
+route set, budgets, input/output limits, and deferred safeguards are owned by
+the [FastAPI route matrix and resource-control contract](./fastapi-boundary.md#rate-limit-and-resource-controls).
 
 Current rate-limit failure shape:
 
@@ -311,69 +269,12 @@ Current rate-limit failure shape:
 }
 ```
 
-Notes:
-
-- `429` responses also include a coarse `Retry-After` header based on the
-  configured fixed-window size so clients can back off without parsing limiter
-  internals
-- the same structured `429` plus `Retry-After` contract is expected across the
-  protected alerts route family, not only on the raw `/alerts` route
-- the rate-limit subject is intentionally defined in auth-neutral terms so a
-  later JWT-backed principal can reuse the same boundary contract
-- the current limiter store is local, in-memory, and per-process
-- that makes the current behavior a good fit for local development, demos, and
-  single-process backend runs, but not a distributed or multi-worker contract
-- the current FastAPI security and limiter seams are therefore safe to treat
-  as local/demo readiness features, not as a production-distributed security
-  model
-- shared service modules such as
-  [`src/session_alerts.py`](../src/session_alerts.py) and
-  [`src/session_alert_incidents.py`](../src/session_alert_incidents.py) should
-  remain unaware of request counting
-
-Current readiness summary:
-
-- safe current use:
-  - local development
-  - demos
-  - single-process backend runs
-- not yet ready as a distributed boundary:
-  - multi-worker shared rate limiting
-  - shared-store request budgets
-  - remote MCP auth or limiter enforcement
-  - broader production-distributed guarantees
-
-Implementation note:
-
-- the current limiter mechanics live in [`src/api_rate_limit.py`](../src/api_rate_limit.py)
-- the alerts-router HTTP protection composition lives in
-  [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py)
-- structured run-mode, auth, and rate-limit settings live in
-  [`src/api_boundary_config.py`](../src/api_boundary_config.py)
-- compatibility re-exports still exist in [`src/config.py`](../src/config.py)
-- the stable `429` error vocabulary lives in
-  [`src/api/errors.py`](../src/api/errors.py) and
-  [`src/api/schemas.py`](../src/api/schemas.py)
-- the current alerts router enforces the limiter through a router dependency
-  rather than pushing counting logic into route bodies or shared alert services
-- invalid configured auth or limiter settings now fail during FastAPI startup
-  rather than waiting for the first protected request
-- `/health` and `/detectors` remain outside operational-route authentication
-  and alert rate limiting; framework documentation is local-only and returns
-  `404` in share mode. Session and playback routes require authentication but
-  do not have a limiter yet
-
-Future remote MCP note:
-
-- the current FastAPI authentication and rate-limit contracts do not secure the
-  current `stdio` MCP server
-- if MCP later gains a remote transport, it should reuse the auth-neutral
-  principal concept, the same general machine-readable error style, and
-  possibly the limiter service concepts
-- that future work should still be designed at the MCP transport boundary
-  rather than assuming the current FastAPI dependency model already applies
-- until then, keep the current `stdio` MCP server documented as a local-trust
-  transport rather than a protected remote API surface
+Every implemented family returns this `429` envelope plus a coarse
+`Retry-After` header. Shared services remain unaware of request counting.
+The limiter is local, in-memory, and per process: suitable for the current
+desktop-backed and demo runtime, but not a multi-worker or distributed-security
+guarantee. A remote MCP transport requires its own authentication, bounds, and
+rate-limit design.
 
 ## API Stream Source Contract v1
 
@@ -2101,6 +2002,13 @@ Shared filter inputs:
 - optional `severity`
 - optional `start_time_utc`
 - optional `end_time_utc`
+
+Raw alert lists and grouped timelines also accept `limit` and `offset` on both
+FastAPI and MCP. `limit` defaults to 100 and is capped at 250; `offset`
+defaults to 0. Paging preserves the existing alert or grouped-entry order.
+Session snapshot reads keep their complete payload meaning and fail with a
+structured `422` if the serialized HTTP response would exceed 2 MiB; they are
+not silently truncated.
 
 Current shared-service validation expectations:
 

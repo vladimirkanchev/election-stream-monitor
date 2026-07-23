@@ -65,9 +65,9 @@ does not discover or merge history from the other backend.
 
 | Tool | Classification | Capability and returned data | Shared dependency | Result-size control | Error and secret exposure | Remote availability |
 | --- | --- | --- | --- | --- | --- | --- |
-| `query_session_alerts` | `MCP-local-read-only` | Read-only raw alert events for one session | `session_alerts.filter_session_alert_events()` | No pagination or result cap | Returns persisted alert content. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
+| `query_session_alerts` | `MCP-local-read-only` | Read-only raw alert events for one session | `session_alerts.filter_session_alert_events()` | Stable offset page; `limit` defaults to 100 and is capped at 250 | Returns persisted alert content. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
 | `summarize_session_alerts` | `MCP-local-read-only` | Read-only counts and time bounds for one session's alerts | `session_alerts.summarize_session_alert_events()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate alert data. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
-| `query_session_alert_timeline` | `MCP-local-read-only` | Read-only grouped incident entries for one session | `session_alert_incidents.build_session_timeline()` | No pagination or result cap | Returns persisted incident titles, messages, and sources. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
+| `query_session_alert_timeline` | `MCP-local-read-only` | Read-only grouped incident entries for one session | `session_alert_incidents.build_session_timeline()` | Stable grouped-entry offset page; `limit` defaults to 100 and is capped at 250 | Returns persisted incident titles, messages, and sources. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
 | `summarize_session_alert_incidents` | `MCP-local-read-only` | Read-only grouped incident counts and narrative summary | `session_alert_incidents.build_session_incident_summary()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate incident data. Input errors are readable; storage errors use a safe generic message. | `disabled-remotely`; local `stdio` only |
 
 No tool starts, cancels, edits, deletes, or resolves playback for a session.
@@ -95,14 +95,14 @@ returns API keys, database URLs, session metadata, result payloads, or playback
 paths, but alert messages and source names remain sensitive local monitoring
 content.
 
-There is currently no pagination or result cap. Raw and timeline tools can
-return every selected row; summaries are compact but scan the selected rows.
-This is an explicit local-trust limitation, not resource-abuse protection.
+Raw and timeline tools use the same `offset` and `limit` contract as FastAPI.
+Paging limits returned data only: shared services still load and filter the
+selected rows, and summaries still scan them.
 
 ## Deferred Hardening
 
-Request length, time-span, pagination, and result caps remain a bounded
-follow-up before any network transport is considered. Storage-error
+Request length, time-span, and store-level scan caps remain bounded follow-ups
+before any network transport is considered. Storage-error
 sanitization is implemented for the current stdio boundary; no remote MCP,
 authentication infrastructure, or mutation tool is introduced here.
 

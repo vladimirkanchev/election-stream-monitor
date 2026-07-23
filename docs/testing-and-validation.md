@@ -1242,7 +1242,7 @@ machine-specific test assumptions from drifting into shared review branches.
 Focused alert-query, seam, incident, and MCP validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_timeline_service_filters.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_session_alert_store.py tests/test_session_alert_store_runtime.py tests/test_session_alert_store_runtime_config.py tests/test_session_alert_store_parity.py tests/test_session_alert_store_postgres.py tests/test_session_alert_store_postgres_config.py tests/test_session_io.py tests/test_session_runner_execution_local.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
+.venv/bin/pytest -q tests/test_api_auth.py tests/test_api_rate_limit.py tests/test_api_boundary_settings_env.py tests/test_api_boundary_settings_validation.py tests/test_api_boundary_error_contracts.py tests/test_api_server_cli_runtime.py tests/test_api_server_cli_routes.py tests/test_api_server_cli_output.py tests/test_api_alert_route_auth_policy.py tests/test_api_alert_route_rate_limit_policy.py tests/test_api_session_route_rate_limit_policy.py tests/test_api_playback_route_policy.py tests/test_api_read_resource_policy.py tests/test_api_alert_route_contracts.py tests/test_alert_query_service_read.py tests/test_alert_query_service_filter.py tests/test_alert_query_service_summary.py tests/test_alert_timeline_service_grouping.py tests/test_alert_incident_summary_service_contracts.py tests/test_alert_incident_summary_service_filters.py tests/test_session_alert_store.py tests/test_session_alert_store_runtime.py tests/test_session_alert_store_runtime_config.py tests/test_session_alert_store_parity.py tests/test_session_alert_store_postgres.py tests/test_session_alert_store_postgres_config.py tests/test_session_io.py tests/test_session_runner_execution_local.py tests/test_api_session_alerts.py tests/test_api_session_alert_incidents.py tests/test_mcp_server_contracts.py tests/test_mcp_server_alerts_behavior.py tests/test_mcp_server_alerts_errors.py tests/test_mcp_fastapi_boundary_split.py tests/test_mcp_fastapi_parity_behavior.py tests/test_mcp_fastapi_parity_edges.py tests/test_mcp_server_incidents_behavior.py tests/test_mcp_server_incidents_errors.py
 ```
 
 This slice covers the shared read-only alert query service, the FastAPI alerts
@@ -1462,7 +1462,7 @@ protection contract:
 - `share` mode defaults turn auth and rate limiting on
 - share mode can auto-generate one startup API key when none is configured
 - share-mode authentication for operational routes
-- alert-route rate limiting
+- alert, session-control, and playback route-family rate limiting
 - structured `401` and `429` responses
 - local in-memory/per-process limiter behavior
 - coarse `Retry-After` behavior on `429`
@@ -1470,10 +1470,25 @@ protection contract:
 Treat that as strong confidence for the current local/demo readiness level,
 not as proof of a distributed shared-store deployment model.
 
+For a focused FastAPI resource-control change, run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider -q \
+  tests/test_api_rate_limit.py \
+  tests/test_api_alert_route_rate_limit_policy.py \
+  tests/test_api_session_route_rate_limit_policy.py \
+  tests/test_api_playback_route_policy.py \
+  tests/test_api_read_resource_policy.py \
+  tests/test_api_boundary_settings_env.py \
+  tests/test_mcp_server_contracts.py
+```
+
 The current functionality under that slice is:
 
 - FastAPI API-key authentication seam for session, alert, and playback routes
-- FastAPI in-memory principal-aware rate-limiting seam for the alerts router
+- FastAPI in-memory principal-aware rate-limiting seam for alert, session-control,
+  and playback route families
 - raw session alert list queries
 - raw numeric alert summaries
 - grouped incident timelines
@@ -1605,7 +1620,8 @@ The current test split is:
     invalid keys, blank headers, and unsupported modes
 - `tests/test_api_rate_limit.py`
   - limiter unit coverage for fixed-window counting, principal separation,
-    window reset, and IP-strategy subject building
+    named route-family budget isolation, explicit reset, window reset, and
+    IP-strategy subject building
 - `tests/test_api_boundary_settings_env.py`
   - env parsing, run-mode defaults, share-mode API-key generation, and rejected
     auth-disabling share overrides
@@ -1634,6 +1650,13 @@ The current test split is:
   - shared FastAPI alerts-router limiter behavior, logging, budget-sharing
     policy, stable `429` plus `Retry-After`, and proof that unrelated public
     routes stay usable after protected route throttling
+- `tests/test_api_session_route_rate_limit_policy.py`
+  - separate session start/control budgets and bounded start fields
+- `tests/test_api_playback_route_policy.py`
+  - dedicated playback budget, bounded source fields, and `429` OpenAPI contract
+- `tests/test_api_read_resource_policy.py`
+  - shared FastAPI/MCP list and timeline paging plus the session snapshot
+    response-size boundary
 - `tests/test_api_alert_route_contracts.py`
   - shared FastAPI alerts-router `429` response shaping and OpenAPI contract coverage
 - `tests/test_alert_timeline_service_grouping.py`
