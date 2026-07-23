@@ -17,6 +17,7 @@ from tests.session_alert_test_support import (
     select_live_runtime_postgres_alert_store,
 )
 from session_alert_store import (
+    AlertReadLimitExceededError,
     AlertEventPayload,
     clear_default_session_alert_store_cache,
 )
@@ -155,9 +156,17 @@ class MemoryRuntimeAlertStore:
             )
         )
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
-        """Return the in-memory normalized alert rows for one session."""
-        return list(self._alerts_by_session.get(session_id, []))
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
+        """Return in-memory rows while honoring the shared storage-work ceiling."""
+        alerts = self._alerts_by_session.get(session_id, [])
+        if max_rows is not None and len(alerts) > max_rows:
+            raise AlertReadLimitExceededError(max_rows)
+        return list(alerts)
 
 
 def test_run_analyzers_for_slice_filters_kwargs_for_simple_bundle_runner(
