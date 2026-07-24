@@ -1,11 +1,4 @@
-"""Shared helpers for MCP alert-tool tests.
-
-The MCP tests exercise the real in-memory client/server seam, but most of the
-async session setup is mechanical. These helpers keep that plumbing in one
-place so the behavior files can stay focused on tool contracts, success
-payloads, and readable failure mapping across both raw alert and grouped
-incident tools.
-"""
+"""Shared in-memory MCP transport helpers for alert-tool tests."""
 
 from __future__ import annotations
 
@@ -23,11 +16,7 @@ RunReturn = TypeVar("RunReturn")
 def run_with_mcp_session(
     callback: Callable[[Any], Awaitable[RunReturn]],
 ) -> RunReturn:
-    """Run one callback against a fresh in-memory MCP client/server session.
-
-    The callback receives the live MCP client session so each test can still be
-    explicit about the tool call it is making.
-    """
+    """Run a callback against a fresh in-memory MCP client/server session."""
 
     async def run() -> RunReturn:
         async with create_connected_server_and_client_session(build_mcp_server()) as session:
@@ -58,11 +47,21 @@ def list_mcp_tools() -> Any:
 
 
 def tool_error_text(result: Any) -> str:
-    """Flatten MCP text content blocks for concise error assertions.
-
-    The current MCP SDK returns text fragments as content blocks, so the tests
-    use this helper when they only care about the user-visible failure message.
-    """
+    """Return the user-visible text from MCP error content blocks."""
     return "\n".join(
         content.text for content in result.content if hasattr(content, "text")
     )
+
+
+def assert_mcp_storage_failure_is_sanitized(
+    result: Any,
+    *,
+    forbidden_values: tuple[str, ...],
+) -> None:
+    """Assert the stable storage error without leaking supplied diagnostics."""
+    error_text = tool_error_text(result)
+
+    assert result.isError is True
+    assert "Alert storage is unavailable" in error_text
+    for forbidden_value in forbidden_values:
+        assert forbidden_value not in error_text

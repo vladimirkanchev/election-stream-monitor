@@ -24,6 +24,9 @@ from config import (
     get_api_auth_settings,
     get_api_rate_limit_settings,
     get_fastapi_run_mode_settings,
+    get_playback_resolution_rate_limit_settings,
+    get_session_control_rate_limit_settings,
+    get_session_start_rate_limit_settings,
 )
 from tests.api_boundary_env_test_support import (
     reset_boundary_test_state,
@@ -251,6 +254,36 @@ def test_get_api_rate_limit_settings_defaults_follow_run_mode(
     assert settings.enabled is expected_enabled
 
 
+def test_session_rate_limit_budgets_follow_shared_mode_and_window(monkeypatch) -> None:
+    """Session control keeps fixed ceilings while sharing the selected limiter mode."""
+
+    monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
+    monkeypatch.setenv("ESM_API_RATE_LIMIT_WINDOW_SEC", "45")
+
+    control_settings = get_session_control_rate_limit_settings()
+    start_settings = get_session_start_rate_limit_settings()
+
+    assert control_settings.enabled is True
+    assert control_settings.window_seconds == 45
+    assert control_settings.max_requests == 12
+    assert start_settings.enabled is True
+    assert start_settings.window_seconds == 45
+    assert start_settings.max_requests == 6
+
+
+def test_playback_budget_follows_shared_mode_and_window(monkeypatch) -> None:
+    """Playback keeps a fixed budget while sharing mode and window policy."""
+
+    monkeypatch.setenv("ESM_FASTAPI_RUN_MODE", "share")
+    monkeypatch.setenv("ESM_API_RATE_LIMIT_WINDOW_SEC", "45")
+
+    settings = get_playback_resolution_rate_limit_settings()
+
+    assert settings.enabled is True
+    assert settings.window_seconds == 45
+    assert settings.max_requests == 30
+
+
 def test_get_api_rate_limit_settings_falls_back_to_default_on_invalid_bool_env(
     monkeypatch,
 ) -> None:
@@ -283,5 +316,19 @@ def test_get_api_rate_limit_settings_rejects_invalid_env_max_requests(monkeypatc
     with pytest.raises(
         ApiBoundaryConfigurationError,
         match="ESM_API_RATE_LIMIT_MAX_REQUESTS must be a positive integer",
+    ):
+        get_api_rate_limit_settings()
+
+
+def test_get_api_rate_limit_settings_rejects_values_above_alert_read_ceiling(
+    monkeypatch,
+) -> None:
+    """The configured alert-read budget should stay within its documented maximum."""
+
+    monkeypatch.setenv("ESM_API_RATE_LIMIT_MAX_REQUESTS", "201")
+
+    with pytest.raises(
+        ApiBoundaryConfigurationError,
+        match="ESM_API_RATE_LIMIT_MAX_REQUESTS must not exceed 200",
     ):
         get_api_rate_limit_settings()

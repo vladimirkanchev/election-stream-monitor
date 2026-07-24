@@ -10,6 +10,7 @@ The file owns:
 - principal and IP subject strategies
 - exact-limit and over-limit behavior
 - window reset semantics
+- independent named route-family budgets
 - injected backend seam behavior
 - defensive behavior for unsupported limiter strategies
 - injected backend short-circuit and propagation behavior
@@ -112,6 +113,45 @@ def test_enforce_api_rate_limit_keeps_distinct_principals_separate() -> None:
         )
 
 
+def test_enforce_api_rate_limit_keeps_named_operation_budgets_separate() -> None:
+    """One caller should retain independent capacity for each route family."""
+    settings = ApiRateLimitSettings(
+        enabled=True,
+        strategy="principal",
+        window_seconds=60,
+        max_requests=1,
+    )
+    principal = _build_principal("alpha")
+
+    enforce_api_rate_limit(
+        principal=principal,
+        settings=settings,
+        budget_name="session-start",
+        now_monotonic=100.0,
+    )
+    enforce_api_rate_limit(
+        principal=principal,
+        settings=settings,
+        budget_name="playback-resolution",
+        now_monotonic=100.0,
+    )
+
+    with pytest.raises(RateLimitError, match="Too many requests for the configured window"):
+        enforce_api_rate_limit(
+            principal=principal,
+            settings=settings,
+            budget_name="session-start",
+            now_monotonic=101.0,
+        )
+    with pytest.raises(RateLimitError, match="Too many requests for the configured window"):
+        enforce_api_rate_limit(
+            principal=principal,
+            settings=settings,
+            budget_name="playback-resolution",
+            now_monotonic=101.0,
+        )
+
+
 def test_enforce_api_rate_limit_uses_local_fallback_subject_without_key_id() -> None:
     """Local-mode principals should still map to one deterministic limiter subject."""
     settings = ApiRateLimitSettings(
@@ -161,6 +201,32 @@ def test_enforce_api_rate_limit_resets_after_window_expires() -> None:
         principal=_build_principal("alpha"),
         settings=settings,
         now_monotonic=110.0,
+    )
+
+
+def test_reset_api_rate_limit_state_reopens_named_operation_budgets() -> None:
+    """An explicit in-process reset should clear every route-family counter."""
+    settings = ApiRateLimitSettings(
+        enabled=True,
+        strategy="principal",
+        window_seconds=60,
+        max_requests=1,
+    )
+    principal = _build_principal("alpha")
+
+    enforce_api_rate_limit(
+        principal=principal,
+        settings=settings,
+        budget_name="session-control",
+        now_monotonic=100.0,
+    )
+    reset_api_rate_limit_state()
+
+    enforce_api_rate_limit(
+        principal=principal,
+        settings=settings,
+        budget_name="session-control",
+        now_monotonic=101.0,
     )
 
 

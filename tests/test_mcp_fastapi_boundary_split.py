@@ -1,19 +1,7 @@
-"""Focused tests for the FastAPI-versus-stdio MCP trust-boundary split.
+"""Tests for the separate FastAPI HTTP and local stdio MCP trust boundaries.
 
-This file owns the current local-trust rule for MCP:
-
-- enabling FastAPI auth and rate limiting must not affect stdio MCP tools
-- preparing the explicit FastAPI ``share`` runtime must not affect stdio MCP
-- grouped MCP tools remain usable even if both ``share`` prep and direct
-  FastAPI protection env are touched
-- one small smoke run proves protected HTTP and local MCP can still read the
-  same persisted alert data together
-
-Cross-surface meaning parity now lives in
-``tests/test_mcp_fastapi_parity_behavior.py`` and
-``tests/test_mcp_fastapi_parity_edges.py``. The one shared boundary-state and
-protected-route setup seam reused here lives in
-``tests/mcp_fastapi_parity_test_support.py``.
+FastAPI protection must not alter local MCP reads, and the MCP allowlist must
+not mutate persisted data. Cross-surface payload parity has dedicated suites.
 """
 
 from __future__ import annotations
@@ -45,11 +33,7 @@ pytestmark = pytest.mark.usefixtures("clear_boundary_test_state")
 
 
 def _write_single_alert_session(monkeypatch, tmp_path: Path, session_id: str) -> None:
-    """Create one persisted single-alert session shared by boundary tests.
-
-    The trust-boundary slice intentionally uses one tiny fixture so any failure
-    is easier to attribute to boundary behavior rather than fixture complexity.
-    """
+    """Create the shared persisted single-alert fixture for boundary tests."""
 
     session_root = configure_session_alert_test(monkeypatch, tmp_path)
     write_known_session(
@@ -67,6 +51,15 @@ def _write_single_alert_session(monkeypatch, tmp_path: Path, session_id: str) ->
             ),
         ],
     )
+
+
+def _session_file_contents(session_dir: Path) -> dict[str, bytes]:
+    """Return one session's persisted files for the MCP read-only assertion."""
+    return {
+        path.relative_to(session_dir).as_posix(): path.read_bytes()
+        for path in session_dir.rglob("*")
+        if path.is_file()
+    }
 
 
 def _single_alert_payload(session_id: str) -> dict[str, object]:
@@ -109,11 +102,7 @@ def _assert_mcp_query_alerts_success(result, *, session_id: str) -> None:
 
 
 def _assert_mcp_raw_alert_tools_success(session_id: str) -> None:
-    """Assert both raw MCP tools against the shared single-alert fixture.
-
-    The boundary file cares about trust-split independence, not the raw MCP
-    tools as separate business behaviors, so the paired assertion stays local.
-    """
+    """Assert both raw MCP tools against the shared boundary fixture."""
 
     query_result = call_mcp_tool(
         "query_session_alerts",
@@ -132,11 +121,7 @@ def _assert_mcp_raw_alert_tools_success(session_id: str) -> None:
 
 
 def _assert_grouped_mcp_tools_success(session_id: str) -> None:
-    """Assert grouped MCP tools still expose the shared single-alert contracts.
-
-    Keeping the grouped timeline and grouped summary together here makes the
-    grouped trust-boundary rule easier to scan as one contract.
-    """
+    """Assert both grouped MCP tools against the shared boundary fixture."""
 
     timeline_result = call_mcp_tool(
         "query_session_alert_timeline",
@@ -191,12 +176,7 @@ def _enable_fastapi_auth_and_rate_limiting(monkeypatch) -> None:
 
 
 def _prepare_combined_share_and_fastapi_protection_state(monkeypatch) -> None:
-    """Apply both FastAPI protection entrypoints before one MCP read.
-
-    This mirrors the strongest current MCP boundary regression we care about:
-    both the CLI ``share`` path and the env-driven protection path may be
-    touched, but stdio MCP must still stay outside the HTTP trust boundary.
-    """
+    """Prepare both FastAPI protection paths without altering stdio MCP."""
 
     prepare_cli_runtime(mode="share", manual_api_key=None)
     _enable_fastapi_auth_and_rate_limiting(monkeypatch)
@@ -270,6 +250,22 @@ def test_mcp_incident_tools_remain_usable_when_share_mode_and_direct_fastapi_pro
     _prepare_combined_share_and_fastapi_protection_state(monkeypatch)
 
     _assert_grouped_mcp_tools_success("session-mcp-share-and-fastapi-grouped-split")
+
+
+def test_all_mcp_tools_leave_persisted_session_data_unchanged(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """The read-only MCP allowlist must not alter the persisted session it reads."""
+    session_id = "session-mcp-read-only"
+    _write_single_alert_session(monkeypatch, tmp_path, session_id)
+    session_dir = tmp_path / session_id
+    before = _session_file_contents(session_dir)
+
+    _assert_mcp_raw_alert_tools_success(session_id)
+    _assert_grouped_mcp_tools_success(session_id)
+
+    assert _session_file_contents(session_dir) == before
 
 
 def test_alert_query_slice_smoke_run_keeps_fastapi_and_stdio_mcp_paths_usable_together(

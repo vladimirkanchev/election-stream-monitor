@@ -131,6 +131,12 @@ API_RATE_LIMIT_ENABLED = _api_boundary_config.API_RATE_LIMIT_ENABLED
 API_RATE_LIMIT_STRATEGY = _api_boundary_config.API_RATE_LIMIT_STRATEGY
 API_RATE_LIMIT_WINDOW_SEC = _api_boundary_config.API_RATE_LIMIT_WINDOW_SEC
 API_RATE_LIMIT_MAX_REQUESTS = _api_boundary_config.API_RATE_LIMIT_MAX_REQUESTS
+API_RATE_LIMIT_MAX_REQUESTS_CEILING = (
+    _api_boundary_config.API_RATE_LIMIT_MAX_REQUESTS_CEILING
+)
+PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS = (
+    _api_boundary_config.PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS
+)
 ApiBoundaryConfigurationError = _api_boundary_config.ApiBoundaryConfigurationError
 FastApiRunModeSettings = _api_boundary_config.FastApiRunModeSettings
 ApiAuthSettings = _api_boundary_config.ApiAuthSettings
@@ -139,6 +145,15 @@ get_fastapi_run_mode_settings = _api_boundary_config.get_fastapi_run_mode_settin
 clear_fastapi_boundary_settings_caches = _api_boundary_config.clear_fastapi_boundary_settings_caches
 get_api_auth_settings = _api_boundary_config.get_api_auth_settings
 get_api_rate_limit_settings = _api_boundary_config.get_api_rate_limit_settings
+get_session_control_rate_limit_settings = (
+    _api_boundary_config.get_session_control_rate_limit_settings
+)
+get_session_start_rate_limit_settings = (
+    _api_boundary_config.get_session_start_rate_limit_settings
+)
+get_playback_resolution_rate_limit_settings = (
+    _api_boundary_config.get_playback_resolution_rate_limit_settings
+)
 validate_api_auth_settings = _api_boundary_config.validate_api_auth_settings
 validate_api_rate_limit_settings = _api_boundary_config.validate_api_rate_limit_settings
 validate_fastapi_boundary_settings = _api_boundary_config.validate_fastapi_boundary_settings

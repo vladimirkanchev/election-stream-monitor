@@ -195,7 +195,7 @@ def test_rate_limit_rejections_log_strategy_and_safe_subject(monkeypatch, caplog
     install_rate_limited_alert_routes(monkeypatch)
     fingerprint = hashlib.sha256("valid-key".encode("utf-8")).hexdigest()[:12]
 
-    with caplog.at_level(logging.INFO, logger="api.alert_route_policy"):
+    with caplog.at_level(logging.INFO, logger="api.http_rate_limit_policy"):
         first_response = request(
             "GET",
             "/sessions/session-123/alerts",
@@ -227,7 +227,7 @@ def test_ip_strategy_rate_limit_rejections_log_safe_host_subject(monkeypatch, ca
         strategy="ip",
     )
 
-    with caplog.at_level(logging.INFO, logger="api.alert_route_policy"):
+    with caplog.at_level(logging.INFO, logger="api.http_rate_limit_policy"):
         first_response = request(
             "GET",
             "/sessions/session-123/alerts",
@@ -258,9 +258,9 @@ def test_ip_strategy_rate_limit_rejections_fall_back_to_unknown_host_subject(
         allowed_api_keys=("alpha-key", "beta-key"),
         strategy="ip",
     )
-    monkeypatch.setattr("api.alert_route_policy._get_request_host", lambda request: None)
+    monkeypatch.setattr("api.http_rate_limit_policy._get_request_host", lambda request: None)
 
-    with caplog.at_level(logging.INFO, logger="api.alert_route_policy"):
+    with caplog.at_level(logging.INFO, logger="api.http_rate_limit_policy"):
         first_response = request(
             "GET",
             "/sessions/session-123/alerts",
@@ -285,7 +285,7 @@ def test_ip_strategy_unknown_host_returns_real_429_with_retry_after(monkeypatch)
         strategy="ip",
         window_seconds=13,
     )
-    monkeypatch.setattr("api.alert_route_policy._get_request_host", lambda request: None)
+    monkeypatch.setattr("api.http_rate_limit_policy._get_request_host", lambda request: None)
 
     first_response = request(
         "GET",
@@ -313,7 +313,7 @@ def test_local_fallback_rate_limit_rejections_log_local_subject(monkeypatch, cap
         auth_enabled=False,
     )
 
-    with caplog.at_level(logging.INFO, logger="api.alert_route_policy"):
+    with caplog.at_level(logging.INFO, logger="api.http_rate_limit_policy"):
         first_response = request("GET", "/sessions/session-123/alerts")
         second_response = request("GET", "/sessions/session-123/alerts")
 

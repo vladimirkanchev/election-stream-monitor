@@ -1,24 +1,19 @@
-"""Negative-path tests for raw MCP alert-query tools.
+"""Raw MCP alert-tool error-mapping tests.
 
-This file owns raw MCP tool-level error mapping:
-
-- missing-session failures
-- invalid time-range failures
-- invalid timestamp-format failures
-- list/summary parity where both raw tools should expose the same MCP error contract
-
-Keeping these checks apart from the usable payload file makes raw MCP adapter
-drift easier to spot: payload regressions fail in one place, error-translation
-regressions fail in another.
+These tests cover reviewed client errors and sanitized storage failures;
+successful payload behavior lives in ``test_mcp_server_alerts_behavior.py``.
 """
 
 from collections.abc import Iterator
 
 import esm_mcp.alert_tools as alert_tools
 import pytest
-from session_alert_store import clear_default_session_alert_store_cache
+from session_alert_store import AlertReadLimitExceededError, clear_default_session_alert_store_cache
 from session_alerts import SessionAlertsNotFoundError
-from tests.mcp_alert_test_support import call_mcp_tool
+from tests.mcp_alert_test_support import (
+    assert_mcp_storage_failure_is_sanitized,
+    call_mcp_tool,
+)
 from tests.mcp_server_alerts_test_support import assert_mcp_tool_error
 from tests.session_alert_test_support import install_runtime_postgres_bootstrap_failure
 
@@ -61,13 +56,13 @@ def _assert_raw_tool_maps_service_error(
 
 
 def _assert_raw_mcp_bootstrap_failure(tool_name: str) -> None:
-    """Assert the stable MCP tool error text for one runtime Postgres bootstrap failure."""
+    """Assert PostgreSQL bootstrap failure uses the safe MCP storage error."""
     result = call_mcp_tool(
         tool_name,
         {"session_id": "session-runtime-postgres-mcp-error"},
     )
 
-    assert_mcp_tool_error(result, expected_message="postgres bootstrap failed")
+    assert_mcp_tool_error(result, expected_message="Alert storage is unavailable")
 
 
 def test_query_session_alerts_tool_reports_missing_session_as_tool_error(
@@ -101,6 +96,21 @@ def test_summarize_session_alerts_tool_reports_invalid_time_range_as_tool_error(
         },
         service_error=ValueError(expected_message),
         expected_message=expected_message,
+    )
+
+
+def test_query_session_alerts_tool_reports_the_shared_storage_read_ceiling(
+    monkeypatch,
+) -> None:
+    """MCP should expose the reviewed ceiling message without HTTP-specific behavior."""
+    _assert_raw_tool_maps_service_error(
+        monkeypatch,
+        tool_name="query_session_alerts",
+        service_attr="filter_session_alert_events",
+        session_id="session-mcp-read-ceiling",
+        tool_arguments={},
+        service_error=AlertReadLimitExceededError(2),
+        expected_message="Alert query exceeds the maximum of 2 stored rows",
     )
 
 
@@ -155,3 +165,36 @@ def test_raw_mcp_alert_tools_report_runtime_postgres_bootstrap_failure(
     install_runtime_postgres_bootstrap_failure(monkeypatch)
 
     _assert_raw_mcp_bootstrap_failure(tool_name)
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "service_attr", "error_type"),
+    [
+        ("query_session_alerts", "filter_session_alert_events", RuntimeError),
+        ("query_session_alerts", "filter_session_alert_events", ValueError),
+        ("summarize_session_alerts", "summarize_session_alert_events", RuntimeError),
+        ("summarize_session_alerts", "summarize_session_alert_events", ValueError),
+    ],
+)
+def test_raw_mcp_alert_tools_hide_storage_diagnostics(
+    monkeypatch,
+    tool_name: str,
+    service_attr: str,
+    error_type: type[Exception],
+) -> None:
+    """Unexpected storage failures must not disclose connection details to MCP."""
+    leaked_detail = (
+        "read failed for postgresql://alerts:db-secret@db.example/esm "
+        "api_key=tool-secret path=/srv/esm/alerts"
+    )
+
+    def failing_service(*_: object, **__: object) -> object:
+        raise error_type(leaked_detail)
+
+    monkeypatch.setattr(alert_tools, service_attr, failing_service)
+    result = call_mcp_tool(tool_name, {"session_id": "session-storage-failure"})
+
+    assert_mcp_storage_failure_is_sanitized(
+        result,
+        forbidden_values=("db-secret", "tool-secret", "postgresql://", "/srv/esm"),
+    )

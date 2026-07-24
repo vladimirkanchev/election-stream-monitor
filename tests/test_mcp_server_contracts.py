@@ -1,17 +1,7 @@
-"""Focused structural tests for MCP tool registration and launch wiring.
+"""Structural MCP tests for the allowlist, schemas, and stdio launch path.
 
-This file owns the MCP surface that should stay stable even before any real
-tool call happens:
-
-- registered tool names and count
-- input/output schema basics for raw and grouped read tools
-- read-only MCP surface intent in server instructions
-- stdio launch wiring
-- installed console entrypoint metadata
-
-Scenario-level raw alert, grouped incident, and FastAPI-boundary behavior
-lives in the dedicated MCP behavior suites so this file can stay short,
-structural, and easy to review.
+Payload behavior, error mapping, and the FastAPI/MCP boundary each live in
+their focused suites.
 """
 
 import importlib
@@ -23,7 +13,7 @@ from tests.mcp_alert_test_support import list_mcp_tools
 
 
 def _current_read_only_tool_names() -> set[str]:
-    """Return the exact stable MCP tool names for the current read-only surface."""
+    """Return the exact read-only MCP allowlist."""
     return {
         "query_session_alerts",
         "summarize_session_alerts",
@@ -33,50 +23,97 @@ def _current_read_only_tool_names() -> set[str]:
 
 
 def _tool_named(tools, tool_name: str):
-    """Return one registered MCP tool by name for compact schema assertions.
-
-    The contracts file stays intentionally small, so this helper removes the
-    repeated lookup noise without introducing a broader test-support layer.
-    """
+    """Return one registered MCP tool by name for schema assertions."""
     return next(tool for tool in tools.tools if tool.name == tool_name)
 
 
-def test_mcp_server_registers_alert_tools() -> None:
-    """The server should advertise the stable read-only MCP tool surface.
+def _assert_shared_alert_filter_schema(tool, *, paged: bool = False) -> None:
+    """Assert common bounded session-alert inputs for one MCP tool."""
+    assert tool.inputSchema["required"] == ["session_id"]
+    expected_properties = {
+        "session_id",
+        "detector_id",
+        "severity",
+        "start_time_utc",
+        "end_time_utc",
+    }
+    if paged:
+        expected_properties.update({"limit", "offset"})
+    assert set(tool.inputSchema["properties"]) == expected_properties
+    if paged:
+        assert tool.inputSchema["properties"]["limit"] == {
+            "default": 100,
+            "maximum": 250,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer",
+        }
+        assert tool.inputSchema["properties"]["offset"]["minimum"] == 0
+    assert tool.inputSchema["properties"]["session_id"] == {
+        "maxLength": 128,
+        "minLength": 1,
+        "title": "Session Id",
+        "type": "string",
+    }
+    bounded_filters = (
+        ("detector_id", 128),
+        ("start_time_utc", 64),
+        ("end_time_utc", 64),
+    )
+    for filter_name, maximum in bounded_filters:
+        assert tool.inputSchema["properties"][filter_name]["anyOf"][0] == {
+            "maxLength": maximum,
+            "minLength": 1,
+            "type": "string",
+        }
 
-    This stays intentionally structural: it locks down the current tool names,
-    read-only instructions, and the core raw/grouped input-output schema shape
-    while richer payload and error behavior stays in the dedicated MCP tool
-    behavior files.
-    """
+
+def _assert_exact_output_fields(tool, expected_fields: set[str]) -> None:
+    """Assert one MCP output exposes only its current public top-level fields."""
+    assert set(tool.outputSchema["properties"]) == expected_fields
+
+
+def test_mcp_server_registers_alert_tools() -> None:
+    """The server exposes the stable read-only schemas and page bounds."""
     tools = list_mcp_tools()
-    tool_names = sorted(tool.name for tool in tools.tools)
-    assert tool_names == [
-        "query_session_alert_timeline",
-        "query_session_alerts",
-        "summarize_session_alert_incidents",
-        "summarize_session_alerts",
-    ]
-    assert "Read-only tools" in SERVER_INSTRUCTIONS
+    assert "Local stdio-only, read-only tools" in SERVER_INSTRUCTIONS
 
     query_tool = _tool_named(tools, "query_session_alerts")
     summary_tool = _tool_named(tools, "summarize_session_alerts")
     timeline_tool = _tool_named(tools, "query_session_alert_timeline")
     incident_summary_tool = _tool_named(tools, "summarize_session_alert_incidents")
 
-    assert query_tool.inputSchema["required"] == ["session_id"]
-    assert "severity" in query_tool.inputSchema["properties"]
-    assert query_tool.outputSchema["properties"]["session_id"]["type"] == "string"
-    assert query_tool.outputSchema["properties"]["alerts"]["type"] == "array"
+    _assert_shared_alert_filter_schema(query_tool, paged=True)
+    _assert_exact_output_fields(query_tool, {"session_id", "alerts"})
+    assert set(
+        query_tool.outputSchema["$defs"]["AlertEventResponse"]["properties"]
+    ) == {
+        "session_id",
+        "timestamp_utc",
+        "detector_id",
+        "title",
+        "message",
+        "severity",
+        "source_name",
+        "window_index",
+        "window_start_sec",
+    }
 
-    assert summary_tool.inputSchema["required"] == ["session_id"]
-    assert "start_time_utc" in summary_tool.inputSchema["properties"]
-    assert summary_tool.outputSchema["properties"]["counts_by_detector"]["type"] == "object"
-    assert summary_tool.outputSchema["properties"]["total_alerts"]["type"] == "integer"
+    _assert_shared_alert_filter_schema(summary_tool)
+    _assert_exact_output_fields(
+        summary_tool,
+        {
+            "session_id",
+            "total_alerts",
+            "counts_by_detector",
+            "counts_by_severity",
+            "first_alert_timestamp_utc",
+            "last_alert_timestamp_utc",
+        },
+    )
 
-    assert timeline_tool.inputSchema["required"] == ["session_id"]
-    assert "start_time_utc" in timeline_tool.inputSchema["properties"]
-    assert timeline_tool.outputSchema["properties"]["entries"]["type"] == "array"
+    _assert_shared_alert_filter_schema(timeline_tool, paged=True)
+    _assert_exact_output_fields(timeline_tool, {"session_id", "entries"})
     assert (
         timeline_tool.outputSchema["properties"]["entries"]["items"]["$ref"]
         == "#/$defs/SessionAlertTimelineEntryResponse"
@@ -88,23 +125,25 @@ def test_mcp_server_registers_alert_tools() -> None:
         == "string"
     )
 
-    assert incident_summary_tool.inputSchema["required"] == ["session_id"]
-    assert "severity" in incident_summary_tool.inputSchema["properties"]
-    assert incident_summary_tool.outputSchema["properties"]["top_incident_categories"]["type"] == "object"
-    assert (
-        incident_summary_tool.outputSchema["properties"]["total_incidents"]["type"]
-        == "integer"
+    _assert_shared_alert_filter_schema(incident_summary_tool)
+    _assert_exact_output_fields(
+        incident_summary_tool,
+        {
+            "session_id",
+            "total_alerts",
+            "total_incidents",
+            "counts_by_detector",
+            "counts_by_severity",
+            "top_incident_categories",
+            "first_alert_timestamp_utc",
+            "last_alert_timestamp_utc",
+            "narrative_summary",
+        },
     )
-    assert "narrative_summary" in incident_summary_tool.outputSchema["properties"]
 
 
 def test_mcp_server_registers_exactly_four_current_read_only_tools() -> None:
-    """The current MCP surface should remain the exact four read/query tools.
-
-    This stays separate from the broader registration/schema test so changes to
-    tool count or accidental mutating tool registration fail through one small,
-    obvious guard instead of being buried inside the schema assertions.
-    """
+    """The MCP allowlist should remain the exact four current read/query tools."""
     tools = list_mcp_tools()
 
     assert len(tools.tools) == 4
@@ -112,11 +151,7 @@ def test_mcp_server_registers_exactly_four_current_read_only_tools() -> None:
 
 
 def test_main_runs_mcp_server_over_stdio(monkeypatch) -> None:
-    """The module entrypoint should keep stdio as the default local transport.
-
-    The repo currently treats MCP as a local-first read surface, so this test
-    keeps the launch seam explicit even if registration details evolve later.
-    """
+    """The MCP entrypoint should keep stdio as its local-only transport."""
     calls: list[str] = []
     mcp_server_module = importlib.import_module("esm_mcp.server")
 

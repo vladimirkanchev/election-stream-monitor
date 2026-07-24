@@ -15,7 +15,9 @@ from datetime import datetime
 import importlib
 from typing import Any, Protocol, Self, cast
 
+from read_resource_policy import validate_optional_row_limit
 from session_alert_store import (
+    AlertReadLimitExceededError,
     AlertEventPayload,
     require_known_session,
     SessionAlertStore,
@@ -106,9 +108,11 @@ FROM session_alert_events
 WHERE session_id = %s
 ORDER BY id ASC
 """.strip()
+POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL = f"{POSTGRES_ALERT_EVENTS_READ_SQL}\nLIMIT %s"
 
 __all__ = [
     "POSTGRES_ALERT_EVENTS_INDEX_SQL",
+    "POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL",
     "POSTGRES_ALERT_EVENTS_INSERT_SQL",
     "POSTGRES_ALERT_EVENTS_READ_SQL",
     "POSTGRES_ALERT_EVENTS_TABLE_NAME",
@@ -169,17 +173,31 @@ class PostgresSessionAlertStore(SessionAlertStore):
             cursor.execute(POSTGRES_ALERT_EVENTS_INSERT_SQL, _event_insert_params(event))
         self._connection.commit()
 
-    def read_session_alert_events(self, session_id: str) -> list[AlertEventPayload]:
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[AlertEventPayload]:
         """Return validated raw alert rows for one known session.
 
         Unknown-session behavior goes through the shared alert-side adapter so
         file and PostgreSQL alert reads preserve the same not-found contract.
         """
         require_known_session(session_id)
+        validate_optional_row_limit(max_rows)
+
+        query = POSTGRES_ALERT_EVENTS_READ_SQL
+        params: tuple[object, ...] = (session_id,)
+        if max_rows is not None:
+            query = POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL
+            params = (session_id, max_rows + 1)
 
         with self._connection.cursor() as cursor:
-            cursor.execute(POSTGRES_ALERT_EVENTS_READ_SQL, (session_id,))
+            cursor.execute(query, params)
             rows = cursor.fetchall()
+        if max_rows is not None and len(rows) > max_rows:
+            raise AlertReadLimitExceededError(max_rows)
         return [_row_to_alert_event_payload(row) for row in rows]
 
 

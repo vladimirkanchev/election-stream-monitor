@@ -26,32 +26,84 @@ route, run-mode, and share-mode matrix belongs in
 
 Today that also means:
 
-- file-backed alerts remain the default backend
-- PostgreSQL-backed alerts can back the same read surface when explicitly
-  enabled for the local runtime
-- moving to a remote/authenticated MCP transport would be a later boundary
-  change, not an implied side effect of the current FastAPI security work
+- the selected local alert backend supplies the data; file-backed is the
+  default and PostgreSQL remains explicit opt-in
+- remote or authenticated MCP is a separate future boundary change, not an
+  extension of FastAPI security work
+
+The shared alert response semantics and backend-selection contract are owned
+by [contracts.md](./contracts.md#session-alert-query-surfaces).
+
+## Policy Gate For Future Changes
+
+MCP remains local `stdio`, explicitly allowlisted, and read-only. Any mutation
+tool or network-capable transport requires a separate security decision before
+implementation. That decision must define the transport trust model,
+authentication and authorization, request and result bounds, audit needs, and
+error-redaction coverage. FastAPI protection is not inherited by MCP.
+
+Local still means that the launched MCP client can read the selected runtime
+backend's session-alert data. Treat client launch configuration as part of the
+trusted local-process boundary.
+
+`tests/test_mcp_server_contracts.py` locks the exact allowlist, schemas, and
+stdio launch. `tests/test_mcp_fastapi_boundary_split.py` confirms every current
+tool leaves persisted session data unchanged. The raw and grouped error suites
+also lock the generic storage-error response.
 
 ## Current Tool Inventory
 
-The server registers exactly these four tools. Each input schema requires a
-string `session_id` and accepts optional `detector_id`, `severity`,
-`start_time_utc`, and `end_time_utc` filters. The exact tool allowlist and
-schema basics are protected by `tests/test_mcp_server_contracts.py`.
+The server registers exactly these four tools. All are
+`MCP-local-read-only`, use local `stdio` only, and call the active alert
+backend through shared read models. File-backed storage remains the default;
+PostgreSQL requires explicit runtime selection. MCP reads one backend and
+never merges history across them.
 
-| Tool | Classification | Capability and returned data | Shared dependency | Result-size control | Error and secret exposure | Remote availability |
-| --- | --- | --- | --- | --- | --- | --- |
-| `query_session_alerts` | `MCP-local-read-only` | Read-only raw alert events for one session | `session_alerts.filter_session_alert_events()` | No pagination or result cap | Returns persisted alert content. Known-session, filter, and storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
-| `summarize_session_alerts` | `MCP-local-read-only` | Read-only counts and time bounds for one session's alerts | `session_alerts.summarize_session_alert_events()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate alert data. Validation or storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
-| `query_session_alert_timeline` | `MCP-local-read-only` | Read-only grouped incident entries for one session | `session_alert_incidents.build_session_timeline()` | No pagination or result cap | Returns persisted incident titles, messages, and sources. Validation or storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
-| `summarize_session_alert_incidents` | `MCP-local-read-only` | Read-only grouped incident counts and narrative summary | `session_alert_incidents.build_session_incident_summary()` | Summary is compact; underlying selected alerts are scanned | Returns aggregate incident data. Validation or storage failures become readable tool errors; keys and environment settings are not read or returned. | `disabled-remotely`; local `stdio` only |
+| Tool | Returned data | Shared dependency | Response bound |
+| --- | --- | --- | --- |
+| `query_session_alerts` | Raw alert events | `session_alerts.filter_session_alert_events()` | Offset page: default 100, maximum 250 |
+| `summarize_session_alerts` | Counts and time bounds | `session_alerts.summarize_session_alert_events()` | Compact summary |
+| `query_session_alert_timeline` | Grouped incident entries | `session_alert_incidents.build_session_timeline()` | Offset page: default 100, maximum 250 |
+| `summarize_session_alert_incidents` | Grouped counts and narrative | `session_alert_incidents.build_session_incident_summary()` | Compact summary |
 
-No tool starts, cancels, edits, deletes, or resolves playback for a session.
-The tool layer deliberately passes user-facing validation and storage-failure
-text through as MCP tool errors. That is suitable only for the current
-local-trust process boundary. A future networked MCP transport must add its
-own authentication, request and result bounds, and reviewed error-sanitization
-policy; FastAPI `X-API-Key` checks and HTTP rate limiting do not apply to it.
+Every shared query reads at most 5,000 stored rows and fails instead of
+returning a partial result. Validation and missing-session errors remain
+readable. Unexpected storage failures use `Alert storage is unavailable`, so
+responses do not expose paths, driver detail, PostgreSQL URLs, or key values.
+No tool starts, cancels, edits, deletes, or resolves playback. The exact
+allowlist, schemas, and stdio launch are protected by
+`tests/test_mcp_server_contracts.py`.
+
+## Request Validation And Current Bounds
+
+Every tool requires a string `session_id` and accepts the same optional
+`detector_id`, enum `severity`, `start_time_utc`, and `end_time_utc` filters.
+The tool schema trims outer whitespace and requires nonblank values. Session
+and detector IDs are capped at 128 characters; timestamp filters are capped
+at 64. The shared read-model service validates UTC timestamp format and
+rejects an end time earlier than its start. Time-span caps remain deferred.
+
+## Returned Data And Current Bounds
+
+Raw queries return session IDs plus alert timestamps, detector IDs, titles,
+messages, severities, source names, and optional window metadata. Timelines
+return grouped timestamps, titles, source names, and one sample message.
+Summaries return only counts, time bounds, and a grouped narrative. No tool
+returns API keys, database URLs, session metadata, result payloads, or playback
+paths, but alert messages and source names remain sensitive local monitoring
+content.
+
+Raw and timeline tools use the same `offset` and `limit` contract as FastAPI.
+The 5,000-row ceiling bounds application/store work; it does not guarantee
+that every future backend query scans no more than 5,000 rows. Backend-native
+filtering and indexing can be strengthened as alert history grows.
+
+## Deferred Hardening
+
+Broader request/body-size and time-span caps remain bounded follow-ups before
+any network transport is considered. Storage-error sanitization is implemented
+for the current stdio boundary; no remote MCP, authentication infrastructure,
+or mutation tool is introduced here.
 
 ## How To Run It
 
@@ -63,6 +115,10 @@ PYTHONPATH=src python -m esm_mcp
 ```
 
 That starts the MCP server over `stdio`.
+
+The installed `esm-mcp` command and `python -m esm_mcp` both delegate to the
+same stdio entrypoint. Neither starts a FastAPI application or opens an HTTP
+listener.
 
 ## How To Connect
 

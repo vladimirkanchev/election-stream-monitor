@@ -1,4 +1,4 @@
-"""FastAPI adapters for session-scoped alert query endpoints.
+"""FastAPI adapters for bounded session-scoped alert query endpoints.
 
 Keep raw alert-file reading, filtering, and numeric summary logic in
 `session_alerts.py`, and keep grouped incident read models in
@@ -19,24 +19,35 @@ policy in `api/alert_route_policy.py`. That keeps authentication and rate
 limiting at the HTTP boundary and out of the shared alert service modules.
 """
 
+from typing import TypeVar
+
 from fastapi import APIRouter, Depends
 
 from api.alert_route_policy import ALERT_ROUTE_RESPONSES, require_http_alert_principal
-from api.errors import SessionNotFoundError, ValidationFailedError
+from api.errors import AlertQueryLimitExceededError, SessionNotFoundError, ValidationFailedError
 from api.schemas import (
+    AlertTimestampFilter,
     ApiAlertSeverity,
+    DetectorIdentifier,
+    ReadPageLimit,
+    ReadPageOffset,
+    SessionIdentifier,
     SessionAlertTimelineResponse,
     SessionAlertQueryResponse,
     SessionIncidentSummaryResponse,
     SessionAlertSummaryResponse,
 )
+from read_resource_policy import DEFAULT_READ_PAGE_LIMIT, paginate_read_items
 from session_alert_adapter import (
     AlertServiceCallable,
     build_alert_filter_kwargs,
     call_alert_service,
 )
 from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alert_store import AlertReadLimitExceededError
 from session_alerts import filter_session_alert_events, summarize_session_alert_events
+
+ServiceResult = TypeVar("ServiceResult")
 
 # Router-level protection is intentionally attached here so all alert-query
 # routes share the same auth and rate-limit boundary without repeating it per
@@ -48,14 +59,14 @@ router = APIRouter(
 
 
 def _call_http_alert_service(
-    service_fn: AlertServiceCallable[object],
+    service_fn: AlertServiceCallable[ServiceResult],
     *,
     session_id: str,
     detector_id: str | None,
     severity: ApiAlertSeverity | None,
     start_time_utc: str | None,
     end_time_utc: str | None,
-) -> object:
+) -> ServiceResult:
     """Call one shared alert service using the standard HTTP filter/error mapping.
 
     This keeps the individual route functions easy to scan: bind params, call
@@ -86,6 +97,8 @@ def _map_http_not_found(session_id: str) -> Exception:
 
 def _map_http_validation_error(err: ValueError) -> Exception:
     """Translate one shared-service validation failure into the API contract."""
+    if isinstance(err, AlertReadLimitExceededError):
+        return AlertQueryLimitExceededError(max_rows=err.max_rows)
     return ValidationFailedError(str(err))
 
 
@@ -95,13 +108,15 @@ def _map_http_validation_error(err: ValueError) -> Exception:
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alerts(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
+    limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
+    offset: ReadPageOffset = 0,
 ) -> SessionAlertQueryResponse:
-    """Return persisted alerts for one session after applying optional filters.
+    """Return one stable page of persisted alerts after optional filtering.
 
     This route is intentionally a thin adapter over the shared raw alert
     service. It owns HTTP parameter binding and HTTP-style error mapping, not
@@ -118,7 +133,7 @@ async def get_session_alerts(
     return SessionAlertQueryResponse.model_validate(
         {
             "session_id": session_id,
-            "alerts": alerts,
+            "alerts": paginate_read_items(alerts, limit=limit, offset=offset),
         }
     )
 
@@ -129,11 +144,11 @@ async def get_session_alerts(
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_summary(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
 ) -> SessionAlertSummaryResponse:
     """Return a deterministic summary of persisted alerts for one session.
 
@@ -158,13 +173,15 @@ async def get_session_alert_summary(
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_timeline(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
+    limit: ReadPageLimit = DEFAULT_READ_PAGE_LIMIT,
+    offset: ReadPageOffset = 0,
 ) -> SessionAlertTimelineResponse:
-    """Return grouped incident timeline entries for one session.
+    """Return one stable page of grouped incident entries for one session.
 
     This endpoint remains a pure HTTP adapter. It binds query parameters and
     maps domain errors, while the shared alert service owns all grouping rules.
@@ -177,7 +194,16 @@ async def get_session_alert_timeline(
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
     )
-    return SessionAlertTimelineResponse.model_validate(timeline)
+    return SessionAlertTimelineResponse.model_validate(
+        {
+            **timeline,
+            "entries": paginate_read_items(
+                timeline["entries"],
+                limit=limit,
+                offset=offset,
+            ),
+        }
+    )
 
 
 @router.get(
@@ -186,11 +212,11 @@ async def get_session_alert_timeline(
     responses=ALERT_ROUTE_RESPONSES,
 )
 async def get_session_alert_incident_summary(
-    session_id: str,
-    detector_id: str | None = None,
+    session_id: SessionIdentifier,
+    detector_id: DetectorIdentifier | None = None,
     severity: ApiAlertSeverity | None = None,
-    start_time_utc: str | None = None,
-    end_time_utc: str | None = None,
+    start_time_utc: AlertTimestampFilter | None = None,
+    end_time_utc: AlertTimestampFilter | None = None,
 ) -> SessionIncidentSummaryResponse:
     """Return grouped incident summary data for one session.
 

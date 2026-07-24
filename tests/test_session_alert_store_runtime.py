@@ -35,6 +35,7 @@ from session_alert_store import (
     get_default_session_alert_store,
 )
 from session_alert_store_postgres import (
+    POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
     POSTGRES_ALERT_EVENTS_INSERT_SQL,
     POSTGRES_ALERT_EVENTS_READ_SQL,
     POSTGRES_ALERT_TIMESTAMP_FORMAT,
@@ -123,7 +124,12 @@ class RecordingRuntimeAlertStore:
         """Record one alert append through the runtime-selected default store."""
         self.appended_events.append(event)
 
-    def read_session_alert_events(self, session_id: str) -> list[dict[str, object]]:
+    def read_session_alert_events(
+        self,
+        session_id: str,
+        *,
+        max_rows: int | None = None,
+    ) -> list[dict[str, object]]:
         """Record one read through the runtime-selected default store."""
         self.read_session_ids.append(session_id)
         return []
@@ -154,11 +160,17 @@ class InMemoryRuntimePostgresAlertCursor:
             assert isinstance(params, tuple)
             self._connection.append_inserted_row(params)
             return object()
-        if query == POSTGRES_ALERT_EVENTS_READ_SQL:
+        if query in {
+            POSTGRES_ALERT_EVENTS_READ_SQL,
+            POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
+        }:
             assert isinstance(params, tuple)
             session_id = params[0]
             assert isinstance(session_id, str)
             self._rows = self._connection.read_rows_for_session(session_id)
+            if query == POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL:
+                assert isinstance(params[1], int)
+                self._rows = self._rows[: params[1]]
             return object()
         raise AssertionError(f"Unexpected SQL in runtime alert-store test: {query}")
 

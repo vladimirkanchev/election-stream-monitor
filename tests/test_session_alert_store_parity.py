@@ -33,6 +33,7 @@ from session_alert_store import (
     SessionAlertStore,
 )
 from session_alert_store_postgres import (
+    POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
     POSTGRES_ALERT_EVENTS_INSERT_SQL,
     POSTGRES_ALERT_EVENTS_READ_SQL,
     POSTGRES_ALERT_TIMESTAMP_FORMAT,
@@ -97,12 +98,18 @@ class InMemoryPostgresParityCursor:
             assert isinstance(params, tuple)
             self._connection.append_inserted_row(params)
             return object()
-        if query == POSTGRES_ALERT_EVENTS_READ_SQL:
+        if query in {
+            POSTGRES_ALERT_EVENTS_READ_SQL,
+            POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
+        }:
             assert isinstance(params, tuple)
-            assert len(params) == 1
+            assert len(params) in {1, 2}
             session_id = params[0]
             assert isinstance(session_id, str)
             self._rows = self._connection.read_rows_for_session(session_id)
+            if query == POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL:
+                assert isinstance(params[1], int)
+                self._rows = self._rows[: params[1]]
             return object()
         raise AssertionError(f"Unexpected SQL in parity test: {query}")
 

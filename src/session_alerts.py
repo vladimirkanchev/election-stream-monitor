@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import TypedDict
 
 from logger import get_logger
+from read_resource_policy import MAX_ALERT_QUERY_ROWS
 from session_alert_store import (
     AlertEventPayload,
     DEFAULT_SESSION_ALERT_STORE,
@@ -57,6 +58,7 @@ def read_session_alert_events(
     session_id: str,
     *,
     store: SessionAlertStore = DEFAULT_SESSION_ALERT_STORE,
+    max_rows: int | None = None,
 ) -> list[AlertEventPayload]:
     """Return persisted alert events for one known session.
 
@@ -68,9 +70,10 @@ def read_session_alert_events(
 
     The optional store seam keeps the current default backend behind one stable
     read-model path while letting alternate alert stores reuse the same query
-    logic.
+    logic. ``max_rows`` is used by bounded query services; direct callers may
+    omit it when they need the full durable history.
     """
-    return store.read_session_alert_events(session_id)
+    return store.read_session_alert_events(session_id, max_rows=max_rows)
 
 
 def filter_session_alert_events(
@@ -89,7 +92,11 @@ def filter_session_alert_events(
     transport-specific semantics into the service layer. The storage seam stays
     limited to fetching validated raw alert rows.
     """
-    alerts = read_session_alert_events(session_id, store=store)
+    alerts = read_session_alert_events(
+        session_id,
+        store=store,
+        max_rows=MAX_ALERT_QUERY_ROWS,
+    )
     start_time, end_time = _parse_time_range(
         start_time_utc=start_time_utc,
         end_time_utc=end_time_utc,
