@@ -85,11 +85,11 @@ PostgreSQL-specific diagnostic handling is summarized here and detailed in the
 
 | Channel | Required behavior |
 | --- | --- |
-| Logs, exceptions, tracebacks, worker logs, CI artifacts, and routine diagnostics | Never contain a raw API key, request header value, database password, or complete credential-bearing PostgreSQL URL. A sanitized failure may retain the backend, setting name, host, and error class. |
+| Logs, exceptions, tracebacks, worker logs, CI artifacts, and routine diagnostics | Never reflect a raw API key, request header value, database password, credential-bearing PostgreSQL URL, SQL or filesystem path from a backend failure, or raw driver diagnostic. Structured operator context may retain redacted source labels. |
 | Manual API keys | Are never echoed in CLI output, logs, errors, or generated commands. A blank or malformed explicitly supplied key is a configuration error, not a request to generate another key. |
 | Generated share key | Uses 24 random bytes (192 bits) in process memory only, is not written to environment variables or files, and may appear exactly once in direct interactive CLI stdout. Example commands must use a placeholder rather than repeat the raw key. |
 | Configuration errors | Identify the invalid setting and actionable expected form without showing the supplied value. The same rule applies to CLI parsing, runtime settings, and bootstrap errors. |
-| PostgreSQL diagnostics | Redact URL credentials and sensitive query values before they reach observable errors or diagnostics. Safe endpoint context may remain when useful. |
+| PostgreSQL diagnostics | Collapse driver-shaped failures into a stable safe message before they reach HTTP, CLI, worker, or MCP output. A connection failure may retain a redacted endpoint; configuration errors name settings without values. |
 
 Key resolution is deterministic: `--api-key` overrides
 `ESM_API_AUTH_ALLOWED_KEYS`; when neither is configured, enabled share mode
@@ -233,20 +233,23 @@ budget may be lower than the default but not higher than the stated ceiling.
 
 | Route family | Share-mode budget, per authenticated principal | Always-on input, scan, or response bound | Failure behavior |
 | --- | --- | --- | --- |
-| Session start | Implemented shared `session-control` budget: 12 requests / 60 seconds. Implemented start-only guard: 6 requests / 60 seconds. | Implemented: `input_path` up to 4 KiB; at most 32 detector IDs, each up to 128 characters. Deferred: JSON body cap. | Implemented: `422` for field or detector-count limits; `429` for an exhausted share budget. Deferred: `413` for body too large. |
+| Session start | Implemented shared `session-control` budget: 12 requests / 60 seconds. Implemented start-only guard: 6 requests / 60 seconds. | Implemented: JSON body up to 16 KiB; `input_path` up to 4 KiB; at most 32 detector IDs, each up to 128 characters. | `413` for an oversized JSON body; `422` for field or detector-count limits; `429` for an exhausted share budget. |
 | Session read | Deferred: 60 requests / 60 seconds; ceiling 120 | Implemented: serialized snapshot up to 2 MiB; a larger snapshot fails rather than silently omitting alerts or results | Implemented: `422` beyond the response bound. Deferred: `429` for an exhausted share budget. |
 | Session cancel | Implemented shared `session-control` budget: 12 requests / 60 seconds | No request body; existing lifecycle-state validation remains | `404` for an unknown session; `409` when the current state cannot be cancelled; `429` for an exhausted share budget. |
 | Raw alert list | Implemented shared alert-read budget: 100 requests / 60 seconds; ceiling 200 | Implemented nonblank, trimmed IDs and timestamps: session/detector IDs up to 128 characters; timestamps up to 64. Each query reads at most 5,000 stored alert rows. Stable offset page: `limit` defaults to 100 and may not exceed 250; `offset` defaults to 0 | `422` for invalid field, page, or storage-read ceiling; `400` for domain-invalid filters; `429` for an exhausted shared alert budget. |
 | Alert summary | Implemented shared alert-read budget | Implemented nonblank, trimmed IDs and timestamps: session/detector IDs up to 128 characters; timestamps up to 64. Each query reads at most 5,000 stored alert rows before aggregation | `422` for invalid fields or the storage-read ceiling; `400` for domain-invalid filters; `429` for an exhausted shared alert budget. |
 | Alert timeline | Implemented shared alert-read budget | Implemented nonblank, trimmed IDs and timestamps: session/detector IDs up to 128 characters; timestamps up to 64. Each query reads at most 5,000 stored alert rows before grouping. Stable grouped-entry page: `limit` defaults to 100 and may not exceed 250; `offset` defaults to 0 | `422` for invalid field, page, or storage-read ceiling; `400` for domain-invalid filters; `429` for an exhausted shared alert budget. |
 | Incident summary | Implemented shared alert-read budget | Implemented nonblank, trimmed IDs and timestamps: session/detector IDs up to 128 characters; timestamps up to 64. Each query reads at most 5,000 stored alert rows before aggregation and grouping | `422` for invalid fields or the storage-read ceiling; `400` for domain-invalid filters; `429` for an exhausted shared alert budget. |
-| Playback resolution | Implemented `playback-resolution` budget: 30 requests / 60 seconds | Implemented: `input_path` up to 4 KiB; `current_item` up to 1 KiB. Deferred: JSON body cap and bounded DNS/filesystem work. | Implemented: `422` for field limits and `429` for an exhausted share budget. Deferred: `413` for body size. |
+| Playback resolution | Implemented `playback-resolution` budget: 30 requests / 60 seconds | Implemented: JSON body up to 16 KiB; `input_path` up to 4 KiB; `current_item` up to 1 KiB. Deferred: bounded DNS/filesystem work. | `413` for an oversized JSON body; `422` for field limits and `429` for an exhausted share budget. |
 
-`413` means the submitted JSON body exceeded the transport size limit. `422`
+`413` means the submitted JSON body exceeded the application size limit. `422`
 means the request was well-formed but exceeded a declared field, page, scan, or
 response contract. `429` means the caller exhausted its fixed-window budget
 and retains the existing `Retry-After` header. These errors must use the shared
 API envelope and must not expose persistence details.
+
+The app-level body cap is not an ingress proxy limit: a future hosted deployment
+should enforce an equivalent or stricter limit before requests reach Python.
 
 The snapshot guard fails rather than truncates because the current contract has
 no `truncated` marker or paging semantics. It bounds serialization and transfer

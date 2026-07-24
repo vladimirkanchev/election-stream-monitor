@@ -1192,16 +1192,17 @@ are passed only to the PostgreSQL driver. The configuration validators report
 the relevant environment-variable name without echoing the configured value.
 The live-alert helper prints `ESM_POSTGRES_ALERT_DATABASE_URL=<set>` instead.
 
-Connection, bootstrap, and runtime wrappers sanitize embedded PostgreSQL URLs
-and credential assignments, then avoid chaining raw driver errors. The shared
-sanitizer retains safe endpoint context while removing user info and sensitive
-query values. Detached workers retain persistence settings but exclude FastAPI
-API-key settings before writing stderr to the per-session worker log.
+Connection, bootstrap, and runtime wrappers collapse driver-shaped diagnostics
+to a stable safe message and avoid chaining raw errors. This keeps credentials,
+credential-bearing URLs, SQL, local paths, and driver details out of observable
+failure output. A connection failure may retain a redacted endpoint. Detached
+workers retain persistence settings but exclude FastAPI API-key settings before
+writing stderr to the per-session worker log.
 
 Operator-facing errors, worker logs, helper output, and exception chains may
-identify the backend, setting, host, or error class, but never a database
-password, API key, or credential-bearing URL. The related HTTP key policy is
-owned by [FastAPI boundary](./fastapi-boundary.md#secret-handling-contract).
+identify the backend, setting, redacted endpoint, or error class, but never a
+database password, API key, or credential-bearing URL. The related HTTP key
+policy is owned by [FastAPI boundary](./fastapi-boundary.md#secret-handling-contract).
 
 ### Alert-Store Rollback
 
