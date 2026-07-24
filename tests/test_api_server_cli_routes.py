@@ -11,7 +11,6 @@ from collections.abc import Generator
 import logging
 
 import pytest
-from fastapi.routing import APIRoute
 
 from api.app import app
 from tests.api_alert_test_support import (
@@ -38,6 +37,9 @@ _SHARE_PUBLIC_OPERATIONS = frozenset(
         ("GET", "/health"),
         ("GET", "/detectors"),
     }
+)
+_FRAMEWORK_DOCUMENTATION_PATHS = frozenset(
+    {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
 )
 
 _SHARE_PROTECTED_REQUESTS = (
@@ -113,15 +115,17 @@ _AUTH_TRANSITION_ROUTE_CASES = (
 def _mounted_application_operations() -> set[tuple[str, str]]:
     """Return live application operations covered by the share-mode policy.
 
-    Framework documentation routes are middleware-controlled and have separate
-    local/share tests below.
+    Route shape is the stable FastAPI/Starlette boundary here. Avoid filtering
+    on a concrete route class: test collection can load framework classes
+    through a different module identity. Framework documentation routes remain
+    middleware-controlled and have separate local/share tests below.
     """
 
     return {
         (method, route.path)
         for route in app.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
+        if getattr(route, "path", None) not in _FRAMEWORK_DOCUMENTATION_PATHS
+        for method in getattr(route, "methods", ())
     }
 
 
