@@ -76,9 +76,14 @@ After installing the frontend dependencies:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
+
+Use Node `22` and npm `11.15.0`, matching the root `.nvmrc` and this
+package's `packageManager` declaration. CI pins that npm release and retries
+one transient dependency or Electron artifact download; persistent failures
+remain failures.
 
 The current UI runs through Electron and the local FastAPI backend during
 normal desktop development.

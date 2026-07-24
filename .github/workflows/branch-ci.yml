@@ -109,7 +109,7 @@ jobs:
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
         working-directory: frontend
-        run: npm ci
+        run: bash ../scripts/install_frontend_dependencies.sh
 
       - name: Run frontend checkpoint
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true'
@@ -229,7 +229,7 @@ jobs:
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
         working-directory: frontend
-        run: npm ci
+        run: bash ../scripts/install_frontend_dependencies.sh
 
       - name: Run frontend typecheck
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
@@ -262,7 +262,7 @@ jobs:
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
         working-directory: frontend
-        run: npm ci
+        run: bash ../scripts/install_frontend_dependencies.sh
 
       - name: Run frontend lint
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true'
