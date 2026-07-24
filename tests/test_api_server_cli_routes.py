@@ -38,8 +38,8 @@ _SHARE_PUBLIC_OPERATIONS = frozenset(
         ("GET", "/detectors"),
     }
 )
-_FRAMEWORK_DOCUMENTATION_PATHS = frozenset(
-    {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+_HTTP_OPERATION_METHODS = frozenset(
+    {"delete", "get", "head", "options", "patch", "post", "put"}
 )
 
 _SHARE_PROTECTED_REQUESTS = (
@@ -113,19 +113,19 @@ _AUTH_TRANSITION_ROUTE_CASES = (
 
 
 def _mounted_application_operations() -> set[tuple[str, str]]:
-    """Return live application operations covered by the share-mode policy.
+    """Return documented application operations covered by the share-mode policy.
 
-    Route shape is the stable FastAPI/Starlette boundary here. Avoid filtering
-    on a concrete route class: test collection can load framework classes
-    through a different module identity. Framework documentation routes remain
-    middleware-controlled and have separate local/share tests below.
+    OpenAPI is the stable public FastAPI inventory. It avoids depending on the
+    mutable Starlette route container shared by in-process boundary tests.
+    Framework documentation endpoints remain middleware-controlled and have
+    separate local/share tests below.
     """
 
     return {
-        (method, route.path)
-        for route in app.routes
-        if getattr(route, "path", None) not in _FRAMEWORK_DOCUMENTATION_PATHS
-        for method in getattr(route, "methods", ())
+        (method.upper(), path)
+        for path, path_item in app.openapi()["paths"].items()
+        for method in path_item
+        if method in _HTTP_OPERATION_METHODS
     }
 
 
