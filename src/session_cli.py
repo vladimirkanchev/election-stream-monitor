@@ -16,6 +16,7 @@ import json
 
 from detectors.registry import list_available_detectors
 from logger import format_log_context, get_logger
+from postgres_diagnostics import redact_postgres_diagnostic
 from playback_sources import resolve_playback_source
 from session_runner import run_local_session
 from session_service import (
@@ -140,7 +141,7 @@ def _handle_start_session(args: argparse.Namespace) -> dict[str, object]:
 
 
 def _handle_run_session(args: argparse.Namespace) -> dict[str, object]:
-    """Execute one session synchronously and return final metadata."""
+    """Execute one session and log only redacted context when it fails."""
     validated_input_path = validate_source_input(args.mode, args.input_path)
     try:
         metadata = run_local_session(
@@ -149,15 +150,20 @@ def _handle_run_session(args: argparse.Namespace) -> dict[str, object]:
             selected_detectors=args.detector,
             session_id=args.session_id,
         )
-    except Exception:
-        logger.exception(
-            "run-session worker failed [%s]",
+    except Exception as error:
+        logger.error(
+            "run-session worker failed [%s] error_type=%s",
             format_log_context(
                 session_id=args.session_id,
                 mode=args.mode,
                 input_path=validated_input_path,
             ),
+            type(error).__name__,
         )
+        error_detail = str(error)
+        detail = redact_postgres_diagnostic(error_detail)
+        if detail != error_detail:
+            raise RuntimeError(detail) from None
         raise
     return metadata.to_dict()
 

@@ -15,18 +15,26 @@ from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from api.errors import ApiDomainError
+from api.errors import (
+    ApiDomainError,
+    RequestBodyTooLargeError,
+    UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
+)
 from api.routers import alerts, detectors, health, playback, sessions
 from api_boundary_config import (
+    MAX_HTTP_REQUEST_BODY_BYTES,
     is_fastapi_documentation_enabled,
     validate_fastapi_boundary_settings,
 )
+from logger import get_logger
 
 
 _HttpRequestHandler = Callable[[Request], Awaitable[Response]]
 _LOCAL_ONLY_FRAMEWORK_PATHS = frozenset(
     {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
 )
+_BODY_BEARING_HTTP_METHODS = frozenset({"PATCH", "POST", "PUT"})
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -65,6 +73,30 @@ async def hide_framework_documentation_in_share_mode(
     ):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def reject_oversized_request_bodies(
+    request: Request,
+    call_next: _HttpRequestHandler,
+) -> Response:
+    """Reject oversized command bodies before route validation or service work.
+
+    The cached body remains available to downstream handlers. This is an
+    application boundary; a hosted deployment still needs an ingress limit.
+    """
+
+    if request.method not in _BODY_BEARING_HTTP_METHODS:
+        return await call_next(request)
+
+    if len(await request.body()) <= MAX_HTTP_REQUEST_BODY_BYTES:
+        return await call_next(request)
+
+    error = RequestBodyTooLargeError(max_bytes=MAX_HTTP_REQUEST_BODY_BYTES)
+    return JSONResponse(
+        status_code=error.status_code,
+        content=error.to_response_content(),
+    )
 
 
 app.include_router(health.router)
@@ -106,7 +138,12 @@ async def handle_request_validation_error(
 
 @app.exception_handler(Exception)
 async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-    """Serialize one unexpected backend failure using the shared error envelope."""
+    """Return a safe envelope without reflecting unexpected backend diagnostics."""
+
+    logger.error(
+        "unexpected_backend_error exception_type=%s",
+        type(exc).__name__,
+    )
 
     return JSONResponse(
         status_code=500,
@@ -114,7 +151,7 @@ async def handle_unexpected_error(request: Request, exc: Exception) -> JSONRespo
             "detail": "Unexpected backend error",
             "error_code": "internal_error",
             "status_reason": "internal_error",
-            "status_detail": str(exc),
+            "status_detail": UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
         },
     )
 

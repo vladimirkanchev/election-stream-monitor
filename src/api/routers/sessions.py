@@ -61,6 +61,7 @@ _RATE_LIMIT_RESPONSE: dict[int | str, dict[str, Any]] = {
         **AUTHENTICATION_FAILURE_RESPONSES,
         **_RATE_LIMIT_RESPONSE,
         400: {"model": ApiErrorResponse, "description": "Validation failed"},
+        413: {"model": ApiErrorResponse, "description": "Request body too large"},
         422: {"model": ApiErrorResponse, "description": "Request validation failed"},
         500: {"model": ApiErrorResponse, "description": "Session start failed"},
     },

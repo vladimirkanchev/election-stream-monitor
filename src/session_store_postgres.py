@@ -35,7 +35,10 @@ from session_store import (
     build_empty_session_snapshot_payload,
     build_session_snapshot_payload,
 )
-from postgres_diagnostics import redact_postgres_database_url, redact_postgres_diagnostic
+from postgres_diagnostics import (
+    SAFE_POSTGRES_DIAGNOSTIC,
+    redact_postgres_database_url,
+)
 
 from session_store_postgres_config import (
     PostgresSessionStoreConfigurationError,
@@ -660,8 +663,8 @@ def bootstrap_postgres_session_store(
 
     try:
         initialize_postgres_session_store(connection)
-    except Exception as error:
-        detail = redact_postgres_diagnostic(str(error))
+    except Exception:
+        detail = SAFE_POSTGRES_DIAGNOSTIC
     else:
         return connection
 

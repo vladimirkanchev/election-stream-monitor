@@ -1,8 +1,7 @@
-"""Sanitize PostgreSQL connection details for operator-facing diagnostics.
+"""Render safe PostgreSQL configuration and failure diagnostics.
 
-This is deliberately a narrow PostgreSQL helper, not a general-purpose secret
-scrubber. Callers retain enough endpoint context to diagnose configuration
-failures without exposing credentials.
+Validated connection URLs retain endpoint context; diagnostics carrying a
+PostgreSQL, credential, or driver marker collapse to a stable safe message.
 """
 
 from __future__ import annotations
@@ -13,6 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 REDACTED_POSTGRES_VALUE = "<redacted>"
 REDACTED_POSTGRES_URL = "<redacted-postgres-url>"
+SAFE_POSTGRES_DIAGNOSTIC = "PostgreSQL backend operation failed"
 _SENSITIVE_POSTGRES_QUERY_PARAMETER_NAMES = frozenset(
     {
         "access_token",
@@ -38,6 +38,9 @@ _SENSITIVE_POSTGRES_ASSIGNMENT_PATTERN = re.compile(
     r"(?i)\b(?P<name>access[_-]?token|api[_-]?key|apikey|pass(?:word|wd|file)?|"
     r"pwd|secret|ssl(?:password|key|cert|rootcert)|token|user(?:name)?)\s*=\s*"
     r"(?P<value>'[^']*'|\"[^\"]*\"|[^\s,;]+)"
+)
+_POSTGRES_DRIVER_DIAGNOSTIC_PATTERN = re.compile(
+    r"(?i)\b(?:asyncpg|libpq|psycopg(?:\.\w+)?)\s+(?:driver|error|exception|failed)\b"
 )
 
 
@@ -79,20 +82,17 @@ def redact_postgres_database_url(database_url: str) -> str:
 
 
 def redact_postgres_diagnostic(message: str) -> str:
-    """Redact PostgreSQL URLs and credential assignments in one diagnostic.
-
-    It preserves ordinary error detail and endpoint context while removing
-    embedded PostgreSQL URLs and known secret assignments. Callers still own
-    avoiding raw exception chaining after sanitizing a driver error.
-    """
-    without_urls = _POSTGRES_URL_IN_DIAGNOSTIC_PATTERN.sub(
-        lambda match: redact_postgres_database_url(match.group()),
-        message,
-    )
-    return _SENSITIVE_POSTGRES_ASSIGNMENT_PATTERN.sub(
-        lambda match: f"{match.group('name')}={REDACTED_POSTGRES_VALUE}",
-        without_urls,
-    )
+    """Collapse PostgreSQL-sensitive diagnostics and preserve unrelated failures."""
+    if any(
+        pattern.search(message) is not None
+        for pattern in (
+            _POSTGRES_URL_IN_DIAGNOSTIC_PATTERN,
+            _SENSITIVE_POSTGRES_ASSIGNMENT_PATTERN,
+            _POSTGRES_DRIVER_DIAGNOSTIC_PATTERN,
+        )
+    ):
+        return SAFE_POSTGRES_DIAGNOSTIC
+    return message
 
 
 def _is_sensitive_postgres_query_parameter(name: str) -> bool:
