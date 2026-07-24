@@ -10,6 +10,7 @@ import pytest
 
 from postgres_diagnostics import (
     REDACTED_POSTGRES_URL,
+    SAFE_POSTGRES_DIAGNOSTIC,
     redact_postgres_database_url,
     redact_postgres_diagnostic,
 )
@@ -59,20 +60,22 @@ def test_redact_postgres_database_url_fails_closed_for_invalid_input(
     assert redact_postgres_database_url(database_url) == REDACTED_POSTGRES_URL
 
 
-def test_redact_postgres_diagnostic_sanitizes_embedded_urls_and_assignments() -> None:
-    """Driver-style details should retain context without credential values."""
+def test_redact_postgres_diagnostic_hides_driver_level_details() -> None:
+    """Driver diagnostics should not retain URLs, SQL, paths, or secret values."""
     diagnostic = (
-        "connection failed for postgresql://encoded%20user:secret%3Avalue@db.example/esm"
+        "psycopg failed SELECT * FROM session_alert_events for "
+        "postgresql://encoded%20user:secret%3Avalue@db.example/esm"
         "?token=query-token: password=plain-secret sslkey='/private/client.key'"
     )
 
     redacted = redact_postgres_diagnostic(diagnostic)
 
-    assert "postgresql://<redacted>@db.example/esm?token=<redacted>" in redacted
-    assert "password=<redacted>" in redacted
-    assert "sslkey=<redacted>" in redacted
-    assert "encoded%20user" not in redacted
-    assert "secret%3Avalue" not in redacted
-    assert "query-token" not in redacted
-    assert "plain-secret" not in redacted
-    assert "/private/client.key" not in redacted
+    assert redacted == SAFE_POSTGRES_DIAGNOSTIC
+
+
+def test_redact_postgres_diagnostic_preserves_unrelated_application_errors() -> None:
+    """Ordinary worker failures must not be mislabeled as PostgreSQL failures."""
+
+    detail = "detector failed with invalid input /tmp/clip.mp4"
+
+    assert redact_postgres_diagnostic(detail) == detail

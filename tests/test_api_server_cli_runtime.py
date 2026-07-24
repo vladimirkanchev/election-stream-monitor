@@ -357,6 +357,8 @@ def test_run_from_args_rejects_invalid_bind_before_server_handoff(host: str) -> 
 @pytest.mark.parametrize(
     ("mode", "host", "expected_auth_enabled"),
     [
+        ("local", "127.0.0.1", False),
+        ("local", "localhost", False),
         ("local", "::1", False),
         ("share", "0.0.0.0", True),
         ("share", "::", True),

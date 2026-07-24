@@ -184,7 +184,8 @@ def test_raw_mcp_alert_tools_hide_storage_diagnostics(
 ) -> None:
     """Unexpected storage failures must not disclose connection details to MCP."""
     leaked_detail = (
-        "read failed for postgresql://alerts:db-secret@db.example/esm "
+        "psycopg driver failed: SELECT * FROM session_alert_events "
+        "for postgresql://alerts:db-secret@db.example/esm "
         "api_key=tool-secret path=/srv/esm/alerts"
     )
 
@@ -196,5 +197,12 @@ def test_raw_mcp_alert_tools_hide_storage_diagnostics(
 
     assert_mcp_storage_failure_is_sanitized(
         result,
-        forbidden_values=("db-secret", "tool-secret", "postgresql://", "/srv/esm"),
+        forbidden_values=(
+            "db-secret",
+            "tool-secret",
+            "postgresql://",
+            "SELECT",
+            "/srv/esm",
+            "psycopg",
+        ),
     )

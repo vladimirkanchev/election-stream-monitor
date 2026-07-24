@@ -716,23 +716,31 @@ def test_grouped_fastapi_routes_preserve_filtered_results_in_runtime_selected_po
 )
 def test_grouped_fastapi_routes_return_internal_error_when_runtime_postgres_read_fails_after_startup(
     monkeypatch,
+    caplog: pytest.LogCaptureFixture,
     session_id: str,
     route_path: str,
 ) -> None:
-    """Grouped FastAPI routes should surface post-startup Postgres read failures clearly."""
+    """Grouped FastAPI routes must not reflect storage diagnostics into HTTP or logs."""
+    leaked_detail = (
+        "psycopg driver failed: SELECT * FROM session_alert_events "
+        "for postgresql://alerts:db-secret@db.example/esm?password=query-secret "
+        "path=/srv/esm/incidents"
+    )
     select_runtime_postgres_store(
         monkeypatch,
         FailingReadAlertStore(
             session_id,
-            "database grouped read failed",
+            leaked_detail,
         ),
     )
 
     response = request("GET", route_path)
 
     assert response.status_code == 500
-    assert response.json() == build_internal_error_payload(
-        "database grouped read failed"
+    assert response.json() == build_internal_error_payload()
+    assert all(
+        value not in f"{response.text}\n{caplog.text}"
+        for value in ("db-secret", "query-secret", "postgresql://", "SELECT", "/srv/esm")
     )
 
 
@@ -756,7 +764,7 @@ def test_grouped_fastapi_routes_keep_the_same_bootstrap_failure_envelope(
     response = request("GET", route_path)
 
     assert response.status_code == 500
-    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
+    assert response.json() == build_internal_error_payload()
 
 
 @pytest.mark.skipif(

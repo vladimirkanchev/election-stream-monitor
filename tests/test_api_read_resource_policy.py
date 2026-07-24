@@ -1,8 +1,10 @@
-"""Focused API and MCP tests for collection-response and store-work bounds."""
+"""Focused API and MCP tests for request, response, and store-work bounds."""
 
 from collections.abc import Iterator
 
 import pytest
+from api.app import app
+from api_boundary_config import MAX_HTTP_REQUEST_BODY_BYTES
 from session_alert_store import AlertReadLimitExceededError
 
 from tests.api_boundary_env_test_support import (
@@ -289,3 +291,54 @@ def test_session_snapshot_rejects_a_response_above_the_serialized_limit(monkeypa
         "status_reason": "response_limit_exceeded",
         "status_detail": "Maximum serialized response size is 256 bytes.",
     }
+
+
+@pytest.mark.parametrize("path", ["/sessions", "/playback/resolve"])
+def test_body_bearing_routes_reject_requests_above_the_shared_size_limit(
+    path: str,
+) -> None:
+    """The shared body guard should reject oversized commands before route parsing."""
+
+    response = request(
+        "POST",
+        path,
+        headers={"content-type": "application/json"},
+        content=b"{" + b" " * MAX_HTTP_REQUEST_BODY_BYTES,
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {
+        "detail": "Request body exceeds the supported size",
+        "error_code": "request_body_too_large",
+        "status_reason": "request_body_too_large",
+        "status_detail": (
+            f"Maximum request body size is {MAX_HTTP_REQUEST_BODY_BYTES} bytes."
+        ),
+    }
+
+
+def test_request_body_at_the_shared_size_limit_reaches_route_validation() -> None:
+    """The limit is inclusive so exactly-sized commands remain route-owned input."""
+
+    response = request(
+        "POST",
+        "/sessions",
+        headers={"content-type": "application/json"},
+        content=b"{}" + b" " * (MAX_HTTP_REQUEST_BODY_BYTES - 2),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "validation_failed"
+
+
+def test_body_bearing_routes_advertise_the_shared_413_contract() -> None:
+    """OpenAPI should expose the body-size failure to HTTP API clients."""
+
+    paths = app.openapi()["paths"]
+
+    assert paths["/sessions"]["post"]["responses"]["413"]["description"] == (
+        "Request body too large"
+    )
+    assert paths["/playback/resolve"]["post"]["responses"]["413"]["description"] == (
+        "Request body too large"
+    )

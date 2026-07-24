@@ -719,12 +719,11 @@ def test_bootstrap_postgres_alert_store_surfaces_schema_init_failures_after_conn
     with pytest.raises(PostgresAlertStoreBootstrapError) as error:
         bootstrap_postgres_alert_store(settings)
 
-    assert "schema bootstrap failed" in str(error.value)
-    assert "postgresql://<redacted>@db.example/esm?api_key=<redacted>" in str(
-        error.value
+    assert str(error.value).endswith("PostgreSQL backend operation failed")
+    assert all(
+        value not in str(error.value)
+        for value in ("secret", "query-key", "postgresql://")
     )
-    assert "secret" not in str(error.value)
-    assert "query-key" not in str(error.value)
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
     assert seen == ["connect", "initialize"]

@@ -821,7 +821,7 @@ def test_get_session_returns_internal_error_when_runtime_postgres_snapshot_read_
     response = request("GET", f"/sessions/{session_id}")
 
     assert response.status_code == 500
-    assert response.json() == build_internal_error_payload("database read failed")
+    assert response.json() == build_internal_error_payload()
 
 
 def test_get_session_snapshot_and_cli_read_session_stay_aligned_in_postgres_mode(

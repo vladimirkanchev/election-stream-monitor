@@ -88,7 +88,7 @@ def _assert_runtime_postgres_bootstrap_failure_response(route_path: str) -> None
     response = request("GET", route_path)
 
     assert response.status_code == 500
-    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
+    assert response.json() == build_internal_error_payload()
 
 
 # Happy-path adapter behavior
@@ -455,23 +455,42 @@ def test_get_session_alerts_falls_back_to_file_backend_for_invalid_runtime_backe
     }
 
 
-def test_get_session_alerts_returns_internal_error_when_runtime_postgres_read_fails_after_startup(
+@pytest.mark.parametrize(
+    "route_path",
+    [
+        "/sessions/session-runtime-postgres-read-error/alerts",
+        "/sessions/session-runtime-postgres-read-error/alerts/summary",
+    ],
+)
+def test_raw_alert_routes_hide_runtime_postgres_read_diagnostics(
     monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+    route_path: str,
 ) -> None:
-    """A runtime-selected Postgres backend should surface read failures after successful startup."""
+    """Raw alert routes must not reflect storage diagnostics into HTTP or logs."""
+
+    leaked_detail = (
+        "psycopg driver failed: SELECT * FROM session_alert_events "
+        "for postgresql://alerts:db-secret@db.example/esm?password=query-secret "
+        "path=/srv/esm/alerts"
+    )
 
     select_runtime_postgres_store(
         monkeypatch,
         FailingReadAlertStore(
             "session-runtime-postgres-read-error",
-            "database read failed",
+            leaked_detail,
         ),
     )
 
-    response = request("GET", "/sessions/session-runtime-postgres-read-error/alerts")
+    response = request("GET", route_path)
 
     assert response.status_code == 500
-    assert response.json() == build_internal_error_payload("database read failed")
+    assert response.json() == build_internal_error_payload()
+    assert all(
+        value not in f"{response.text}\n{caplog.text}"
+        for value in ("db-secret", "query-secret", "postgresql://", "SELECT", "/srv/esm")
+    )
 
 
 @pytest.mark.skipif(

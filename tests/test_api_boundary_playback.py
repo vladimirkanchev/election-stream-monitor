@@ -1,3 +1,4 @@
+from api.errors import UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
 from tests.api_boundary_test_support import request
 
 
@@ -115,5 +116,5 @@ def test_playback_resolve_unexpected_failure_returns_structured_payload(monkeypa
         "detail": "Unexpected backend error",
         "error_code": "internal_error",
         "status_reason": "internal_error",
-        "status_detail": "playback backend exploded",
+        "status_detail": UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
     }

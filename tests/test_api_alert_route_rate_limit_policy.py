@@ -60,7 +60,7 @@ def _assert_protected_route_keeps_bootstrap_failure_envelope(route_path: str) ->
     )
 
     assert response.status_code == 500
-    assert response.json() == build_internal_error_payload("postgres bootstrap failed")
+    assert response.json() == build_internal_error_payload()
 
 
 def _exhaust_alert_route_budget() -> tuple[httpx.Response, httpx.Response]:

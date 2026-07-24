@@ -14,6 +14,7 @@ boundary vocabulary under mypy.
 from collections.abc import Mapping
 
 from api_boundary_config import ApiAuthMode, ApiRateLimitStrategy
+from api.errors import UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
 from config import ApiAuthSettings, ApiRateLimitSettings
 from api_auth import AuthPrincipal, AuthenticationError, AuthType
 from api_rate_limit import reset_api_rate_limit_state
@@ -43,13 +44,13 @@ def build_validation_error_payload(detail: str) -> dict[str, str]:
     }
 
 
-def build_internal_error_payload(detail: str) -> dict[str, str]:
-    """Return the stable API payload for one alert-route internal backend failure."""
+def build_internal_error_payload() -> dict[str, str]:
+    """Return the safe API payload for one unexpected backend failure."""
     return {
         "detail": "Unexpected backend error",
         "error_code": "internal_error",
         "status_reason": "internal_error",
-        "status_detail": detail,
+        "status_detail": UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
     }
 
 

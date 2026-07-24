@@ -11,6 +11,7 @@ from collections.abc import Generator
 import logging
 
 import pytest
+from fastapi.routing import APIRoute
 
 from api.app import app
 from tests.api_alert_test_support import (
@@ -30,6 +31,98 @@ from tests.api_server_cli_test_support import (
     install_one_request_rate_limit_env,
     prepare_runtime_with_empty_alert_routes,
 )
+
+
+_SHARE_PUBLIC_OPERATIONS = frozenset(
+    {
+        ("GET", "/health"),
+        ("GET", "/detectors"),
+    }
+)
+
+_SHARE_PROTECTED_REQUESTS = (
+    (
+        "POST",
+        "/sessions",
+        "/sessions",
+        {
+            "mode": "video_files",
+            "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
+            "selected_detectors": [],
+        },
+    ),
+    ("GET", "/sessions/{session_id}", "/sessions/session-123", None),
+    (
+        "POST",
+        "/sessions/{session_id}/cancel",
+        "/sessions/session-123/cancel",
+        None,
+    ),
+    (
+        "GET",
+        "/sessions/{session_id}/alerts",
+        "/sessions/session-123/alerts",
+        None,
+    ),
+    (
+        "GET",
+        "/sessions/{session_id}/alerts/summary",
+        "/sessions/session-123/alerts/summary",
+        None,
+    ),
+    (
+        "GET",
+        "/sessions/{session_id}/alerts/timeline",
+        "/sessions/session-123/alerts/timeline",
+        None,
+    ),
+    (
+        "GET",
+        "/sessions/{session_id}/alerts/incident-summary",
+        "/sessions/session-123/alerts/incident-summary",
+        None,
+    ),
+    (
+        "POST",
+        "/playback/resolve",
+        "/playback/resolve",
+        {
+            "mode": "video_files",
+            "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
+            "current_item": None,
+        },
+    ),
+)
+
+_AUTH_TRANSITION_ROUTE_CASES = (
+    ("GET", "/sessions/session-123", None, 404),
+    ("GET", "/sessions/session-123/alerts", None, 200),
+    (
+        "POST",
+        "/playback/resolve",
+        {
+            "mode": "video_files",
+            "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
+            "current_item": None,
+        },
+        200,
+    ),
+)
+
+
+def _mounted_application_operations() -> set[tuple[str, str]]:
+    """Return live application operations covered by the share-mode policy.
+
+    Framework documentation routes are middleware-controlled and have separate
+    local/share tests below.
+    """
+
+    return {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -82,55 +175,32 @@ def test_prepare_cli_runtime_share_mode_allows_empty_alert_routes_for_valid_keys
     assert response.json() == expected_payload
 
 
-def test_prepare_cli_runtime_share_mode_generated_key_rejects_wrong_credential(
-    monkeypatch,
-) -> None:
-    """Share mode should still reject callers that do not present the generated key."""
+def test_mounted_application_operations_have_explicit_security_classes() -> None:
+    """Every live application route should be share-public or share-protected.
 
-    prepare_runtime_with_empty_alert_routes(
-        monkeypatch,
-        mode="share",
+    The share-mode request cases below must cover every protected operation;
+    adding an unclassified operation makes this test fail.
+    """
+
+    protected_operations = {
+        (method, operation_path)
+        for method, operation_path, _, _ in _SHARE_PROTECTED_REQUESTS
+    }
+
+    assert _mounted_application_operations() == (
+        _SHARE_PUBLIC_OPERATIONS | protected_operations
     )
-
-    response = request(
-        "GET",
-        "/sessions/session-123/alerts",
-        headers={"X-API-Key": "wrong-share-key"},
-    )
-
-    assert response.status_code == 401
-    assert response.json() == build_authentication_failed_payload("Invalid API key")
+    assert _SHARE_PUBLIC_OPERATIONS.isdisjoint(protected_operations)
 
 
 @pytest.mark.parametrize(
-    ("method", "path", "payload"),
-    [
-        (
-            "POST",
-            "/sessions",
-            {
-                "mode": "video_files",
-                "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
-                "selected_detectors": [],
-            },
-        ),
-        ("GET", "/sessions/session-123", None),
-        ("POST", "/sessions/session-123/cancel", None),
-        ("GET", "/sessions/session-123/alerts", None),
-        (
-            "POST",
-            "/playback/resolve",
-            {
-                "mode": "video_files",
-                "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
-                "current_item": None,
-            },
-        ),
-    ],
+    ("method", "_operation_path", "path", "payload"),
+    _SHARE_PROTECTED_REQUESTS,
 )
 def test_prepare_cli_runtime_share_mode_requires_auth_for_operational_routes(
     monkeypatch,
     method: str,
+    _operation_path: str,
     path: str,
     payload: dict[str, object] | None,
 ) -> None:
@@ -213,36 +283,36 @@ def test_operational_routes_advertise_authentication_failures(
 
 @pytest.mark.parametrize(
     ("method", "path", "payload", "expected_status"),
-    [
-        ("GET", "/sessions/session-123", None, 404),
-        ("GET", "/sessions/session-123/alerts", None, 200),
-        (
-            "POST",
-            "/playback/resolve",
-            {
-                "mode": "video_files",
-                "input_path": "tests/fixtures/media/video_files/black_trigger.mp4",
-                "current_item": None,
-            },
-            200,
-        ),
-    ],
+    _AUTH_TRANSITION_ROUTE_CASES,
 )
-def test_prepare_cli_runtime_protected_route_families_allow_local_and_valid_share_calls(
+def test_prepare_cli_runtime_protected_route_families_apply_auth_transitions(
     monkeypatch,
     method: str,
     path: str,
     payload: dict[str, object] | None,
     expected_status: int,
 ) -> None:
-    """Local and authenticated share calls should pass router-level auth."""
+    """Session, alert, and playback families should share the access contract."""
 
     prepare_runtime_with_empty_alert_routes(monkeypatch, mode="local")
     local_response = request(method, path, json=payload)
 
     reset_boundary_test_state()
     runtime = prepare_runtime_with_empty_alert_routes(monkeypatch, mode="share")
-    share_response = request(
+    missing_response = request(method, path, json=payload)
+    blank_response = request(
+        method,
+        path,
+        json=payload,
+        headers={"X-API-Key": "   "},
+    )
+    invalid_response = request(
+        method,
+        path,
+        json=payload,
+        headers={"X-API-Key": "wrong-share-key"},
+    )
+    valid_response = request(
         method,
         path,
         json=payload,
@@ -250,7 +320,19 @@ def test_prepare_cli_runtime_protected_route_families_allow_local_and_valid_shar
     )
 
     assert local_response.status_code == expected_status
-    assert share_response.status_code == expected_status
+    assert missing_response.status_code == 401
+    assert missing_response.json() == build_authentication_failed_payload(
+        "Missing API key"
+    )
+    assert blank_response.status_code == 401
+    assert blank_response.json() == build_authentication_failed_payload(
+        "Missing API key"
+    )
+    assert invalid_response.status_code == 401
+    assert invalid_response.json() == build_authentication_failed_payload(
+        "Invalid API key"
+    )
+    assert valid_response.status_code == expected_status
 
 
 def test_prepare_cli_runtime_share_mode_keeps_health_route_open(

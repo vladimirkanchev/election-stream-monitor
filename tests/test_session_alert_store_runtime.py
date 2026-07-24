@@ -484,8 +484,7 @@ def test_explicit_postgres_alert_backend_redacts_bootstrap_diagnostics_at_runtim
     with pytest.raises(AlertStoreRuntimeConfigurationError) as error:
         get_default_session_alert_store()
 
-    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
-    assert "alerts:secret" not in str(error.value)
+    assert str(error.value) == "PostgreSQL backend operation failed"
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
 
