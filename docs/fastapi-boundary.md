@@ -62,6 +62,31 @@ Focused settings and CLI tests cover the supported false-like auth overrides,
 including conflicting manual API-key configuration, so this guarantee does not
 depend on startup documentation alone.
 
+### Local-Mode Trust Assumption
+
+Local mode is a loopback convenience boundary, not a defense against malicious
+local processes. It trusts the local operator, the Electron process, the
+configured persistence backend and its local filesystem/database access, and a
+locally launched MCP client. It remains mostly keyless: authentication is off
+by default but can be enabled explicitly. Any process already trusted on the
+machine may still inspect or call the loopback service, access local session
+artifacts, or use the selected backend directly. Local mode does not protect
+against a process with sufficient access to the same machine.
+
+### Share-Mode Guarantees
+
+`share` is the only supported mode that permits intentional network-visible
+binding. It requires API-key authentication for operational session, alert,
+and playback routes; enables their operation-family rate-limit budgets by
+default; and hides framework documentation endpoints. `GET /health` remains a
+minimal public reachability response, while `GET /detectors` is currently
+public pending its separate access-policy decision.
+
+These protections apply in the current single-process HTTP runtime. The
+limiter is not distributed enforcement, rate limiting remains independently
+configurable, and reverse-proxy, TLS, network segmentation, and deployment
+monitoring controls are deferred to a future deployment boundary.
+
 ### Secret-Bearing Surface Audit
 
 This audit distinguishes the one intentional direct-terminal disclosure of a
@@ -297,7 +322,7 @@ control belongs in this local-first project now.
 | --- | --- | --- | --- |
 | Mode and bind address | Supported CLI enforces loopback-only `local` binds; `share` permits explicit network-visible binds with authentication | Keep non-loopback binding behind explicit `share` selection; keep raw Uvicorn documented as a development escape hatch | Implemented policy; raw-Uvicorn limitation remains |
 | Session start, read, and cancel | API-key authentication applies in `share`; start/cancel have fixed budgets and bounded start fields; snapshot transfer is capped at 2 MiB | Preserve `share-protected`; add the deferred read budget and a compact/paged store projection before broader deployment | Acceptable local-first limitation |
-| Playback resolution | API-key authentication, fixed 30/60 budget, and bounded source strings apply in `share`; local mode remains unthrottled by default | Preserve `share-protected`; add body, DNS, and filesystem-work limits only with a practical synchronous-work design | Acceptable local-first limitation |
+| Playback resolution | API-key authentication, fixed 30/60 budget, a 16 KiB body cap, and bounded source strings apply in `share`; local mode remains unthrottled by default | Preserve `share-protected`; add DNS and filesystem-work limits only with a practical synchronous-work design | Acceptable local-first limitation |
 | Alert and incident reads | API-key and fixed-window protection apply in `share`; raw and timeline responses use 100-default/250-maximum offset pages, while shared reads stop above 5,000 stored rows | Preserve `share-protected`; add backend-native filtered queries only if routine histories approach the shared ceiling | Acceptable local-first limitation |
 | Detector catalog | Unauthenticated in `share` mode | Treat detector metadata as `share-protected` for one consistent remote API boundary | Policy gap requiring a decision |
 | `/docs`, `/redoc`, OAuth redirect, and `/openapi.json` | Available locally and return `404` in `share` mode | Keep framework discovery local-only; add remote opt-in only for a deliberate integration need | Implemented policy |
@@ -307,12 +332,31 @@ control belongs in this local-first project now.
 | MCP tools | Four read-only alert tools run over trusted local `stdio`, without HTTP auth or HTTP rate limiting | Keep `MCP-local-read-only` and `disabled-remotely`; do not add a network transport in this branch | Acceptable local-first limitation |
 | Future remote MCP | No network transport exists | Treat remote MCP as a new security boundary requiring separate authentication, authorization, request/result bounds, and error review | Later deployment concern |
 
-The immediate implementation backlog is therefore bounded to minimal health
-output and proportionate HTTP resource controls. Bind/mode enforcement and
-framework-doc availability are implemented in the supported CLI/application
-path.
+The immediate implementation backlog is therefore bounded to a minimal health
+response decision, a detector-catalog access decision, and the deferred
+session-read/DNS/filesystem-work controls. Bind/mode enforcement,
+framework-doc availability, and the current proportionate HTTP resource
+controls are implemented in the supported CLI/application path.
 Distributed throttling and remote MCP remain deployment-stage work rather than
 defects in the current local transport model.
+
+### Public-Deployment Gates
+
+`share` is suitable for authenticated, controlled demos or LAN use. It is not
+an approval for public Internet deployment. Before that change, the intended
+deployment must satisfy every gate below. This is a readiness checklist, not a
+cloud-deployment plan.
+
+| Gate | Current evidence | Required before public deployment |
+| --- | --- | --- |
+| Secrets | Local CLI/environment configuration, generated demo keys, and redacted diagnostics are covered. | Managed secret injection and rotation, least-privilege database credentials, and no secret disclosure through deployed logs or operator output. |
+| Transport and proxy | The application has no TLS or trusted-proxy policy. | TLS termination, an explicitly trusted reverse-proxy boundary, and a reviewed network-exposure design. |
+| Shared abuse controls | Route-family limits are in-memory and per process. | Shared/distributed rate limiting for multi-worker deployment plus ingress request, connection, and timeout limits. |
+| PostgreSQL operations | Bootstrap, failure behavior, and opt-in live smoke exist; schema upgrades are manual. | Repeatable schema upgrades, backup scope/retention, restore rehearsal, monitoring, and recovery procedures. See the [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard). |
+| Observability | HTTP, worker, and PostgreSQL diagnostics are sanitized. | Centralized sanitized logging, auditability appropriate to the deployment, and an operator diagnostic path. |
+| HTTP policy | Loopback/share binding is enforced and framework docs are hidden in `share`; health is minimal and detector metadata is currently public. | Explicit CORS, trusted-host, health-response, and detector-catalog access policies. |
+| Release confidence | Deterministic security regression tests and opt-in PostgreSQL smoke are available. | A security review plus deployment smoke tests covering the real proxy, secrets, database, and recovery configuration. |
+| MCP | MCP is local `stdio` only, with four read-only bounded tools. | A separate transport, authentication, authorization, audit, and abuse-control design before any remote MCP endpoint. |
 
 ### Policy And Regression Ownership
 
@@ -322,41 +366,23 @@ tool policy belongs in [mcp-server.md](./mcp-server.md#current-tool-inventory).
 `contracts.md`, `architecture.md`, testing guidance, and the root README
 should link here rather than repeat the matrix.
 
-| Guarantee to protect after implementation | Regression-test owner |
+| Enforced or planned guarantee | Regression-test owner |
 | --- | --- |
 | Host classification, loopback-only local mode, and safe share startup | `tests/test_api_bind_policy.py`, `tests/test_api_server_cli_runtime.py` |
 | Share-mode admission, `401` envelopes, and intentional public-route classification | `tests/test_api_server_cli_routes.py` |
 | Alert-specific auth logging and limiter ordering | `tests/test_api_alert_route_auth_policy.py` |
 | Rate-limit envelopes and route-family budgets | `tests/test_api_alert_route_rate_limit_policy.py`, `tests/test_api_session_route_rate_limit_policy.py`, and `tests/test_api_playback_route_policy.py` |
 | Session/read/playback input and response bounds | `tests/test_api_read_resource_policy.py` and `tests/test_api_playback_route_policy.py` |
-| Local stdio-only MCP transport, exact tool allowlist, and read-only capability | `tests/test_mcp_server_contracts.py` |
-| MCP alert and incident behavior, including error mapping | Existing `tests/test_mcp_server_*_behavior.py` and `tests/test_mcp_server_*_errors.py` modules |
 
-This map records future regression ownership only. It does not widen the
-current security suite before the associated controls exist.
+This map identifies the focused regression owners for implemented guarantees
+and the planned session-read budget. MCP regression ownership is kept with the
+[MCP policy](./mcp-server.md#policy-gate-for-future-changes) and the
+[validation guide](./testing-and-validation.md#security-regression-coverage-map).
 
-Current readiness summary:
-
-- safe to rely on today for:
-  - local development
-  - demos
-  - single-process desktop-backed backend runs
-- not yet ready to claim as:
-  - multi-worker distributed rate limiting
-  - shared-store production throttling
-  - remote MCP security coverage
-  - a general production-distributed security boundary
-
-FastAPI's HTTP authentication and rate limits do not apply to the separate
-local `stdio` MCP server. [mcp-server.md](./mcp-server.md#current-tool-inventory)
-owns its exact tool, data-exposure, and result-bound policy; any remote MCP
-transport would require a separately designed security boundary.
-
-What is still partial:
-
-- playback proxying and renderer-specific media handling still live in Electron
-- startup/readiness ownership is in place, but the runtime model still needs
-  hardening and broader validation
+This boundary is suitable today for local development, controlled demos, and
+single-process desktop-backed runs. It is not a distributed security boundary;
+multi-worker throttling and any remote MCP transport remain deployment work.
+Electron still owns playback proxying and renderer-specific media handling.
 
 ## Current Runtime State
 
