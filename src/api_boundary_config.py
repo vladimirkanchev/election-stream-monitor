@@ -45,6 +45,9 @@ API_RATE_LIMIT_MAX_REQUESTS_CEILING = 200
 SESSION_CONTROL_RATE_LIMIT_MAX_REQUESTS = 12
 SESSION_START_RATE_LIMIT_MAX_REQUESTS = 6
 PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS = 30
+# This bounds the small JSON commands accepted by the local-first HTTP API.
+# A deployment proxy may add a stricter transport-level cap later.
+MAX_HTTP_REQUEST_BODY_BYTES = 16 * 1024
 
 
 class ApiBoundaryConfigurationError(RuntimeError):

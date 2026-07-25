@@ -23,14 +23,21 @@ async def _request(
     *,
     headers: dict[str, str] | None = None,
     json: dict[str, object] | None = None,
+    content: bytes | None = None,
 ) -> httpx.Response:
-    """Issue one in-process request against the shared FastAPI app."""
+    """Issue one in-process request, including raw bodies when needed."""
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(
         transport=transport,
         base_url="http://testserver",
     ) as client:
-        return await client.request(method, path, json=json, headers=headers)
+        return await client.request(
+            method,
+            path,
+            json=json,
+            content=content,
+            headers=headers,
+        )
 
 
 def request(
@@ -39,6 +46,9 @@ def request(
     *,
     headers: dict[str, str] | None = None,
     json: dict[str, object] | None = None,
+    content: bytes | None = None,
 ) -> httpx.Response:
-    """Synchronously issue one FastAPI request for straightforward test usage."""
-    return asyncio.run(_request(method, path, headers=headers, json=json))
+    """Synchronously issue one FastAPI request for boundary tests."""
+    return asyncio.run(
+        _request(method, path, headers=headers, json=json, content=content)
+    )

@@ -9,6 +9,8 @@ This suite protects the outer HTTP contract when backend internals move:
 
 import pytest
 
+from api.errors import UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
+
 from api.routers.sessions import SessionServiceCancelFailedError
 from detectors.registry import list_available_detectors
 from tests.api_boundary_test_support import request
@@ -75,7 +77,7 @@ def test_sessions_unexpected_failure_returns_structured_payload(monkeypatch) -> 
         "detail": "Unexpected backend error",
         "error_code": "internal_error",
         "status_reason": "internal_error",
-        "status_detail": "response serialization blew up",
+        "status_detail": UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
     }
 
 
@@ -96,7 +98,7 @@ def test_detectors_unexpected_failure_returns_structured_payload(monkeypatch) ->
         "detail": "Unexpected backend error",
         "error_code": "internal_error",
         "status_reason": "internal_error",
-        "status_detail": "catalog exploded",
+        "status_detail": UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
     }
 
 
@@ -150,7 +152,7 @@ def test_read_session_malformed_nested_payload_fails_closed_with_structured_erro
     assert response.json()["detail"] == "Unexpected backend error"
     assert response.json()["error_code"] == "internal_error"
     assert response.json()["status_reason"] == "internal_error"
-    assert "processed_count" in response.json()["status_detail"]
+    assert response.json()["status_detail"] == UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
 
 
 def test_read_session_malformed_alert_and_result_payloads_fail_closed_with_structured_error(
@@ -215,7 +217,7 @@ def test_read_session_malformed_alert_and_result_payloads_fail_closed_with_struc
     assert body["detail"] == "Unexpected backend error"
     assert body["error_code"] == "internal_error"
     assert body["status_reason"] == "internal_error"
-    assert any(fragment in body["status_detail"] for fragment in ("severity", "payload"))
+    assert body["status_detail"] == UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
 
 
 def test_read_session_snapshot_contract_keeps_results_and_latest_result_shape_after_store_move(

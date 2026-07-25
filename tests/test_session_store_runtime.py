@@ -527,8 +527,7 @@ def test_default_session_store_redacts_bootstrap_diagnostics_at_runtime_boundary
     with pytest.raises(SessionStoreRuntimeConfigurationError) as error:
         get_default_session_store()
 
-    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
-    assert "session:secret" not in str(error.value)
+    assert str(error.value) == "PostgreSQL backend operation failed"
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
 

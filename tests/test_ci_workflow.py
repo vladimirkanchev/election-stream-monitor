@@ -27,6 +27,8 @@ ci_workflow_contract = importlib.import_module("ci_workflow_contract")
 CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "ci.yml"
 BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
 WEEKLY_VALIDATION_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
+FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
+FRONTEND_INSTALL_COMMAND = "bash ../scripts/install_frontend_dependencies.sh"
 MAIN_GATE_REQUIRED_JOBS = ci_workflow_contract.MAIN_GATE_REQUIRED_JOBS
 FEATURE_GATE_REQUIRED_JOBS = ci_workflow_contract.FEATURE_GATE_REQUIRED_JOBS
 ADVISORY_JOBS = ci_workflow_contract.ADVISORY_JOBS
@@ -187,6 +189,30 @@ def test_routine_workflows_keep_live_alert_postgres_confidence_disabled() -> Non
         assert 'POSTGRES_ALERT_STORE_REAL_SMOKE: "0"' in workflow_text
         assert "services:" not in workflow_text
         assert "postgres_alert_weekly_" not in workflow_text
+
+
+def test_frontend_workflows_use_the_pinned_retrying_installer() -> None:
+    """Every frontend install lane should share the pinned toolchain helper."""
+
+    for workflow_path in (
+        CI_WORKFLOW_PATH,
+        BRANCH_CI_WORKFLOW_PATH,
+        WEEKLY_VALIDATION_WORKFLOW_PATH,
+    ):
+        workflow = ci_workflow.load_workflow(workflow_path)
+        install_steps = [
+            step
+            for job in workflow.jobs.values()
+            for step in job.steps
+            if step.name == "Install frontend dependencies"
+        ]
+
+        assert install_steps
+        assert all(step.command == FRONTEND_INSTALL_COMMAND for step in install_steps)
+
+    installer = FRONTEND_INSTALLER_PATH.read_text()
+    assert 'REQUIRED_NPM_VERSION="11.15.0"' in installer
+    assert "npm ci" in installer
 
 
 def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:

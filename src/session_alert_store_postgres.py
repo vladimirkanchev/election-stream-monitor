@@ -29,7 +29,11 @@ from session_alert_store_postgres_config import (
     validate_postgres_alert_store_settings,
 )
 from session_models import AlertEvent, EventSeverity
-from postgres_diagnostics import redact_postgres_database_url, redact_postgres_diagnostic
+from postgres_diagnostics import (
+    SAFE_POSTGRES_DIAGNOSTIC,
+    redact_postgres_database_url,
+)
+
 POSTGRES_ALERT_EVENTS_TABLE_NAME = "session_alert_events"
 POSTGRES_ALERT_EVENT_COLUMNS: tuple[str, ...] = (
     "session_id",
@@ -273,8 +277,8 @@ def bootstrap_postgres_alert_store(
 
     try:
         initialize_postgres_alert_store(connection)
-    except Exception as error:
-        detail = redact_postgres_diagnostic(str(error))
+    except Exception:
+        detail = SAFE_POSTGRES_DIAGNOSTIC
     else:
         return connection
 

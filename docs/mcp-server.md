@@ -8,7 +8,7 @@ The current MCP server:
 
 - runs locally over `stdio`
 - is read-only and query-only
-- reads persisted local alert and session data
+- reads persisted alert data for selected monitoring sessions
 - reads through the same shared alert/session services used by the local
   FastAPI boundary
 - stays outside FastAPI auth and rate limiting
@@ -36,15 +36,19 @@ by [contracts.md](./contracts.md#session-alert-query-surfaces).
 
 ## Policy Gate For Future Changes
 
-MCP remains local `stdio`, explicitly allowlisted, and read-only. Any mutation
-tool or network-capable transport requires a separate security decision before
-implementation. That decision must define the transport trust model,
-authentication and authorization, request and result bounds, audit needs, and
-error-redaction coverage. FastAPI protection is not inherited by MCP.
+MCP is an explicitly allowlisted, local `stdio`, read-only adapter. A trusted
+local client may use its four bounded alert views for a supplied session: raw
+events, an alert summary, a grouped timeline, and an incident summary. It
+cannot read session metadata, progress, or results; start, cancel, edit, or
+delete sessions; resolve playback; access media; or use arbitrary filesystem
+paths. Client launch configuration is therefore part of the local-process
+trust boundary, and FastAPI authentication and rate limits do not protect this
+stdio process.
 
-Local still means that the launched MCP client can read the selected runtime
-backend's session-alert data. Treat client launch configuration as part of the
-trusted local-process boundary.
+Any mutation tool or network-capable transport requires a separate security
+decision before implementation. That decision must define the transport trust
+model, authentication and authorization, request and result bounds, audit
+needs, and error-redaction coverage.
 
 `tests/test_mcp_server_contracts.py` locks the exact allowlist, schemas, and
 stdio launch. `tests/test_mcp_fastapi_boundary_split.py` confirms every current
@@ -53,11 +57,10 @@ also lock the generic storage-error response.
 
 ## Current Tool Inventory
 
-The server registers exactly these four tools. All are
-`MCP-local-read-only`, use local `stdio` only, and call the active alert
-backend through shared read models. File-backed storage remains the default;
-PostgreSQL requires explicit runtime selection. MCP reads one backend and
-never merges history across them.
+The server registers exactly these four `MCP-local-read-only` tools. They call
+the active alert backend through shared read models. File-backed storage is the
+default; PostgreSQL requires explicit runtime selection. MCP reads one backend
+and never merges history across them.
 
 | Tool | Returned data | Shared dependency | Response bound |
 | --- | --- | --- | --- |
@@ -70,8 +73,7 @@ Every shared query reads at most 5,000 stored rows and fails instead of
 returning a partial result. Validation and missing-session errors remain
 readable. Unexpected storage failures use `Alert storage is unavailable`, so
 responses do not expose paths, driver detail, PostgreSQL URLs, or key values.
-No tool starts, cancels, edits, deletes, or resolves playback. The exact
-allowlist, schemas, and stdio launch are protected by
+The exact allowlist, schemas, and stdio launch are protected by
 `tests/test_mcp_server_contracts.py`.
 
 ## Request Validation And Current Bounds

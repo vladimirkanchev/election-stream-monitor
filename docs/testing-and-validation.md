@@ -583,6 +583,12 @@ commands directly, use the matching `justfile` recipes:
     `tests/test_ci_test_target_scripts.py`
   - best local check when editing `ci.yml`, workflow-helper scripts, or the
     protected/advisory lane contract
+- `just test-security-regression`
+  - deterministic FastAPI/MCP security regression lane
+  - owns synthetic auth, binding, rate/resource, redaction, safe-error, and
+    MCP-boundary checks; it opens no sockets and does not require PostgreSQL
+  - use it before `just ci-local`; live database security confidence remains
+    opt-in and weekly/manual
 - `just branch-cleanup`
   - non-destructive branch hygiene lane
   - shows branch name, status, upstream divergence, and changed-file summaries
@@ -1484,16 +1490,18 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   tests/test_mcp_server_contracts.py
 ```
 
-The current functionality under that slice is:
+For the complete deterministic FastAPI/MCP security regression bundle, run:
 
-- FastAPI API-key authentication seam for session, alert, and playback routes
-- FastAPI in-memory principal-aware rate-limiting seam for alert, session-control,
-  and playback route families
-- raw session alert list queries
-- raw numeric alert summaries
-- grouped incident timelines
-- grouped incident summaries
-- stdio MCP launch wiring over the same shared service seam
+```bash
+just test-security-regression
+```
+
+This routine lane stays synthetic: it uses in-process test seams, opens no
+network listener, and does not require PostgreSQL. Live database confidence and
+weekly security audits remain separate lanes.
+
+It covers FastAPI access and startup policy, resource bounds, safe diagnostics,
+and the local MCP trust boundary. The ownership map below names the exact tests.
 
 For MCP-only bounds, allowlist, error, and local-trust changes, use the
 smaller deterministic slice:
@@ -1510,6 +1518,41 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 
 It covers MCP's local stdio boundary and shared response/storage-work bounds;
 it does not test a remote MCP transport because none exists.
+
+### Security Regression Coverage Map
+
+The current deterministic security suite is intentionally split by observable
+boundary. The FastAPI route/mode policy remains owned by
+[`fastapi-boundary.md`](./fastapi-boundary.md); MCP transport and tool policy
+remain owned by [`mcp-server.md`](./mcp-server.md).
+
+| Guarantee | Focused test owner | Coverage |
+| --- | --- | --- |
+| Local versus share-mode access for operational routes | `tests/test_api_server_cli_routes.py`, `tests/test_api_server_cli_runtime.py` | Sessions, alerts, playback, health, detectors, and framework docs; mounted application operations require an explicit class. |
+| Missing, blank, invalid, and valid API keys | `tests/test_api_server_cli_routes.py`, `tests/test_api_auth.py`, `tests/test_api_alert_route_auth_policy.py`, `tests/test_api_boundary_settings_env.py` | Representative session, alert, and playback routes, generated keys, and unsafe overrides. |
+| Loopback versus network-visible startup | `tests/test_api_server_cli_runtime.py`, `frontend/electron/fastApiStartupOrchestrator.test.mjs` | IPv4, IPv6, `localhost`, wildcards, and non-loopback hosts without real sockets; Electron remains keyless on loopback. |
+| Safe HTTP, CLI, worker, and PostgreSQL diagnostics | FastAPI alert-route tests, `tests/test_api_server_cli_output.py`, `tests/test_session_cli_tooling.py`, `tests/test_postgres_diagnostics.py`, and runtime-store tests | Manual keys, credential-bearing URLs, SQL/path/driver diagnostics, and bootstrap failures. |
+| Rate limits and resource bounds | `tests/test_api_alert_route_rate_limit_policy.py`, `tests/test_api_session_route_rate_limit_policy.py`, `tests/test_api_playback_route_policy.py`, `tests/test_api_read_resource_policy.py` | Operation-family budgets, JSON-body/input/page limits, response ceilings, and `413`/`422`/`429` behavior. |
+| MCP allowlist, stdio transport, and read-only behavior | `tests/test_mcp_server_contracts.py`, `tests/test_mcp_fastapi_boundary_split.py` | Exact four-tool allowlist, stdio launch, and unchanged persisted state. |
+| Safe MCP and HTTP error translation | `tests/test_mcp_server_alerts_errors.py`, `tests/test_mcp_server_incidents_errors.py`, `tests/test_api_boundary_error_contracts.py` | Reviewed domain errors and sanitized unexpected storage failures. |
+| PostgreSQL failure redaction | `tests/test_session_store_runtime.py`, `tests/test_session_alert_store_runtime.py`, `tests/test_postgres_diagnostics.py` | Runtime selection and sanitizer boundaries. |
+
+#### Security Assertion Contract
+
+Security regression tests assert externally meaningful outcomes, not router or
+dependency internals:
+
+| Boundary | Assert | Avoid asserting |
+| --- | --- | --- |
+| FastAPI access | status, shared error envelope, authentication transition, and public/protected reachability | dependency placement, router construction, or private policy helpers |
+| Startup and binding | accepted or rejected mode/host configuration and safe CLI output | real socket availability, Uvicorn internals, or Electron timing |
+| Secrets and PostgreSQL failures | absence of credentials, paths, SQL, and raw driver text while retaining a stable safe reason | exact driver wording or sanitizer implementation details |
+| Rate and resource controls | `413`/`422`/`429` contracts, limit boundaries, reset behavior, and operation-family isolation | limiter counter layout or clock implementation beyond controlled time seams |
+| MCP | registered allowlist, stdio launch, bounded schema/output, safe errors, and unchanged persisted data | framework registry internals or FastAPI authentication behavior |
+
+Prefer one representative route from each protected family when testing a
+shared policy. Add per-route tests only when that route has distinct public
+behavior, resource cost, or error semantics.
 
 Current alert persistence contract to preserve:
 

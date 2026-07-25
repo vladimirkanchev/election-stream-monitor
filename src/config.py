@@ -137,6 +137,7 @@ API_RATE_LIMIT_MAX_REQUESTS_CEILING = (
 PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS = (
     _api_boundary_config.PLAYBACK_RESOLUTION_RATE_LIMIT_MAX_REQUESTS
 )
+MAX_HTTP_REQUEST_BODY_BYTES = _api_boundary_config.MAX_HTTP_REQUEST_BODY_BYTES
 ApiBoundaryConfigurationError = _api_boundary_config.ApiBoundaryConfigurationError
 FastApiRunModeSettings = _api_boundary_config.FastApiRunModeSettings
 ApiAuthSettings = _api_boundary_config.ApiAuthSettings

@@ -622,8 +622,8 @@ def test_run_session_logs_useful_failure_context_before_reraising(monkeypatch) -
     )
     monkeypatch.setattr(
         session_cli.logger,
-        "exception",
-        lambda message, context: calls.append((message, context)),
+        "error",
+        lambda message, context, error_type: calls.append((message, context, error_type)),
     )
 
     with pytest.raises(RuntimeError, match="detector crashed"):
@@ -631,10 +631,11 @@ def test_run_session_logs_useful_failure_context_before_reraising(monkeypatch) -
 
     assert calls == [
         (
-            "run-session worker failed [%s]",
+            "run-session worker failed [%s] error_type=%s",
             "session_id='session-123' "
             "mode='video_files' "
             "input_path='<path:input.mp4>'",
+            "RuntimeError",
         )
     ]
 
@@ -759,8 +760,12 @@ def test_run_session_worker_cli_redacts_postgres_bootstrap_diagnostics(
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Worker CLI failures should not expose database credentials in worker logs."""
-    diagnostic = "bootstrap failed for postgresql://session:secret@db.example/esm"
+    """Worker CLI output and logs must not expose backend diagnostics."""
+    diagnostic = (
+        "psycopg driver failed: SELECT * FROM session_metadata "
+        "for postgresql://session:secret@db.example/esm?password=query-secret "
+        "path=/srv/esm/sessions"
+    )
     monkeypatch.setenv(SESSION_STORE_BACKEND_ENV, "postgres")
     monkeypatch.setenv(POSTGRES_SESSION_DATABASE_URL_ENV, VALID_POSTGRES_SESSION_URL)
     monkeypatch.setattr(
@@ -775,14 +780,20 @@ def test_run_session_worker_cli_redacts_postgres_bootstrap_diagnostics(
             session_id="session-worker-runtime-postgres-redacted-diagnostic",
         )
 
-    assert "postgresql://<redacted>@db.example/esm" in str(error.value)
-    assert "session:secret" not in str(error.value)
+    assert str(error.value) == "PostgreSQL backend operation failed"
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
     captured = capsys.readouterr()
     assert all(
-        "session:secret" not in sink
-        for sink in (captured.out, captured.err, caplog.text)
+        value not in f"{captured.out}\n{captured.err}\n{caplog.text}"
+        for value in (
+            "session:secret",
+            "query-secret",
+            "postgresql://",
+            "SELECT",
+            "/srv/esm",
+            "psycopg",
+        )
     )
 
 

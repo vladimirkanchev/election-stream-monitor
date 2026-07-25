@@ -957,13 +957,17 @@ def test_bootstrap_postgres_session_store_redacts_schema_failure_details(
         bootstrap_postgres_session_store(settings)
 
     assert "Could not initialize the PostgreSQL session-store schema" in str(error.value)
-    assert "postgresql://<redacted>@db.example/esm?token=<redacted>" in str(
-        error.value
+    assert str(error.value).endswith("PostgreSQL backend operation failed")
+    assert all(
+        value not in str(error.value)
+        for value in (
+            database_user,
+            database_password,
+            query_token,
+            assignment_password,
+            "postgresql://",
+        )
     )
-    assert database_user not in str(error.value)
-    assert database_password not in str(error.value)
-    assert query_token not in str(error.value)
-    assert assignment_password not in str(error.value)
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
 

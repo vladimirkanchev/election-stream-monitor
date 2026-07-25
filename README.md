@@ -96,17 +96,14 @@ coverage across alerts, API/data rules, and workflow targeting.
 
 Still not:
 
-- multi-worker distributed rate limiting
-- shared-store production throttling
-- remote MCP authentication or limiter coverage
+- public Internet deployment; see the
+  [FastAPI deployment gates](./docs/fastapi-boundary.md#public-deployment-gates)
 - broad detector coverage for real election-stream failure modes
 
-MCP is still a local `stdio` tool surface over local alert and session data.
-In `share` mode, FastAPI requires an API key for session, playback, and alert
-operations; alert routes also use the current local rate limiter.
-PostgreSQL-backed alerts use the same shared alert backend, but file remains
-the default. The detailed current-versus-intended HTTP policy is in
-[docs/fastapi-boundary.md](./docs/fastapi-boundary.md#http-route-security-matrix).
+Current FastAPI access, MCP trust, and persistence rollout policies belong to
+the [FastAPI boundary guide](./docs/fastapi-boundary.md),
+[MCP policy](./docs/mcp-server.md), and
+[persistence audit](./docs/session-persistence-audit.md).
 
 For local startup, use [Running The Project](./README.md#running-the-project).
 For live Postgres validation and weekly confidence runs, use
@@ -114,12 +111,9 @@ For live Postgres validation and weekly confidence runs, use
 
 ## FastAPI Access Modes
 
-FastAPI currently supports two access modes:
-
-- `local` for normal desktop and development use, with auth and rate limiting
-  off by default
-- `share` for temporary local or demo sharing, with API-key auth for
-  operational routes and rate limiting for alert routes
+FastAPI supports `local` and `share` modes; binding, authentication, public
+routes, and rate-limit policy are owned by the
+[FastAPI boundary guide](./docs/fastapi-boundary.md#runtime-mode-and-network-exposure).
 
 For the exact startup commands and key examples, see
 [Running The Project](./README.md#running-the-project).
@@ -223,9 +217,9 @@ In practice, the flow looks like this:
    is also opt-in and currently forward-only rather than a historical
    migration path.
 
-FastAPI and MCP are separate entry points over the same local alert and session
-data. FastAPI owns the main desktop HTTP path, while MCP remains a local
-read-only tool surface over the same saved data.
+FastAPI and MCP are separate entry points over local persisted data. FastAPI
+owns the desktop HTTP path; MCP is the local read-only alert-query adapter
+described in the [MCP policy](./docs/mcp-server.md).
 
 The diagram below shows the same flow in one picture.
 
@@ -234,9 +228,9 @@ The diagram below shows the same flow in one picture.
 ### Who Owns What
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
-- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, and alert/session reads; operational routes require an API key in `share` mode.
+- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, and alert/session reads. Its access policy is documented in the [FastAPI boundary guide](./docs/fastapi-boundary.md).
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
-- **MCP** remains a separate local `stdio` read-only alert-reading surface. It reads local alert/session data and stays outside FastAPI auth and rate limiting.
+- **MCP** remains a separate local `stdio` read-only alert-query surface; its trust boundary is documented in the [MCP policy](./docs/mcp-server.md).
 - **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session reads and writes now go through the shared session-store contract, but the default backend still writes under `data/sessions/`.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
@@ -475,10 +469,10 @@ Temporary shared demo access:
 PYTHONPATH=src python -m api_server_cli share
 ```
 
-`share` mode requires an API key for operational routes and enables alert-route
-rate limiting. If neither `--api-key` nor `ESM_API_AUTH_ALLOWED_KEYS` supplies
-a key, the CLI generates one and prints it once. It is for temporary local or
-demo sharing, not production deployment.
+`share` mode requires an API key for operational routes and enables the current
+per-process route-family rate limits. If neither `--api-key` nor
+`ESM_API_AUTH_ALLOWED_KEYS` supplies a key, the CLI generates one and prints it
+once. It is for temporary local or demo sharing, not production deployment.
 
 Explicit shared-demo key:
 
@@ -561,10 +555,9 @@ Some public streams still reject automated fetching. See
 - Some public `.m3u8` streams still block automated fetching.
 - Playback and monitoring are related but not identical, so one can fail while
   the other keeps running.
-- FastAPI auth and rate limiting are for local and demo use, not distributed
-  deployment.
-- MCP is still a local `stdio` read-only query surface over local alert/session
-  data, outside that FastAPI protection.
+- FastAPI and MCP security are designed for local and demo use, not distributed
+  public deployment; see the [FastAPI boundary guide](./docs/fastapi-boundary.md)
+  and [MCP policy](./docs/mcp-server.md).
 - The desktop workflow is tuned mainly for Ubuntu/Linux.
 - Packaging is still early and closer to a developer-run app than a polished release.
 - Detector coverage is still narrow, with a current focus on black-screen and blur-related issues.
@@ -712,26 +705,10 @@ Remote media fetching is intentionally limited:
 - local or private-network targets are blocked by default unless deliberately
   allowed, for example `localhost`, `127.0.0.1`, `192.168.x.x`, or `10.x.x.x`
 
-The current backend security scope is still intentionally narrow:
-
-- FastAPI `share` mode requires API keys for session, playback, and alert
-  operations; alert routes additionally use the local rate limiter
-- FastAPI `local` mode keeps auth and rate limiting off
-- `api_server_cli local` accepts loopback binds only; use `share` for an
-  intentional network-visible bind
-- MCP remains a local `stdio` read-only tool surface over local alert/session
-  data, outside FastAPI auth and rate limiting
-- PostgreSQL-backed alerts do not change that boundary by themselves; they only
-  change where alert data is stored
-- session outputs stay on local disk for review and debugging
-
-Owning files:
-
-- [src/source_validation.py](./src/source_validation.py) for remote input and trust rules
-- [src/api_boundary_config.py](./src/api_boundary_config.py) for `local` / `share` defaults and boundary settings
-- [src/api_server_cli.py](./src/api_server_cli.py) for CLI bind admission and run-mode setup
-- [src/api/alert_route_policy.py](./src/api/alert_route_policy.py) for alert-route authentication and rate limiting
-- [src/esm_mcp/](./src/esm_mcp/) for the local MCP server and tools
+The detailed security model is intentionally maintained outside the root
+README: [FastAPI boundary and deployment gates](./docs/fastapi-boundary.md),
+[MCP transport and tool policy](./docs/mcp-server.md), and
+[validation ownership](./docs/testing-and-validation.md).
 
 ## Working Style
 

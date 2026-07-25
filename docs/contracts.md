@@ -276,6 +276,29 @@ desktop-backed and demo runtime, but not a multi-worker or distributed-security
 guarantee. A remote MCP transport requires its own authentication, bounds, and
 rate-limit design.
 
+## FastAPI Request Boundary And Error Contract v1
+
+The FastAPI application accepts at most 16 KiB for a `POST`, `PUT`, or `PATCH`
+request body. A larger body is rejected before route validation or service
+work with this stable `413` envelope:
+
+```json
+{
+  "detail": "Request body exceeds the supported size",
+  "error_code": "request_body_too_large",
+  "status_reason": "request_body_too_large",
+  "status_detail": "Maximum request body size is 16384 bytes."
+}
+```
+
+An unexpected backend failure returns the standard `500` error envelope with
+the stable status detail `The server could not complete the request.` It must
+not reflect exception text, PostgreSQL diagnostics, SQL, filesystem paths, or
+credentials. Route-specific field, page, response, and rate limits are owned
+by the [FastAPI resource-control contract](./fastapi-boundary.md#rate-limit-and-resource-controls).
+An eventual hosted deployment must apply equivalent or stricter ingress limits
+before requests reach the application.
+
 ## API Stream Source Contract v1
 
 Purpose:

@@ -177,45 +177,15 @@ JSONB-first:
 - append-order reads are preserved through `ORDER BY id ASC`
 - filtering and summary behavior still stay above the storage interface
 
-The first FastAPI authentication split follows the same boundary-oriented style:
-
-- [`src/api_auth.py`](../src/api_auth.py) owns request-authentication mechanics
-  for the HTTP API boundary
-- [`src/api/http_auth_policy.py`](../src/api/http_auth_policy.py) owns HTTP
-  API-key extraction, `401` mapping, and safe auth-failure logging
-- [`src/api/alert_route_policy.py`](../src/api/alert_route_policy.py) owns the
-  alerts-router HTTP protection policy that composes authentication and rate
-  limiting
-- [`src/api_boundary_config.py`](../src/api_boundary_config.py) owns the
-  structured auth and rate-limit settings; [`src/config.py`](../src/config.py)
-  provides compatibility re-exports
-- [`src/api_rate_limit.py`](../src/api_rate_limit.py) owns the current
-  principal-aware fixed-window limiter and keeps its local in-memory store
-  replaceable
-- session and playback routers apply shared authentication through router
-  dependencies; the alerts router composes that authentication with its
-  limiter instead of using app-wide middleware
-- the current `429` rate-limit error vocabulary is defined and enforced at the
-  same API boundary
-- shared application services remain auth-agnostic
-
-Current MCP versus FastAPI trust boundary:
-
-- FastAPI authentication and alert rate limiting are HTTP-boundary concerns
-- the current MCP server remains a local `stdio` adapter, not a remote
-  authenticated service
-- that separation is intentional: today's FastAPI protection work should stay
-  reusable later without pretending it already secures MCP
-- if MCP later moves to a remote transport, the project should reuse:
-  - auth-neutral principal identity
-  - the same general structured error vocabulary
-  - maybe the limiter concepts or backend
-- but that future work should still be implemented as MCP-boundary logic, not
-  by coupling MCP directly to FastAPI dependencies
-
-The detailed current-versus-intended HTTP policy belongs in
-[fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix); the
-MCP tool and transport inventory belongs in [mcp-server.md](./mcp-server.md).
+Security ownership is intentionally split by transport. FastAPI owns the HTTP
+route, local/share, bind, authentication, rate-limit, and deployment policy;
+MCP remains a separate local `stdio`, read-only adapter and does not inherit
+FastAPI authentication. The detailed HTTP matrix belongs in
+[fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix), while
+the MCP inventory and future transport gate belong in
+[mcp-server.md](./mcp-server.md#current-tool-inventory). Validation commands
+and test ownership remain in
+[testing-and-validation.md](./testing-and-validation.md).
 
 ## Legacy Tooling
 

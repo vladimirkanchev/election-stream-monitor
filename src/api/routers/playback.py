@@ -35,6 +35,7 @@ router = APIRouter(
             "model": ApiErrorResponse,
             "description": "Validation failed or playback source unavailable",
         },
+        413: {"model": ApiErrorResponse, "description": "Request body too large"},
         422: {
             "model": ApiErrorResponse,
             "description": "Request validation failed",

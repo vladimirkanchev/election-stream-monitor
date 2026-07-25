@@ -94,6 +94,32 @@ ci-contract-check:
       tests/test_ci_workflow.py \
       tests/test_ci_test_target_scripts.py
 
+# Focused deterministic FastAPI/MCP security regression lane.
+# This stays synthetic and is safe for routine backend validation: it does not
+# start a server, open sockets, or require PostgreSQL.
+test-security-regression:
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
+      tests/test_api_auth.py \
+      tests/test_api_rate_limit.py \
+      tests/test_api_boundary_settings_env.py \
+      tests/test_api_boundary_settings_validation.py \
+      tests/test_api_boundary_contracts.py \
+      tests/test_api_boundary_error_contracts.py \
+      tests/test_api_server_cli_runtime.py \
+      tests/test_api_server_cli_routes.py \
+      tests/test_api_server_cli_output.py \
+      tests/test_api_alert_route_auth_policy.py \
+      tests/test_api_alert_route_rate_limit_policy.py \
+      tests/test_api_session_route_rate_limit_policy.py \
+      tests/test_api_playback_route_policy.py \
+      tests/test_api_read_resource_policy.py \
+      tests/test_session_cli_tooling.py \
+      tests/test_mcp_server_contracts.py \
+      tests/test_mcp_server_alerts_errors.py \
+      tests/test_mcp_server_incidents_errors.py \
+      tests/test_mcp_fastapi_boundary_split.py \
+      tests/test_postgres_diagnostics.py
+
 # Fixture/environment policy lane for local maintainer checks.
 fixture-check:
     python3 .github/scripts/check_fixture_environment_policy.py

@@ -6,6 +6,8 @@ error captures the repo's standard API error envelope fields so the app-level
 exception handler can serialize one consistent payload shape.
 """
 
+UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL = "The server could not complete the request."
+
 
 class ApiDomainError(Exception):
     """Base transport-facing error that carries one structured API failure.
@@ -109,6 +111,19 @@ class RateLimitExceededError(ApiDomainError):
             status_reason="rate_limit_exceeded",
             status_detail=detail,
             headers=_build_retry_after_headers(retry_after_seconds),
+        )
+
+
+class RequestBodyTooLargeError(ApiDomainError):
+    """Error raised when a command body exceeds the API size boundary."""
+
+    def __init__(self, *, max_bytes: int) -> None:
+        super().__init__(
+            detail="Request body exceeds the supported size",
+            error_code="request_body_too_large",
+            status_code=413,
+            status_reason="request_body_too_large",
+            status_detail=f"Maximum request body size is {max_bytes} bytes.",
         )
 
 
