@@ -41,8 +41,11 @@ Use these first depending on what you are doing:
   - use [adding-an-analyzer.md](./adding-an-analyzer.md) as the canonical
     promotion rule when an experiment may become supported runtime behavior
   - [detector-lab-analysis.md](./detector-lab-analysis.md) for the current detector-lab structure and evaluation intent
-  - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
+    and authoritative detector-validation lane map
+  - [detector-validation-ownership.md](./detector-validation-ownership.md) for
+    file-level ownership, overlap review, and cleanup or truth-promotion rules
+  - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - high-signal test files:
     - `tests/test_analyzer_registry.py`
     - `tests/test_api_boundary_contracts.py`

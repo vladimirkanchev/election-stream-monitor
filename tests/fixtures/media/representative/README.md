@@ -79,30 +79,18 @@ Use the representative-media lanes as a ladder, not as one big suite:
   - repeatability, interruption/recovery, and long-baseline false-positive
     posture stay in that full-file soak lane, not ordinary PR validation
 
-Keep exact truth intentionally small. Promote only reviewed stable subsets into
-`tests/fixtures/media/ground_truth.json`. Leave borderline, threshold-sensitive,
-or mainly diagnostic cases in the intent or calibration lanes instead of
-inventing exact truth.
+### Truth And Lane Boundary
 
-Compression-heavy representative cases deserve extra restraint here. They are
-useful today for calibration, detector comparison, and false-positive guards,
-but they should stay out of exact alert truth until a reviewed runtime lane
-shows a stable promotable subset.
+`expected_results.json` records broad intent; `ground_truth.json` is reserved
+for reviewed stable subsets. Keep borderline, compression-heavy, and
+threshold-sensitive cases in intent or calibration until a reviewed runtime
+lane supports exact truth. Full-file `pytest -m soak` confidence proves
+long-run behavior, not detector truth.
 
-Read the representative-media stack this way:
-
-- support and catalog guards
-- reviewed runtime intent
-- exact reviewed-subset truth
-- transport-backed confidence
-- calibration-only confidence
-- capped MP4 confidence
-- full-file MP4 soak confidence
-
-The full-file soak lane is confidence-building only. Run it with `pytest -m
-soak` in scheduled or manual-depth validation. It proves long-run completion,
-restart/cancel honesty, and readable persisted output, not exact detector
-truth.
+The [testing guide](../../../../docs/testing-and-validation.md#detector-validation-ownership)
+owns category-to-lane selection. The
+[detailed ownership inventory](../../../../docs/detector-validation-ownership.md)
+owns test cleanup and representative truth-promotion criteria.
 
 ## Metadata Files
 
