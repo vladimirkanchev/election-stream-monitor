@@ -1,9 +1,9 @@
 # Detector Validation Ownership
 
-This is the detailed supporting record for the authoritative
-[detector-validation ownership table](./testing-and-validation.md#detector-validation-ownership).
-It records current tests, their primary behavior owner, fixture role, overlap
-review, and cleanup rules.
+This document is the authoritative detailed record for detector-validation
+ownership and test-value decisions. The compact category-to-lane
+[summary table](./testing-and-validation.md#detector-validation-ownership)
+points here for test cases, evidence, overlap decisions, and cleanup rules.
 
 Sharing a fixture does not make tests duplicates. A detector-lab calibration
 check, a runtime session test, and an exact-truth test can each protect a
@@ -115,44 +115,187 @@ is authoritative for category-to-lane selection. The inventory above records
 the file-level lane and fixture class behind each category. Slow, local, and
 soak tests are confidence layers, not lower-value duplicates of fast tests.
 
-## Overlap Review
+## Test-Value Matrix
 
-The following groups share assertions or fixtures closely enough to review.
-They are not deletion instructions: a cleanup must preserve every distinct
-behavior claim and stay in the current test owner and lane.
+The matrix records one row for each reviewed test or distinct parameterized
+behavior case. It is a cleanup decision record, not a ranking of tests by
+speed or fixture reuse.
 
-| Comparable tests | Boundary and shared claim | Classification | Current decision |
+| Field | Record | Objective rule |
+| --- | --- | --- |
+| Test case | Node id or a stable parameterized behavior label. | Name one runnable test or one input case with a distinct assertion. |
+| Primary owner and protected behavior | The ownership category and observable contract. | Describe the behavior that would regress, not implementation mechanics. |
+| Layer and boundary | Detector, rule, processor, detector-lab, runtime, transport, catalog, or soak/manual boundary. | Use the earliest boundary whose failure the test is intended to diagnose. |
+| Fixture role | Synthetic contract, checked-in media, representative calibration, exact truth, local-only confidence, or soak/manual input. | Fixture identity alone is not a role. Record what the fixture is evidence for. |
+| Expected failure signal | The likely regression class: detector fact, rule decision, threshold guardrail, decoding/media drift, transport, runtime persistence, catalog integrity, or environment availability. | A case is comparable only when a failure gives a similarly actionable signal. |
+| Runtime cost | Low, medium, or high. | Base this on the current lane and observed work: synthetic, checked-in media, local representative media, or full-file/soak work. |
+| Environment sensitivity | Deterministic, checked-in fixture, local asset/tool, or remote/timing dependent. | Record sensitivity separately from cost; a slow checked-in test can still be deterministic. |
+| Proposed action | `keep`, `merge`, `parameterize`, `move`, or `remove`. | `merge` and `remove` require a named surviving case; `move` requires a named destination owner and lane. |
+| Decision evidence | The comparable case, replacement command, and reason confidence remains intact. | Do not approve an action from similar setup, fixture names, or assertion syntax alone. |
+
+Action meanings:
+
+- `keep`: preserves distinct confidence or a clearer failure signal.
+- `merge`: combines truly equivalent behavior into one readable test while
+  retaining its current owner and lane.
+- `parameterize`: keeps distinct inputs and expected outcomes in one test
+  structure because they share the same boundary and diagnostic meaning.
+- `move`: retains the behavior but relocates it to its correct owner or
+  validation lane.
+- `remove`: retires a case only after an equivalent named case demonstrably
+  preserves its behavior, fixture intent, lane, and failure signal.
+
+The behavior registry below records the current reviewed test families. A
+proposed action is not approved until its decision evidence satisfies the
+equivalence gate.
+
+## Behavior And Failure-Signal Registry
+
+The current 247 detector-related test functions are represented below at the
+narrowest maintainable behavior-family level. A later cleanup decision must
+name the exact node id or parameterized case it affects; this registry does
+not authorize a file-wide action. A test family may exercise supporting seams,
+but its failure signal records the earliest boundary it is meant to diagnose.
+
+| Test scope | Observable behavior protected | Primary failure meaning | Cost | Environment sensitivity |
+| --- | --- | --- | --- | --- |
+| `test_detectors.py` | Built-in detector facts, supported modes, input handling, and registry exposure remain stable for controlled inputs. | Detector implementation or registration regression. | low | deterministic |
+| `test_detectors_integration.py` | Production detectors retain their intended behavior on decoded checked-in media. | Decoder/media interpretation drift or detector regression outside synthetic inputs. | medium | checked-in-media dependent |
+| `test_alert_rules.py` | Shared alert-rule entry, recovery, severity, and emitted alert shape follow detector facts. | Rule transition or alert-contract regression. | low | deterministic |
+| `test_alert_rules_black.py` | Black-frame rule thresholds, suppression, recovery, and state handling remain stable. | Black-alert threshold or state-machine drift. | low | deterministic |
+| `test_alert_rules_blur.py` | Blur-rule thresholds, guardrails, suppression, and recovery remain stable. | Blur-alert threshold or state-machine drift. | low | deterministic |
+| `test_processor.py` | Core analyzer execution, slice/result propagation, and alert-bundle assembly remain coherent. | Processor integration or result-routing regression. | low | deterministic |
+| `test_processor_context_alerts.py` | Contextual detector facts reach alert evaluation with the required shared context. | Context propagation or alert-assembly regression. | low | deterministic |
+| `test_processor_failures.py` | Expected analyzer and input failures remain isolated and observable without corrupting the session path. | Failure-isolation or error-contract regression. | low | deterministic |
+| `test_processor_routing.py` | Supported-mode and analyzer routing stay explicit and deterministic. | Analyzer-selection or mode-routing regression. | low | deterministic |
+| `test_detector_lab.py` harness, fixture-set, cache, CSV, and CLI cases | Detector-lab accepts intended inputs, reuses safe cached context, resolves fixture sets, and exports readable comparison data. | Experiment-harness, fixture-resolution, cache, CLI, or export-contract regression. | low | deterministic; optional local baseline discovery |
+| `test_detector_lab.py` experimental score and optical-flow cases | Experimental blur and motion score variants remain monotonic or fail closed under controlled synthetic facts. | Experimental scoring, trace aggregation, or fail-closed guardrail drift. | low | deterministic |
+| `test_detector_lab.py` practical black/blur/motion guardrail cases | Practical policies retain black dominance, neighbor, structure, softness, coherence, and exact-threshold decisions. | Practical-policy threshold or precedence drift. | low | deterministic |
+| `test_detector_lab.py` practical output and operator-message cases | Practical rows preserve optional metadata and expose stable operator-facing fields. | Experimental output-shape or diagnostic-message regression. | low | deterministic |
+| `test_detector_lab_real_media.py` | Decoded checked-in fixtures preserve practical positive, suppression, precedence, sequence, flow-signal, and CSV behavior. | Media-decoding confidence or practical-policy drift on real frames. | medium | checked-in-media dependent |
+| `test_detector_lab_representative_media.py` | Local representative compression and low-resolution cases remain broad calibration evidence without accidental promotion to exact truth. | Calibration, fixture-metadata, or promotion-boundary drift. | medium | local-asset and decoder-tool dependent |
+| `test_representative_hls_test_support.py` | Representative catalogs, fixture resolution, HLS route maps, and promoted-truth references remain internally valid. | Fixture/catalog integrity or unavailable-local-asset handling regression. | low | deterministic; local assets skipped when absent |
+| `test_e2e_local_session.py` | A minimal generated session reaches readable runtime output through the real local session boundary. | Core end-to-end session lifecycle regression. | low | deterministic |
+| `test_e2e_local_session_real_media.py` | Checked-in media reaches the real session boundary with the intended runtime output and alert behavior. | Checked-in media runtime, persistence, or rule-integration regression. | medium | checked-in-media dependent |
+| `test_e2e_local_session_representative_hls.py` | Reviewed local HLS baselines and artifacts preserve broad session behavior, MP4 agreement, and processing consistency. | Local HLS runtime, conversion, or representative-confidence drift. | medium-high | local-asset and decoder-tool dependent |
+| Representative HLS and MP4 ground-truth suites | Reviewed representative subsets retain exact status, result, and alert expectations on their intended runtime seam. | Promoted exact-truth or session-output regression. | medium-high | local-asset and decoder-tool dependent |
+| `test_e2e_local_session_representative_mp4_soak.py` capped cases | Capped representative MP4 runs preserve output shape and focused positive or false-positive guards. | Longer local runtime or representative-alert behavior regression. | medium-high | local-asset and decoder-tool dependent |
+| `test_e2e_local_session_representative_mp4_soak.py` `@pytest.mark.soak` cases | Full-file sessions preserve completion, repeatability, interruption recovery, and long-baseline false-positive posture. | Long-run lifecycle, recovery, or environment-sensitive confidence regression. | high | local-asset and decoder-tool dependent |
+| `test_e2e_session_ground_truth_api_stream.py` | Synthetic `api_stream` sessions retain reviewed exact end-to-end output. | `api_stream` runtime-contract regression independent of local media assets. | low | deterministic |
+| `test_e2e_session_ground_truth_local.py` | Reviewed checked-in local-media sessions retain exact end-to-end output. | Exact checked-in media runtime or persistence regression. | medium-high | checked-in-media and decoder-tool dependent |
+| `test_e2e_api_stream_representative_hls.py` | Reviewed local HLS inputs retain `api_stream` completion, ordering, cleanup, alignment, and bounded broad-alert behavior. | `api_stream` transport, temporary-file cleanup, or representative-runtime regression. | medium-high | local-asset, decoder-tool, and local-HTTP dependent |
+
+This registry separates likely detector or rule regressions from fixture,
+transport, runtime, and environment failures. Similar assertions become
+cleanup candidates only when their behavior and primary failure meaning match
+as well as their owner, fixture role, and validation lane.
+
+Cost and sensitivity are routing evidence, not value scores. Checked-in media
+belongs in its weekly lane; local representative, decoder-tool, and local-HTTP
+dependencies belong in explicit local/manual confidence lanes. No inventoried
+detector test currently depends on a remote live stream or remote timing.
+
+## Comparable Test Groups
+
+The following groups have enough behavioral similarity for cleanup review. A
+shared fixture, setup helper, or boolean assertion does not make a group a
+duplicate. Each group records the earliest boundary and failure signal that a
+later consolidation decision must preserve.
+
+| Group | Comparable behavior | Boundary and failure signal | Current classification | Next review unit |
+| --- | --- | --- | --- | --- |
+| Practical blur neighbor thresholds | `test_practical_blur_alert_v3_*neighbor_penalty*` cases at, below, and above the black-neighbor boundary, including score demotion. | Synthetic practical-policy evaluator; a failure means threshold, demotion, or strong-score escape drift. | Parameterization candidate. | Keep each input/outcome; assess one parameterized table or shared setup only. |
+| Representative low-resolution black negatives | The standalone `test_representative_lowres_strong_end_stays_black_negative` assertion and the matching `stable-docs-strong-end` source-family matrix row. Moderate-start negative and motion-heavy calibration cases remain distinct. | Representative calibration; a failure means black-negative calibration or source-family coverage drift. | One consolidation candidate; otherwise intentional reinforcement. | Decide whether the source-family row can retain the standalone case's clear diagnostic message. |
+| Capped and full-file MP4 runtime | Capped output-shape and alert guards versus full-file completion, repeatability, interruption/recovery, and baseline false-positive cases. | Runtime session behavior; capped failures diagnose practical output or alert regressions, while soak failures diagnose long-run lifecycle and recovery. | Intentional reinforcement. | Keep separate; compare only tests with the same runtime contract, selected detectors, and duration. |
+| Calibration and exact truth | Representative detector-lab calibration expectations versus promoted HLS/MP4 and `api_stream` exact-truth suites. | Calibration versus reviewed runtime truth; failures mean score/promotion-boundary drift or exact session-output drift. | Intentional reinforcement. | Keep separate unless a reviewed exact-truth case replaces the same calibration claim without losing broad calibration evidence. |
+| Synthetic and decoded black-transition guardrails | Practical motion-blur synthetic suppression tests and checked-in `test_detector_lab_real_media.py` black-recovery checks. | Synthetic policy versus decoded-media confidence; failures mean guardrail logic drift or decoder/media-boundary drift. | Intentional reinforcement. | Keep separate; no same-boundary candidate exists. |
+
+No probable deletion candidate is recorded. The low-resolution strong-end case
+is the sole candidate for later consolidation, subject to the equivalence rules
+below. All other groups intentionally preserve different boundaries, fixture
+roles, validation lanes, or failure signals.
+
+## Equivalence Gate
+
+Tests are removable or mergeable only when every gate passes: the same public
+behavior, primary boundary, fixture intent, input variation, validation lane,
+and comparably useful failure signal. A shared fixture or boolean result alone
+does not pass any gate.
+
+| Group | Gate result | Allowed next action |
+| --- | --- | --- |
+| Practical blur neighbor thresholds | Fails equivalent-input-variation: each case owns an edge, demotion, or escape outcome. | Parameterize shared setup only; retain every named case. |
+| Low-resolution strong-end negative | Provisionally passes: both cases use the same fixture, start window, detector, calibration boundary, lane, and negative assertion. | Consolidate only after the source-family matrix keeps an equally clear strong-end failure signal and focused local validation passes. |
+| Capped and full-file MP4 runtime | Fails public behavior, fixture intent, input duration, lane, and failure signal. | Keep separate. |
+| Calibration and exact truth | Fails primary boundary, fixture intent, lane, and failure signal. | Keep separate. |
+| Synthetic and decoded black-transition guardrails | Fails primary boundary, fixture intent, and validation lane. | Keep separate. |
+
+A cleanup change must name the surviving test, explain how every gate remains
+covered, and run the focused validation lane. Prefer parameterization or a
+small shared helper when it removes setup repetition without erasing a distinct
+input or diagnostic signal. The provisional low-resolution result is an
+investigation target, not approval to modify a test in this documentation pass.
+
+## Cleanup Action Queue
+
+Each reviewed group has exactly one next action. These are bounded follow-up
+items, not changes applied by this documentation task.
+
+| Candidate | Action | Rationale and survivor | Focused validation |
 | --- | --- | --- | --- |
-| `test_practical_blur_alert_v3_applies_hard_neighbor_penalty_at_exact_boundary`, `...skips_hard_neighbor_penalty_just_below_boundary`, `...penalty_can_demote_otherwise_alerting_score`, and `...skips_hard_neighbor_penalty_above_max_blur_score` | One synthetic practical-blur evaluator and adjacent neighbor-black thresholds. | Parameterization candidate | Keep all four behavior cases, but a later detector-lab-only refactor may use one parameterized threshold matrix or shared setup helper. It must retain the exact-boundary, demotion, and strong-score escape claims. |
-| `test_representative_lowres_strong_end_stays_black_negative` and the `stable-docs-strong-end` row in `test_representative_lowres_source_family_matrix_stays_black_negative` | The same representative fixture, start window, black-frame detector, and black-negative result. | Consolidation candidate | The matrix adds source-family and quality-degradation context; fold the standalone assertion into that row only if its dedicated failure message remains clear. Do not change fixture coverage in this task. |
-| `test_representative_lowres_moderate_start_stays_black_negative` and `test_representative_lowres_windows_stay_black_negative_but_score_as_motion_heavy` | The same startup fixture remains black-negative. | Intentional reinforcement | The first protects the black-frame detector alone; the second protects combined black-negative and quality-score calibration. Keep both. |
-| Practical motion-blur black-transition suppression unit tests and `test_detector_lab_real_media.py` black-recovery checks | Both reject black-transition motion, but one controls synthetic guardrails and the other observes decoded checked-in media. | Intentional reinforcement | Keep both: they protect algorithm policy and media-decoding confidence at different boundaries. |
-| Representative detector-lab calibration, representative HLS/MP4 runtime, and `api_stream` transport tests | They reuse reviewed representative cases and broad alert expectations. | Intentional reinforcement | Keep the layers separate: calibration owns score and promotion evidence; local sessions own persisted runtime behavior; `api_stream` owns transport and temporary-file cleanup. |
-| Capped representative MP4 tests and `@pytest.mark.soak` full-file tests | The same local media family reaches session output. | Intentional reinforcement | Keep capped tests as practical runtime confidence and soak tests for completion, repeatability, and interruption/recovery. |
+| Practical blur neighbor thresholds | `parameterize` | The cases share one synthetic evaluator and setup shape, but each threshold, demotion, or escape outcome remains a distinct named input. Preserve case-specific IDs and assertion messages. | `just test-detector-lab` |
+| Low-resolution strong-end negative | `merge` | Fold `test_representative_lowres_strong_end_stays_black_negative` into the `stable-docs-strong-end` case of `test_representative_lowres_source_family_matrix_stays_black_negative` only after preserving its dedicated diagnostic context. The source-family matrix is the named survivor. | Focused local representative-media test slice with the required assets and decoder tool. |
+| Capped and full-file MP4 runtime | `keep` | Capped cases prove practical output and alert posture; soak cases prove completion, repeatability, interruption recovery, and long-baseline behavior. | Existing capped and soak lanes; local representative assets required. |
+| Calibration and exact truth | `keep` | Calibration remains broad evidence, while exact truth is a reviewed runtime contract. Neither replaces the other. | Existing calibration and promoted-truth lanes. |
+| Synthetic and decoded black-transition guardrails | `keep` | Synthetic tests isolate policy logic; decoded checked-in media tests prove the policy survives the media boundary. | `just test-detector-lab` and `just test-real-media` when real-media confidence is needed. |
 
-No probable deletion candidate is recorded yet. Similar test names, shared
-fixtures, or matching boolean assertions are insufficient evidence when the
-tests exercise different layers, fixture classes, or validation lanes.
+No reviewed candidate has a `move` or `remove` action. A future cleanup PR
+should implement at most the parameterization and conditional merge above, then
+re-run this queue before considering any broader test reduction.
 
-## Deletion And Promotion Rules
+## Expected Cleanup Benefit And Risk
 
-### Delete Or Consolidate Only With Equivalent Coverage
+The non-`keep` actions are small maintenance improvements, not a material test
+suite reduction. Ratings are qualitative and assume the named behavior cases,
+markers, and validation lanes remain unchanged.
 
-A test may be deleted or folded into a parameterized case only when the review
-names the surviving test and shows that it preserves all of the following:
+| Candidate | Maintenance reduction | Runtime reduction | Readability improvement | Confidence-loss risk | Priority |
+| --- | --- | --- | --- | --- | --- |
+| Practical blur neighbor thresholds (`parameterize`) | Moderate: centralizes repeated synthetic setup. | None: every input/outcome still runs. | Moderate: one behavior matrix makes threshold coverage easier to scan. | Low if parameter IDs and case-specific assertions remain readable; medium if a generic table hides the demotion or escape reason. | Medium. |
+| Low-resolution strong-end negative (`merge`) | Low: removes one local representative invocation and duplicate setup. | Low: the surviving source-family case still decodes the same case. | Low to moderate: source-family coverage becomes the single owner. | Medium: a broad matrix failure can be less immediately diagnostic than the standalone test. | Low; perform only with local assets and a clear failing case ID. |
 
-- the same public behavior claim at the same primary boundary;
-- the same fixture role and intent: synthetic contract, calibration, exact
-  truth, runtime confidence, or soak/manual behavior;
-- the relevant input variation, including a threshold edge or transport mode
-  when that is what made the test distinct; and
-- the same validation lane and a comparably clear failure signal.
+Neither action justifies changing routine CI, markers, fixtures, detector
+thresholds, or the distinction between calibration and exact truth. Defer an
+action when its readable failure signal cannot be retained; keeping a small,
+clear test is preferable to a compact but opaque matrix.
 
-The cleanup change must state the replacement test, focused validation command,
-and why the removed assertion adds no remaining confidence. Sharing a fixture,
-being slow, or having a similar boolean assertion is never enough. Prefer
-parameterization or a small shared helper when it removes setup repetition
-without hiding distinct behavior cases.
+## Validation And Frozen Follow-Ups
+
+The queue was checked against the current repository evidence:
+
+- the practical blur neighbor cases are in `tests/test_detector_lab.py`;
+- the low-resolution standalone and source-family cases are in
+  `tests/test_detector_lab_representative_media.py`;
+- capped and full-file MP4 cases are in
+  `tests/test_e2e_local_session_representative_mp4_soak.py`, with module-level
+  `e2e` and `slow` markers and additional `soak` markers on long runs;
+- checked-in real-media ownership is listed in
+  `.github/ci_test_targets.json` under `weekly_slow_media`;
+- `just test-detector-lab` owns synthetic detector-lab checks and
+  `just test-real-media` owns checked-in detector-lab media checks.
+
+The approved follow-ups for the next implementation change are limited to:
+
+1. parameterize the practical blur neighbor setup while retaining every case
+   ID and failure meaning;
+2. conditionally merge the low-resolution strong-end case into the named
+   source-family survivor after a focused local-media validation run.
+
+No test deletion, marker change, fixture change, CI expansion, detector change,
+or truth promotion is approved by this matrix review. Validation for
+this documentation pass is `just docs-check` and `git diff --check`.
+
+## Promotion Rules
 
 ### Promote Representative Behavior Only After Review
 

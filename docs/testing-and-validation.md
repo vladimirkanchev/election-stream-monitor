@@ -65,10 +65,11 @@ For detector and alert work specifically, keep this mental split:
 
 ### Detector Validation Ownership
 
-This table is the authoritative category-to-lane map for detector-validation
-work. Use the [detailed ownership inventory](./detector-validation-ownership.md)
-for file-level assignments, fixture roles, overlap candidates, and safe
-cleanup or truth-promotion rules.
+This is the compact category-to-lane summary for detector-validation work. The
+[detailed ownership inventory](./detector-validation-ownership.md) is the
+authoritative owner of file-level assignments, fixture roles, test-value
+decisions, and evidence. Keep this table focused on lane
+selection and use the detailed document for cleanup or truth-promotion review.
 
 | Primary behavior owner | Main test surface | Cheapest honest lane | Deeper confidence owner |
 | --- | --- | --- | --- |

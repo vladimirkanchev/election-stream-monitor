@@ -44,7 +44,7 @@ Use these first depending on what you are doing:
   - [testing-and-validation.md](./testing-and-validation.md) for the focused production-vs-lab test split
     and authoritative detector-validation lane map
   - [detector-validation-ownership.md](./detector-validation-ownership.md) for
-    file-level ownership, overlap review, and cleanup or truth-promotion rules
+    file-level ownership, test-value evidence, and cleanup or truth-promotion decisions
   - [motion-coherence.md](./motion-coherence.md) for the current motion-coherent blur experiment
   - high-signal test files:
     - `tests/test_analyzer_registry.py`
