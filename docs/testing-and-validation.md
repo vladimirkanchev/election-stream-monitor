@@ -63,6 +63,30 @@ For detector and alert work specifically, keep this mental split:
   - do experiment metrics and practical policies still behave as expected on
     the checked-in fixture slices?
 
+### Detector Validation Ownership
+
+This is the compact category-to-lane summary for detector-validation work. The
+[detailed ownership inventory](./detector-validation-ownership.md) is the
+authoritative owner of file-level assignments, fixture roles, test-value
+decisions, and evidence. Keep this table focused on lane
+selection and use the detailed document for cleanup or truth-promotion review.
+
+| Primary behavior owner | Main test surface | Cheapest honest lane | Deeper confidence owner |
+| --- | --- | --- | --- |
+| Production detector facts | `test_detectors.py`; checked-in decoding in `test_detectors_integration.py` | `just test-detectors` | slow-marked detector integration in weekly real-media validation |
+| Production alert rules | `test_alert_rules*.py` | `just test-alert-rules` | real session/media validation only when the change reaches that seam |
+| Processor/runtime integration | `test_processor*.py` | `just test-processor` for the core path | protected fast backend tests; session/E2E lanes for lifecycle effects |
+| Detector-lab experiments | `test_detector_lab.py`; checked-in media in `test_detector_lab_real_media.py` | `just test-detector-lab` | `just test-real-media` and weekly real-media confidence |
+| Representative calibration and catalog integrity | `test_detector_lab_representative_media.py`; `test_representative_hls_test_support.py` | catalog guards, then explicit local representative selection | local/manual slow confidence; do not promote broad intent to exact truth by default |
+| Exact ground truth | `test_e2e_session_ground_truth_*.py` and representative ground-truth suites | smallest matching explicit E2E lane | checked-in cases are weekly; representative cases are local/manual slow |
+| End-to-end runtime confidence | `test_e2e_local_session*.py` and representative `api_stream` suites | protected generated local-session smoke or the smallest matching E2E command | checked-in real media weekly; representative transport confidence local/manual slow |
+| Soak/manual validation | `@pytest.mark.soak` representative MP4 cases | `pytest -m soak` only when long-run behavior changes | scheduled or manual-depth validation |
+
+Routine CI excludes `e2e` and `slow` tests. The weekly slow-media job runs the
+manifest through `-m slow`, so e2e-only files named by that manifest are not
+executed by that job; use their explicit E2E owner instead. Local
+representative assets are optional and must not become routine CI inputs.
+
 For a shorter CI ownership handoff, use
 [ci-maintainer-guide.md](./ci-maintainer-guide.md).
 That guide owns the definitions of required, advisory, informational, weekly,
@@ -340,35 +364,12 @@ regressions.
 Use [docs/merge-readiness-checklist.md](./merge-readiness-checklist.md) when
 you want to turn those lane choices into a final branch-ready pass.
 
-For detector-lab specifically:
-
-- focused detector-lab tests and fixture runs validate experimental comparison
-  logic
-- they are valuable for promotion candidates
-- they should not be read on their own as proof of supported runtime behavior
-
-Use the lane split this way when a detector-lab idea may become supported
-runtime behavior:
-
-- `tests/test_detector_lab.py`
-  - validates lab-only comparison behavior
-- production detector, processor, and alert-rule lanes
-  - validate supported runtime behavior:
-    - `tests/test_detectors.py`
-    - `tests/test_processor.py`
-    - `tests/test_alert_rules.py`
-    - `tests/test_alert_rules_black.py`
-    - `tests/test_alert_rules_blur.py`
-
-Promotion needs the production-facing lanes, not only the detector-lab lane.
-
-For the representative-media detector-lab lane specifically, keep one extra
-boundary in mind:
-
-- repeated compression fixtures are currently review-only calibration samples
-  - they may prove score shape, false-positive resistance, or burst consistency
-  - they should not be promoted into exact alert truth until a reviewed runtime
-    lane proves a stable subset worth promoting
+Detector-lab validates experimental comparison behavior; it is not proof of
+supported runtime behavior on its own. Use the
+[detector-validation ownership table](#detector-validation-ownership) to add
+the matching production detector, rule, processor, or runtime lane. The
+[detailed inventory](./detector-validation-ownership.md) owns representative
+calibration, exact-truth promotion, and cleanup criteria.
 
 Current CI coverage audit for this area:
 

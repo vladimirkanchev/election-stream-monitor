@@ -152,6 +152,11 @@ That split helps keep:
 - fast iteration loops for scoring and policy logic
 - slower confidence checks for real fixture media
 
+The [testing guide](./testing-and-validation.md#detector-validation-ownership)
+owns category-to-lane selection. Use the
+[detailed ownership inventory](./detector-validation-ownership.md) before
+consolidating tests or promoting representative calibration into exact truth.
+
 ## What detector_lab Is Not
 
 `detector_lab` is not:
