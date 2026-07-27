@@ -77,20 +77,21 @@ The experiment-detector path follows a similar shared structure:
 2. compute one family-specific score series
 3. finalize one detector-style export row
 
-The matching high-signal tests are concentrated in
-[`tests/test_detector_lab.py`](../tests/test_detector_lab.py). That file is
-organized around the current detector-lab responsibilities:
+The matching fast synthetic tests are split by responsibility:
 
-- runner and CLI wiring
-- fixture-set and export contracts
-- blur experiment families
-- optical-flow and motion-coherence helpers
-- practical lab-only alert policies
+- [`tests/test_detector_lab_runner.py`](../tests/test_detector_lab_runner.py)
+  - runner, CLI, fixture selection, and reporting
+- [`tests/test_detector_lab_metrics.py`](../tests/test_detector_lab_metrics.py)
+  - blur blends, optical flow, and motion-coherence metrics
+- [`tests/test_detector_lab_practical_blur.py`](../tests/test_detector_lab_practical_blur.py)
+  - practical black and blur policy
+- [`tests/test_detector_lab_practical_motion.py`](../tests/test_detector_lab_practical_motion.py)
+  - practical motion-blur policy
 
 The local developer harness keeps the detector-lab confidence lanes separate:
 
 - `just test-detector-lab`
-  - fast synthetic detector-lab coverage
+  - fast synthetic coverage across the four responsibility-based test modules
 - `just test-real-media`
   - slower checked-in fixture confidence lane
 

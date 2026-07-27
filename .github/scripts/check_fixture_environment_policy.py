@@ -24,7 +24,7 @@ ALLOWED_LOCAL_ONLY_REFERENCE_PATHS = frozenset(
     {
         "detector_lab/README.md",
         "docs/fixture-environment-policy.md",
-        "tests/test_detector_lab.py",
+        "tests/test_detector_lab_runner.py",
         "tests/test_fixture_environment_policy_check.py",
         "tests/fixtures/media/video_file_second_labels.json",
     }

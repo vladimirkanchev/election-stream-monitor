@@ -143,7 +143,10 @@ remaining easy to inspect.
 Detector-lab tests are intentionally split into:
 
 - synthetic/controlled experiment and policy coverage
-  - [`tests/test_detector_lab.py`](../tests/test_detector_lab.py)
+  - [`tests/test_detector_lab_runner.py`](../tests/test_detector_lab_runner.py)
+  - [`tests/test_detector_lab_metrics.py`](../tests/test_detector_lab_metrics.py)
+  - [`tests/test_detector_lab_practical_blur.py`](../tests/test_detector_lab_practical_blur.py)
+  - [`tests/test_detector_lab_practical_motion.py`](../tests/test_detector_lab_practical_motion.py)
 - real-media confidence checks
   - [`tests/test_detector_lab_real_media.py`](../tests/test_detector_lab_real_media.py)
 

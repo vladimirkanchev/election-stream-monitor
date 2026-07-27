@@ -49,7 +49,7 @@ def test_pyproject_only_change_stays_advisory() -> None:
 
 def test_lock_only_change_is_flagged() -> None:
     classification = check_dependency_drift.classify_dependency_drift(
-        ["uv.lock", "tests/test_detector_lab.py"]
+        ["uv.lock", "tests/test_detector_lab_runner.py"]
     )
 
     assert classification == check_dependency_drift.CLASS_LOCK_ONLY

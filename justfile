@@ -155,7 +155,11 @@ lint:
 
 # Fast detector-lab lane for synthetic and runner-scaffold confidence.
 test-detector-lab:
-    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_detector_lab.py
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
+      tests/test_detector_lab_runner.py \
+      tests/test_detector_lab_metrics.py \
+      tests/test_detector_lab_practical_blur.py \
+      tests/test_detector_lab_practical_motion.py
 
 # Slow detector-lab confidence lane backed by checked-in real media fixtures.
 test-real-media:

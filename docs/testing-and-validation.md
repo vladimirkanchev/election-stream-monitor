@@ -76,7 +76,7 @@ selection and use the detailed document for cleanup or truth-promotion review.
 | Production detector facts | `test_detectors.py`; checked-in decoding in `test_detectors_integration.py` | `just test-detectors` | slow-marked detector integration in weekly real-media validation |
 | Production alert rules | `test_alert_rules*.py` | `just test-alert-rules` | real session/media validation only when the change reaches that seam |
 | Processor/runtime integration | `test_processor*.py` | `just test-processor` for the core path | protected fast backend tests; session/E2E lanes for lifecycle effects |
-| Detector-lab experiments | `test_detector_lab.py`; checked-in media in `test_detector_lab_real_media.py` | `just test-detector-lab` | `just test-real-media` and weekly real-media confidence |
+| Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, and `test_detector_lab_practical_motion.py`; checked-in media in `test_detector_lab_real_media.py` | `just test-detector-lab` | `just test-real-media` and weekly real-media confidence |
 | Representative calibration and catalog integrity | `test_detector_lab_representative_media.py`; `test_representative_hls_test_support.py` | catalog guards, then explicit local representative selection | local/manual slow confidence; do not promote broad intent to exact truth by default |
 | Exact ground truth | `test_e2e_session_ground_truth_*.py` and representative ground-truth suites | smallest matching explicit E2E lane | checked-in cases are weekly; representative cases are local/manual slow |
 | End-to-end runtime confidence | `test_e2e_local_session*.py` and representative `api_stream` suites | protected generated local-session smoke or the smallest matching E2E command | checked-in real media weekly; representative transport confidence local/manual slow |
@@ -282,9 +282,11 @@ Current focused ownership map:
   - latest-progress no-op write guard for timestamp-only refreshes
 - `tests/test_export_detector_catalog.py`
   - exported detector-catalog JSON contract for frontend-facing tooling
-- `tests/test_detector_lab.py`
-  - detector-lab runner wiring, experiment families, practical alert policies,
-    and export shaping
+- `tests/test_detector_lab_runner.py`, `tests/test_detector_lab_metrics.py`,
+  `tests/test_detector_lab_practical_blur.py`, and
+  `tests/test_detector_lab_practical_motion.py`
+  - synthetic detector-lab runner/export, metric, blur-policy, and motion-policy
+    confidence
 - `tests/test_detector_lab_real_media.py`
   - slower real-media confidence lane for detector-lab motion/flow behavior
   - weekly confidence here is intentionally behavior-based and artifact-backed;
@@ -542,7 +544,10 @@ tests/test_alert_rules_blur.py -q
 cd /home/vlad/Projects/election-stream-monitor && \
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 .venv/bin/pytest -p no:cacheprovider \
-tests/test_detector_lab.py -q -k 'practical or build_experiment_window_facts or prefers_motion_blur_classification or blend or optical_flow or motion_coherent_variant or compression_robust or structure_relief'
+tests/test_detector_lab_runner.py \
+tests/test_detector_lab_metrics.py \
+tests/test_detector_lab_practical_blur.py \
+tests/test_detector_lab_practical_motion.py -q
 ```
 
 If you want the standardized local harness entrypoint instead of copying the
@@ -1162,9 +1167,11 @@ Detector and alert coverage is now split so the ownership is easier to scan:
   - `video_metrics` black-screen rule state transitions
 - `tests/test_alert_rules_blur.py`
   - `video_blur` rolling/recovery rule state transitions
-- `tests/test_detector_lab.py`
-  - detector-lab runner, export shaping, experiment families, practical alert
-    policies, and optical-flow / motion-coherence seams
+- `tests/test_detector_lab_runner.py`, `tests/test_detector_lab_metrics.py`,
+  `tests/test_detector_lab_practical_blur.py`, and
+  `tests/test_detector_lab_practical_motion.py`
+  - detector-lab runner/export, experimental metrics, and practical blur/motion
+    policy seams
 
 Current blur-validation expectation:
 

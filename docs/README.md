@@ -57,7 +57,10 @@ Use these first depending on what you are doing:
     - `tests/test_alert_rules_black.py`
     - `tests/test_alert_rules_blur.py`
     - `tests/test_plugin_manifest_validation.py`
-    - `tests/test_detector_lab.py`
+    - `tests/test_detector_lab_runner.py`
+    - `tests/test_detector_lab_metrics.py`
+    - `tests/test_detector_lab_practical_blur.py`
+    - `tests/test_detector_lab_practical_motion.py`
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)

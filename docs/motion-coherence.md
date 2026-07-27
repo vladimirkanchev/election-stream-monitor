@@ -15,7 +15,8 @@ production runtime detector catalog.
 - registry entry:
   - [`detector_lab/algorithms.py`](../detector_lab/algorithms.py)
 - test coverage:
-  - [`tests/test_detector_lab.py`](../tests/test_detector_lab.py)
+  - [`tests/test_detector_lab_metrics.py`](../tests/test_detector_lab_metrics.py)
+  - [`tests/test_detector_lab_practical_motion.py`](../tests/test_detector_lab_practical_motion.py)
   - [`tests/test_detector_lab_real_media.py`](../tests/test_detector_lab_real_media.py)
 
 ## Purpose
@@ -120,7 +121,8 @@ The current validation story is split on purpose:
 
 Read:
 
-- [`tests/test_detector_lab.py`](../tests/test_detector_lab.py)
+- [`tests/test_detector_lab_metrics.py`](../tests/test_detector_lab_metrics.py)
+- [`tests/test_detector_lab_practical_motion.py`](../tests/test_detector_lab_practical_motion.py)
 - [`tests/test_detector_lab_real_media.py`](../tests/test_detector_lab_real_media.py)
 - [`docs/testing-and-validation.md`](./testing-and-validation.md)
 
