@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import cast
 
 import processor
-from analyzer_contract import AnalysisSlice, VideoMetricsRow
+from analyzer_contract import AnalysisSlice, RuntimeResultRow, VideoMetricsRow
 from alert_rules import reset_session_rule_state
 from session_models import AlertEvent
 from tests.processor_test_support import (
@@ -72,9 +72,10 @@ def test_run_enabled_analyzers_serializes_typed_detector_rows_at_boundary(
 def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Temporal slice metadata should reach analyzers and survive into events."""
+    """Slice metadata should reach analyzers, normalized rule input, and events."""
     file_path = write_video_file(tmp_path, "segment_001.ts")
     observed_kwargs: dict[str, object] = {}
+    observed_rule_calls: list[tuple[str, str, RuntimeResultRow]] = []
 
     def sliced_analyzer(
         file_path: Path,
@@ -121,10 +122,13 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
             produces_alerts=True,
         ),
     )
-    monkeypatch.setattr(
-        processor,
-        "evaluate_alerts",
-        lambda session_id, detector_id, row: [
+    def fake_evaluate_alerts(
+        session_id: str,
+        detector_id: str,
+        row: RuntimeResultRow,
+    ) -> list[AlertEvent]:
+        observed_rule_calls.append((session_id, detector_id, row))
+        return [
             AlertEvent(
                 session_id=session_id,
                 timestamp_utc=str(row["timestamp_utc"]),
@@ -136,8 +140,9 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
                 window_index=int(row["window_index"]),
                 window_start_sec=float(row["window_start_sec"]),
             )
-        ],
-    )
+        ]
+
+    monkeypatch.setattr(processor, "evaluate_alerts", fake_evaluate_alerts)
 
     dummy_store = DummyStore()
     patch_store_registry(monkeypatch, video_metrics=dummy_store)
@@ -167,6 +172,10 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
         "window_duration_sec": 2.0,
     }
     first_payload = cast(dict[str, object], bundle["results"][0]["payload"])
+    assert len(observed_rule_calls) == 1
+    rule_session_id, rule_detector_id, rule_row = observed_rule_calls[0]
+    assert (rule_session_id, rule_detector_id) == ("session-42", "video_metrics")
+    assert rule_row.to_dict() == first_payload
     assert first_payload["window_index"] == 7
     assert first_payload["window_start_sec"] == 14.0
     assert bundle["alerts"][0]["window_index"] == 7
