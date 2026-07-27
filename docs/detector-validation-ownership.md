@@ -39,7 +39,7 @@ behavior those other tests assert.
 | Detector/media integration | `test_detectors_integration.py` | `slow` | checked-in media | weekly slow media | medium |
 | Production alert rules | `test_alert_rules.py`, `test_alert_rules_black.py`, `test_alert_rules_blur.py` | none | synthetic detector rows and alert state | `just test-alert-rules`; fast synthetic | low |
 | Processor/runtime integration | `test_processor.py`, `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | none | temporary inputs, synthetic registrations, in-memory stores | fast synthetic; `just test-processor` runs the core file | low |
-| Detector-lab experiments | `test_detector_lab.py` | none | synthetic slices, temporary CSVs, checked-in fixture metadata; optional local baselines | `just test-detector-lab`; fast synthetic | low |
+| Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, `test_detector_lab_practical_motion.py` | none | synthetic slices, temporary CSVs, checked-in fixture metadata; optional local baselines | `just test-detector-lab`; fast synthetic | low |
 | Detector-lab real-media confidence | `test_detector_lab_real_media.py` | `slow` | checked-in MP4 fixtures | `just test-real-media`; weekly slow media | medium |
 | Detector-lab representative calibration | `test_detector_lab_representative_media.py` | `slow` | reviewed local representative MP4 subsets and catalog metadata | local/manual slow confidence | medium-high |
 | Representative fixture/catalog guards | `test_representative_hls_test_support.py` | none | manifest, expected-results, ground-truth catalogs; optional local HLS exports | fast catalog checks with local skips where assets are absent | low |
@@ -53,6 +53,62 @@ behavior those other tests assert.
 | Local real-media exact truth | `test_e2e_session_ground_truth_local.py` | `e2e`, `slow` | checked-in real media and `ground_truth.json` | weekly slow media | medium-high |
 | Representative `api_stream` transport | `test_e2e_api_stream_representative_hls.py` | `e2e`, `slow` | reviewed local HLS subsets | local/manual slow confidence | medium-high |
 
+## Synthetic Detector-Lab Baseline
+
+Before the split, revision `8801e5d8f5f2ab6731075121bd428a7bfc2c706b` kept
+the synthetic suite in `tests/test_detector_lab.py`: 3,300 lines, 77 named
+test functions, and 81 collected cases. The current four-file suite retains
+81 cases; compare test-name suffixes and parameter IDs rather than file
+prefixes when reviewing the historical baseline.
+
+The deleted baseline file is available through that revision when historical
+node IDs are needed. Current validation uses `just test-detector-lab`.
+
+The split preserves these synthetic behavior groups:
+
+- runner, CLI, fixture-set, batch, CSV/export, and ground-truth reporting
+- blur blends, optical-flow exports, motion-coherence metrics, and fail-closed
+  metric behavior
+- practical black and blur policy, including dark and black-neighbor boundaries
+- practical motion policy, including transition guardrails, coherence,
+  softness, persistence, final thresholds, and operator-facing evaluation rows
+
+No real-media, representative-media, production detector, or runtime test is
+part of this structural baseline. Those owners remain separate confidence
+layers.
+
+## Synthetic Detector-Lab Test Ownership
+
+The synthetic suite is split by the behavior under review, not by source
+import or by the order tests happened to accumulate. These four files remain
+the complete synthetic detector-lab owner set and continue to run through the
+focused `test-detector-lab` lane.
+
+| Target file | Primary responsibility | Includes | Excludes |
+| --- | --- | --- | --- |
+| `tests/test_detector_lab_runner.py` | Runner and reporting contracts. | CLI parsing, fixture-set selection, batch and split-batch execution, CSV profiles, ground-truth lookup, and output-row formatting. | Experimental metric calculations and practical detection decisions. |
+| `tests/test_detector_lab_metrics.py` | Experimental metric facts. | Blur blends, optical-flow trace/export behavior, motion-coherence metrics, score monotonicity, and fail-closed metric inputs. | Practical alert thresholds, guardrails, and reporting/CLI behavior. |
+| `tests/test_detector_lab_practical_blur.py` | Black and blur practical-policy decisions. | Shared practical fact caching, black dominance, dark-frame and neighbor suppression, blur v2/v3 thresholds, structure escapes, and blur-to-motion handoff. | Motion-blur scoring, persistence, coherence, and final motion policy thresholds. |
+| `tests/test_detector_lab_practical_motion.py` | Practical motion-blur policy decisions. | Black-transition guardrails, softness, persistence, coherence, mixed-boundary behavior, final thresholds, and motion-specific evaluation context. | Blur v2/v3 decision policy and runner/export behavior. |
+
+`evaluate_practical_alerts()` output-shape and operator-message checks belong in
+the runner/reporting file. They protect the exported alert representation, not
+whether a blur or motion policy decided to alert.
+
+`tests/detector_lab_test_support.py` owns only neutral data constructors used
+across these files: `black_metrics_row`, `fake_slice`, `fake_blur_context`,
+and `fresh_practical_evaluation_context`. Runner-only ground-truth patches,
+policy patches, threshold tables, and inline fakes remain with their policy
+owner. The support module must not contain tests, assertions, file discovery,
+or CSV expectations.
+
+The split intentionally changes test file prefixes. Test names and readable
+parameter IDs should remain stable unless a later approved parameterization
+change replaces repeated setup without removing a boundary case.
+
+`just test-detector-lab` explicitly runs the four owners above, so moved tests
+remain in the focused synthetic lane.
+
 ## Primary Assignments
 
 Each row covers every test in the named file unless a marker-qualified subset
@@ -65,7 +121,7 @@ make a test a duplicate of its primary owner.
 | `test_detectors_integration.py` | Production detector facts | checked-in media confidence |
 | `test_alert_rules.py`, `test_alert_rules_black.py`, `test_alert_rules_blur.py` | Production alert rules | detector-fact inputs |
 | `test_processor.py`, `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | Processor/runtime integration | detector registration, result storage, alert-bundle assembly |
-| `test_detector_lab.py` | Detector-lab experiments | fixture metadata and export contracts |
+| `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, `test_detector_lab_practical_motion.py` | Detector-lab experiments | fixture metadata and export contracts |
 | `test_detector_lab_real_media.py` | Detector-lab experiments | checked-in real-media confidence |
 | `test_detector_lab_representative_media.py` | Representative-media calibration | detector-lab experiments and promotion-boundary evidence |
 | `test_representative_hls_test_support.py` | Fixture/catalog integrity | representative calibration and exact-truth reference validity |
@@ -168,10 +224,10 @@ but its failure signal records the earliest boundary it is meant to diagnose.
 | `test_processor_context_alerts.py` | Contextual detector facts reach alert evaluation with the required shared context. | Context propagation or alert-assembly regression. | low | deterministic |
 | `test_processor_failures.py` | Expected analyzer and input failures remain isolated and observable without corrupting the session path. | Failure-isolation or error-contract regression. | low | deterministic |
 | `test_processor_routing.py` | Supported-mode and analyzer routing stay explicit and deterministic. | Analyzer-selection or mode-routing regression. | low | deterministic |
-| `test_detector_lab.py` harness, fixture-set, cache, CSV, and CLI cases | Detector-lab accepts intended inputs, reuses safe cached context, resolves fixture sets, and exports readable comparison data. | Experiment-harness, fixture-resolution, cache, CLI, or export-contract regression. | low | deterministic; optional local baseline discovery |
-| `test_detector_lab.py` experimental score and optical-flow cases | Experimental blur and motion score variants remain monotonic or fail closed under controlled synthetic facts. | Experimental scoring, trace aggregation, or fail-closed guardrail drift. | low | deterministic |
-| `test_detector_lab.py` practical black/blur/motion guardrail cases | Practical policies retain black dominance, neighbor, structure, softness, coherence, and exact-threshold decisions. | Practical-policy threshold or precedence drift. | low | deterministic |
-| `test_detector_lab.py` practical output and operator-message cases | Practical rows preserve optional metadata and expose stable operator-facing fields. | Experimental output-shape or diagnostic-message regression. | low | deterministic |
+| `test_detector_lab_runner.py` | Detector-lab accepts intended inputs, reuses safe cached context, resolves fixture sets, and exports readable comparison data. | Experiment-harness, fixture-resolution, cache, CLI, or export-contract regression. | low | deterministic; optional local baseline discovery |
+| `test_detector_lab_metrics.py` | Experimental blur and motion score variants remain monotonic or fail closed under controlled synthetic facts. | Experimental scoring, trace aggregation, or fail-closed guardrail drift. | low | deterministic |
+| `test_detector_lab_practical_blur.py` | Practical black and blur policies retain dominance, neighbor, structure, and exact-threshold decisions. | Practical blur-policy threshold or precedence drift. | low | deterministic |
+| `test_detector_lab_practical_motion.py` | Motion policy retains black-transition, softness, coherence, persistence, and exact-threshold decisions. | Practical motion-policy threshold or precedence drift. | low | deterministic |
 | `test_detector_lab_real_media.py` | Decoded checked-in fixtures preserve practical positive, suppression, precedence, sequence, flow-signal, and CSV behavior. | Media-decoding confidence or practical-policy drift on real frames. | medium | checked-in-media dependent |
 | `test_detector_lab_representative_media.py` | Local representative compression and low-resolution cases remain broad calibration evidence without accidental promotion to exact truth. | Calibration, fixture-metadata, or promotion-boundary drift. | medium | local-asset and decoder-tool dependent |
 | `test_representative_hls_test_support.py` | Representative catalogs, fixture resolution, HLS route maps, and promoted-truth references remain internally valid. | Fixture/catalog integrity or unavailable-local-asset handling regression. | low | deterministic; local assets skipped when absent |
@@ -239,7 +295,7 @@ investigation target, not approval to modify a test in this documentation pass.
 ## Cleanup Action Queue
 
 Each reviewed group has exactly one next action. These are bounded follow-up
-items, not changes applied by this documentation task.
+items, not changes applied by this review.
 
 | Candidate | Action | Rationale and survivor | Focused validation |
 | --- | --- | --- | --- |
@@ -273,7 +329,8 @@ clear test is preferable to a compact but opaque matrix.
 
 The queue was checked against the current repository evidence:
 
-- the practical blur neighbor cases are in `tests/test_detector_lab.py`;
+- the practical blur neighbor cases are in
+  `tests/test_detector_lab_practical_blur.py`;
 - the low-resolution standalone and source-family cases are in
   `tests/test_detector_lab_representative_media.py`;
 - capped and full-file MP4 cases are in
@@ -284,12 +341,14 @@ The queue was checked against the current repository evidence:
 - `just test-detector-lab` owns synthetic detector-lab checks and
   `just test-real-media` owns checked-in detector-lab media checks.
 
-The approved follow-ups for the next implementation change are limited to:
-
-1. parameterize the practical blur neighbor setup while retaining every case
-   ID and failure meaning;
-2. conditionally merge the low-resolution strong-end case into the named
+The remaining approved follow-up is limited to conditionally merging the
+low-resolution strong-end case into the named
    source-family survivor after a focused local-media validation run.
+
+The practical-blur neighbor parameterization is implemented in
+`tests/test_detector_lab_practical_blur.py`. Its five IDs retain the strong
+transition, exact boundary, just-below boundary, score-demotion, and
+strong-score escape outcomes as separate synthetic cases.
 
 No test deletion, marker change, fixture change, CI expansion, detector change,
 or truth promotion is approved by this matrix review. Validation for
