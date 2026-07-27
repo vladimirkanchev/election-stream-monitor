@@ -30,7 +30,7 @@ def test_policy_scan_covers_docs_python_tests_and_fixture_metadata() -> None:
 
     assert "README.md" in scanned_paths
     assert "docs/testing-and-validation.md" in scanned_paths
-    assert "tests/test_detector_lab.py" in scanned_paths
+    assert "tests/test_detector_lab_runner.py" in scanned_paths
     assert "tests/fixtures/media/ground_truth.json" in scanned_paths
 
 
