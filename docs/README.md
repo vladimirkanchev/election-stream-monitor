@@ -52,7 +52,9 @@ Use these first depending on what you are doing:
     - `tests/test_session_cli_tooling.py`
     - `tests/test_export_detector_catalog.py`
     - `tests/test_detectors.py`
-    - `tests/test_processor.py`
+    - `tests/test_processor_routing.py`
+    - `tests/test_processor_context_alerts.py`
+    - `tests/test_processor_failures.py`
     - `tests/test_alert_rules.py`
     - `tests/test_alert_rules_black.py`
     - `tests/test_alert_rules_blur.py`

@@ -74,7 +74,7 @@ def run_enabled_analyzers_bundle(
     persist_to_store: bool = True,
     analysis_slice: AnalysisSlice | None = None,
 ) -> dict[str, list[dict[str, object]]]:
-    """Run matching detectors and return session-friendly result and alert events."""
+    """Run matching detectors, optionally persist valid rows, and return normalized events."""
     results: list[dict[str, object]] = []
     alerts: list[dict[str, object]] = []
     current_item = _resolve_current_item_name(analysis_slice, file_path)
