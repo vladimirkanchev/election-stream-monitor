@@ -1,9 +1,13 @@
-"""Focused processor tests for routing, filtering, and basic execution selection."""
+"""Processor routing, selection, and shipped-registry boundary tests."""
 
+from dataclasses import replace
 from pathlib import Path
 
 import processor
+from analyzer_contract import AnalyzerRegistration
+from detectors import registry as detector_registry
 from tests.processor_test_support import (
+    AnalyzerFn,
     DummyStore,
     patch_registrations,
     patch_single_registration,
@@ -13,6 +17,20 @@ from tests.processor_test_support import (
     video_metrics_row,
     write_video_file,
 )
+
+
+def _patched_builtin_registrations(
+    *,
+    analyzers: dict[str, AnalyzerFn],
+) -> tuple[AnalyzerRegistration, ...]:
+    """Return shipped registrations with only their analyzer callables replaced."""
+    return tuple(
+        replace(
+            registration,
+            analyzer=analyzers[registration.name],
+        )
+        for registration in detector_registry.ENABLED_ANALYZERS
+    )
 
 
 def test_run_enabled_analyzers_routes_result_to_matching_store(
@@ -43,6 +61,71 @@ def test_run_enabled_analyzers_routes_result_to_matching_store(
 
     assert len(results) == 1
     assert dummy_store.rows == results
+
+
+def test_run_enabled_analyzers_bundle_uses_canonical_registry_contract(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The processor should route the shipped analyzer registrations to their stores."""
+    file_path = write_video_file(tmp_path)
+
+    def fake_metrics(file_path: Path, prefix: str | None = None) -> dict[str, object]:
+        _ = prefix
+        return video_metrics_row(
+            source_name=file_path.name,
+            source_group=file_path.parent.name,
+        )
+
+    def fake_blur(file_path: Path, prefix: str | None = None) -> dict[str, object]:
+        _ = prefix
+        return video_blur_row(
+            source_name=file_path.name,
+            source_group=file_path.parent.name,
+            sample_count=3,
+            sharpness_p10=0.1,
+            sharpness_p90=0.2,
+            motion_mean=0.0,
+            motion_p90=0.0,
+            window_size=3,
+            consecutive_blurry_windows=0,
+        )
+
+    monkeypatch.setattr(
+        detector_registry,
+        "ENABLED_ANALYZERS",
+        _patched_builtin_registrations(
+            analyzers={
+                "video_metrics": fake_metrics,
+                "video_blur": fake_blur,
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        processor,
+        "get_enabled_analyzers",
+        detector_registry.get_enabled_analyzers,
+    )
+    metrics_store = DummyStore()
+    blur_store = DummyStore()
+    patch_store_registry(
+        monkeypatch,
+        video_metrics=metrics_store,
+        blur_metrics=blur_store,
+    )
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-canonical-registry",
+    )
+
+    assert [result["detector_id"] for result in bundle["results"]] == [
+        "video_metrics",
+        "video_blur",
+    ]
+    assert metrics_store.rows[0]["source_group"] == file_path.parent.name
+    assert blur_store.rows[0]["source_group"] == file_path.parent.name
 
 
 def test_run_enabled_analyzers_skips_unmatched_suffix(monkeypatch, tmp_path: Path) -> None:

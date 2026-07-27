@@ -53,7 +53,10 @@ test-detectors:
 
 # Focused production processor/orchestration lane.
 test-processor:
-    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_processor.py
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
+      tests/test_processor_routing.py \
+      tests/test_processor_context_alerts.py \
+      tests/test_processor_failures.py
 
 # Focused production alert-rule lane.
 test-alert-rules:

@@ -1,8 +1,10 @@
-"""Focused processor tests for detector/store failure handling and malformed payload policy."""
+"""Processor malformed-result and persistence-failure boundary tests."""
 
 from pathlib import Path
 
 import processor
+import pytest
+from analyzer_contract import AnalysisSlice
 from tests.processor_test_support import (
     DummyStore,
     FailingStore,
@@ -57,6 +59,7 @@ def test_run_enabled_analyzers_bundle_isolates_detector_failures(
     bundle = run_bundle(file_path)
 
     assert [result["detector_id"] for result in bundle["results"]] == ["video_metrics"]
+    assert bundle["alerts"] == []
     assert len(dummy_store.rows) == 1
 
 
@@ -97,6 +100,56 @@ def test_run_enabled_analyzers_bundle_logs_failure_context(
         "session_id='session-log-ctx' "
         "source_kind='video_segments' "
         "current_item='sample.ts' "
+        "detector_id='broken_detector'"
+    )
+
+
+def test_run_enabled_analyzers_bundle_logs_analysis_slice_failure_context(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Failure logs should prefer the supplied slice identity over the file name."""
+    file_path = write_video_file(tmp_path)
+    logged: list[tuple[str, tuple[object, ...]]] = []
+
+    def failing_analyzer(file_path: Path, prefix: str | None = None) -> dict:
+        _ = (file_path, prefix)
+        raise RuntimeError("ffmpeg failed")
+
+    patch_registrations(
+        monkeypatch,
+        registration(
+            name="broken_detector",
+            analyzer=failing_analyzer,
+            store_name="video_metrics",
+            display_name="Broken Detector",
+            description="Fails on purpose",
+        ),
+    )
+    monkeypatch.setattr(
+        processor.logger,
+        "exception",
+        lambda message, *args: logged.append((message, args)),
+    )
+
+    run_bundle(
+        file_path,
+        session_id="session-log-ctx",
+        analysis_slice=AnalysisSlice(
+            file_path=file_path,
+            source_group="playlist-a",
+            source_name="segment_0001.ts",
+            window_index=0,
+            window_start_sec=0.0,
+            window_duration_sec=1.0,
+        ),
+    )
+
+    assert logged
+    assert logged[0][0] == "Detector %s failed for %s [%s]"
+    assert logged[0][1][2] == (
+        "session_id='session-log-ctx' "
+        "source_kind='video_segments' "
+        "current_item='segment_0001.ts' "
         "detector_id='broken_detector'"
     )
 
@@ -177,12 +230,14 @@ def test_run_enabled_analyzers_bundle_skips_malformed_rows(
         ),
     )
 
-    patch_store_registry(monkeypatch, video_metrics=DummyStore())
+    dummy_store = DummyStore()
+    patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
     bundle = run_bundle(file_path)
 
     assert bundle["results"] == []
     assert bundle["alerts"] == []
+    assert dummy_store.rows == []
 
 
 def test_run_enabled_analyzers_bundle_skips_unexpected_payload_types(
@@ -222,6 +277,7 @@ def test_run_enabled_analyzers_bundle_skips_unexpected_payload_types(
 
     assert bundle["results"] == []
     assert bundle["alerts"] == []
+    assert dummy_store.rows == []
 
 
 def test_run_enabled_analyzers_bundle_propagates_store_write_failures(
@@ -246,15 +302,14 @@ def test_run_enabled_analyzers_bundle_propagates_store_write_failures(
     )
     patch_store_registry(monkeypatch, video_metrics=FailingStore())
 
-    try:
+    with pytest.raises(processor.ProcessorPersistenceError) as exc_info:
         run_bundle(file_path)
-    except processor.ProcessorPersistenceError as error:
-        assert error.detector_id == "video_metrics"
-        assert error.store_name == "video_metrics"
-        assert error.file_path == file_path
-        assert "disk full" in str(error)
-    else:
-        raise AssertionError("Expected store write failures to propagate")
+
+    error = exc_info.value
+    assert error.detector_id == "video_metrics"
+    assert error.store_name == "video_metrics"
+    assert error.file_path == file_path
+    assert "disk full" in str(error)
 
 
 def test_run_enabled_analyzers_bundle_logs_store_failure_context(
@@ -285,17 +340,13 @@ def test_run_enabled_analyzers_bundle_logs_store_failure_context(
         lambda message, *args: logged.append((message, args)),
     )
 
-    try:
+    with pytest.raises(processor.ProcessorPersistenceError):
         processor.run_enabled_analyzers_bundle(
             file_path=file_path,
             prefix="segments",
             mode="video_segments",
             session_id="session-store-log",
         )
-    except processor.ProcessorPersistenceError:
-        pass
-    else:
-        raise AssertionError("Expected store write failures to propagate")
 
     assert logged
     message, args = logged[0]
@@ -337,20 +388,19 @@ def test_run_enabled_analyzers_bundle_raises_when_store_registry_entry_is_missin
         {"blur_metrics": DummyStore()},
     )
 
-    try:
+    with pytest.raises(processor.ProcessorPersistenceError) as exc_info:
         processor.run_enabled_analyzers_bundle(
             file_path=file_path,
             prefix="segments",
             mode="video_segments",
             session_id="session-missing-store",
         )
-    except processor.ProcessorPersistenceError as error:
-        assert error.detector_id == "video_metrics"
-        assert error.store_name == "missing_store"
-        assert error.file_path == file_path
-        assert "missing_store" in str(error)
-    else:
-        raise AssertionError("Expected missing store entries to raise ProcessorPersistenceError")
+
+    error = exc_info.value
+    assert error.detector_id == "video_metrics"
+    assert error.store_name == "missing_store"
+    assert error.file_path == file_path
+    assert "missing_store" in str(error)
 
 
 def test_run_enabled_analyzers_bundle_logs_file_name_when_analysis_slice_is_missing(
