@@ -1,8 +1,9 @@
-"""Real-media detector integration tests.
+"""Compact decoded-media proof for the production black and blur detectors.
 
 These tests exercise the detector layer against checked-in media fixtures and
 therefore require real ``ffmpeg``/``ffprobe`` binaries. They stay out of the
-fast backend lane and belong in the slower weekly media-validation path.
+fast backend lane and belong in the slower weekly media-validation path. Rule
+lifecycles and calibration remain owned by their dedicated synthetic suites.
 """
 
 from pathlib import Path

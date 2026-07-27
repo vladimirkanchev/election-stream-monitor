@@ -1,4 +1,4 @@
-"""Shared fixtures and helper builders for the split processor test suites."""
+"""Shared builders for focused processor boundary tests."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -187,7 +187,7 @@ def run_bundle(
     mode: InputMode = "video_segments",
     analysis_slice: AnalysisSlice | None = None,
 ) -> dict[str, list[dict[str, object]]]:
-    """Run the bundle API with a small set of ergonomic defaults for tests."""
+    """Run the bundle API with standard focused-processor defaults."""
     return processor.run_enabled_analyzers_bundle(
         file_path=file_path,
         prefix=prefix,

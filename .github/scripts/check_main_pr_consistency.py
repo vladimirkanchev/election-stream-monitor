@@ -77,7 +77,9 @@ FRONTEND_BRIDGE_POLICY_GROUPS = ("frontend_contract",)
 # CI ownership groups.
 BACKEND_POLICY_ONLY_TESTS = (
     "tests/test_detectors.py",
-    "tests/test_processor.py",
+    "tests/test_processor_routing.py",
+    "tests/test_processor_context_alerts.py",
+    "tests/test_processor_failures.py",
     "tests/test_alert_rules.py",
     "tests/test_alert_rules_black.py",
     "tests/test_alert_rules_blur.py",

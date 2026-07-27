@@ -75,7 +75,7 @@ selection and use the detailed document for cleanup or truth-promotion review.
 | --- | --- | --- | --- |
 | Production detector facts | `test_detectors.py`; checked-in decoding in `test_detectors_integration.py` | `just test-detectors` | slow-marked detector integration in weekly real-media validation |
 | Production alert rules | `test_alert_rules*.py` | `just test-alert-rules` | real session/media validation only when the change reaches that seam |
-| Processor/runtime integration | `test_processor*.py` | `just test-processor` for the core path | protected fast backend tests; session/E2E lanes for lifecycle effects |
+| Processor/runtime integration | `test_processor_routing.py`, `test_processor_context_alerts.py`, `test_processor_failures.py` | `just test-processor` | protected fast backend tests; session/E2E lanes for lifecycle effects |
 | Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, and `test_detector_lab_practical_motion.py`; checked-in media in `test_detector_lab_real_media.py` | `just test-detector-lab` | `just test-real-media` and weekly real-media confidence |
 | Representative calibration and catalog integrity | `test_detector_lab_representative_media.py`; `test_representative_hls_test_support.py` | catalog guards, then explicit local representative selection | local/manual slow confidence; do not promote broad intent to exact truth by default |
 | Exact ground truth | `test_e2e_session_ground_truth_*.py` and representative ground-truth suites | smallest matching explicit E2E lane | checked-in cases are weekly; representative cases are local/manual slow |
@@ -226,8 +226,12 @@ Current focused ownership map:
 - `tests/test_detectors.py`
   - production detector rows, media-tool fallback behavior, metric contracts,
     and runtime-row compatibility
-- `tests/test_processor.py`
-  - production processor routing, detector orchestration, and persistence behavior
+- `tests/test_processor_routing.py`
+  - production routing, registry selection, and analyzer invocation behavior
+- `tests/test_processor_context_alerts.py`
+  - typed-row serialization, slice propagation, and alert-bundle assembly
+- `tests/test_processor_failures.py`
+  - malformed-result isolation and persistence failure behavior
 - `tests/test_alert_rules.py`
   - shared rule metadata, failure wrapping, and row annotation behavior
 - `tests/test_alert_rules_black.py`
@@ -534,7 +538,9 @@ cd /home/vlad/Projects/election-stream-monitor && \
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
 .venv/bin/pytest -p no:cacheprovider \
 tests/test_detectors.py \
-tests/test_processor.py \
+tests/test_processor_routing.py \
+tests/test_processor_context_alerts.py \
+tests/test_processor_failures.py \
 tests/test_alert_rules.py \
 tests/test_alert_rules_black.py \
 tests/test_alert_rules_blur.py -q

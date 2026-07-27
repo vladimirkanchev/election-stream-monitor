@@ -38,7 +38,7 @@ behavior those other tests assert.
 | Production detector facts | `test_detectors.py` | none | synthetic rows and small inputs | `just test-detectors`; fast synthetic | low |
 | Detector/media integration | `test_detectors_integration.py` | `slow` | checked-in media | weekly slow media | medium |
 | Production alert rules | `test_alert_rules.py`, `test_alert_rules_black.py`, `test_alert_rules_blur.py` | none | synthetic detector rows and alert state | `just test-alert-rules`; fast synthetic | low |
-| Processor/runtime integration | `test_processor.py`, `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | none | temporary inputs, synthetic registrations, in-memory stores | fast synthetic; `just test-processor` runs the core file | low |
+| Processor/runtime integration | `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | none | temporary inputs, synthetic registrations, in-memory stores | fast synthetic; `just test-processor` | low |
 | Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, `test_detector_lab_practical_motion.py` | none | synthetic slices, temporary CSVs, checked-in fixture metadata; optional local baselines | `just test-detector-lab`; fast synthetic | low |
 | Detector-lab real-media confidence | `test_detector_lab_real_media.py` | `slow` | checked-in MP4 fixtures | `just test-real-media`; weekly slow media | medium |
 | Detector-lab representative calibration | `test_detector_lab_representative_media.py` | `slow` | reviewed local representative MP4 subsets and catalog metadata | local/manual slow confidence | medium-high |
@@ -52,6 +52,28 @@ behavior those other tests assert.
 | Synthetic `api_stream` exact truth | `test_e2e_session_ground_truth_api_stream.py` | `e2e` | synthetic stream events and checked-in truth cases | explicit E2E contract confidence | low |
 | Local real-media exact truth | `test_e2e_session_ground_truth_local.py` | `e2e`, `slow` | checked-in real media and `ground_truth.json` | weekly slow media | medium-high |
 | Representative `api_stream` transport | `test_e2e_api_stream_representative_hls.py` | `e2e`, `slow` | reviewed local HLS subsets | local/manual slow confidence | medium-high |
+
+## Production Detector Boundaries
+
+The category and inventory tables above are the ownership source of truth. The
+following rules keep production confidence focused:
+
+- `test_detectors.py` owns controlled detector facts and degradation behavior.
+- `test_alert_rules*.py` owns rule entry, suppression, recovery, and re-entry.
+- `test_processor_routing.py`, `test_processor_context_alerts.py`, and
+  `test_processor_failures.py` own registration selection, normalized-row
+  handoff, store routing, and failure isolation.
+- `test_detectors_integration.py` owns a small weekly decoded-media proof for
+  black and blur detection; it does not calibrate rules or session behavior.
+
+Processor tests usually replace rule evaluation so they test only processor
+handoff. One compact vertical case uses the real black-screen rule to verify a
+detector result reaches its store and produces a bundle alert. Keep detailed
+rule thresholds and state transitions in `test_alert_rules*.py`.
+
+`just test-processor` runs the three processor owners and collects 19 cases.
+The legacy processor suite was consolidated into them; the current eight-file
+production boundary set collects 93 cases.
 
 ## Synthetic Detector-Lab Baseline
 
@@ -120,7 +142,7 @@ make a test a duplicate of its primary owner.
 | `test_detectors.py` | Production detector facts | detector registration and supported-mode exposure |
 | `test_detectors_integration.py` | Production detector facts | checked-in media confidence |
 | `test_alert_rules.py`, `test_alert_rules_black.py`, `test_alert_rules_blur.py` | Production alert rules | detector-fact inputs |
-| `test_processor.py`, `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | Processor/runtime integration | detector registration, result storage, alert-bundle assembly |
+| `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | Processor/runtime integration | detector registration, result storage, alert-bundle assembly |
 | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, `test_detector_lab_practical_motion.py` | Detector-lab experiments | fixture metadata and export contracts |
 | `test_detector_lab_real_media.py` | Detector-lab experiments | checked-in real-media confidence |
 | `test_detector_lab_representative_media.py` | Representative-media calibration | detector-lab experiments and promotion-boundary evidence |
@@ -220,10 +242,9 @@ but its failure signal records the earliest boundary it is meant to diagnose.
 | `test_alert_rules.py` | Shared alert-rule entry, recovery, severity, and emitted alert shape follow detector facts. | Rule transition or alert-contract regression. | low | deterministic |
 | `test_alert_rules_black.py` | Black-frame rule thresholds, suppression, recovery, and state handling remain stable. | Black-alert threshold or state-machine drift. | low | deterministic |
 | `test_alert_rules_blur.py` | Blur-rule thresholds, guardrails, suppression, and recovery remain stable. | Blur-alert threshold or state-machine drift. | low | deterministic |
-| `test_processor.py` | Core analyzer execution, slice/result propagation, and alert-bundle assembly remain coherent. | Processor integration or result-routing regression. | low | deterministic |
-| `test_processor_context_alerts.py` | Contextual detector facts reach alert evaluation with the required shared context. | Context propagation or alert-assembly regression. | low | deterministic |
+| `test_processor_context_alerts.py` | Typed detector rows and contextual facts reach persistence and alert evaluation with the required shared context. | Typed-row boundary, context propagation, or alert-assembly regression. | low | deterministic |
 | `test_processor_failures.py` | Expected analyzer and input failures remain isolated and observable without corrupting the session path. | Failure-isolation or error-contract regression. | low | deterministic |
-| `test_processor_routing.py` | Supported-mode and analyzer routing stay explicit and deterministic. | Analyzer-selection or mode-routing regression. | low | deterministic |
+| `test_processor_routing.py` | Supported-mode, shipped-registry, and analyzer routing stay explicit and deterministic. | Registry-selection or mode-routing regression. | low | deterministic |
 | `test_detector_lab_runner.py` | Detector-lab accepts intended inputs, reuses safe cached context, resolves fixture sets, and exports readable comparison data. | Experiment-harness, fixture-resolution, cache, CLI, or export-contract regression. | low | deterministic; optional local baseline discovery |
 | `test_detector_lab_metrics.py` | Experimental blur and motion score variants remain monotonic or fail closed under controlled synthetic facts. | Experimental scoring, trace aggregation, or fail-closed guardrail drift. | low | deterministic |
 | `test_detector_lab_practical_blur.py` | Practical black and blur policies retain dominance, neighbor, structure, and exact-threshold decisions. | Practical blur-policy threshold or precedence drift. | low | deterministic |

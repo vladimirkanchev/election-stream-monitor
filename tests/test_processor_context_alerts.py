@@ -1,10 +1,11 @@
-"""Focused processor tests for analysis-slice propagation and alert bundle behavior."""
+"""Processor typed-row, slice-context, and alert-bundle boundary tests."""
 
 from pathlib import Path
 from typing import cast
 
 import processor
-from analyzer_contract import AnalysisSlice
+from analyzer_contract import AnalysisSlice, RuntimeResultRow, VideoMetricsRow
+from alert_rules import reset_session_rule_state
 from session_models import AlertEvent
 from tests.processor_test_support import (
     DummyStore,
@@ -17,12 +18,64 @@ from tests.processor_test_support import (
 )
 
 
+def test_run_enabled_analyzers_serializes_typed_detector_rows_at_boundary(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Typed detector rows should reach both persistence and the public bundle as dicts."""
+    file_path = write_video_file(tmp_path)
+
+    def fake_analyzer(file_path: Path, prefix: str | None = None) -> VideoMetricsRow:
+        _ = prefix
+        return VideoMetricsRow(
+            analyzer="video_metrics",
+            source_type="video",
+            source_group=file_path.parent.name,
+            source_name=file_path.name,
+            window_index=None,
+            window_start_sec=None,
+            window_duration_sec=None,
+            timestamp_utc="2026-06-05 12:00:00",
+            processing_sec=0.01,
+            duration_sec=2.0,
+            black_detected=False,
+            black_segment_count=0,
+            total_black_sec=0.0,
+            longest_black_sec=0.0,
+            black_ratio=0.0,
+            picture_threshold_used=0.98,
+            pixel_threshold_used=0.10,
+            min_duration_sec=0.5,
+        )
+
+    patch_single_registration(
+        monkeypatch,
+        name="video_metrics",
+        analyzer=fake_analyzer,
+        store_name="video_metrics",
+    )
+    dummy_store = DummyStore()
+    patch_store_registry(monkeypatch, video_metrics=dummy_store)
+
+    bundle = processor.run_enabled_analyzers_bundle(
+        file_path=file_path,
+        prefix="segments",
+        mode="video_segments",
+        session_id="session-typed",
+    )
+
+    assert isinstance(dummy_store.rows[0], dict)
+    assert dummy_store.rows[0]["source_name"] == file_path.name
+    assert isinstance(bundle["results"][0]["payload"], dict)
+    assert bundle["results"][0]["payload"]["analyzer"] == "video_metrics"
+
+
 def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Temporal slice metadata should reach analyzers and survive into events."""
+    """Slice metadata should reach analyzers, normalized rule input, and events."""
     file_path = write_video_file(tmp_path, "segment_001.ts")
     observed_kwargs: dict[str, object] = {}
+    observed_rule_calls: list[tuple[str, str, RuntimeResultRow]] = []
 
     def sliced_analyzer(
         file_path: Path,
@@ -69,10 +122,13 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
             produces_alerts=True,
         ),
     )
-    monkeypatch.setattr(
-        processor,
-        "evaluate_alerts",
-        lambda session_id, detector_id, row: [
+    def fake_evaluate_alerts(
+        session_id: str,
+        detector_id: str,
+        row: RuntimeResultRow,
+    ) -> list[AlertEvent]:
+        observed_rule_calls.append((session_id, detector_id, row))
+        return [
             AlertEvent(
                 session_id=session_id,
                 timestamp_utc=str(row["timestamp_utc"]),
@@ -84,8 +140,9 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
                 window_index=int(row["window_index"]),
                 window_start_sec=float(row["window_start_sec"]),
             )
-        ],
-    )
+        ]
+
+    monkeypatch.setattr(processor, "evaluate_alerts", fake_evaluate_alerts)
 
     dummy_store = DummyStore()
     patch_store_registry(monkeypatch, video_metrics=dummy_store)
@@ -115,6 +172,10 @@ def test_run_enabled_analyzers_bundle_passes_analysis_slice_context(
         "window_duration_sec": 2.0,
     }
     first_payload = cast(dict[str, object], bundle["results"][0]["payload"])
+    assert len(observed_rule_calls) == 1
+    rule_session_id, rule_detector_id, rule_row = observed_rule_calls[0]
+    assert (rule_session_id, rule_detector_id) == ("session-42", "video_metrics")
+    assert rule_row.to_dict() == first_payload
     assert first_payload["window_index"] == 7
     assert first_payload["window_start_sec"] == 14.0
     assert bundle["alerts"][0]["window_index"] == 7
@@ -181,11 +242,12 @@ def test_run_enabled_analyzers_bundle_returns_results_and_alerts_without_persist
     assert dummy_store.rows == []
 
 
-def test_run_enabled_analyzers_bundle_routes_generated_alerts(
+def test_run_enabled_analyzers_bundle_preserves_detector_rule_store_contract(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Alert-rule output should be returned alongside the detector result bundle."""
+    """One alerting result should persist and produce the matching bundle alert."""
     file_path = write_video_file(tmp_path)
+    session_id = "session-processor-rule-store"
 
     def analyzer(file_path: Path, prefix: str | None = None) -> dict:
         _ = prefix
@@ -198,8 +260,6 @@ def test_run_enabled_analyzers_bundle_routes_generated_alerts(
             black_ratio=1.0,
         )
 
-    observed_alert_args: list[tuple[str, str, dict[str, object]]] = []
-
     patch_single_registration(
         monkeypatch,
         name="video_metrics",
@@ -209,39 +269,21 @@ def test_run_enabled_analyzers_bundle_routes_generated_alerts(
         description="Alerting detector",
         produces_alerts=True,
     )
-    def fake_evaluate_alerts(session_id, detector_id, row):
-        observed_alert_args.append((session_id, detector_id, row.copy()))
-        return [
-            AlertEvent(
-                session_id=session_id,
-                timestamp_utc=str(row["timestamp_utc"]),
-                detector_id=detector_id,
-                title="Black screen detected",
-                message="alert routing check",
-                severity="warning",
-                source_name=str(row["source_name"]),
-                window_index=None,
-                window_start_sec=None,
-            )
-        ]
-
-    monkeypatch.setattr(processor, "evaluate_alerts", fake_evaluate_alerts)
-
     dummy_store = DummyStore()
     patch_store_registry(monkeypatch, video_metrics=dummy_store)
 
-    bundle = processor.run_enabled_analyzers_bundle(
-        file_path=file_path,
-        prefix="segments",
-        mode="video_segments",
-        session_id="session-alert-routing",
-    )
-
-    assert observed_alert_args == [
-        (
-            "session-alert-routing",
-            "video_metrics",
-            bundle["results"][0]["payload"],
+    reset_session_rule_state(session_id)
+    try:
+        bundle = processor.run_enabled_analyzers_bundle(
+            file_path=file_path,
+            prefix="segments",
+            mode="video_segments",
+            session_id=session_id,
         )
-    ]
+    finally:
+        reset_session_rule_state(session_id)
+
+    assert [row["source_name"] for row in dummy_store.rows] == [file_path.name]
+    assert [result["detector_id"] for result in bundle["results"]] == ["video_metrics"]
+    assert [alert["detector_id"] for alert in bundle["alerts"]] == ["video_metrics"]
     assert [alert["title"] for alert in bundle["alerts"]] == ["Black screen detected"]
