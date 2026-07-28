@@ -94,22 +94,27 @@ owns test cleanup and representative truth-promotion criteria.
 
 ## Metadata Files
 
-Use `manifest.json` when you need file paths, source roles, artifact type,
-strength, placement, media metadata, local HLS playlist details, or notes.
+Use `manifest.json` for fixture identity: file paths, source relationships,
+artifact type, media metadata, and local HLS playlist details.
 
 Use `expected_results.json` when you need detector intent: whether
 black-screen, blur, or quality-degradation behavior is expected, not expected,
 or borderline.
 
-For local HLS entries, both files also record segment duration, segment count,
+For local HLS entries, the manifest records segment duration, segment count,
 source MP4 path, playlist path, and an approximate artifact timeline by
-segment index. Clean baselines use an explicit `artifact_free_baseline`
-timeline instead of leaving the stream timeline implicit.
+segment index. Expectations refer to the canonical HLS fixture by their
+`_hls` case ID and keep only detector intent, review tier, notes, and optional
+exact-truth linkage. Clean baselines use an explicit
+`artifact_free_baseline` timeline instead of leaving the stream timeline
+implicit.
 
 The expectations are intentionally broader than exact alert-count ground truth.
 When a representative case proves stable enough for exact counts or alert
 positions, promote only the reviewed subset into `ground_truth.json` instead
-of turning the whole representative catalog into fake-precise truth.
+of turning the whole representative catalog into fake-precise truth. The
+[ownership guide](../../../../docs/detector-validation-ownership.md#exact-truth-promotion-and-demotion)
+defines promotion and demotion evidence.
 
 ## How To Extend
 
@@ -129,7 +134,8 @@ borderline case for the changed detector area. Run broader representative
 coverage only when the branch actually reaches real-media, transport, or
 longer-run runtime risk.
 
-When changing metadata or fixture shape, start with support/catalog checks.
+When changing metadata or fixture shape, run `just fixture-check` and the
+support/catalog checks first.
 When changing detector/runtime behavior, start with intent or exact reviewed
 subset lanes. Use capped MP4 confidence only when the branch really needs a
 longer `video_files` run, and keep full-file soak for scheduled or manual-depth
