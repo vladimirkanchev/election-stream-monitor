@@ -365,7 +365,6 @@
     "weekly_slow_media": [
       "tests/test_e2e_local_session.py",
       "tests/test_e2e_local_session_real_media.py",
-      "tests/test_e2e_local_session_representative_mp4_soak.py",
       "tests/test_e2e_session_ground_truth_api_stream.py",
       "tests/test_e2e_session_ground_truth_local.py",
       "tests/test_detectors_integration.py",

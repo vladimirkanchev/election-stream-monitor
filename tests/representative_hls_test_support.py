@@ -210,7 +210,7 @@ def assert_representative_hls_expectation_matches_mp4(mp4_fixture_id: str) -> No
 
 
 def require_representative_local_hls(*fixture_ids: str) -> None:
-    """Skip the current test when any required HLS fixture is missing."""
+    """Skip for missing cataloged local HLS assets; unknown IDs remain errors."""
     missing = [
         fixture_id
         for fixture_id in fixture_ids
@@ -224,7 +224,7 @@ def require_representative_local_hls(*fixture_ids: str) -> None:
 
 
 def require_representative_local_files(*fixture_ids: str) -> None:
-    """Skip the current test when any required MP4 fixture is missing."""
+    """Skip for missing cataloged local MP4 assets; unknown IDs remain errors."""
     missing = [
         fixture_id
         for fixture_id in fixture_ids

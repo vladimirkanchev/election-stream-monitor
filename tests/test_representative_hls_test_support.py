@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+import tests.representative_hls_test_support as representative_support
 from tests.representative_hls_test_support import (
     REPRESENTATIVE_EXPECTATIONS_PATH,
     REPRESENTATIVE_MANIFEST_PATH,
@@ -288,6 +289,17 @@ def test_unknown_hls_identity_is_a_catalog_error_not_an_asset_skip() -> None:
     """Unknown fixture IDs should fail before optional local-asset checks."""
     with pytest.raises(KeyError, match="No representative local HLS fixture"):
         require_representative_local_hls("not-cataloged")
+
+
+def test_missing_cataloged_hls_asset_is_an_optional_local_skip(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A cataloged local export may skip when its ignored media is unavailable."""
+    monkeypatch.setattr(representative_support, "REPRESENTATIVE_MEDIA_DIR", tmp_path)
+
+    with pytest.raises(pytest.skip.Exception, match="Representative local HLS fixture"):
+        require_representative_local_hls("stable_docs__source_baseline")
 
 
 def test_representative_manifest_identity_namespaces_and_summary_stay_consistent() -> None:

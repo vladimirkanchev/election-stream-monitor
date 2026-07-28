@@ -11,6 +11,7 @@ import pytest
 from tests.e2e_session_test_support import (
     assert_snapshot_matches_ground_truth,
     configure_session_output,
+    ground_truth_diagnostic_context,
     install_isolated_csv_stores,
     load_ground_truth_cases,
     resolve_fixture_path,
@@ -51,14 +52,18 @@ def test_local_session_ground_truth_with_real_fixtures(
         session_id=f"ground-truth-{case['id']}",
     )
 
-    tolerate_checked_in_mp4_black_variance = (
+    # The reviewed allowance is limited to positive black truth on checked-in
+    # MP4 input; generated, TS, blur-only, and black-negative cases stay exact.
+    allow_video_metrics_variance = (
         case["mode"] == "video_files"
         and case["fixture"]["kind"] == "checked_in"
+        and case["ground_truth"]["detector_true_counts"].get("video_metrics", 0) > 0
     )
 
     assert metadata.status == case["ground_truth"]["session_status"]
     assert_snapshot_matches_ground_truth(
         snapshot,
         case["ground_truth"],
-        tolerate_checked_in_mp4_black_variance=tolerate_checked_in_mp4_black_variance,
+        allow_video_metrics_variance=allow_video_metrics_variance,
+        diagnostic_context=ground_truth_diagnostic_context(case),
     )

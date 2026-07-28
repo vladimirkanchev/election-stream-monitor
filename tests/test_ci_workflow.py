@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import importlib
+import json
 from pathlib import Path
 import sys
 from typing import Any
@@ -28,6 +29,7 @@ CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "ci.yml"
 BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
 WEEKLY_VALIDATION_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
+CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 FRONTEND_INSTALL_COMMAND = "bash ../scripts/install_frontend_dependencies.sh"
 MAIN_GATE_REQUIRED_JOBS = ci_workflow_contract.MAIN_GATE_REQUIRED_JOBS
 FEATURE_GATE_REQUIRED_JOBS = ci_workflow_contract.FEATURE_GATE_REQUIRED_JOBS
@@ -237,6 +239,27 @@ def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> No
         ) in job_text
         assert "ESM_ALERT_STORE_BACKEND: postgres" in job_text
         assert 'POSTGRES_ALERT_STORE_REAL_SMOKE: "1"' in job_text
+
+
+def test_weekly_slow_media_job_uploads_ground_truth_failure_artifacts() -> None:
+    """A failed checked-in truth case should retain its compact diagnostic report."""
+    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    slow_media_job = workflow_text.split("  slow-e2e:", 1)[1].split(
+        "  api-stream-deep:", 1
+    )[0]
+
+    assert "ESM_GROUND_TRUTH_ARTIFACT_DIR: ci-artifacts/ground-truth-failures" in slow_media_job
+    assert "ci-artifacts/ground-truth-failures/**" in slow_media_job
+
+
+def test_weekly_slow_media_targets_checked_in_media_only() -> None:
+    """Weekly media confidence must not rely on optional representative assets."""
+    manifest = json.loads(CI_TARGET_MANIFEST_PATH.read_text())
+    weekly_targets = manifest["targets"]["weekly_slow_media"]
+
+    assert "tests/test_e2e_local_session_representative_mp4_soak.py" not in weekly_targets
+    assert "tests/test_e2e_local_session_real_media.py" in weekly_targets
+    assert "tests/test_e2e_session_ground_truth_local.py" in weekly_targets
 
 
 def test_current_ci_workflow_satisfies_complete_contract() -> None:
