@@ -4,6 +4,9 @@ These tests keep a small, human-reviewed set of representative MP4 windows
 visible in calibration mode. They protect broad detector behavior, catalog
 boundaries, and promotion rules without pretending that every quality issue
 already has exact ground truth.
+
+The corpus is optional local media, so this slow lane skips when its reviewed
+fixtures are unavailable.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import pytest
 from detector_lab.runner import DetectorLabConfig, run_detector_lab
 from tests.representative_hls_test_support import (
     representative_expected_case,
+    representative_hls_manifest_fixture_for_expected_case,
     representative_local_file_path,
     require_representative_local_files,
 )
@@ -104,16 +108,6 @@ def _rows_by_algorithm(
     for row in rows:
         grouped.setdefault(row["algorithm_id"], []).append(row)
     return grouped
-
-
-def _case(fixture_id: str) -> dict[str, object]:
-    """Return representative-catalog metadata for one local MP4 fixture."""
-    return representative_expected_case(fixture_id)
-
-
-def _repeated_compression_case() -> dict[str, object]:
-    """Return catalog metadata for the repeated-compression calibration fixture."""
-    return _case(REPEATED_COMPRESSION_FIXTURE_ID)
 
 
 def _repeated_compression_rows(
@@ -246,7 +240,12 @@ def _assert_lowres_promoted_mp4_truth(case: dict[str, object]) -> None:
 def _assert_lowres_review_only_hls_black_guard(case: dict[str, object]) -> None:
     """Assert low-res HLS metadata keeps blur review-only while preserving black truth."""
     assert case["assertion_tier"] == "future_quality_degradation"
-    assert case["source_mp4_path"] == LOWRES_HLS_SOURCE_MP4_PATH
+    assert (
+        representative_hls_manifest_fixture_for_expected_case(LOWRES_HLS_FIXTURE_ID)[
+            "source_mp4_path"
+        ]
+        == LOWRES_HLS_SOURCE_MP4_PATH
+    )
     assert case["expected"]["black_screen_alert"] == "not_expected"
     assert case["expected"]["blur_alert"] == "borderline_or_metric_only"
     assert case["expected"]["quality_degradation"] == "expected"
@@ -293,7 +292,7 @@ def test_representative_compression_windows_show_quality_motion_without_black(
 
 def test_representative_compression_mp4_stays_out_of_exact_blur_truth() -> None:
     """Compression-heavy MP4 fixtures should remain outside exact blur truth."""
-    case = _case(MESSY_ACTIVITY_COMPRESSION_FIXTURE_ID)
+    case = representative_expected_case(MESSY_ACTIVITY_COMPRESSION_FIXTURE_ID)
 
     assert case["expected"]["blur_alert"] == "borderline_or_metric_only"
     assert "exact_ground_truth_case_id" not in case
@@ -305,7 +304,7 @@ def test_representative_repeated_compression_bursts_do_not_fake_black(
     tmp_path: Path,
 ) -> None:
     """Repeated compression bursts should remain black-negative in detector-lab."""
-    case = _repeated_compression_case()
+    case = representative_expected_case(REPEATED_COMPRESSION_FIXTURE_ID)
     rows = _repeated_compression_rows(
         start_window=start_window,
         max_windows=8,
@@ -326,7 +325,7 @@ def test_representative_repeated_compression_blur_scores_remain_calibration_only
     tmp_path: Path,
 ) -> None:
     """Compression blur scores should move without becoming exact blur truth."""
-    case = _repeated_compression_case()
+    case = representative_expected_case(REPEATED_COMPRESSION_FIXTURE_ID)
     rows = _repeated_compression_rows(
         start_window=start_window,
         max_windows=REPEATED_COMPRESSION_PROFILE_WINDOW_COUNT,
@@ -342,7 +341,7 @@ def test_representative_repeated_compression_bursts_keep_similar_blur_profiles(
     tmp_path: Path,
 ) -> None:
     """Repeated compression bursts should keep similar blur-score profiles."""
-    case = _repeated_compression_case()
+    case = representative_expected_case(REPEATED_COMPRESSION_FIXTURE_ID)
     profiles = [
         _blur_score_profile(
             _repeated_compression_rows(
@@ -361,14 +360,16 @@ def test_representative_repeated_compression_bursts_keep_similar_blur_profiles(
 
 def test_representative_repeated_compression_alerts_stay_unpromoted_until_reviewed() -> None:
     """Compression metadata should stay review-only until a later promotion decision."""
-    _assert_repeated_compression_stays_review_only(_repeated_compression_case())
+    _assert_repeated_compression_stays_review_only(
+        representative_expected_case(REPEATED_COMPRESSION_FIXTURE_ID)
+    )
 
 
 def test_representative_compression_core_scores_differ_from_cleanish_lead_in(
     tmp_path: Path,
 ) -> None:
     """Lead-in and compression-core windows should remain score-distinguishable."""
-    case = _repeated_compression_case()
+    case = representative_expected_case(REPEATED_COMPRESSION_FIXTURE_ID)
     rows = _repeated_compression_rows(
         start_window=LEAD_IN_VS_COMPRESSION_CORE_START_WINDOW,
         max_windows=LEAD_IN_WINDOW_COUNT + COMPRESSION_CORE_WINDOW_COUNT,
@@ -390,7 +391,7 @@ def test_representative_lowres_moderate_start_stays_black_negative(
     tmp_path: Path,
 ) -> None:
     """Low-res startup should stay outside black-screen alert territory."""
-    case = _case(LOWRES_FIXTURE_ID)
+    case = representative_expected_case(LOWRES_FIXTURE_ID)
     rows = _lowres_black_negative_rows(
         fixture_id=LOWRES_FIXTURE_ID,
         start_window=0,
@@ -405,7 +406,7 @@ def test_representative_lowres_strong_end_stays_black_negative(
     tmp_path: Path,
 ) -> None:
     """Severe low-res collapse should stay outside black-screen alert territory."""
-    case = _case(LOWRES_STRONG_END_FIXTURE_ID)
+    case = representative_expected_case(LOWRES_STRONG_END_FIXTURE_ID)
     rows = _lowres_black_negative_rows(
         fixture_id=LOWRES_STRONG_END_FIXTURE_ID,
         start_window=LOWRES_STRONG_END_START_WINDOW,
@@ -418,14 +419,16 @@ def test_representative_lowres_strong_end_stays_black_negative(
 
 def test_representative_lowres_blur_boundary_remains_calibration_only() -> None:
     """Strong low-resolution cases should stay outside exact blur truth until reviewed."""
-    _assert_lowres_stays_calibration_only(_case(LOWRES_STRONG_END_FIXTURE_ID))
+    _assert_lowres_stays_calibration_only(
+        representative_expected_case(LOWRES_STRONG_END_FIXTURE_ID)
+    )
 
 
 def test_representative_lowres_metadata_does_not_silently_promote_exact_truth() -> None:
     """Low-res exact truth should stay explicit and review-backed in metadata."""
-    promoted_mp4_case = _case(LOWRES_FIXTURE_ID)
-    review_only_mp4_case = _case(LOWRES_STRONG_END_FIXTURE_ID)
-    review_only_hls_case = _case(LOWRES_HLS_FIXTURE_ID)
+    promoted_mp4_case = representative_expected_case(LOWRES_FIXTURE_ID)
+    review_only_mp4_case = representative_expected_case(LOWRES_STRONG_END_FIXTURE_ID)
+    review_only_hls_case = representative_expected_case(LOWRES_HLS_FIXTURE_ID)
 
     _assert_lowres_promoted_mp4_truth(promoted_mp4_case)
     _assert_lowres_stays_calibration_only(review_only_mp4_case)
@@ -442,7 +445,7 @@ def test_representative_lowres_source_family_matrix_stays_black_negative(
     tmp_path: Path,
 ) -> None:
     """Low-res black-negative behavior should hold across source families."""
-    case = _case(fixture_id)
+    case = representative_expected_case(fixture_id)
     rows = _lowres_black_negative_rows(
         fixture_id=fixture_id,
         start_window=start_window,
@@ -459,7 +462,7 @@ def test_representative_lowres_lead_in_vs_core_score_shift(
     tmp_path: Path,
 ) -> None:
     """Low-res slices should shift detector scores relative to normal lead-in and recovery."""
-    case = _case(LOWRES_SCORE_SHIFT_FIXTURE_ID)
+    case = representative_expected_case(LOWRES_SCORE_SHIFT_FIXTURE_ID)
     lead_in_rows = _rows_by_algorithm(
         fixture_id=LOWRES_SCORE_SHIFT_FIXTURE_ID,
         start_window=LOWRES_SCORE_SHIFT_LEAD_IN_START_WINDOW,

@@ -1,7 +1,7 @@
 """Exact session truth for the few representative HLS subsets that proved stable.
 
-This file is intentionally narrow. Promote only reviewed clean baselines,
-stable positives, and stable false-positive guards here.
+This optional local-media lane is intentionally narrow: it owns reviewed clean
+baselines, stable positives, and stable false-positive guards only.
 """
 
 from pathlib import Path
@@ -10,10 +10,10 @@ import pytest
 
 from tests.e2e_session_test_support import (
     assert_snapshot_matches_ground_truth,
-    load_ground_truth_cases,
 )
 from tests.representative_hls_test_support import (
     require_representative_local_hls,
+    representative_hls_ground_truth_cases,
     representative_hls_subset_from_ground_truth_fixture,
     run_video_segments_subset_session,
 )
@@ -21,7 +21,7 @@ from tests.representative_hls_test_support import (
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
-REPRESENTATIVE_LOCAL_HLS_CASES = load_ground_truth_cases("representative_local_hls_cases")
+REPRESENTATIVE_LOCAL_HLS_CASES = representative_hls_ground_truth_cases()
 
 
 @pytest.mark.parametrize("case", REPRESENTATIVE_LOCAL_HLS_CASES, ids=lambda case: case["id"])

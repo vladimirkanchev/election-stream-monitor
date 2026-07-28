@@ -164,9 +164,38 @@ different operating conditions.
 
 ## Fixture Roles And Consumers
 
-Fixture identity answers what is being run. Calibration intent describes broad
-expected behavior. Exact truth is reserved for reviewed stable session output.
-The same media may appear in several rows without collapsing those roles.
+The same media may support several confidence layers without making those
+layers interchangeable. Use these terms consistently:
+
+| Term | Meaning | Owner | Must not be read as |
+| --- | --- | --- | --- |
+| Fixture identity | What media exists and how it relates to a source, artifact, or transport export. | Fixture corpus or `representative/manifest.json`. | A detector-quality claim. |
+| Broad intent | A condition is `expected`, `not_expected`, `threshold_dependent`, or `borderline_or_metric_only` for a representative case. | `representative/expected_results.json`. | Exact alert counts, positions, or a universal detector guarantee. |
+| Calibration evidence | Score shape, threshold, false-positive, or diagnostic behavior used to tune or review a detector. | Detector-lab representative tests. | A reviewed runtime contract. |
+| Exact truth | Stable status, result, and alert output for one deliberately reviewed runtime subset. | `ground_truth.json`. | A claim about the whole source fixture or every transport. |
+| Soak confidence | Long-run completion, repeatability, recovery, or baseline behavior. | Soak/manual tests. | Detector truth or routine CI confidence. |
+
+`expected` and `not_expected` remain broad intent values. Only a linked,
+reviewed `ground_truth.json` case makes a subset exact.
+
+`representative/manifest.json` is the canonical identity catalog for
+representative media: MP4 fixture IDs and paths, source relationships,
+artifact metadata, and MP4-to-HLS derivation. Source fixtures intentionally
+carry baseline metadata while derived fixtures carry artifact metadata;
+consumers must use the shared catalog lookup rather than flattening those
+shapes into one synthetic schema. Intent and truth catalogs may repeat stable
+references for integrity checks, but do not own fixture identity.
+
+HLS expectation rows contain only detector intent, review tier, selected
+detectors, notes, and truth linkage. Their `_hls` case IDs resolve to the
+canonical HLS fixture ID by removing that suffix; transport paths, playlist
+details, segment counts, and artifact timelines remain manifest-only.
+
+Promoted MP4 and HLS truth descriptors use nonblank canonical fixture IDs and
+subset names with nonnegative, unique, ascending indices. HLS indices select
+playlist segments; MP4 indices select detector windows. They can be compared
+through the manifest source relationship, but their numeric boundaries are not
+interchangeable.
 
 | Fixture source | Identity owner | Expectation or truth owner | Consumers and distinct proof |
 | --- | --- | --- | --- |
@@ -175,6 +204,67 @@ The same media may appear in several rows without collapsing those roles.
 | Representative media paths and HLS exports: `representative/manifest.json` | representative manifest and local asset paths | none by itself | catalog guards prove reference integrity; runtime, transport, calibration, and soak tests select reviewed MP4/HLS subsets from the same identities |
 | Representative intent: `representative/expected_results.json` | representative manifest identifies the source | expectation catalog owns broad positive, negative, and borderline intent | detector-lab representative tests prove score/false-positive calibration; representative E2E and capped MP4 tests prove broad runtime behavior without asserting exact counts |
 | Promoted exact truth: `tests/fixtures/media/ground_truth.json` | fixture metadata identifies generated, checked-in, or representative inputs | ground-truth cases own exact status, result, and alert expectations for reviewed subsets only | synthetic `api_stream`, local real-media, representative HLS, and representative MP4 exact-truth tests prove stable session outputs; catalog guards prove promoted references resolve |
+
+## Fixture Baseline
+
+This snapshot is the starting point for fixture and truth normalization. It
+records catalog structure, not detector-quality results.
+
+| Surface | Current baseline | Availability | Primary consumers |
+| --- | --- | --- | --- |
+| Generated inputs | Test-local `media_factory` outputs; no persisted catalog count. | Deterministic during the owning test. | Synthetic detector, rule, processor, and small E2E tests. |
+| Checked-in MP4 media | 9 files in `video_files/`. | Required repository fixtures. | Detector integration, detector-lab real-media, and local exact-truth tests. |
+| Checked-in HLS media | 10 fixture directories with 89 `.ts` segments in `video_segments/`. | Required repository fixtures. | Segment, `api_stream`, and local runtime confidence. |
+| Representative MP4 catalog | 54 entries in `representative/manifest.json`. | Local optional corpus; not required in clones or CI. | Calibration, representative runtime, exact-truth, and soak tests. |
+| Representative HLS catalog | 8 exports in `representative/manifest.json`. | Local optional corpus; not required in clones or CI. | Transport, representative runtime, and exact-truth tests. |
+| Representative intent | 62 cases in `representative/expected_results.json`. | Versioned metadata. | Calibration and broad runtime-intent tests. |
+| Promoted representative exact truth | 13 cases in `ground_truth.json`: 8 HLS and 5 MP4 subsets. Ten are catalog-linked through `exact_ground_truth_case_id`; three MP4 detector-specific cases remain direct runtime truth because one fixture can support more than one reviewed detector contract. | Versioned metadata; runtime execution also needs local assets. | Representative exact-truth tests and catalog guards. |
+| Focused catalog/calibration/truth collection | 59 cases across catalog guards, representative calibration, and representative MP4/HLS exact-truth modules. | Collection is deterministic; local-media execution skips when assets are absent. | Fixture/truth normalization validation. |
+
+Missing local representative MP4 or HLS assets are an expected skipped-test
+condition. Missing checked-in media, invalid catalog references, or unresolved
+promoted truth are repository defects.
+
+Routine catalog guards validate IDs, safe relative paths, source relationships,
+allowed intent values, summary counts, truth references, and subset ordering.
+They do not open representative media or run detectors.
+
+Every catalog `exact_ground_truth_case_id` must resolve to one completed
+runtime case with the same fixture, transport, reviewed subset length, and
+compatible detector selection. The representative MP4 exact-truth matrix also
+contains three direct cases without that catalog pointer; its parameterized
+runtime test remains their evidence owner. Do not promote a calibration or
+environment-sensitive result merely because it currently passes.
+
+## Exact-Truth Promotion And Demotion
+
+Promote a representative subset to exact truth only when all of the following
+are reviewed in the same change:
+
+- the media is cataloged and its MP4/HLS fixture identity and source relation
+  are unambiguous;
+- the subset has deterministic, ordered boundaries in the transport's native
+  unit: HLS segments or MP4 detector windows;
+- repeated runs on the reviewed local environment produce the same selected
+  public fields, with any decoder or fixture variation investigated first;
+- the truth records only stable session/status, progress, result, and alert
+  fields needed by the contract, not diagnostic scores or incidental payloads;
+- a parameterized exact-runtime test owns the case in the appropriate local
+  HLS or MP4 validation lane, and catalog links are added when the current
+  single-reference metadata can express the relationship.
+
+Promotion evidence belongs in the change review and the owning runtime test;
+the catalog guards protect the recorded reference shape afterward. A passing
+calibration test, a broad intent value, or one successful local run is not
+enough to create exact truth.
+
+Demote a case to calibration when repeated runs are unstable, a detector or
+runtime contract intentionally changes, or the asserted output depends on an
+uncontrolled decoder, timing, or environment condition. First investigate a
+single unexpected failure; do not demote merely to hide a regression. A
+demotion removes the exact assertions and catalog link as needed, but keeps
+the fixture and its broad intent or calibration evidence with a short reason.
+It is a narrower claim, not deletion of useful detector evidence.
 
 Consequences for future cleanup:
 
@@ -374,28 +464,6 @@ strong-score escape outcomes as separate synthetic cases.
 No test deletion, marker change, fixture change, CI expansion, detector change,
 or truth promotion is approved by this matrix review. Validation for
 this documentation pass is `just docs-check` and `git diff --check`.
-
-## Promotion Rules
-
-### Promote Representative Behavior Only After Review
-
-`expected_results.json` records broad intent. Add a representative subset to
-`ground_truth.json` only when all of the following are true:
-
-- the manifest identifies the exact source, subset, mode, and detector set;
-- the proposed status, result, and alert expectations have been reviewed from
-  repeatable runs on the relevant production runtime path;
-- the case is stable enough for exact assertions, not merely useful for score
-  calibration, a false-positive guard, or a threshold investigation;
-- an exact-truth test and catalog guard cover the promoted subset in its
-  intended local/manual or checked-in lane; and
-- the corresponding calibration or intent entry remains explicit when it
-  still documents broader, non-exact behavior.
-
-Leave compression-heavy, borderline, environment-sensitive, or transport-
-divergent cases in calibration or broad runtime confidence until those
-conditions are met. Promotion adds a reviewed truth claim; it does not by
-itself make a detector or detector-lab algorithm production-ready.
 
 ## Lane Observations
 

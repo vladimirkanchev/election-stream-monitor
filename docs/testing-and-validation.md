@@ -77,7 +77,7 @@ selection and use the detailed document for cleanup or truth-promotion review.
 | Production alert rules | `test_alert_rules*.py` | `just test-alert-rules` | real session/media validation only when the change reaches that seam |
 | Processor/runtime integration | `test_processor_routing.py`, `test_processor_context_alerts.py`, `test_processor_failures.py` | `just test-processor` | protected fast backend tests; session/E2E lanes for lifecycle effects |
 | Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, and `test_detector_lab_practical_motion.py`; checked-in media in `test_detector_lab_real_media.py` | `just test-detector-lab` | `just test-real-media` and weekly real-media confidence |
-| Representative calibration and catalog integrity | `test_detector_lab_representative_media.py`; `test_representative_hls_test_support.py` | catalog guards, then explicit local representative selection | local/manual slow confidence; do not promote broad intent to exact truth by default |
+| Representative calibration and catalog integrity | `test_detector_lab_representative_media.py`; `test_representative_hls_test_support.py` | `just fixture-check`, then focused catalog guards | local/manual slow confidence; fixture identity and truth-promotion policy live in the ownership guide |
 | Exact ground truth | `test_e2e_session_ground_truth_*.py` and representative ground-truth suites | smallest matching explicit E2E lane | checked-in cases are weekly; representative cases are local/manual slow |
 | End-to-end runtime confidence | `test_e2e_local_session*.py` and representative `api_stream` suites | protected generated local-session smoke or the smallest matching E2E command | checked-in real media weekly; representative transport confidence local/manual slow |
 | Soak/manual validation | `@pytest.mark.soak` representative MP4 cases | `pytest -m soak` only when long-run behavior changes | scheduled or manual-depth validation |
@@ -2457,127 +2457,33 @@ smoke check:
 PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider tests/test_e2e_local_session.py -q
 ```
 
-For the backend E2E suites, the current split is:
+### Representative-Media Validation
 
-- `tests/test_e2e_local_session.py`
-  - small snapshot-contract smoke check
-- `tests/test_e2e_local_session_real_media.py`
-  - curated real-media local-session coverage
-- `tests/test_e2e_local_session_representative_hls.py`
-  - local-only representative HLS intent checks over focused subset playlists
-  - includes broad low-res MP4/HLS parity without forcing exact blur counts,
-    plus black-negative guards for clean, compression, and review-only low-res
-    subsets
-- `tests/test_e2e_local_session_representative_hls_ground_truth.py`
-  - exact session truth for the few representative HLS subsets that proved stable enough
-- `tests/test_e2e_api_stream_representative_hls.py`
-  - the same reviewed representative HLS subsets served through the real `api_stream` seam
-- `tests/test_e2e_local_session_representative_mp4_ground_truth.py`
-  - exact truth for reviewed representative MP4 windows on the real `video_files` seam
-- `tests/test_e2e_local_session_representative_mp4_soak.py`
-  - capped representative `video_files` confidence in the ordinary slow lane
-  - includes a long-window output-shape check plus focused positive and
-    false-positive guards on reviewed subsets
-  - full-file `pytest -m soak` confidence for selected longer MP4 fixtures
-  - repeatability, interruption/recovery, and long-baseline false-positive
-    posture stay under `pytest -m soak`, not ordinary PR validation
-- `tests/test_e2e_session_ground_truth_api_stream.py`
-  - synthetic `api_stream` ground-truth contract cases
-- `tests/test_e2e_session_ground_truth_local.py`
-  - slower real-media ground-truth matrix
-
-The representative-media support and calibration layers stay separate on purpose:
-
-- `tests/test_representative_hls_test_support.py`
-  - representative catalog and helper ownership
-  - fixture resolution, route-map shape, promoted-truth consistency, and
-    confidence-lane metadata checks across `manifest.json`,
-    `expected_results.json`, and `ground_truth.json`
-  - guards that promoted exact-truth references still point at real reviewed
-    ground-truth cases
-- `tests/test_detector_lab_representative_media.py`
-  - calibration-oriented score-shape checks for reviewed low-resolution and
-    compression windows
-  - useful for detector tuning, false-positive control, and promotion-boundary
-    review, not exact production truth
-
-Read the representative-media ladder this way:
-
-- support and catalog guards
-  - `tests/test_representative_hls_test_support.py`
-- reviewed runtime intent
-  - `tests/test_e2e_local_session_representative_hls.py`
-  - this is where broad low-res MP4/HLS agreement belongs before exact truth
-- exact reviewed-subset truth
-  - `tests/test_e2e_local_session_representative_hls_ground_truth.py`
-  - `tests/test_e2e_local_session_representative_mp4_ground_truth.py`
-- transport-backed confidence
-  - `tests/test_e2e_api_stream_representative_hls.py`
-- calibration-only confidence
-  - `tests/test_detector_lab_representative_media.py`
-- capped MP4 confidence
-  - the non-`soak` lanes inside `tests/test_e2e_local_session_representative_mp4_soak.py`
-- full-file MP4 soak confidence
-  - `tests/test_e2e_local_session_representative_mp4_soak.py`
-
-Keep the exact representative lanes small. Promote only reviewed stable
-subsets into exact truth. Leave borderline, threshold-sensitive, or mainly
-diagnostic cases in intent or calibration lanes instead of forcing fake
-precision.
-
-For the current low-resolution branch fixtures specifically:
-
-- use reviewed runtime-intent lanes to prove black-negative behavior and broad
-  MP4/HLS agreement
-- use detector-lab lanes to keep score-shift and false-positive behavior
-  visible
-- promote exact blur truth only after a reviewed subset proves stable enough
-
-Use markers to keep local feedback tight:
+Representative media is local optional confidence, not routine CI input.
+For fixture or metadata changes, run `just fixture-check` followed by the
+deterministic catalog guards:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "e2e and not slow" tests/test_e2e_*.py -q
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+.venv/bin/pytest -p no:cacheprovider -q \
+  tests/test_representative_hls_test_support.py
 ```
 
-That command keeps:
+Choose one additional local lane only when the changed seam needs it:
 
-- the small local-session smoke test
-- the synthetic `api_stream` ground-truth cases
+- `test_detector_lab_representative_media.py` for calibration and
+  false-positive evidence;
+- `test_e2e_local_session_representative_hls.py` for broad runtime intent;
+- representative HLS or MP4 ground-truth tests for an already reviewed exact
+  subset;
+- `test_e2e_api_stream_representative_hls.py` for the `api_stream` transport;
+- non-`soak` or `@pytest.mark.soak` MP4 cases for capped or full-file runtime
+  confidence.
 
-and skips the heavier real-media suites until you actually need them.
-
-Run the fuller real-media E2E pass when changing detector behavior, windowing,
-or persisted snapshot expectations for checked-in media fixtures:
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "e2e and slow and not soak" tests/test_e2e_*.py -q
-```
-
-Note:
-
-- some Electron/HLS tests bind loopback listeners on `127.0.0.1`
-- those cases may fail inside stricter sandboxes even when the code is healthy
-- if that happens, rerun the same targeted suite in a normal local shell
-
-For representative-media work specifically:
-
-- start with the smallest honest lane
-  - support/catalog checks for metadata or fixture-shape changes
-  - intent checks for broader detector/runtime behavior
-  - exact truth only when a reviewed subset is already proven stable
-- use the capped representative MP4 lane when the branch reaches longer
-  `video_files` execution but does not need full-file manual-depth coverage yet
-  - this lane is the right home for capped output-shape checks and focused
-    positive or false-positive guards on reviewed windows
-- use the `api_stream` representative lane when the change reaches transport,
-  loader, or temp-file lifecycle behavior
-- keep the MP4 soak lane as weekly/manual-depth confidence unless the branch is
-  explicitly about longer-run runtime behavior
-- keep repeatability and interruption/recovery under that soak lane too; they
-  should not ride along in ordinary PR validation
-- use `pytest -m soak` for the full-file representative MP4 lane when you want
-  scheduled/manual-depth confidence without pulling it into ordinary PR
-  validation
+Use the [detector-validation ownership guide](./detector-validation-ownership.md)
+for fixture identity, broad intent, exact-truth promotion, and the complete
+test ownership map. Local HLS tests may require loopback sockets and optional
+assets; run those in a normal local shell when the selected lane needs them.
 
 Recommended backend order for session-runner work:
 

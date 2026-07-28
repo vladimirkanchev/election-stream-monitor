@@ -1,7 +1,8 @@
 """Transport-oriented checks for reviewed representative HLS subsets.
 
 These tests serve reviewed HLS subsets over local HTTP so the real
-`api_stream` seam can be exercised without depending on a public stream.
+`api_stream` seam can be exercised without a public stream. Local media and
+the local HTTP server keep this as an explicit slow confidence lane.
 """
 
 from pathlib import Path
@@ -11,7 +12,6 @@ import pytest
 
 from tests.e2e_session_test_support import (
     assert_completed_session,
-    load_ground_truth_cases,
 )
 from tests.representative_hls_test_support import (
     assert_api_stream_temp_dir_cleaned,
@@ -19,6 +19,7 @@ from tests.representative_hls_test_support import (
     detector_payloads,
     range_indices,
     representative_expected_case,
+    representative_hls_ground_truth_cases,
     representative_hls_subset,
     representative_hls_subset_from_ground_truth_fixture,
     require_representative_local_hls,
@@ -30,9 +31,7 @@ from tests.representative_hls_test_support import (
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
 
-PROMOTED_REPRESENTATIVE_HLS_CASES = load_ground_truth_cases(
-    "representative_local_hls_cases"
-)
+PROMOTED_REPRESENTATIVE_HLS_CASES = representative_hls_ground_truth_cases()
 
 
 def _payload_truths(
