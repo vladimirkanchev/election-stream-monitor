@@ -72,12 +72,13 @@ Use the representative-media lanes as a ladder, not as one big suite:
     consistency, review-only metadata boundaries, and lead-in versus
     compression-core score separation
 - `tests/test_e2e_local_session_representative_mp4_soak.py`
-  - capped representative `video_files` confidence in the ordinary slow lane
+  - capped representative `video_files` confidence in a local/manual slow lane
   - includes a long-window output-shape check plus focused positive and
     false-positive guards on reviewed subsets
   - full-file `pytest -m soak` confidence for selected longer MP4 fixtures
   - repeatability, interruption/recovery, and long-baseline false-positive
-    posture stay in that full-file soak lane, not ordinary PR validation
+    posture stay in that full-file local/manual soak lane, not ordinary PR or
+    checked-in-media weekly validation
 
 ### Truth And Lane Boundary
 
@@ -87,10 +88,9 @@ threshold-sensitive cases in intent or calibration until a reviewed runtime
 lane supports exact truth. Full-file `pytest -m soak` confidence proves
 long-run behavior, not detector truth.
 
-The [testing guide](../../../../docs/testing-and-validation.md#detector-validation-ownership)
-owns category-to-lane selection. The
-[detailed ownership inventory](../../../../docs/detector-validation-ownership.md)
-owns test cleanup and representative truth-promotion criteria.
+The [testing guide](../../../../docs/testing-and-validation.md) owns commands.
+The [ownership guide](../../../../docs/detector-validation-ownership.md) owns
+fixture/truth policy and lane decisions.
 
 ## Metadata Files
 

@@ -66,6 +66,7 @@ jobs:
       - name: Run weekly_slow_real_media slow e2e media tests
         env:
           ESM_DETECTOR_LAB_ARTIFACT_DIR: ci-artifacts/detector-lab-real-media
+          ESM_GROUND_TRUTH_ARTIFACT_DIR: ci-artifacts/ground-truth-failures
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
@@ -81,6 +82,7 @@ jobs:
           path: |
             ci-artifacts/slow-e2e.log
             ci-artifacts/detector-lab-real-media/**
+            ci-artifacts/ground-truth-failures/**
           retention-days: 7
 
   api-stream-deep:

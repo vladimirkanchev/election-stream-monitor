@@ -87,6 +87,18 @@ manifest through `-m slow`, so e2e-only files named by that manifest are not
 executed by that job; use their explicit E2E owner instead. Local
 representative assets are optional and must not become routine CI inputs.
 
+To reproduce the scheduled checked-in-media selection locally without adding
+optional representative assets, run:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  .venv/bin/pytest -p no:cacheprovider -q -m slow \
+  $(.venv/bin/python .github/scripts/read_ci_test_targets.py weekly_slow_media --separator space)
+```
+
+This checks the same manifest selection, not the Ubuntu runner, pinned FFmpeg
+package, or weekly-only environment setup.
+
 For a shorter CI ownership handoff, use
 [ci-maintainer-guide.md](./ci-maintainer-guide.md).
 That guide owns the definitions of required, advisory, informational, weekly,
@@ -297,6 +309,10 @@ Current focused ownership map:
     when fixture boundary timing shifts slightly across environments, prefer
     suppression/precedence assertions plus emitted CSV diagnostics over exact
     window-number calibration
+- `tests/test_e2e_session_ground_truth_local.py`
+  - checked-in local-session truth in the weekly slow-media lane; its
+    assertion and diagnostic policy is owned by
+    [detector-validation-ownership.md](./detector-validation-ownership.md)
 - `tests/test_detector_lab_representative_media.py`
   - reviewed representative MP4 calibration lane for low-resolution and
     compression cases

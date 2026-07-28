@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.e2e_session_test_support import (
+    ground_truth_diagnostic_context,
     assert_snapshot_matches_ground_truth,
 )
 from tests.representative_hls_test_support import (
@@ -44,4 +45,13 @@ def test_representative_local_hls_ground_truth(
     )
 
     assert metadata.status == case["ground_truth"]["session_status"]
-    assert_snapshot_matches_ground_truth(snapshot, case["ground_truth"])
+    assert_snapshot_matches_ground_truth(
+        snapshot,
+        case["ground_truth"],
+        diagnostic_context=ground_truth_diagnostic_context(
+            case,
+            fixture_id=subset.fixture_id,
+            subset_name=subset.subset_name,
+            subset_indices=subset.segment_indices,
+        ),
+    )

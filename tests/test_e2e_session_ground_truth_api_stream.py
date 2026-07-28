@@ -17,6 +17,7 @@ from stream_loader import FakeApiStreamLoader
 from tests.e2e_session_test_support import (
     assert_snapshot_matches_ground_truth,
     configure_session_output,
+    ground_truth_diagnostic_context,
     load_ground_truth_cases,
     run_and_read_local_session,
 )
@@ -236,4 +237,8 @@ def test_synthetic_api_stream_session_contract_matches_ground_truth(
             )
         snapshot = read_session_snapshot(session_id)
 
-    assert_snapshot_matches_ground_truth(snapshot, case["ground_truth"])
+    assert_snapshot_matches_ground_truth(
+        snapshot,
+        case["ground_truth"],
+        diagnostic_context=ground_truth_diagnostic_context(case),
+    )

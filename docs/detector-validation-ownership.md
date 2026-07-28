@@ -48,7 +48,7 @@ behavior those other tests assert.
 | Representative HLS intent | `test_e2e_local_session_representative_hls.py` | `e2e`, `slow` | reviewed local HLS/MP4 subsets | local/manual slow confidence | medium-high |
 | Representative HLS exact truth | `test_e2e_local_session_representative_hls_ground_truth.py` | `e2e`, `slow` | reviewed local HLS subsets and `ground_truth.json` | local/manual slow confidence | medium-high |
 | Representative MP4 exact truth | `test_e2e_local_session_representative_mp4_ground_truth.py` | `e2e`, `slow` | reviewed local MP4 subsets and `ground_truth.json` | local/manual slow confidence | medium-high |
-| Representative MP4 capped/soak confidence | `test_e2e_local_session_representative_mp4_soak.py` | `e2e`, `slow`; selected `soak` cases | reviewed local MP4 subsets | capped checks in slow confidence; full-file cases weekly/manual soak | high |
+| Representative MP4 capped/soak confidence | `test_e2e_local_session_representative_mp4_soak.py` | `e2e`, `slow`; selected `soak` cases | reviewed local MP4 subsets | local/manual slow confidence; full-file cases manual soak | high |
 | Synthetic `api_stream` exact truth | `test_e2e_session_ground_truth_api_stream.py` | `e2e` | synthetic stream events and checked-in truth cases | explicit E2E contract confidence | low |
 | Local real-media exact truth | `test_e2e_session_ground_truth_local.py` | `e2e`, `slow` | checked-in real media and `ground_truth.json` | weekly slow media | medium-high |
 | Representative `api_stream` transport | `test_e2e_api_stream_representative_hls.py` | `e2e`, `slow` | reviewed local HLS subsets | local/manual slow confidence | medium-high |
@@ -152,8 +152,8 @@ make a test a duplicate of its primary owner.
 | `test_e2e_local_session_representative_hls.py` | End-to-end runtime confidence | representative-media intent and MP4/HLS agreement |
 | `test_e2e_local_session_representative_hls_ground_truth.py` | Exact ground truth | end-to-end runtime confidence |
 | `test_e2e_local_session_representative_mp4_ground_truth.py` | Exact ground truth | end-to-end runtime confidence |
-| `test_e2e_local_session_representative_mp4_soak.py` without `@pytest.mark.soak` | End-to-end runtime confidence | representative-media confidence and long-window output shape |
-| `test_e2e_local_session_representative_mp4_soak.py` with `@pytest.mark.soak` | Soak/manual validation | end-to-end runtime confidence and recovery behavior |
+| `test_e2e_local_session_representative_mp4_soak.py` without `@pytest.mark.soak` | End-to-end runtime confidence | local/manual representative-media confidence and long-window output shape |
+| `test_e2e_local_session_representative_mp4_soak.py` with `@pytest.mark.soak` | Soak/manual validation | local/manual full-file runtime confidence and recovery behavior |
 | `test_e2e_session_ground_truth_api_stream.py` | Exact ground truth | synthetic `api_stream` end-to-end contract |
 | `test_e2e_session_ground_truth_local.py` | Exact ground truth | checked-in real-media end-to-end confidence |
 | `test_e2e_api_stream_representative_hls.py` | End-to-end runtime confidence | representative-media intent and `api_stream` transport |
@@ -224,6 +224,85 @@ records catalog structure, not detector-quality results.
 Missing local representative MP4 or HLS assets are an expected skipped-test
 condition. Missing checked-in media, invalid catalog references, or unresolved
 promoted truth are repository defects.
+
+## Real-Media Assertion Stability Matrix
+
+This matrix classifies assertion families by the public behavior they protect.
+It is the decision record for later stabilization work; a decoder-sensitive
+row is not permission to weaken unrelated session, payload, or alert contracts.
+
+| Owner and assertion family | Classification | Stability policy |
+| --- | --- | --- |
+| `test_detector_lab_real_media.py`: short blur-trigger windows and named guardrail reasons | Exact truth | Keep strict while the reviewed window boundary remains stable; inspect exported CSV diagnostics before changing a window or reason. |
+| `test_detector_lab_real_media.py`: black-transition suppression and recovery | Presence/absence behavior plus bounded numeric invariant | Keep the reviewed black core strict; require bounded early suppression and later recovery while accepting either reviewed black-suppression reason around decoder-sensitive transition boundaries. |
+| `test_detector_lab_real_media.py`: black-versus-blur precedence and later recovery | Ordered behavior with an exact reviewed blur core | Keep the blur-core precedence and recovery sequence strict; do not depend on one transient black-transition window unless that window is the contract. |
+| `test_detector_lab_real_media.py`: optical-flow fields and score distinction | Payload-shape contract plus diagnostic-only calibration | Keep required fields, method names, and positive/distinct signals; do not promote raw score values to exact truth. |
+| `test_detector_lab_real_media.py`: full CSV export | Payload-shape contract with an exact reviewed row | Keep schema, configured threshold, and normalized alert projection strict; classify any changed detector outcome through its row-specific real-media assertion before changing the export test. |
+| `test_detectors_integration.py`: black and blur detection on checked-in MP4/TS media | Presence/absence behavior plus bounded numeric invariant | Keep detection decisions strict and use lower bounds for duration, ratio, samples, and streaks rather than decoder-specific exact measurements. |
+| `test_e2e_local_session_real_media.py`: completed session, source coverage, detector set, and result counts | Ordered behavior and payload-shape contract | Keep playlist ordering, source names, selected-detector set, and results-per-input strict; these are runtime transport contracts. |
+| `test_e2e_local_session_real_media.py`: real black media produces alerts | Presence/absence behavior | Require readable completed output, black detection, and at least one alert; alert multiplicity is not the owner of detector calibration. |
+| `test_e2e_session_ground_truth_local.py`: generated and TS ground-truth cases | Exact truth | Keep status, progress, counts, ordered alerts, and selected key payload fields exact. |
+| `test_e2e_session_ground_truth_local.py`: checked-in MP4 ground truth | Exact truth with one bounded numeric exception | Keep status, progress, result count, key payloads, and expected alerts strict. A case with positive `video_metrics` truth may add, but never lose, one `video_metrics` count and alert; blur-only and black-negative cases remain exact. |
+| Representative calibration and soak suites | Diagnostic-only calibration or soak confidence | Keep their broad intent, score-shape, and long-run behavior separate from checked-in exact truth; they do not authorize changes to this matrix. |
+
+Use the narrowest class that expresses the real contract. Decoder variation may
+justify a named guardrail set or a small count range, never a wildcard result
+count, unconstrained alert list, or broad exception handler. Inspect the
+detector-lab CSV or focused failure diagnostic before changing an assertion.
+
+### Exact And Behavioral Assertion Rules
+
+1. Use exact windows only for reviewed, stable core windows or promoted exact
+   truth with fixed fixture, mode, detector selection, and native subset
+   boundaries.
+2. Express a transition region through at least one stable anchor and one
+   behavioral invariant: suppression presence, ordering, precedence, a minimum
+   or maximum count, or a later recovery window.
+3. A tolerance must name its fixture class, detector, affected field, numeric
+   bound, and decoder cause. It may not apply to an entire test module or to
+   unrelated detector output.
+4. The only current exact-truth tolerance is checked-in MP4 black-detection
+   variance: cases with a positive expected `video_metrics` count may add at
+   most one `video_metrics` count and alert. Expected counts and alerts stay
+   required and ordered; blur-only and black-negative cases have no tolerance.
+5. A changed outcome first requires fixture availability and dependency checks,
+   then the detector-lab CSV or focused diagnostics. Broaden a rule only after
+   repeated evidence identifies a harmless decoder boundary shift.
+
+## Real-Media Availability Matrix
+
+The required fixture and dependency contract is per suite. Checked-in MP4 and
+LFS-managed HLS media are shared test inputs; representative MP4/HLS binaries
+are intentionally local-only while their manifest and truth metadata remain
+versioned. See [fixture-environment-policy.md](./fixture-environment-policy.md)
+for the repository-wide definitions.
+
+| Suite | Media and generated inputs | Required environment | Missing prerequisite outcome |
+| --- | --- | --- | --- |
+| `test_detector_lab_real_media.py` | Checked-in MP4 fixtures. | Python detector-lab dependencies and OpenCV decode support; the flow case explicitly requires `cv2`. | Missing checked-in media is a defect. The flow case skips without `cv2`; a missing weekly decoder dependency is an environment failure. |
+| `test_detectors_integration.py` | Checked-in MP4 and LFS-managed TS fixtures. | `ffmpeg`, `ffprobe`, and the installed detector stack. | The fixture skips locally when FFmpeg tools are absent. In weekly CI, missing tools are setup failure because the workflow installs a pinned package. |
+| `test_e2e_local_session_real_media.py` | Checked-in MP4 and LFS-managed segment directories. | Installed runtime detector stack and decoder support. | Missing core media, LFS objects, or decoder support is a failure, not optional-media absence. |
+| `test_e2e_session_ground_truth_local.py` | Checked-in MP4/TS cases plus generated media from `media_factory`. | `ffmpeg`/`ffprobe` for generated fixtures and the installed runtime stack. | Local runs skip through `media_factory` without FFmpeg; weekly absence is an environment failure. Missing checked-in inputs or truth references is a repository defect. |
+| `test_detector_lab_representative_media.py` and representative MP4 exact/soak suites | Optional local representative MP4 corpus. | OpenCV/decode support; runtime suites also require FFmpeg tools. | Missing local MP4 assets skip through `require_representative_local_files()`. A present asset that cannot decode is a local-environment failure to investigate. |
+| Representative HLS intent and exact-truth suites | Optional local HLS exports; some comparison cases also require their source MP4. | Decoder support and FFmpeg where the test declares `ffmpeg_available`. | Missing local assets skip through the representative helpers; catalog/reference failures remain defects. |
+| `test_e2e_api_stream_representative_hls.py` | Optional local HLS exports copied into a temporary playlist subset. | FFmpeg tools and a bindable loopback TCP port. | Missing HLS assets skip; restricted loopback environments skip through `_serve_local_hls()`. Do not treat either as a detector regression. |
+
+`actions/checkout` uses `lfs: true` in the weekly workflow, and the current
+checkout passes `git lfs fsck --pointers`. A local clone that has media-pointer
+files rather than hydrated LFS segments must fetch LFS before running a
+checked-in HLS lane.
+
+When triaging a real-media failure, classify it in this order: fixture/catalog
+defect, missing required weekly dependency, expected local-only skip,
+loopback restriction, decoder-version variation, then detector/runtime
+regression. This order avoids changing detector assertions to accommodate a
+missing asset or tool.
+
+Ground-truth failures print safe case and environment facts plus bounded result
+data. `ESM_GROUND_TRUTH_ARTIFACT_DIR` additionally writes one sanitized JSON
+report per case; the weekly job uploads these alongside detector-lab CSVs.
+Full snapshots, raw paths, raw environment variables, and driver output are
+excluded.
 
 Routine catalog guards validate IDs, safe relative paths, source relationships,
 allowed intent values, summary counts, truth references, and subset ordering.
