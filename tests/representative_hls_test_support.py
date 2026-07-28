@@ -3,7 +3,8 @@
 The helpers in this module keep the representative test suites on one compact
 fixture model:
 
-- local MP4 and HLS fixtures stay catalog-driven
+- the manifest owns MP4/HLS identity and source relationships
+- expectations stay broad intent while ground-truth cases own reviewed exact output
 - tests run reviewed subsets instead of replaying full fixtures by default
 - `video_segments`, `api_stream`, and reviewed `video_files` lanes reuse the
   same subset descriptors
@@ -28,6 +29,7 @@ from stream_loader import build_api_stream_temp_session_dir
 from tests.e2e_session_test_support import (
     configure_session_output,
     install_isolated_csv_stores,
+    load_ground_truth_cases,
     run_and_read_local_session,
 )
 from tests.local_hls_test_support import _serve_local_hls
@@ -36,7 +38,6 @@ from tests.session_runner_api_stream_test_support import _configure_http_hls_run
 
 REPRESENTATIVE_MEDIA_DIR = Path(__file__).parent / "fixtures" / "media" / "representative"
 REPRESENTATIVE_LOCAL_FILES_DIR = REPRESENTATIVE_MEDIA_DIR / "local_files"
-REPRESENTATIVE_LOCAL_HLS_DIR = REPRESENTATIVE_MEDIA_DIR / "local_hls"
 REPRESENTATIVE_MANIFEST_PATH = REPRESENTATIVE_MEDIA_DIR / "manifest.json"
 REPRESENTATIVE_EXPECTATIONS_PATH = REPRESENTATIVE_MEDIA_DIR / "expected_results.json"
 
@@ -51,7 +52,6 @@ class RepresentativeHlsSubset:
 
     @property
     def segment_count(self) -> int:
-        """Return the number of reviewed segments."""
         return len(self.segment_indices)
 
     @property
@@ -70,12 +70,10 @@ class RepresentativeVideoFileSubset:
 
     @property
     def window_count(self) -> int:
-        """Return the number of reviewed one-second windows."""
         return len(self.window_indices)
 
     @property
     def fixture_path(self) -> Path:
-        """Return the backing representative MP4 path."""
         return representative_local_file_path(self.fixture_id)
 
     @property
@@ -100,35 +98,63 @@ def _load_representative_expectations() -> dict[str, object]:
     return json.loads(REPRESENTATIVE_EXPECTATIONS_PATH.read_text(encoding="utf-8"))
 
 
+def representative_mp4_manifest_fixture(fixture_id: str) -> dict[str, object]:
+    """Return one source or derived MP4 fixture from the canonical manifest."""
+    manifest = _load_representative_manifest()
+    for fixture_group in ("source_fixtures", "derived_fixtures"):
+        for fixture in manifest[fixture_group]:
+            if fixture["id"] == fixture_id:
+                return fixture
+    raise KeyError(f"No representative MP4 fixture is cataloged for {fixture_id!r}")
+
+
+def representative_hls_manifest_fixture(fixture_id: str) -> dict[str, object]:
+    """Return one derived HLS fixture from the canonical manifest."""
+    for fixture in _load_representative_manifest()["local_hls_fixtures"]:
+        if fixture["id"] == fixture_id:
+            return fixture
+    raise KeyError(f"No representative local HLS fixture is cataloged for {fixture_id!r}")
+
+
+def representative_hls_manifest_fixture_for_expected_case(
+    expected_case_id: str,
+) -> dict[str, object]:
+    """Resolve one HLS expectation row to its canonical manifest fixture."""
+    suffix = "_hls"
+    if not expected_case_id.endswith(suffix):
+        raise ValueError(f"Representative expectation is not an HLS case: {expected_case_id!r}")
+    return representative_hls_manifest_fixture(expected_case_id[: -len(suffix)])
+
+
+def representative_mp4_manifest_fixture_for_hls(hls_fixture_id: str) -> dict[str, object]:
+    """Resolve an HLS export to its source or matching derived MP4 fixture."""
+    hls_fixture = representative_hls_manifest_fixture(hls_fixture_id)
+    try:
+        return representative_mp4_manifest_fixture(hls_fixture_id)
+    except KeyError:
+        return representative_mp4_manifest_fixture(hls_fixture["source_id"])
+
+
 def representative_hls_fixture_dir(fixture_id: str) -> Path:
-    """Return the on-disk HLS folder for one cataloged representative fixture."""
-    return REPRESENTATIVE_LOCAL_HLS_DIR / fixture_id
+    """Resolve one cataloged HLS fixture directory through the canonical manifest."""
+    fixture = representative_hls_manifest_fixture(fixture_id)
+    return REPRESENTATIVE_MEDIA_DIR / fixture["path"]
 
 
 def representative_local_file_path(fixture_id: str) -> Path:
-    """Return the on-disk MP4 path for one cataloged representative fixture."""
-    local_files = {
-        fixture["id"]: fixture["path"]
-        for fixture_group in ("source_fixtures", "derived_fixtures")
-        for fixture in _load_representative_manifest()[fixture_group]
-    }
-    try:
-        relative_path = local_files[fixture_id]
-    except KeyError as error:
-        raise KeyError(
-            f"No representative local-file fixture is cataloged for {fixture_id!r}"
-        ) from error
-    return REPRESENTATIVE_MEDIA_DIR / relative_path
+    """Resolve one cataloged MP4 path through the canonical manifest."""
+    return REPRESENTATIVE_MEDIA_DIR / representative_mp4_manifest_fixture(fixture_id)["path"]
 
 
 def representative_hls_fixture_dir_from_mp4_fixture(mp4_fixture_id: str) -> Path:
     """Resolve the sibling HLS export for one representative MP4 fixture id."""
-    fixture_ids = {
-        fixture["id"]
-        for fixture in _load_representative_manifest()["local_hls_fixtures"]
-    }
-    if mp4_fixture_id not in fixture_ids:
-        raise KeyError(f"No representative local HLS fixture is cataloged for {mp4_fixture_id!r}")
+    hls_fixture = representative_hls_manifest_fixture(mp4_fixture_id)
+    mp4_fixture = representative_mp4_manifest_fixture_for_hls(mp4_fixture_id)
+    if hls_fixture["source_mp4_path"] != mp4_fixture["path"]:
+        raise ValueError(
+            f"Representative HLS fixture {mp4_fixture_id!r} does not reference its "
+            "cataloged MP4 path"
+        )
     return representative_hls_fixture_dir(mp4_fixture_id)
 
 
@@ -153,7 +179,7 @@ def read_representative_local_hls_fixture(fixture_id: str) -> dict[str, object]:
 
 
 def representative_expected_case(case_id: str) -> dict[str, object]:
-    """Return one representative expectation entry by id."""
+    """Return one representative broad-intent entry by id."""
     cases = _load_representative_expectations()["cases"]
     for case in cases:
         if case["id"] == case_id:
@@ -161,13 +187,24 @@ def representative_expected_case(case_id: str) -> dict[str, object]:
     raise KeyError(f"Representative expectation case is not defined: {case_id!r}")
 
 
+def representative_hls_ground_truth_cases() -> list[dict[str, object]]:
+    """Return reviewed representative HLS exact-runtime cases."""
+    return load_ground_truth_cases("representative_local_hls_cases")
+
+
+def representative_video_file_ground_truth_cases() -> list[dict[str, object]]:
+    """Return reviewed representative MP4 exact-runtime cases."""
+    return load_ground_truth_cases("representative_local_video_file_cases")
+
+
 def assert_representative_hls_expectation_matches_mp4(mp4_fixture_id: str) -> None:
     """Assert that the derived HLS case preserves the source MP4 intent contract."""
     mp4_case = representative_expected_case(mp4_fixture_id)
     hls_case = representative_expected_case(f"{mp4_fixture_id}_hls")
+    hls_fixture = representative_hls_manifest_fixture_for_expected_case(hls_case["id"])
+    mp4_fixture = representative_mp4_manifest_fixture_for_hls(hls_fixture["id"])
 
-    assert hls_case["source_id"] == mp4_case["source_id"]
-    assert hls_case["source_mp4_path"] == mp4_case["path"]
+    assert hls_fixture["source_mp4_path"] == mp4_fixture["path"]
     assert hls_case["expected"] == mp4_case["expected"]
     assert hls_case["assertion_tier"] == mp4_case["assertion_tier"]
 
@@ -206,11 +243,17 @@ def representative_hls_subset(
     subset_name: str,
     segment_indices: Sequence[int],
 ) -> RepresentativeHlsSubset:
-    """Normalize one representative HLS subset definition."""
+    """Build one validated representative HLS segment subset."""
+    fixture_id, subset_name, indices = _validated_subset_fields(
+        fixture_id=fixture_id,
+        subset_name=subset_name,
+        indices=segment_indices,
+        index_label="segment",
+    )
     return RepresentativeHlsSubset(
         fixture_id=fixture_id,
         subset_name=subset_name,
-        segment_indices=tuple(sorted(set(segment_indices))),
+        segment_indices=indices,
     )
 
 
@@ -220,12 +263,45 @@ def representative_video_file_subset(
     subset_name: str,
     window_indices: Sequence[int],
 ) -> RepresentativeVideoFileSubset:
-    """Normalize one representative MP4 window subset definition."""
+    """Build one validated representative MP4 detector-window subset."""
+    fixture_id, subset_name, indices = _validated_subset_fields(
+        fixture_id=fixture_id,
+        subset_name=subset_name,
+        indices=window_indices,
+        index_label="window",
+    )
     return RepresentativeVideoFileSubset(
         fixture_id=fixture_id,
         subset_name=subset_name,
-        window_indices=tuple(sorted(set(window_indices))),
+        window_indices=indices,
     )
+
+
+def _validated_subset_fields(
+    *,
+    fixture_id: str,
+    subset_name: str,
+    indices: Sequence[int],
+    index_label: str,
+) -> tuple[str, str, tuple[int, ...]]:
+    """Validate the identity and ordered transport-specific indices of a subset."""
+    if not fixture_id.strip() or not subset_name.strip():
+        raise ValueError("Representative subset requires nonblank fixture_id and subset_name")
+
+    normalized_indices = tuple(indices)
+    if not normalized_indices or any(
+        not isinstance(index, int) or isinstance(index, bool)
+        for index in normalized_indices
+    ):
+        raise ValueError(
+            f"Representative {index_label} subset requires one or more integer indices"
+        )
+    if normalized_indices != tuple(sorted(set(normalized_indices))) or normalized_indices[0] < 0:
+        raise ValueError(
+            f"Representative {index_label} subset indices must be nonnegative, unique, and ascending"
+        )
+
+    return fixture_id, subset_name, normalized_indices
 
 
 def build_playlist_subset(
@@ -241,15 +317,19 @@ def build_playlist_subset(
     referenced `.ts` files. Copying the reviewed subset keeps test cost down
     while preserving the real processing path.
     """
-    require_representative_local_hls(fixture_id)
+    subset = representative_hls_subset(
+        fixture_id=fixture_id,
+        subset_name=subset_name,
+        segment_indices=segment_indices,
+    )
+    require_representative_local_hls(subset.fixture_id)
 
-    source_dir = representative_hls_fixture_dir(fixture_id)
-    subset_dir = tmp_path / subset_name
+    source_dir = representative_hls_fixture_dir(subset.fixture_id)
+    subset_dir = tmp_path / subset.subset_name
     subset_dir.mkdir(parents=True, exist_ok=True)
 
-    unique_indices = sorted(set(segment_indices))
     playlist_lines = ["#EXTM3U"]
-    for segment_index in unique_indices:
+    for segment_index in subset.segment_indices:
         source_name = f"segment_{segment_index:04d}.ts"
         source_path = source_dir / source_name
         if not source_path.exists():
@@ -297,17 +377,20 @@ def representative_hls_subset_from_ground_truth_fixture(
     if not isinstance(fixture_id, str) or not isinstance(subset_name, str):
         raise ValueError("Representative HLS ground-truth fixture is missing fixture metadata")
     if not isinstance(segment_indices, list) or not all(
-        isinstance(index, int) for index in segment_indices
+        isinstance(index, int) and not isinstance(index, bool) for index in segment_indices
     ):
         raise ValueError(
             "Representative HLS ground-truth fixture must define integer segment indices"
         )
 
-    return representative_hls_subset(
+    subset = representative_hls_subset(
         fixture_id=fixture_id,
         subset_name=subset_name,
         segment_indices=segment_indices,
     )
+    representative_hls_manifest_fixture(subset.fixture_id)
+    representative_mp4_manifest_fixture_for_hls(subset.fixture_id)
+    return subset
 
 
 def representative_video_file_subset_from_ground_truth_fixture(
@@ -326,17 +409,19 @@ def representative_video_file_subset_from_ground_truth_fixture(
     if not isinstance(fixture_id, str) or not isinstance(subset_name, str):
         raise ValueError("Representative video-file ground-truth fixture is missing metadata")
     if not isinstance(window_indices, list) or not all(
-        isinstance(index, int) for index in window_indices
+        isinstance(index, int) and not isinstance(index, bool) for index in window_indices
     ):
         raise ValueError(
             "Representative video-file ground-truth fixture must define integer window indices"
         )
 
-    return representative_video_file_subset(
+    subset = representative_video_file_subset(
         fixture_id=fixture_id,
         subset_name=subset_name,
         window_indices=window_indices,
     )
+    representative_mp4_manifest_fixture(subset.fixture_id)
+    return subset
 
 
 def build_playlist_subset_from_ground_truth_fixture(

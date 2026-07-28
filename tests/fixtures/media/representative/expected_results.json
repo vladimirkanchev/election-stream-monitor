@@ -1,7 +1,7 @@
 {
   "schema_version": "representative_expected_results_v2",
-  "scope": "Intent-level detector expectations for representative local MP4 fixtures.",
-  "important_note": "Most entries stay intent-level only. Selected representative local HLS subsets now have exact session ground truth in tests/fixtures/media/ground_truth.json under representative_local_hls_cases; keep broader or borderline HLS cases out of fake-precise exact counts.",
+  "scope": "Intent-level detector expectations for representative local MP4 fixtures and HLS exports.",
+  "important_note": "Most entries stay intent-level only. Selected representative local HLS and MP4 subsets have exact session ground truth in tests/fixtures/media/ground_truth.json under representative_local_hls_cases and representative_local_video_file_cases; keep broader or borderline cases out of fake-precise exact counts.",
   "expectation_values": {
     "expected": "The detector should alert for this condition.",
     "not_expected": "The detector should not alert for this condition.",
@@ -688,13 +688,6 @@
     },
     {
       "id": "messy_activity__source_baseline_hls",
-      "path": "local_hls/messy_activity__source_baseline",
-      "mode": "video_segments",
-      "source_id": "messy_activity",
-      "source_mp4_path": "local_files/source/polling_station_table_activity_real_5min_720p.mp4",
-      "playlist_path": "local_hls/messy_activity__source_baseline/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 151,
       "assertion_tier": "source_negative_baseline",
       "selected_detectors": [
         "video_metrics",
@@ -705,26 +698,11 @@
         "blur_alert": "not_expected",
         "quality_degradation": "not_expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "artifact_free_baseline",
-          "segment_start_index": 0,
-          "segment_end_index": 150,
-          "expected_effect": "no_intentional_artifact"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_messy_activity_baseline_video_metrics",
       "notes": "Local HLS baseline exported from the messier real-world source clip. A trusted first-run subset is now promoted to exact session ground truth; broader HLS coverage here stays intent-level."
     },
     {
       "id": "crowded_ballot__compression_strong_repeated_3x20s_hls",
-      "path": "local_hls/crowded_ballot__compression_strong_repeated_3x20s",
-      "mode": "video_segments",
-      "source_id": "crowded_ballot",
-      "source_mp4_path": "local_files/compression_noise/crowded_ballot__compression_strong_repeated_3x20s.mp4",
-      "playlist_path": "local_hls/crowded_ballot__compression_strong_repeated_3x20s/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 154,
       "assertion_tier": "future_quality_degradation",
       "selected_detectors": [
         "video_metrics"
@@ -734,38 +712,11 @@
         "blur_alert": "borderline_or_metric_only",
         "quality_degradation": "expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "compression_noise",
-          "segment_start_index": 28,
-          "segment_end_index": 41,
-          "expected_effect": "quality_damage_without_black_alert"
-        },
-        {
-          "kind": "compression_noise",
-          "segment_start_index": 68,
-          "segment_end_index": 83,
-          "expected_effect": "quality_damage_without_black_alert"
-        },
-        {
-          "kind": "compression_noise",
-          "segment_start_index": 108,
-          "segment_end_index": 121,
-          "expected_effect": "quality_damage_without_black_alert"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_crowded_ballot_compression_black_guard_video_metrics",
       "notes": "Representative HLS export of the repeated compression case. Only the reviewed black-negative false-positive guard is promoted to exact ground truth; quality semantics remain broader intent."
     },
     {
       "id": "messy_activity__compression_strong_mid_45s_hls",
-      "path": "local_hls/messy_activity__compression_strong_mid_45s",
-      "mode": "video_segments",
-      "source_id": "messy_activity",
-      "source_mp4_path": "local_files/compression_noise/messy_activity__compression_strong_mid_45s.mp4",
-      "playlist_path": "local_hls/messy_activity__compression_strong_mid_45s/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 151,
       "assertion_tier": "future_quality_degradation",
       "selected_detectors": [
         "video_metrics",
@@ -776,26 +727,11 @@
         "blur_alert": "borderline_or_metric_only",
         "quality_degradation": "expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "compression_noise",
-          "segment_start_index": 53,
-          "segment_end_index": 75,
-          "expected_effect": "quality_damage_without_black_alert"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_messy_activity_compression_black_guard_video_metrics",
       "notes": "Representative HLS export of the messy-activity strong-compression case. A reviewed middle subset is now trusted as exact black-negative ground truth for `video_metrics`, while blur and broader quality semantics stay intentionally non-exact."
     },
     {
       "id": "crowded_ballot__gblur_strong_mid_20s_hls",
-      "path": "local_hls/crowded_ballot__gblur_strong_mid_20s",
-      "mode": "video_segments",
-      "source_id": "crowded_ballot",
-      "source_mp4_path": "local_files/blur_low_quality/crowded_ballot__gblur_strong_mid_20s.mp4",
-      "playlist_path": "local_hls/crowded_ballot__gblur_strong_mid_20s/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 152,
       "assertion_tier": "current_positive_blur",
       "selected_detectors": [
         "video_blur"
@@ -805,14 +741,6 @@
         "blur_alert": "expected",
         "quality_degradation": "expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "gaussian_blur",
-          "segment_start_index": 66,
-          "segment_end_index": 83,
-          "expected_effect": "strong_blur_positive_window"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_crowded_ballot_blur_strong_video_blur",
       "notes": "Representative HLS export of the strong crowded blur case. The reviewed blur-positive subset is trusted enough for exact session ground truth."
     },
@@ -988,13 +916,6 @@
     },
     {
       "id": "stable_docs__source_baseline_hls",
-      "path": "local_hls/stable_docs__source_baseline",
-      "mode": "video_segments",
-      "source_id": "stable_docs",
-      "source_mp4_path": "local_files/source/polling_station_document_handling_stable_table_5min_720p.mp4",
-      "playlist_path": "local_hls/stable_docs__source_baseline/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 151,
       "assertion_tier": "source_negative_baseline",
       "selected_detectors": [
         "video_metrics",
@@ -1005,26 +926,11 @@
         "blur_alert": "not_expected",
         "quality_degradation": "not_expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "artifact_free_baseline",
-          "segment_start_index": 0,
-          "segment_end_index": 150,
-          "expected_effect": "no_intentional_artifact"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_stable_docs_baseline_video_metrics",
       "notes": "Local HLS baseline exported from the stable document-handling source clip. A trusted first-run subset is now promoted to exact session ground truth; broader HLS coverage here stays intent-level."
     },
     {
       "id": "stable_docs__black_strong_mid_12s_hls",
-      "path": "local_hls/stable_docs__black_strong_mid_12s",
-      "mode": "video_segments",
-      "source_id": "stable_docs",
-      "source_mp4_path": "local_files/black_screen/stable_docs__black_strong_mid_12s.mp4",
-      "playlist_path": "local_hls/stable_docs__black_strong_mid_12s/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 152,
       "assertion_tier": "current_positive_black_screen",
       "selected_detectors": [
         "video_metrics"
@@ -1034,32 +940,11 @@
         "blur_alert": "not_expected",
         "quality_degradation": "expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "review_window",
-          "segment_start_index": 68,
-          "segment_end_index": 83,
-          "expected_effect": "promoted_exact_subset_with_black_core"
-        },
-        {
-          "kind": "black_frame",
-          "segment_start_index": 72,
-          "segment_end_index": 77,
-          "expected_effect": "strong_black_positive_window"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_stable_docs_black_strong_video_metrics",
       "notes": "Representative HLS export of the strong-black stable-docs case. The reviewed positive subset is trusted enough for exact session ground truth."
     },
     {
       "id": "wide_observer__black_strong_start_12s_hls",
-      "path": "local_hls/wide_observer__black_strong_start_12s",
-      "mode": "video_segments",
-      "source_id": "wide_observer",
-      "source_mp4_path": "local_files/black_screen/wide_observer__black_strong_start_12s.mp4",
-      "playlist_path": "local_hls/wide_observer__black_strong_start_12s/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 1320,
       "assertion_tier": "current_positive_black_screen",
       "selected_detectors": [
         "video_metrics"
@@ -1069,26 +954,11 @@
         "blur_alert": "not_expected",
         "quality_degradation": "expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "black_frame",
-          "segment_start_index": 0,
-          "segment_end_index": 7,
-          "expected_effect": "strong_black_positive_window"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_wide_observer_black_start_video_metrics",
       "notes": "Representative HLS export of the long wide-observer startup-blackout case. A reviewed startup subset is now trusted as exact black-positive ground truth for `video_metrics`, while later recovery behavior stays intentionally broader."
     },
     {
       "id": "stable_docs__lowres_moderate_start_30s_hls",
-      "path": "local_hls/stable_docs__lowres_moderate_start_30s",
-      "mode": "video_segments",
-      "source_id": "stable_docs",
-      "source_mp4_path": "local_files/low_resolution/stable_docs__lowres_moderate_start_30s.mp4",
-      "playlist_path": "local_hls/stable_docs__lowres_moderate_start_30s/index.m3u8",
-      "segment_duration_sec": 2,
-      "segment_count": 1320,
       "assertion_tier": "future_quality_degradation",
       "selected_detectors": [
         "video_metrics",
@@ -1099,14 +969,6 @@
         "blur_alert": "borderline_or_metric_only",
         "quality_degradation": "expected"
       },
-      "approximate_artifact_timeline_by_segment": [
-        {
-          "kind": "low_resolution",
-          "segment_start_index": 0,
-          "segment_end_index": 17,
-          "expected_effect": "quality_drop_without_black_alert"
-        }
-      ],
       "exact_ground_truth_case_id": "representative_hls_stable_docs_lowres_black_guard_video_metrics",
       "notes": "Representative HLS export of the moderate low-resolution case. A reviewed startup subset is now trusted as exact black-negative ground truth for `video_metrics`, while blur behavior stays intentionally borderline instead of becoming fake-precise."
     },
