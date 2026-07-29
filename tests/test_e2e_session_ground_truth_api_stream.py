@@ -163,10 +163,16 @@ def _install_case_loader(monkeypatch, tmp_path: Path, case: dict[str, object]) -
         source_group="stream-a",
         names=case["slice_names"],
     )
+
+    def fake_loader_factory(session_id=None, *, session_store=None) -> FakeApiStreamLoader:
+        """Match the public loader seam while keeping case input deterministic."""
+        _ = (session_id, session_store)
+        return FakeApiStreamLoader(_make_live_loader_events(slices))
+
     monkeypatch.setattr(
         session_runner,
         "get_api_stream_loader",
-        lambda session_id=None: FakeApiStreamLoader(_make_live_loader_events(slices)),
+        fake_loader_factory,
     )
 
 
