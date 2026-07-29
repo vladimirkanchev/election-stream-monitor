@@ -363,9 +363,7 @@
       "frontend/src/uiErrors.test.ts"
     ],
     "weekly_slow_media": [
-      "tests/test_e2e_local_session.py",
       "tests/test_e2e_local_session_real_media.py",
-      "tests/test_e2e_session_ground_truth_api_stream.py",
       "tests/test_e2e_session_ground_truth_local.py",
       "tests/test_detectors_integration.py",
       "tests/test_detector_lab_real_media.py"
