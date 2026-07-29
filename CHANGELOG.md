@@ -151,10 +151,15 @@ Highlights:
 
 ## [0.4.0] - 2026-05-20
 
-- ongoing transport, session, and operational hardening
-- continued frontend/operator UX refinement
-- PostgreSQL alert storage is now implemented and supported as an opt-in
-  backend, while file-backed alerts remain the default rollout mode
+PostgreSQL alert-storage and local operator-workflow hardening release.
+
+Highlights:
+
+- transport, session, and operational behavior were hardened for the
+  local-first workflow
+- frontend operator and playback UX received continued refinement
+- PostgreSQL alert storage became a supported opt-in backend while file-backed
+  alerts remained the default rollout mode
 
 ## [0.3.1] - 2026-05-18
 

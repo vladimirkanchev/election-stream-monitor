@@ -4,6 +4,17 @@ This project is still in an active `0.x` stage.
 
 Current public stage: `0.6.4`
 
+## Release History
+
+- `0.1.0` established the public local-first baseline: Electron, Python
+  monitoring, `api_stream`, local HLS playback, contracts, and CI
+- `0.3.0` introduced the FastAPI boundary, local MCP alert queries, and
+  explicit local/share access modes
+- `0.3.1` strengthened CI ownership, test targeting, and alert-query seams
+- `0.4.0` added opt-in PostgreSQL alert storage alongside continued transport,
+  session, and operator-workflow hardening
+- `0.4.1` added the local `just` validation harness and maintainer workflow
+  guardrails
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
 - `0.5.1` was the workflow and AI-harness follow-up on top of that stage
 - `0.5.2` adds session-store hardening and stream/runtime follow-up work on
