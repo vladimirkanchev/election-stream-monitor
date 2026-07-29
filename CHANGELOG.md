@@ -24,6 +24,7 @@ Highlights:
   assertions, and compact failure diagnostics
 - focused detector edge coverage now includes malformed media-tool output,
   incomplete decoder frames, and decoded black-screen negatives
+- MCP SDK compatibility is pinned for the current local MCP boundary
 
 ## [0.6.3] - 2026-07-26
 
@@ -31,12 +32,29 @@ Runtime security and detector-validation foundation release.
 
 Highlights:
 
+- PostgreSQL alert storage is a documented opt-in, forward-only path with
+  parity, live-store, runtime/operator, rollback, and schema-policy coverage
+- weekly PostgreSQL and real-media confidence lanes were stabilized, and the
+  frontend CI toolchain was pinned for repeatable installs
 - share-mode FastAPI exposure, authentication, request bounds, and secret
   handling were hardened while preserving the loopback-local workflow
 - the MCP boundary remains explicitly local, stdio-only, read-only, and
   bounded
 - detector-validation ownership and duplicate-analysis guidance established
   the foundation for the subsequent focused validation work
+
+## [0.6.2] - 2026-07-11
+
+PostgreSQL session-store rollout-confidence release.
+
+Highlights:
+
+- the opt-in PostgreSQL session store gained live bootstrap, runtime, and
+  failure-policy smoke coverage
+- session-store bootstrap, forward-only behavior, and migration boundaries are
+  documented more explicitly while file-backed storage remains the default
+- validation guidance now distinguishes routine checks from explicit live
+  PostgreSQL confidence runs
 
 ## [0.6.1] - 2026-07-08
 

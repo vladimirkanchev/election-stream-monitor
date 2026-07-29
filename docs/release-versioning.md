@@ -18,11 +18,11 @@ Current public stage: `0.6.4`
 - `0.6.2` extends the same dual-backend stage with stronger PostgreSQL session
   rollout confidence: live store smoke, runtime smoke, failure-policy clarity,
   and tighter validation guidance without changing the default file-backed path
-- `0.6.3` hardens the local/share FastAPI and MCP boundary, including
-  authentication, exposure, resource, secret, and regression coverage
+- `0.6.3` completes the opt-in PostgreSQL alert rollout and hardens the
+  FastAPI/MCP boundary, CI reliability, and detector-validation foundation
 - `0.6.4` makes detector and alert validation easier to evolve safely through
-  clearer ownership, fixture/truth governance, real-media confidence, and
-  focused validation lanes
+  focused suite ownership, fixture/truth governance, real-media confidence,
+  missing edge coverage, and explicit validation lanes
 
 ## Current Approach
 
