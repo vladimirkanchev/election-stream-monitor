@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "election-stream-monitor"
-version = "0.6.2"
+version = "0.6.4"
 description = "Local-first AI video monitoring system for election-related media sources."
 readme = "README.md"
 requires-python = ">=3.12"

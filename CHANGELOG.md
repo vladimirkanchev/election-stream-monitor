@@ -7,6 +7,37 @@ stage.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-29
+
+Detector and alert validation confidence release.
+
+Highlights:
+
+- detector-lab, production detector, alert-rule, processor, real-media, E2E,
+  and manual validation lanes now have explicit ownership
+- synthetic detector-lab coverage is split into focused owners while retaining
+  its behavioral baseline
+- duplicate processor coverage was consolidated around canonical test owners
+- fixture identity, calibration evidence, exact truth, and promotion rules are
+  documented and checked for catalog integrity
+- checked-in real-media confidence has a focused lane, stable transition
+  assertions, and compact failure diagnostics
+- focused detector edge coverage now includes malformed media-tool output,
+  incomplete decoder frames, and decoded black-screen negatives
+
+## [0.6.3] - 2026-07-26
+
+Runtime security and detector-validation foundation release.
+
+Highlights:
+
+- share-mode FastAPI exposure, authentication, request bounds, and secret
+  handling were hardened while preserving the loopback-local workflow
+- the MCP boundary remains explicitly local, stdio-only, read-only, and
+  bounded
+- detector-validation ownership and duplicate-analysis guidance established
+  the foundation for the subsequent focused validation work
+
 ## [0.6.1] - 2026-07-08
 
 AI-harness policy refresh release.

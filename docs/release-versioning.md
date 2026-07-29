@@ -2,7 +2,7 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.6.2`
+Current public stage: `0.6.4`
 
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
 - `0.5.1` was the workflow and AI-harness follow-up on top of that stage
@@ -18,6 +18,11 @@ Current public stage: `0.6.2`
 - `0.6.2` extends the same dual-backend stage with stronger PostgreSQL session
   rollout confidence: live store smoke, runtime smoke, failure-policy clarity,
   and tighter validation guidance without changing the default file-backed path
+- `0.6.3` hardens the local/share FastAPI and MCP boundary, including
+  authentication, exposure, resource, secret, and regression coverage
+- `0.6.4` makes detector and alert validation easier to evolve safely through
+  clearer ownership, fixture/truth governance, real-media confidence, and
+  focused validation lanes
 
 ## Current Approach
 
@@ -104,8 +109,7 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- current `0.6.2` work keeps the dual-backend stage intact while strengthening
-  PostgreSQL session rollout confidence, validation helpers, and failure-policy
-  clarity around it
+- `0.6.4` keeps the dual-backend stage intact while strengthening detector and
+  alert validation confidence without changing the supported runtime surface
 - both PostgreSQL persistence paths remain explicit opt-in; session historical
   backfill is still a later rollout decision, not part of the current version
