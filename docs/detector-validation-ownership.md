@@ -482,6 +482,62 @@ small shared helper when it removes setup repetition without erasing a distinct
 input or diagnostic signal. The provisional low-resolution result is an
 investigation target, not approval to modify a test in this documentation pass.
 
+## Missing-Coverage Gate
+
+Add a detector-validation test only when no existing test protects the same
+observable behavior at the same primary boundary, with the same fixture intent
+and validation lane. A missing case in one file is not automatically a coverage
+gap: a focused rule, processor, or runtime test may already own that contract.
+
+Before adding a case, name the behavior, expected failure signal, canonical
+owner, and cheapest honest lane. Then name the nearest existing test and state
+which of the four gate dimensions differs. Do not add a second test merely
+because it uses a different helper, file, or fixture representation.
+
+This gate is intentionally separate from the equivalence gate above. The
+equivalence gate decides whether an existing test can be removed; this gate
+decides whether a proposed test contributes new confidence.
+
+## Production Detector Coverage Matrix
+
+This matrix records the current evidence for the two shipped detectors. A
+`candidate` identifies a question for focused follow-up, not approval to add a
+test. Rule and runtime rows deliberately name their own boundaries: they do
+not substitute for direct detector-fact coverage.
+
+| Behavior | `video_metrics` | `video_blur` | Owner and decision |
+| --- | --- | --- | --- |
+| Synthetic positive | Covered by `test_analyze_video_metrics_returns_expected_schema`. | Covered by `test_analyze_video_blur_exports_summary_window_fields`. | Direct detector facts; fast synthetic lane. |
+| Synthetic clean negative | Covered by `test_analyze_video_metrics_returns_clean_negative_for_valid_media_output`. | Covered by `test_analyze_video_blur_returns_expected_schema` with sharp sampled frames. | Direct detector facts; fast synthetic lane. |
+| Decoded-media positive | Covered by checked-in MP4 and TS black-trigger cases. | Covered by the checked-in blurred MP4 case. | `test_detectors_integration.py`; weekly slow-media lane. |
+| Decoded-media clean negative | Covered by direct `blur_trigger.mp4` analysis with no black intervals. | No reviewed clean negative exists: the checked-in clean baseline is currently blur-positive by truth. | `test_detectors_integration.py` owns the direct black-negative fact. Do not invent a blur-negative claim. |
+| Malformed media-tool response | Covered for invalid FFprobe output, malformed `blackdetect` lines, and timeout. | Covered for malformed FFprobe dimensions and stream containers, FFmpeg timeout, and non-zero exit. | Direct detector facts; fast synthetic lane. |
+| Suppression and transitions | Covered by black-rule entry, recovery, and malformed-row tests. | Covered by blur-rule warm-up, motion guard, suppression, and recovery tests. | `test_alert_rules*.py` owns stateful policy; do not duplicate it in detector facts. |
+| Runtime propagation | Checked-in real sessions cover `video_files` and `video_segments`; representative local HLS runs the shipped detector through `api_stream`. | Same runtime evidence. | `test_e2e_local_session_real_media.py` owns checked-in decoded sessions, `test_e2e_api_stream_representative_hls.py` owns optional local HTTP/HLS execution, and synthetic `api_stream` truth isolates deterministic runtime behavior. |
+
+Do not add a detector-by-mode cross-product: registry support is shared, while
+processor and session tests own selection and propagation. Checked-in
+`video_files` and `video_segments` sessions are the routine decoded proof;
+the local `api_stream` suite is optional real-transport confidence, and its
+synthetic companion owns deterministic transport behavior. Alert-rule state
+belongs in `test_alert_rules_black.py` and `test_alert_rules_blur.py`;
+`test_detector_lab_real_media.py` owns practical experimental transitions.
+
+### Deferred Local Blur-Negative Candidate
+
+The local `stable_docs__source_baseline` case remains calibration evidence, not
+production truth. On 2026-07-29, three detector-lab runs of windows `0..7`
+produced no `practical.blur_alert_v3` detections (scores `0.910..0.945` versus
+that policy's `0.955` threshold), but three direct production
+`analyze_video_blur()` runs over the canonical `stable_docs` source slice
+(`0..8s`) returned `blur_detected=True` at `0.914` against `0.880`.
+
+The source MP4 is local-only and practical detector-lab policy is not
+production detector truth. Keep it as a known false-positive calibration
+candidate; do not add a passing or deliberately failing CI assertion. Promote
+only a short, reviewed, versioned subset after production runs stay negative
+with a documented threshold margin across relevant decoder environments.
+
 ## Cleanup Action Queue
 
 Each reviewed group has exactly one next action. These are bounded follow-up

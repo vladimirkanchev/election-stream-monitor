@@ -1216,6 +1216,11 @@ Current blur-validation expectation:
   valid detector-quality MP4 fixtures so blur and black-score calibration
   output remains easy to read
 
+No decoded blur clean-negative is currently promoted as slow integration truth.
+Treat local clean-baseline runs as calibration until a reviewed, versioned
+subset meets the promotion criteria in the
+[detector-validation ownership guide](./detector-validation-ownership.md#deferred-local-blur-negative-candidate).
+
 Common local command:
 
 ```bash
