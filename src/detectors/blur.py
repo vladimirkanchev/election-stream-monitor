@@ -1,4 +1,8 @@
-"""Production blur detector for local files and time slices."""
+"""Production blur detector for local media and timed slices.
+
+FFprobe dimensions bound frame sampling; unavailable or malformed metadata uses
+the configured fallback bounds.
+"""
 
 import subprocess  # nosec B404
 import time
@@ -164,7 +168,7 @@ def _summarize_blur_scores(
 
 
 def _probe_video_dimensions(file_path: Path) -> tuple[int, int] | None:
-    """Return the source frame size, or ``None`` when it cannot be resolved."""
+    """Return validated first-video dimensions, or ``None`` for invalid metadata."""
     data = probe_ffprobe_json(
         file_path,
         show_entries="stream=width,height",
@@ -174,13 +178,18 @@ def _probe_video_dimensions(file_path: Path) -> tuple[int, int] | None:
     if data is None:
         return None
     try:
-        stream = (data.get("streams") or [{}])[0]
+        streams = data.get("streams")
+        if not isinstance(streams, list) or not streams:
+            return None
+        stream = streams[0]
+        if not isinstance(stream, dict):
+            return None
         width = int(stream.get("width") or 0)
         height = int(stream.get("height") or 0)
         if width < 2 or height < 2:
             return None
         return (width, height)
-    except (OSError, ValueError, TypeError, IndexError):
+    except (ValueError, TypeError):
         logger.warning("ffprobe failed to read dimensions for %s", file_path.name)
         return None
 
