@@ -4,7 +4,7 @@ These tests intentionally stay close to the production runtime surface:
 
 - detector rows should expose the current typed in-memory contract
 - typed rows should stay compatible with the processor-facing runtime row shape
-- ffprobe / ffmpeg failures should fail closed without surprising callers
+- ffmpeg failures fail closed; malformed FFprobe dimensions use bounded sampling
 - blur and black metrics should keep their current export semantics
 """
 
@@ -32,6 +32,14 @@ from detectors import (
 BLUR_SAMPLE_BOUNDS = (
     config.VIDEO_BLUR_SAMPLE_MAX_WIDTH,
     config.VIDEO_BLUR_SAMPLE_MAX_HEIGHT,
+)
+SHARP_4X4_FRAME = bytes(
+    [
+        0, 255, 0, 255,
+        255, 0, 255, 0,
+        0, 255, 0, 255,
+        255, 0, 255, 0,
+    ]
 )
 
 SHARED_DETECTOR_FIELDS = {
@@ -139,6 +147,31 @@ def test_analyze_video_metrics_returns_expected_schema(
     assert result["min_duration_sec"] == config.VIDEO_BLACK_MIN_DURATION_SEC
 
 
+def test_analyze_video_metrics_returns_clean_negative_for_valid_media_output(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A valid input without black intervals should not trigger the detector."""
+    video_path = tmp_path / "clean.mp4"
+    video_path.write_bytes(b"video-bytes")
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = kwargs
+        if cmd[0] == "ffprobe":
+            return SimpleNamespace(stdout=json.dumps({"format": {"duration": "2.0"}}))
+        return SimpleNamespace(stderr="")
+
+    monkeypatch.setattr("detectors.black_screen.subprocess.run", fake_run)
+
+    result = analyze_video_metrics(file_path=video_path)
+
+    assert result["duration_sec"] == 2.0
+    assert result["black_detected"] is False
+    assert result["black_segment_count"] == 0
+    assert result["total_black_sec"] == 0.0
+    assert result["longest_black_sec"] == 0.0
+    assert result["black_ratio"] == 0.0
+
+
 def test_analyze_video_metrics_handles_invalid_ffprobe_output(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -169,17 +202,8 @@ def test_analyze_video_blur_returns_expected_schema(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    width = 4
-    height = 4
-    sharp_frame = bytes(
-        [
-            0, 255, 0, 255,
-            255, 0, 255, 0,
-            0, 255, 0, 255,
-            255, 0, 255, 0,
-        ]
-    )
-    raw_frames = sharp_frame * 3
+    width, height = (4, 4)
+    raw_frames = SHARP_4X4_FRAME * 3
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001
         _ = kwargs
@@ -598,16 +622,7 @@ def test_analyze_video_blur_exports_zero_motion_for_single_usable_frame(
     video_path = tmp_path / "sample.ts"
     video_path.write_bytes(b"video-bytes")
 
-    width = 4
-    height = 4
-    sharp_frame = bytes(
-        [
-            0, 255, 0, 255,
-            255, 0, 255, 0,
-            0, 255, 0, 255,
-            255, 0, 255, 0,
-        ]
-    )
+    width, height = (4, 4)
 
     def fake_run(cmd, **kwargs):  # noqa: ANN001
         _ = kwargs
@@ -615,7 +630,7 @@ def test_analyze_video_blur_exports_zero_motion_for_single_usable_frame(
             return SimpleNamespace(
                 stdout=json.dumps({"streams": [{"width": width, "height": height}]})
             )
-        return SimpleNamespace(returncode=0, stdout=sharp_frame, stderr=b"")
+        return SimpleNamespace(returncode=0, stdout=SHARP_4X4_FRAME, stderr=b"")
 
     monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
 
@@ -625,6 +640,36 @@ def test_analyze_video_blur_exports_zero_motion_for_single_usable_frame(
     assert result["motion_mean"] == 0.0
     assert result["motion_p90"] == 0.0
     assert _resolve_blur_sample_fps(0.5) == config.VIDEO_BLUR_MAX_MOTION_SAMPLE_FPS
+
+
+def test_analyze_video_blur_ignores_incomplete_ffmpeg_frame_tail(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A truncated raw-video tail must not become a second blur sample."""
+    video_path = tmp_path / "sample.ts"
+    video_path.write_bytes(b"video-bytes")
+
+    width, height = (4, 4)
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = kwargs
+        if cmd[0] == "ffprobe":
+            return SimpleNamespace(
+                stdout=json.dumps({"streams": [{"width": width, "height": height}]})
+            )
+        return SimpleNamespace(
+            returncode=0,
+            stdout=SHARP_4X4_FRAME + b"partial-frame",
+            stderr=b"",
+        )
+
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
+
+    result = analyze_video_blur(file_path=video_path)
+
+    assert result["sample_count"] == 1
+    assert result["motion_mean"] == 0.0
+    assert result["blur_detected"] is False
 
 
 def test_analyze_video_metrics_handles_ffprobe_timeout(
@@ -683,6 +728,49 @@ def test_analyze_video_blur_handles_ffmpeg_non_zero_exit(
 
     result = analyze_video_blur(file_path=video_path)
 
+    assert result["sample_count"] == 0
+    assert result["blur_score"] == 0.0
+    assert result["blur_detected"] is False
+
+
+@pytest.mark.parametrize(
+    "streams",
+    [
+        pytest.param([{"width": "unknown", "height": 720}], id="invalid-dimensions"),
+        pytest.param("not-a-list", id="string"),
+        pytest.param({"width": 4, "height": 4}, id="mapping"),
+        pytest.param(1, id="scalar"),
+        pytest.param(["not-a-mapping"], id="non-mapping-item"),
+    ],
+)
+def test_analyze_video_blur_falls_back_for_malformed_ffprobe_streams(
+    streams: object,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Malformed FFprobe streams should use fallback bounds and preserve a valid row."""
+    video_path = tmp_path / "sample.ts"
+    video_path.write_bytes(b"video-bytes")
+    observed_sample_size: list[tuple[int, int]] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        _ = (cmd, kwargs)
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"streams": streams}),
+            stderr="",
+        )
+
+    def fake_extract(**kwargs):  # noqa: ANN003
+        observed_sample_size.append((kwargs["width"], kwargs["height"]))
+        return []
+
+    monkeypatch.setattr("detectors.blur.subprocess.run", fake_run)
+    monkeypatch.setattr("detectors.blur._extract_sampled_gray_frames", fake_extract)
+
+    result = analyze_video_blur(file_path=video_path)
+
+    assert observed_sample_size == [BLUR_SAMPLE_BOUNDS]
     assert result["sample_count"] == 0
     assert result["blur_score"] == 0.0
     assert result["blur_detected"] is False

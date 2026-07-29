@@ -54,6 +54,25 @@ def test_video_metrics_detects_black_screen_in_real_ts_segment(
     assert result["black_ratio"] >= 0.9
 
 
+def test_video_metrics_stays_negative_for_real_blurry_video(
+    media_fixture_dir: Path,
+    ffmpeg_available,
+) -> None:
+    """The reviewed blur fixture should remain a decoded clean negative for black detection."""
+    _ = ffmpeg_available
+    video_path = media_fixture_dir / "video_files" / "blur_trigger.mp4"
+
+    result = analyze_video_metrics(video_path)
+
+    assert result["source_name"] == video_path.name
+    assert result["duration_sec"] > 0.0
+    assert result["black_detected"] is False
+    assert result["black_segment_count"] == 0
+    assert result["total_black_sec"] == 0.0
+    assert result["longest_black_sec"] == 0.0
+    assert result["black_ratio"] == 0.0
+
+
 def test_video_blur_detects_real_blurry_video(
     media_fixture_dir: Path,
     ffmpeg_available,
