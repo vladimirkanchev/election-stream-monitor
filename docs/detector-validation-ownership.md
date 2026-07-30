@@ -36,7 +36,7 @@ behavior those other tests assert.
 | Test surface | Files | Markers | Fixture class | Current lane | Cost |
 | --- | --- | --- | --- | --- | --- |
 | Production detector facts | `test_detectors.py` | none | synthetic rows and small inputs | `just test-detectors`; fast synthetic | low |
-| Detector/media integration | `test_detectors_integration.py` | `slow` | checked-in media | weekly slow media | medium |
+| Detector/media integration | `test_detectors_integration.py` | `slow` | checked-in media | `just test-real-media`; weekly slow media | medium |
 | Production alert rules | `test_alert_rules.py`, `test_alert_rules_black.py`, `test_alert_rules_blur.py` | none | synthetic detector rows and alert state | `just test-alert-rules`; fast synthetic | low |
 | Processor/runtime integration | `test_processor_context_alerts.py`, `test_processor_failures.py`, `test_processor_routing.py` | none | temporary inputs, synthetic registrations, in-memory stores | fast synthetic; `just test-processor` | low |
 | Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, `test_detector_lab_practical_motion.py` | none | synthetic slices, temporary CSVs, checked-in fixture metadata; optional local baselines | `just test-detector-lab`; fast synthetic | low |
@@ -52,6 +52,85 @@ behavior those other tests assert.
 | Synthetic `api_stream` exact truth | `test_e2e_session_ground_truth_api_stream.py` | `e2e` | synthetic stream events and checked-in truth cases | explicit E2E contract confidence | low |
 | Local real-media exact truth | `test_e2e_session_ground_truth_local.py` | `e2e`, `slow` | checked-in real media and `ground_truth.json` | weekly slow media | medium-high |
 | Representative `api_stream` transport | `test_e2e_api_stream_representative_hls.py` | `e2e`, `slow` | reviewed local HLS subsets | local/manual slow confidence | medium-high |
+
+## Focused Lane Execution Baseline
+
+This snapshot was captured on 2026-07-29 before changing detector-validation
+recipes or lane documentation. It records the focused local commands, not a
+claim that scheduled or local-only confidence ran in this environment.
+
+| Lane | Command | Cases | Skips | Duration | Marker / environment boundary |
+| --- | --- | ---: | ---: | ---: | --- |
+| Production detector facts | `just test-detectors` | 31 | 0 | 0.14s | Unmarked fast synthetic coverage. |
+| Production alert rules | `just test-alert-rules` | 47 | 0 | 0.15s | Unmarked fast synthetic coverage. |
+| Processor/runtime integration | `just test-processor` | 19 | 0 | 0.41s | Unmarked fast synthetic coverage. |
+| Detector-lab experiments | `just test-detector-lab` | 81 | 0 | 0.48s | Unmarked synthetic harness coverage. |
+| Production decoded-media integration | direct `test_detectors_integration.py` run | 4 | 0 | 0.49s | `slow`; checked-in media and decoder tools. |
+| Detector-lab checked-in media | `just test-real-media` | 6 | 0 | 17.95s | `slow`; checked-in MP4 fixtures and decoder support. |
+
+The three fast production owners collect 97 cases. Together with the four
+slow decoded-media detector cases, the eight production-boundary files collect
+101 cases. Earlier reductions removed equivalent processor coverage; they did
+not remove a detector, rule, routing, persistence, or decoded-media contract.
+
+Runtime E2E tests remain `e2e`, `slow`, or selected `soak` confidence. Local
+representative media and external-stream validation remain local/manual when
+their assets or providers are unavailable. They are intentionally excluded from
+this focused execution snapshot.
+
+## Validation Lane Vocabulary
+
+Choose a lane by the boundary it protects, not only by whether it reads media.
+For example, a checked-in MP4 can prove a decoded detector fact, a detector-lab
+experiment, or a runtime session contract; those are separate confidence
+claims.
+
+| Lane | Meaning | Current command or owner | Excludes |
+| --- | --- | --- | --- |
+| Fast production | Synthetic detector facts, alert-rule transitions, and processor routing/persistence behavior. | `just test-detectors`, `just test-alert-rules`, and `just test-processor`; `just test-fast` is the wider application checkpoint. | Decoding, detector-lab policy, and session E2E behavior. |
+| Fast experiments | Synthetic detector-lab runner, metrics, and practical-policy behavior. | `just test-detector-lab`. | Production-promotion and runtime session claims. |
+| Checked-in real media | Decoded production-detector and detector-lab confidence against repository media, without session E2E. | `test_detectors_integration.py` and `just test-real-media`; both are `slow` and weekly-owned today. | Session lifecycle, persistence, and representative local assets. |
+| Runtime E2E | Session discovery/loading, detector and rule execution, persistence, alerts, snapshots, and supported transport integration. | `test_e2e_*` owners; checked-in media is weekly and representative media is local/manual. | Fine-grained detector tuning. |
+| Soak/manual | Long-running, repeatability, recovery, or environment-shaped confidence. | Selected `@pytest.mark.soak` cases and manual representative-media checks. | Fast deterministic regression guarantees. |
+| External streams | Confidence against a live provider or stream outside repository control. | Manual confidence unless a deterministic fixture represents the relevant transport behavior. | A claim that synthetic or local HLS tests prove arbitrary providers. |
+
+`just test-real-media` is the focused checked-in real-media lane. It runs the
+decoded production-detector and detector-lab suites, while session E2E and
+representative local media keep their separate owners.
+
+### External-Stream Policy
+
+Automated `api_stream` confidence uses synthetic events, generated playlists,
+or checked-in HLS served through controlled local HTTP. It proves the runner
+and transport contracts, not compatibility with an arbitrary external provider.
+Test a real provider manually after the deterministic local checks; do not add
+provider URLs, credentials, or timing-dependent expectations to routine CI.
+
+## Final Lane Metrics
+
+This local snapshot was captured on 2026-07-29 after the lane alignment.
+Durations are indicative, not performance targets. Zero skips applies only to
+the commands run with checked-in fixtures available; optional representative
+media remains a separate local/manual confidence path.
+
+| Lane | Command | Cases | Skips | Observed duration | Distinct confidence retained |
+| --- | --- | ---: | ---: | ---: | --- |
+| Fast production | `just test-detectors`, `just test-alert-rules`, `just test-processor` | 97 | 0 | 0.70s total | Detector facts, rule transitions, and processor routing/persistence remain separate owners. |
+| Fast experiments | `just test-detector-lab` | 81 | 0 | 0.36s | Runner/reporting, metrics, practical blur, and practical motion remain separate synthetic owners. |
+| Checked-in real media | `just test-real-media` | 10 | 0 | 18.39s | Four decoded production-detector cases and six detector-lab media cases; no session E2E claim. |
+| Weekly checked-in slow selection | `pytest -m slow` with `weekly_slow_media` | 35 | 0 | 81.93s | Slow checked-in session, ground-truth, decoded-detector, and detector-lab confidence only. |
+| Manual synthetic `api_stream` truth | direct `test_e2e_session_ground_truth_api_stream.py` run | 4 | 0 | 0.29s | Deterministic `api_stream` runtime contract; not arbitrary-provider confidence. |
+
+Earlier production-boundary consolidation removed equivalent legacy processor
+copies while preserving the focused routing, context-alert, and failure owners.
+The practical-blur neighbor family is one readable parameterized test with five
+named boundary outcomes, rather than five independent setup copies. No
+detector, alert-rule, decoded-media, or runtime contract was removed solely to
+reduce the test count.
+
+Representative MP4/HLS calibration, long-running soak checks, and live external
+streams are intentionally manual or local-only. Their absence from this table
+is a boundary of this snapshot, not evidence that they passed or are obsolete.
 
 ## Production Detector Boundaries
 
@@ -73,7 +152,8 @@ rule thresholds and state transitions in `test_alert_rules*.py`.
 
 `just test-processor` runs the three processor owners and collects 19 cases.
 The legacy processor suite was consolidated into them; the current eight-file
-production boundary set collects 93 cases.
+production-boundary set collects 101 cases: 97 fast synthetic cases and four
+slow decoded-media cases.
 
 ## Synthetic Detector-Lab Baseline
 
@@ -585,7 +665,8 @@ The queue was checked against the current repository evidence:
 - checked-in real-media ownership is listed in
   `.github/ci_test_targets.json` under `weekly_slow_media`;
 - `just test-detector-lab` owns synthetic detector-lab checks and
-  `just test-real-media` owns checked-in detector-lab media checks.
+  `just test-real-media` owns decoded production-detector and detector-lab
+  checks against checked-in media.
 
 The remaining approved follow-up is limited to conditionally merging the
 low-resolution strong-end case into the named
@@ -604,10 +685,10 @@ this documentation pass is `just docs-check` and `git diff --check`.
 
 - Protected fast CI excludes `e2e` and `slow` tests. It is not evidence for
   real-media, representative, or end-to-end behavior.
-- `weekly_slow_media` runs only `-m slow`. Its manifest names
-  `test_e2e_local_session.py` and `test_e2e_session_ground_truth_api_stream.py`,
-  but both are `e2e`-only and are therefore deselected by that command. This is
-  a lane-ownership observation for later review, not a change to their value.
+- `weekly_slow_media` names only checked-in suites selected by `-m slow`.
+  `test_e2e_local_session.py` remains the protected PR integration smoke, and
+  `test_e2e_session_ground_truth_api_stream.py` remains an explicit manual E2E
+  contract check.
 - Local representative HLS/MP4 tests are intentionally distinct from
   checked-in fixture tests. Missing local representative exports should skip
   their checks rather than make routine validation depend on them.

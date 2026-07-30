@@ -252,14 +252,17 @@ def test_weekly_slow_media_job_uploads_ground_truth_failure_artifacts() -> None:
     assert "ci-artifacts/ground-truth-failures/**" in slow_media_job
 
 
-def test_weekly_slow_media_targets_checked_in_media_only() -> None:
-    """Weekly media confidence must not rely on optional representative assets."""
+def test_weekly_slow_media_target_ownership_is_explicit() -> None:
+    """Weekly media confidence must contain exactly its reviewed slow suites."""
     manifest = json.loads(CI_TARGET_MANIFEST_PATH.read_text())
-    weekly_targets = manifest["targets"]["weekly_slow_media"]
+    weekly_targets = set(manifest["targets"]["weekly_slow_media"])
 
-    assert "tests/test_e2e_local_session_representative_mp4_soak.py" not in weekly_targets
-    assert "tests/test_e2e_local_session_real_media.py" in weekly_targets
-    assert "tests/test_e2e_session_ground_truth_local.py" in weekly_targets
+    assert weekly_targets == {
+        "tests/test_detector_lab_real_media.py",
+        "tests/test_detectors_integration.py",
+        "tests/test_e2e_local_session_real_media.py",
+        "tests/test_e2e_session_ground_truth_local.py",
+    }
 
 
 def test_current_ci_workflow_satisfies_complete_contract() -> None:

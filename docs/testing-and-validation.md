@@ -71,9 +71,14 @@ authoritative owner of file-level assignments, fixture roles, test-value
 decisions, and evidence. Keep this table focused on lane
 selection and use the detailed document for cleanup or truth-promotion review.
 
+Use the [validation lane vocabulary](./detector-validation-ownership.md#validation-lane-vocabulary)
+when choosing a command. In particular, checked-in real-media confidence proves
+decoded detector or detector-lab behavior, while runtime E2E proves session and
+transport behavior; the same media input does not make those claims equivalent.
+
 | Primary behavior owner | Main test surface | Cheapest honest lane | Deeper confidence owner |
 | --- | --- | --- | --- |
-| Production detector facts | `test_detectors.py`; checked-in decoding in `test_detectors_integration.py` | `just test-detectors` | slow-marked detector integration in weekly real-media validation |
+| Production detector facts | `test_detectors.py`; checked-in decoding in `test_detectors_integration.py` | `just test-detectors`; use `just test-real-media` for decoded confidence | weekly real-media validation |
 | Production alert rules | `test_alert_rules*.py` | `just test-alert-rules` | real session/media validation only when the change reaches that seam |
 | Processor/runtime integration | `test_processor_routing.py`, `test_processor_context_alerts.py`, `test_processor_failures.py` | `just test-processor` | protected fast backend tests; session/E2E lanes for lifecycle effects |
 | Detector-lab experiments | `test_detector_lab_runner.py`, `test_detector_lab_metrics.py`, `test_detector_lab_practical_blur.py`, and `test_detector_lab_practical_motion.py`; checked-in media in `test_detector_lab_real_media.py` | `just test-detector-lab` | `just test-real-media` and weekly real-media confidence |
@@ -82,10 +87,11 @@ selection and use the detailed document for cleanup or truth-promotion review.
 | End-to-end runtime confidence | `test_e2e_local_session*.py` and representative `api_stream` suites | protected generated local-session smoke or the smallest matching E2E command | checked-in real media weekly; representative transport confidence local/manual slow |
 | Soak/manual validation | `@pytest.mark.soak` representative MP4 cases | `pytest -m soak` only when long-run behavior changes | scheduled or manual-depth validation |
 
-Routine CI excludes `e2e` and `slow` tests. The weekly slow-media job runs the
-manifest through `-m slow`, so e2e-only files named by that manifest are not
-executed by that job; use their explicit E2E owner instead. Local
-representative assets are optional and must not become routine CI inputs.
+Routine CI excludes `e2e` and `slow` tests. The weekly slow-media job runs
+checked-in slow suites through `-m slow`; the generated local-session smoke
+remains protected PR coverage, and synthetic `api_stream` exact truth remains
+an explicit manual E2E check. Local representative assets are optional and
+must not become routine CI inputs.
 
 To reproduce the scheduled checked-in-media selection locally without adding
 optional representative assets, run:
@@ -628,8 +634,8 @@ commands directly, use the matching `justfile` recipes:
 - `just test-detector-lab`
   - fast detector-lab synthetic and runner/export confidence lane
 - `just test-real-media`
-  - slower detector-lab real-media confidence lane backed by checked-in
-    fixtures
+  - slower decoded production-detector and detector-lab confidence lane backed
+    by checked-in fixtures; excludes session E2E and representative local media
 - `just lint`
   - backend Ruff plus frontend ESLint
 - `just typecheck`
@@ -1485,8 +1491,9 @@ Do not treat it as a normal branch-push requirement. The synthetic seam,
 parity, and boundary suites remain the primary everyday validation path.
 
 The fast backend CI lane intentionally stays synthetic and contract-focused.
-The real-media `ffmpeg`/`ffprobe` fixture coverage lives in the slower weekly
-e2e validation path rather than in the normal branch-push backend test job.
+The checked-in `ffmpeg`/`ffprobe` fixture coverage is available through the
+focused `just test-real-media` lane and is also owned by the slower weekly
+validation path. It remains outside the normal branch-push backend test job.
 The same weekly validation workflow also owns the heavier confidence-building
 checks for:
 
@@ -2643,6 +2650,11 @@ npm run build
 
 Public-stream validation is intentionally split from routine tests because
 provider behavior is unstable and can make CI noisy.
+
+Automated `api_stream` tests use deterministic synthetic events or controlled
+local HLS fixtures. They do not prove compatibility with arbitrary external
+providers; the external-stream policy is owned by the
+[detector-validation guide](./detector-validation-ownership.md#external-stream-policy).
 
 Use:
 

@@ -2,8 +2,19 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.6.2`
+Current public stage: `0.6.4`
 
+## Release History
+
+- `0.1.0` established the public local-first baseline: Electron, Python
+  monitoring, `api_stream`, local HLS playback, contracts, and CI
+- `0.3.0` introduced the FastAPI boundary, local MCP alert queries, and
+  explicit local/share access modes
+- `0.3.1` strengthened CI ownership, test targeting, and alert-query seams
+- `0.4.0` added opt-in PostgreSQL alert storage alongside continued transport,
+  session, and operator-workflow hardening
+- `0.4.1` added the local `just` validation harness and maintainer workflow
+  guardrails
 - `0.5.0` marked the detector/runtime extension-contract refactor stage
 - `0.5.1` was the workflow and AI-harness follow-up on top of that stage
 - `0.5.2` adds session-store hardening and stream/runtime follow-up work on
@@ -18,6 +29,11 @@ Current public stage: `0.6.2`
 - `0.6.2` extends the same dual-backend stage with stronger PostgreSQL session
   rollout confidence: live store smoke, runtime smoke, failure-policy clarity,
   and tighter validation guidance without changing the default file-backed path
+- `0.6.3` completes the opt-in PostgreSQL alert rollout and hardens the
+  FastAPI/MCP boundary, CI reliability, and detector-validation foundation
+- `0.6.4` makes detector and alert validation easier to evolve safely through
+  focused suite ownership, fixture/truth governance, real-media confidence,
+  missing edge coverage, and explicit validation lanes
 
 ## Current Approach
 
@@ -104,8 +120,7 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- current `0.6.2` work keeps the dual-backend stage intact while strengthening
-  PostgreSQL session rollout confidence, validation helpers, and failure-policy
-  clarity around it
+- `0.6.4` keeps the dual-backend stage intact while strengthening detector and
+  alert validation confidence without changing the supported runtime surface
 - both PostgreSQL persistence paths remain explicit opt-in; session historical
   backfill is still a later rollout decision, not part of the current version

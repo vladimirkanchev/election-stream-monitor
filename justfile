@@ -164,9 +164,11 @@ test-detector-lab:
       tests/test_detector_lab_practical_blur.py \
       tests/test_detector_lab_practical_motion.py
 
-# Slow detector-lab confidence lane backed by checked-in real media fixtures.
+# Slow decoded-detector and detector-lab confidence lane backed by checked-in media.
 test-real-media:
-    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_detector_lab_real_media.py
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} \
+      tests/test_detectors_integration.py \
+      tests/test_detector_lab_real_media.py
 
 # Slower detached-worker runtime lane for FastAPI/session persistence confidence.
 test-session-runtime:

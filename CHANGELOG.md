@@ -7,6 +7,55 @@ stage.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-07-29
+
+Detector and alert validation confidence release.
+
+Highlights:
+
+- detector-lab, production detector, alert-rule, processor, real-media, E2E,
+  and manual validation lanes now have explicit ownership
+- synthetic detector-lab coverage is split into focused owners while retaining
+  its behavioral baseline
+- duplicate processor coverage was consolidated around canonical test owners
+- fixture identity, calibration evidence, exact truth, and promotion rules are
+  documented and checked for catalog integrity
+- checked-in real-media confidence has a focused lane, stable transition
+  assertions, and compact failure diagnostics
+- focused detector edge coverage now includes malformed media-tool output,
+  incomplete decoder frames, and decoded black-screen negatives
+- MCP SDK compatibility is pinned for the current local MCP boundary
+
+## [0.6.3] - 2026-07-26
+
+Runtime security and detector-validation foundation release.
+
+Highlights:
+
+- PostgreSQL alert storage is a documented opt-in, forward-only path with
+  parity, live-store, runtime/operator, rollback, and schema-policy coverage
+- weekly PostgreSQL and real-media confidence lanes were stabilized, and the
+  frontend CI toolchain was pinned for repeatable installs
+- share-mode FastAPI exposure, authentication, request bounds, and secret
+  handling were hardened while preserving the loopback-local workflow
+- the MCP boundary remains explicitly local, stdio-only, read-only, and
+  bounded
+- detector-validation ownership and duplicate-analysis guidance established
+  the foundation for the subsequent focused validation work
+
+## [0.6.2] - 2026-07-11
+
+PostgreSQL session-store rollout-confidence release.
+
+Highlights:
+
+- the opt-in PostgreSQL session store gained live bootstrap, runtime, and
+  failure-policy smoke coverage
+- session-store bootstrap, forward-only behavior, and migration boundaries are
+  documented more explicitly while file-backed storage remains the default
+- validation guidance now distinguishes routine checks from explicit live
+  PostgreSQL confidence runs
+
 ## [0.6.1] - 2026-07-08
 
 AI-harness policy refresh release.
@@ -102,10 +151,15 @@ Highlights:
 
 ## [0.4.0] - 2026-05-20
 
-- ongoing transport, session, and operational hardening
-- continued frontend/operator UX refinement
-- PostgreSQL alert storage is now implemented and supported as an opt-in
-  backend, while file-backed alerts remain the default rollout mode
+PostgreSQL alert-storage and local operator-workflow hardening release.
+
+Highlights:
+
+- transport, session, and operational behavior were hardened for the
+  local-first workflow
+- frontend operator and playback UX received continued refinement
+- PostgreSQL alert storage became a supported opt-in backend while file-backed
+  alerts remained the default rollout mode
 
 ## [0.3.1] - 2026-05-18
 
