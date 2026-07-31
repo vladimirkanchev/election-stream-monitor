@@ -42,7 +42,13 @@ def test_result_index_projects_safe_outcomes_without_failure_text(
     monkeypatch.setattr(
         result_index,
         "_environment_versions",
-        lambda: {"python": "3.12", "ffmpeg": "7", "ffprobe": "7", "opencv": "4"},
+        lambda: {
+            "python": "3.12",
+            "ffmpeg": "7",
+            "ffprobe": "7",
+            "opencv": "4",
+            "numpy": "2",
+        },
     )
 
     index = result_index.build_result_index(junit_path)
@@ -73,6 +79,20 @@ def test_result_index_projects_safe_outcomes_without_failure_text(
     assert index["related_artifacts"]["preflight_log"] == "weekly-media-preflight.log"
 
 
+def test_environment_versions_keep_only_reviewed_media_and_detector_lab_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The result index should retain a small reproducible toolchain projection."""
+    monkeypatch.setattr(result_index, "_command_version", lambda command: command)
+
+    versions = result_index._environment_versions()
+
+    assert set(versions) == {"python", "ffmpeg", "ffprobe", "opencv", "numpy"}
+    assert versions["ffmpeg"] == "ffmpeg"
+    assert versions["ffprobe"] == "ffprobe"
+    assert all(isinstance(version, str) and version for version in versions.values())
+
+
 def test_result_index_rejects_unsafe_junit_identity_parts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -92,7 +112,9 @@ def test_result_index_rejects_unsafe_junit_identity_parts(
     ]
 
 
-def test_result_index_bounds_failed_test_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_result_index_bounds_failed_test_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A high-failure run should retain a bounded summary instead of every traceback."""
     junit_path = tmp_path / "results.xml"
     _write_junit(

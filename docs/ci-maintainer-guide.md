@@ -93,7 +93,7 @@ credentials, and successful-run artifacts remain outside this bundle.
 | --- | --- | --- |
 | `weekly-media-preflight.log` | Checked-in fixture and tool readiness; no decoder run. | Separates checkout or tool failures from detector regressions. |
 | `slow-e2e.log` | Raw pytest record for the reviewed weekly target. | Traceback context after the result index identifies the failing test. |
-| `weekly-media-results.json` | `weekly_slow_media` outcome counts, decoder versions, and up to 24 normalized failed test IDs. | At most 64 KiB; no parameter values, traceback, captured output, paths, URLs, environment values, or exception text. |
+| `weekly-media-results.json` | `weekly_slow_media` outcome counts, allowlisted Python, FFmpeg, FFprobe, OpenCV, and NumPy versions, and up to 24 normalized failed test IDs. | At most 64 KiB; no parameter values, traceback, captured output, paths, URLs, environment values, or exception text. |
 | `detector-lab-real-media/*.failure.json` | Fixture ID, requested and actual detector-row counts, versions, and allowlisted public rows. | At most 24 rows and 64 KiB per failed execution or assertion. |
 | `detector-lab-real-media/*.csv` | Fixture-relative per-window public detector evidence. | At most 12 files, 512 KiB each, and 4 MiB total. |
 | `ground-truth-failures/*.json` | Reviewed case context plus expected/actual counts and allowlisted alert/result fields. | At most 24 projected alerts, 24 results, and 64 KiB per case. |
@@ -118,6 +118,12 @@ target. Added files and Git-detected rename destinations that split those
 reviewed detector owners must appear in `test-detectors`, `test-detector-lab`,
 or `test-real-media`; protected PR CI verifies this through the
 `focused_detector_recipe` registration surface.
+
+`tests/test_ci_workflow.py` protects this admission policy, routine exclusion
+of slow and external confidence, weekly target membership, and the bounded
+failure-artifact contract. Keep assertions behavioral: they should survive
+workflow formatting changes while rejecting a lost target or widened artifact
+bundle.
 
 Representative-media calibration, runtime E2E, soak, and unrelated detector
 tests remain outside this narrow guard. Do not add local focused recipes to the

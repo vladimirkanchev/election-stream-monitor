@@ -52,11 +52,19 @@ def _environment_versions() -> dict[str, str]:
     else:
         opencv_version = str(cv2.__version__)
 
+    try:
+        import numpy
+    except ImportError:
+        numpy_version = "unavailable"
+    else:
+        numpy_version = str(numpy.__version__)
+
     return {
         "python": sys.version.split()[0],
         "ffmpeg": _command_version("ffmpeg"),
         "ffprobe": _command_version("ffprobe"),
         "opencv": opencv_version,
+        "numpy": numpy_version,
     }
 
 

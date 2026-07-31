@@ -28,8 +28,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg=7:6.1.1-3ubuntu5
 
-      - name: Show ffmpeg version
-        run: ffmpeg -version | head -n 1
+      - name: Show media-tool versions
+        run: |
+          ffmpeg -version | head -n 1
+          ffprobe -version | head -n 1
 
       - name: Sync locked Python dependencies
         run: |
