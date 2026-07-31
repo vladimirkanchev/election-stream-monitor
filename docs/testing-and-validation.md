@@ -682,11 +682,11 @@ facing lanes:
   - faster feedback, but still incomplete compared with protected and weekly
     CI lanes
 
-Failure-only artifacts are now uploaded for the heaviest backend PR lane, the
-weekly lifecycle lane, the slow e2e lane, and the weekly `api_stream`
-deep-validation lane, starting with plain test logs.
-The weekly lifecycle lane also uploads the persisted session files that most
-often explain runner state, cancel behavior, and terminal outcomes.
+Failure evidence is job-specific. The slow-media weekly job adds a non-decoding
+media/tool preflight and a sanitized result index alongside its bounded
+detector diagnostics; the weekly lifecycle lane retains its owned persisted
+session files. See [ci-maintainer-guide.md](./ci-maintainer-guide.md#weekly-media-failure-artifacts)
+for the artifact allowlist and retention policy.
 
 This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier. For exact merge-blocking policy, advisory status, and
@@ -895,6 +895,11 @@ What counts as a guarded split suite:
   - `frontend/src/hooks/usePlaybackSource*.test.tsx`
 - local-only Electron policy suites
   - `frontend/electron/*.test.mjs`
+- focused detector-validation splits
+  - production detector, synthetic detector-lab, and decoded-media owner
+    patterns listed in `.github/ci_test_targets.json`
+  - representative-media calibration, runtime E2E, and soak suites remain
+    outside this narrow registration rule
 
 This surface stays narrower than the whole repo so the guard can catch
 high-signal split-suite ownership misses without policing every new test file.
@@ -921,11 +926,15 @@ Current registration surfaces checked by that guard:
   - the new file is present in the main-PR policy owner surface
 - `local_only_policy`
   - the new file is present in the local-only policy owner surface
+- `focused_detector_recipe`
+  - the new production, detector-lab, or decoded-media split is selected by
+    one of `test-detectors`, `test-detector-lab`, or `test-real-media`
 
 The current rule is still intentionally narrow:
 
 - most guarded areas accept either `shared_manifest` or `policy_owned`
 - the Electron local-only area requires `local_only_policy`
+- focused detector-validation splits require `focused_detector_recipe`
 - docs changes are required only when:
   - the ownership model changes
   - a new guarded split-suite category appears
