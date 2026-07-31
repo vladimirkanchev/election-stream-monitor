@@ -617,6 +617,9 @@ commands directly, use the matching `justfile` recipes:
     `tests/test_ci_test_target_scripts.py`
   - best local check when editing `ci.yml`, workflow-helper scripts, or the
     protected/advisory lane contract
+  - weekly-media preflight and result-index helpers have their own focused
+    tests; run them directly when changing those scripts or their artifact
+    contract
 - `just test-security-regression`
   - deterministic FastAPI/MCP security regression lane
   - owns synthetic auth, binding, rate/resource, redaction, safe-error, and

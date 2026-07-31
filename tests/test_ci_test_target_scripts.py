@@ -1,11 +1,7 @@
-"""Regression tests for CI helper scripts and ownership rules.
+"""Regression coverage for CI target ownership and helper scripts.
 
-This module covers the helper layer around the protected workflow contract:
-- manifest-backed target ownership
-- CI-owned path existence guards
-- protected-lane drift checks
-- guarded split-suite registration
-- focused script CLI behavior
+The helper layer owns manifest-backed target groups, focused detector and
+weekly-lane registration, CI-owned path checks, and protected-lane drift.
 """
 
 from __future__ import annotations
