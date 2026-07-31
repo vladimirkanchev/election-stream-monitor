@@ -25,6 +25,9 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 ci_workflow = importlib.import_module("ci_workflow")
 ci_workflow_contract = importlib.import_module("ci_workflow_contract")
+check_split_suite_registration = importlib.import_module(
+    "check_split_suite_registration"
+)
 CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "ci.yml"
 BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
 WEEKLY_VALIDATION_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
@@ -56,6 +59,15 @@ def _live_workflow() -> Any:
 def _workflow_text(path: Path) -> str:
     """Return one workflow file as raw text for trigger-shape assertions."""
     return path.read_text()
+
+
+def _artifact_upload_blocks(workflow_text: str) -> tuple[str, ...]:
+    """Return complete upload-artifact step blocks from workflow text."""
+    return tuple(
+        block
+        for block in workflow_text.split("      - name: ")[1:]
+        if "uses: actions/upload-artifact@v4" in block
+    )
 
 
 def _load_text_workflow(tmp_path: Path, text: str) -> Any:
@@ -182,6 +194,56 @@ def test_branch_feedback_workflow_is_push_only() -> None:
     assert "pull_request:" not in workflow_text.split("jobs:", 1)[0]
 
 
+def _path_filter_section(workflow_path: Path, filter_name: str) -> str:
+    """Return one named path-filter section from the checked-in workflow text."""
+    workflow_text = _workflow_text(workflow_path)
+    filters_text = workflow_text.split("          filters: |\n", 1)[1]
+    section_start = f"            {filter_name}:\n"
+    next_filter = {"backend": "frontend", "workflow": "contract"}[filter_name]
+    section_end = f"            {next_filter}:\n"
+    return filters_text.split(section_start, 1)[1].split(section_end, 1)[0]
+
+
+def _just_recipe_test_targets(recipe_name: str) -> frozenset[str]:
+    """Return direct test-file targets through the registration guard reader."""
+    return check_split_suite_registration.recipe_test_paths(recipe_name)
+
+
+def test_focused_detector_recipes_keep_canonical_targets() -> None:
+    """Focused detector recipes must retain their reviewed ownership sets."""
+    expected_targets_by_recipe = {
+        "test-detectors": {"tests/test_detectors.py"},
+        "test-detector-lab": {
+            "tests/test_detector_lab_runner.py",
+            "tests/test_detector_lab_metrics.py",
+            "tests/test_detector_lab_practical_blur.py",
+            "tests/test_detector_lab_practical_motion.py",
+        },
+        "test-real-media": {
+            "tests/test_detectors_integration.py",
+            "tests/test_detector_lab_real_media.py",
+        },
+    }
+
+    for recipe_name, expected_targets in expected_targets_by_recipe.items():
+        assert _just_recipe_test_targets(recipe_name) == expected_targets
+        assert all(Path(target).is_file() for target in expected_targets)
+
+
+def test_detector_validation_configuration_wakes_backend_and_workflow_feedback() -> None:
+    """Recipe and manifest edits must not silently skip ordinary CI feedback."""
+    expected_paths = {"justfile", ".github/ci_test_targets.json"}
+
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        backend_paths = _path_filter_section(workflow_path, "backend")
+        workflow_paths = _path_filter_section(workflow_path, "workflow")
+
+        for path in expected_paths:
+            quoted_path = f"- '{path}'"
+            assert quoted_path in backend_paths
+            assert quoted_path in workflow_paths
+
+
 def test_routine_workflows_keep_live_alert_postgres_confidence_disabled() -> None:
     """Routine PR and branch workflows must not start PostgreSQL confidence."""
     for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
@@ -242,14 +304,79 @@ def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> No
 
 
 def test_weekly_slow_media_job_uploads_ground_truth_failure_artifacts() -> None:
-    """A failed checked-in truth case should retain its compact diagnostic report."""
+    """The weekly media job should direct both diagnostics to artifact folders."""
     workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
     slow_media_job = workflow_text.split("  slow-e2e:", 1)[1].split(
         "  api-stream-deep:", 1
     )[0]
 
     assert "ESM_GROUND_TRUTH_ARTIFACT_DIR: ci-artifacts/ground-truth-failures" in slow_media_job
-    assert "ci-artifacts/ground-truth-failures/**" in slow_media_job
+    assert "ESM_DETECTOR_LAB_ARTIFACT_DIR: ci-artifacts/detector-lab-real-media" in slow_media_job
+
+
+def test_weekly_slow_media_job_builds_and_uploads_sanitized_result_index() -> None:
+    """Weekly media failures should retain a compact pytest result summary."""
+    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    slow_media_job = workflow_text.split("  slow-e2e:", 1)[1].split(
+        "  api-stream-deep:", 1
+    )[0]
+
+    assert "--junitxml=ci-artifacts/weekly-media-results.junit.xml" in slow_media_job
+    assert "build_weekly_media_result_index.py" in slow_media_job
+    assert "ci-artifacts/weekly-media-results.json" in slow_media_job
+    assert "exit \"$pytest_status\"" in slow_media_job
+
+
+def test_weekly_artifacts_are_failure_only_short_lived_and_sanitized() -> None:
+    """Weekly uploads keep only bounded failure evidence for seven days."""
+    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    upload_blocks = _artifact_upload_blocks(workflow_text)
+
+    assert upload_blocks
+    for block in upload_blocks:
+        assert "if: failure()" in block
+        assert "retention-days: 7" in block
+
+    assert "weekly-media-results.junit.xml" not in "\n".join(upload_blocks)
+
+
+def test_weekly_slow_media_failure_upload_has_the_reviewed_artifact_allowlist() -> None:
+    """The weekly media bundle must not retain unreviewed diagnostic files."""
+    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    slow_media_job = workflow_text.split("  slow-e2e:", 1)[1].split(
+        "  api-stream-deep:", 1
+    )[0]
+    upload_path_block = slow_media_job.split("          path: |\n", 1)[1].split(
+        "          retention-days:", 1
+    )[0]
+
+    assert {
+        line.strip()
+        for line in upload_path_block.splitlines()
+        if line.strip()
+    } == {
+        "ci-artifacts/slow-e2e.log",
+        "ci-artifacts/weekly-media-preflight.log",
+        "ci-artifacts/weekly-media-results.json",
+        "ci-artifacts/detector-lab-real-media/**",
+        "ci-artifacts/ground-truth-failures/**",
+    }
+
+
+def test_weekly_slow_media_job_runs_non_decoding_fixture_and_tool_preflight() -> None:
+    """Weekly media failures should be classified before detector execution."""
+    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    slow_media_job = workflow_text.split("  slow-e2e:", 1)[1].split(
+        "  api-stream-deep:", 1
+    )[0]
+
+    preflight_index = slow_media_job.index(
+        ".venv/bin/python .github/scripts/check_weekly_media_preflight.py"
+    )
+    media_test_index = slow_media_job.index("Run weekly_slow_real_media")
+
+    assert preflight_index < media_test_index
+    assert "ci-artifacts/weekly-media-preflight.log" in slow_media_job
 
 
 def test_weekly_slow_media_target_ownership_is_explicit() -> None:
