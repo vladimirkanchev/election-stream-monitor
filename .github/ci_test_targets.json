@@ -250,6 +250,20 @@
         "local_only_policy"
       ],
       "rationale": "Electron local-only policy suites are intentionally guarded even when they stay outside shared manifest groups."
+    },
+    "focused_detector_validation_splits": {
+      "patterns": [
+        "tests/test_detectors_*.py",
+        "tests/test_detector_lab_runner*.py",
+        "tests/test_detector_lab_metrics*.py",
+        "tests/test_detector_lab_practical_blur*.py",
+        "tests/test_detector_lab_practical_motion*.py",
+        "tests/test_detector_lab_real_media*.py"
+      ],
+      "registration_surfaces": [
+        "focused_detector_recipe"
+      ],
+      "rationale": "New files that split the reviewed production, synthetic detector-lab, or decoded-media owners must remain in a focused detector recipe. Representative-media calibration, runtime E2E, and soak suites stay outside this narrow rule."
     }
   },
   "split_suite_registration_contract": {
@@ -280,7 +294,7 @@
     "excluded_cases": [
       "ordinary split-file additions that stay within an existing guarded area and ownership model",
       "manifest or policy-owner additions that do not change CI ownership meaning",
-      "new guarded files that satisfy registration through existing shared manifest or policy-owner seams"
+      "new guarded files that satisfy registration through existing shared manifest, policy-owner, or focused-recipe seams"
     ],
     "rationale": "Docs enforcement should stay high-signal so split-suite registration does not create routine docs busywork."
   },

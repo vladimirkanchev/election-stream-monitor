@@ -40,7 +40,7 @@ jobs:
       # Current review result:
       # - `frontend` excludes the docs-only `frontend/README.md` handoff
       # - `contract` includes the refined session/stream and bridge boundary files
-      # Task-8 split-suite guard:
+      # Split-suite registration guard:
       # - guarded split-suite registration is defined in `.github/ci_test_targets.json`
       # - the live guard inspects changed files in protected PR CI,
       #   not the whole repo
@@ -58,6 +58,10 @@ jobs:
               - 'src/**'
               - 'detector_lab/**'
               - 'tests/**'
+              # These files select detector-validation work; changing either
+              # must wake the same backend feedback as changing a test target.
+              - 'justfile'
+              - '.github/ci_test_targets.json'
             frontend:
               - 'frontend/**'
               - '!frontend/README.md'
@@ -68,6 +72,8 @@ jobs:
             workflow:
               - '.github/workflows/**'
               - '.github/scripts/**'
+              - 'justfile'
+              - '.github/ci_test_targets.json'
               - 'frontend/package.json'
               - 'pyproject.toml'
             contract:
@@ -111,7 +117,7 @@ jobs:
       # 2. CI-owned test-path existence
       # 3. fixture/environment policy drift
       # 4. workflow/policy drift
-      # 5. split-suite registration for newly added guarded files
+      # 5. split-suite registration for added or renamed guarded files
       # 6. narrower PR gate policy
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
@@ -135,9 +141,9 @@ jobs:
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
-      # This guard is intentionally PR-scoped because task-8 registration
-      # strategy is based on newly added guarded files in the current PR range.
-      - name: Check split-suite registration for new guarded files
+      # This guard is intentionally PR-scoped because registration
+      # strategy is based on added or renamed guarded files in the current PR range.
+      - name: Check split-suite registration for added or renamed guarded files
         run: python .github/scripts/check_split_suite_registration.py origin/${{ github.base_ref }}...HEAD
 
       # Run the narrower PR policy only after the manifest and its consumers
@@ -615,7 +621,7 @@ jobs:
       # 1. manifest structure/scope
       # 2. CI-owned test-path existence
       # 3. workflow/policy drift alignment
-      # 4. split-suite registration for newly added guarded files
+      # 4. split-suite registration for added or renamed guarded files
       # 5. broader shared contract suites
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
@@ -634,9 +640,9 @@ jobs:
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
-      # This guard stays PR-only because task-8 registration strategy is
-      # defined in terms of newly added guarded files in the current PR range.
-      - name: Check split-suite registration for new guarded files
+      # This guard stays PR-only because the registration strategy is
+      # defined in terms of added or renamed guarded files in the current PR range.
+      - name: Check split-suite registration for added or renamed guarded files
         if: github.event_name == 'pull_request'
         run: python .github/scripts/check_split_suite_registration.py origin/${{ github.base_ref }}...HEAD
 
@@ -711,7 +717,7 @@ jobs:
       # 2. CI-owned test-path existence
       # 3. fixture/environment policy drift
       # 4. workflow/policy drift
-      # 5. split-suite registration for newly added guarded files
+      # 5. split-suite registration for added or renamed guarded files
       # 6. narrower docs/workflow gate policy
       - name: Validate CI test target manifest structure and boundary
         run: python .github/scripts/validate_ci_test_targets.py
@@ -725,7 +731,7 @@ jobs:
       - name: Check CI target drift and workflow-policy alignment
         run: python .github/scripts/check_ci_target_drift.py
 
-      - name: Check split-suite registration for new guarded files
+      - name: Check split-suite registration for added or renamed guarded files
         run: python .github/scripts/check_split_suite_registration.py origin/${{ github.base_ref }}...HEAD
 
       - name: Run manifest-backed docs and workflow gate policy

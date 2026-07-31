@@ -88,12 +88,13 @@ REQUIRED_SPLIT_SUITE_DOCS_REQUIRED_WHEN = (
 REQUIRED_SPLIT_SUITE_DOCS_EXCLUDED_CASES = (
     "ordinary split-file additions that stay within an existing guarded area and ownership model",
     "manifest or policy-owner additions that do not change CI ownership meaning",
-    "new guarded files that satisfy registration through existing shared manifest or policy-owner seams",
+    "new guarded files that satisfy registration through existing shared manifest, policy-owner, or focused-recipe seams",
 )
 ALLOWED_REGISTRATION_SURFACES = (
     "shared_manifest",
     "policy_owned",
     "local_only_policy",
+    "focused_detector_recipe",
 )
 REQUIRED_LANE_CATEGORIES = (
     "fast_synthetic",
