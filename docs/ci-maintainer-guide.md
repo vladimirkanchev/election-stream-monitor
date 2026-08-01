@@ -63,9 +63,10 @@ intentionally narrower than the detailed test and fixture inventory in
 this table when changing a recipe, workflow target, marker, or failure
 artifact.
 
-The local measurements below were captured on 2026-07-31. They are useful
-baselines, not performance gates. The weekly row uses the checked-in snapshot
-recorded in the ownership guide because it is scheduled/manual depth.
+The focused rows below are snapshots, not performance gates. Most local
+measurements were captured on 2026-07-31; the `fast_synthetic` row was
+refreshed on 2026-08-01. The weekly row uses the checked-in snapshot recorded
+in the ownership guide because it is scheduled/manual depth.
 
 | Lane | Targets | Marker / expected skips | Current evidence | CI owner and failure evidence |
 | --- | --- | --- | --- | --- |
@@ -74,7 +75,7 @@ recorded in the ownership guide because it is scheduled/manual depth.
 | `just test-processor` | `tests/test_processor_routing.py`, `test_processor_context_alerts.py`, `test_processor_failures.py` | Unmarked; no expected skips. | 19 passed in 0.57s. | Local focused lane; also selected by `fast_synthetic`. |
 | `just test-detector-lab` | The four synthetic detector-lab owners: runner, metrics, practical blur, practical motion. | Unmarked; no expected skips. | 81 passed in 0.76s. | Local focused lane; also selected by `fast_synthetic`. |
 | `just test-real-media` | `tests/test_detectors_integration.py`, `tests/test_detector_lab_real_media.py` | `slow`; no expected skips when checked-in fixtures and decoder tools are available. | 10 passed in 42.26s. | Local focused lane; both suites are included in `weekly_slow_media`. |
-| `fast_synthetic` | Broad `pytest -m "not e2e and not slow"` selector. | Excludes slow and E2E tests rather than skipping them; no detector-specific skip allowance. | 1,900 selected from 2,014 collected; 114 deselected during collection. | Path-aware branch feedback and required `backend-tests` coverage on `main` PRs; failure-only `backend-tests.log`. |
+| `fast_synthetic` | Broad `pytest -m "not e2e and not slow"` selector. | Excludes slow and E2E tests rather than skipping them; no detector-specific skip allowance. | 1,938 selected from 2,052 collected: 1,790 passed, 148 skipped, and 114 deselected in 8.89s. | Path-aware branch feedback and required `backend-tests` coverage on `main` PRs; failure-only `backend-tests.log`. |
 | `weekly_slow_media` | Checked-in session/media truth plus `test_detectors_integration.py` and `test_detector_lab_real_media.py`. | `slow`; optional representative assets are not targets. The recorded checked-in snapshot has zero skips. | 35 passed in 81.93s in the recorded weekly-equivalent snapshot. | Scheduled/manual weekly depth; non-decoding fixture/tool preflight, failure-only log, detector-lab CSV, and bounded ground-truth diagnostics. |
 
 Do not create a detector-only required workflow from this table. Routine CI
@@ -85,21 +86,21 @@ weekly lane.
 ### Weekly Media Failure Artifacts
 
 `slow-e2e` first performs a non-decoding check of required checked-in media
-and FFmpeg/FFprobe. On failure, it uploads only the bounded evidence below for
-seven days. Optional representative assets, source videos, session directories,
-credentials, and successful-run artifacts remain outside this bundle.
+and FFmpeg/FFprobe. On failure, it uploads only the sanitized, bounded evidence
+below for seven days. Optional representative assets, source videos, session
+directories, credentials, raw pytest output, and successful-run artifacts remain
+outside this bundle.
 
 | Artifact | Contents and boundary | Limit / use |
 | --- | --- | --- |
 | `weekly-media-preflight.log` | Checked-in fixture and tool readiness; no decoder run. | Separates checkout or tool failures from detector regressions. |
-| `slow-e2e.log` | Raw pytest record for the reviewed weekly target. | Traceback context after the result index identifies the failing test. |
 | `weekly-media-results.json` | Outcome counts, total duration, reviewed tool versions, up to 10 slowest normalized tests, safe skip categories, and up to 24 normalized failed test IDs. | At most 64 KiB; excludes parameter values, traceback, captured output, paths, URLs, environment values, and exception text. |
 | `detector-lab-real-media/*.failure.json` | Fixture ID, requested and actual detector-row counts, versions, and allowlisted public rows. | At most 24 rows and 64 KiB per failed execution or assertion. |
-| `detector-lab-real-media/*.csv` | Fixture-relative per-window public detector evidence. | At most 12 files, 512 KiB each, and 4 MiB total. |
+| `detector-lab-real-media/*.csv` | Allowlisted per-window detector fields only. | At most 12 files, 512 KiB each, and 4 MiB total; excludes paths, source metadata, alert text, and unknown columns. |
 | `ground-truth-failures/*.json` | Reviewed case context plus expected/actual counts and allowlisted alert/result fields. | At most 24 projected alerts, 24 results, and 64 KiB per case. |
 
-Raw JUnit XML is an internal input to the result-index builder and is never
-uploaded. Fixture IDs must be catalog-relative names or reviewed case IDs.
+Raw pytest and JUnit output remain in the job log or as an internal
+result-index input; neither is uploaded. Fixture IDs must be catalog-relative names or reviewed case IDs.
 All detector fields are allowlisted; configuration, headers, API keys,
 database URLs, raw driver errors, source URLs, local paths, and full snapshots
 are excluded. Other weekly jobs retain their separately owned failure evidence.

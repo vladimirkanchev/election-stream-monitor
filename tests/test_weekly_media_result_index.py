@@ -76,6 +76,7 @@ def test_result_index_projects_safe_outcomes_without_failure_text(
     assert "secret-token" not in json.dumps(index)
     assert "/private/path" not in json.dumps(index)
     assert "postgresql://" not in json.dumps(index)
+    assert "pytest_log" not in index["related_artifacts"]
     assert index["related_artifacts"]["preflight_log"] == "weekly-media-preflight.log"
 
 

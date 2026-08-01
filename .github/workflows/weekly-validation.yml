@@ -90,16 +90,15 @@ jobs:
           cat ci-artifacts/weekly-media-results.json
           exit "$pytest_status"
 
-      # Weekly artifacts are failure-only diagnostics. Keep the raw JUnit XML
-      # internal because it can contain paths and traceback text; upload the
-      # sanitized result index instead. All retained artifacts expire quickly.
+      # Weekly artifacts are failure-only diagnostics. Raw pytest and JUnit
+      # output can contain paths and traceback text, so retain only reviewed
+      # projections. All retained artifacts expire quickly.
       - name: Upload slow e2e failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: slow-e2e-${{ github.run_id }}
           path: |
-            ci-artifacts/slow-e2e.log
             ci-artifacts/weekly-media-preflight.log
             ci-artifacts/weekly-media-results.json
             ci-artifacts/detector-lab-real-media/**

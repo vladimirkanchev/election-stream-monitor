@@ -191,7 +191,6 @@ def build_result_index(junit_path: Path) -> dict[str, object]:
         )[:MAX_SLOWEST_TESTS],
         "skip_reasons": dict(sorted(skip_reasons.items())),
         "related_artifacts": {
-            "pytest_log": "slow-e2e.log",
             "preflight_log": "weekly-media-preflight.log",
             "detector_lab": "detector-lab-real-media/",
             "ground_truth": "ground-truth-failures/",

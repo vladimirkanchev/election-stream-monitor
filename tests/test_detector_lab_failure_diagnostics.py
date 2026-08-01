@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
@@ -97,18 +98,58 @@ def test_failure_diagnostic_writes_an_artifact_only_after_an_error(
     assert "/private" not in json.dumps(artifact)
 
 
-def test_csv_artifact_copy_enforces_file_and_bundle_bounds(
+def test_csv_artifact_projects_only_reviewed_fields_and_enforces_file_bounds(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    """Configured CSV evidence must stay within the published upload budget."""
+    """Configured CSV evidence must omit paths, alert text, and unknown fields."""
     artifact_dir = tmp_path / "artifacts"
     output_csv = tmp_path / "result.csv"
-    output_csv.write_bytes(b"rows")
+    output_csv.write_text(
+        "input_path,source_name,alert_messages,detector_id,window_index,"
+        "practical_detected,practical_score,guardrail_reason,unknown_field\n"
+        "/private/path/clip.mp4,clip.mp4,secret alert,video_blur,2,True,0.8,"
+        "black_dominant,private value\n"
+    )
     monkeypatch.setenv("ESM_DETECTOR_LAB_ARTIFACT_DIR", str(artifact_dir))
 
     assert persist_csv_artifact(output_csv) is True
-    assert (artifact_dir / output_csv.name).read_bytes() == b"rows"
+    with (artifact_dir / output_csv.name).open(newline="") as artifact_file:
+        reader = csv.DictReader(artifact_file)
+        rows = list(reader)
+
+    assert reader.fieldnames == [
+        "algorithm_id",
+        "detector_id",
+        "window_index",
+        "window_start_sec",
+        "practical_detected",
+        "black_detected",
+        "blur_detected",
+        "practical_score",
+        "practical_threshold",
+        "guardrail_reason",
+        "alert_count",
+    ]
+    assert rows == [
+        {
+            "algorithm_id": "",
+            "detector_id": "video_blur",
+            "window_index": "2",
+            "window_start_sec": "",
+            "practical_detected": "True",
+            "black_detected": "",
+            "blur_detected": "",
+            "practical_score": "0.8",
+            "practical_threshold": "",
+            "guardrail_reason": "black_dominant",
+            "alert_count": "",
+        }
+    ]
+    serialized = (artifact_dir / output_csv.name).read_text()
+    assert "/private/path" not in serialized
+    assert "secret alert" not in serialized
+    assert "private value" not in serialized
 
     monkeypatch.setattr(
         "tests.detector_lab_failure_diagnostics.MAX_CSV_BYTES",
@@ -126,7 +167,7 @@ def test_csv_artifact_copy_enforces_count_and_total_size_limits(
     artifact_dir.mkdir()
     (artifact_dir / "existing.csv").write_bytes(b"old")
     output_csv = tmp_path / "result.csv"
-    output_csv.write_bytes(b"new")
+    output_csv.write_text("detector_id\nvideo_blur\n")
     monkeypatch.setenv("ESM_DETECTOR_LAB_ARTIFACT_DIR", str(artifact_dir))
 
     monkeypatch.setattr(

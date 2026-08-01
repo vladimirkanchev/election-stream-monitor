@@ -536,7 +536,7 @@ def test_weekly_slow_media_job_builds_result_index_before_exiting() -> None:
 
 
 def test_weekly_artifacts_are_failure_only_and_short_lived() -> None:
-    """Weekly uploads must retain failure evidence briefly and exclude raw JUnit."""
+    """Weekly uploads must retain only reviewed evidence for a short period."""
     upload_steps = _weekly_artifact_uploads()
 
     assert upload_steps
@@ -546,8 +546,12 @@ def test_weekly_artifacts_are_failure_only_and_short_lived() -> None:
         assert isinstance(options, dict)
         assert options.get("retention-days") == 7
 
+    excluded_paths = {
+        "ci-artifacts/slow-e2e.log",
+        "ci-artifacts/weekly-media-results.junit.xml",
+    }
     assert all(
-        "weekly-media-results.junit.xml" not in _artifact_paths(step)
+        not excluded_paths & _artifact_paths(step)
         for step in upload_steps
     )
 
@@ -555,7 +559,6 @@ def test_weekly_artifacts_are_failure_only_and_short_lived() -> None:
 def test_weekly_slow_media_failure_upload_has_the_reviewed_artifact_allowlist() -> None:
     """The weekly media bundle must not retain unreviewed diagnostic files."""
     expected_paths = {
-        "ci-artifacts/slow-e2e.log",
         "ci-artifacts/weekly-media-preflight.log",
         "ci-artifacts/weekly-media-results.json",
         "ci-artifacts/detector-lab-real-media/**",
