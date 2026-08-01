@@ -87,6 +87,7 @@ jobs:
           .venv/bin/python .github/scripts/build_weekly_media_result_index.py \
             --junitxml ci-artifacts/weekly-media-results.junit.xml \
             --output ci-artifacts/weekly-media-results.json
+          cat ci-artifacts/weekly-media-results.json
           exit "$pytest_status"
 
       # Weekly artifacts are failure-only diagnostics. Keep the raw JUnit XML

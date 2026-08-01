@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Build a bounded weekly-media result index from internal pytest JUnit XML.
 
-The output retains only test outcomes, normalized identities, tool versions,
-and artifact names. Raw JUnit XML and pytest failure text remain outside the
-uploaded failure bundle.
+The output retains only outcomes, normalized identities, bounded timing and
+skip telemetry, tool versions, and artifact names. Raw JUnit XML and pytest
+failure text remain outside the uploaded failure bundle.
 """
 
 from __future__ import annotations
@@ -15,15 +15,25 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from typing import TypedDict
 import xml.etree.ElementTree as ElementTree
 
 
-SCHEMA_VERSION = "weekly_media_result_index_v1"
+SCHEMA_VERSION = "weekly_media_result_index_v2"
 TARGET = "weekly_slow_media"
 MAX_FAILED_TESTS = 24
+MAX_SLOWEST_TESTS = 10
 MAX_INDEX_BYTES = 64 * 1024
 SAFE_CLASSNAME = re.compile(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$")
 SAFE_TEST_NAME = re.compile(r"^[A-Za-z0-9_]+")
+
+
+class TestResultEntry(TypedDict):
+    """One normalized test outcome retained in bounded weekly telemetry."""
+
+    test_id: str
+    outcome: str
+    duration_seconds: float
 
 
 def _command_version(command: str) -> str:
@@ -105,6 +115,37 @@ def _test_id(testcase: ElementTree.Element) -> str:
     return "::".join(part for part in (class_part, name_part) if part)
 
 
+def _skip_category(testcase: ElementTree.Element) -> str | None:
+    """Return a safe category for one skipped testcase without its raw reason."""
+    skipped = testcase.find("skipped")
+    if skipped is None:
+        return None
+
+    reason = " ".join(
+        value
+        for value in (skipped.get("message"), skipped.text)
+        if isinstance(value, str)
+    ).casefold()
+    if "representative" in reason:
+        return "optional_representative_media"
+    if any(tool in reason for tool in ("ffmpeg", "ffprobe", "opencv")):
+        return "media_tool_unavailable"
+    return "unclassified"
+
+
+def _test_result_entry(
+    testcase: ElementTree.Element,
+    outcome: str,
+    duration_seconds: float,
+) -> TestResultEntry:
+    """Project one testcase into the shared bounded diagnostic shape."""
+    return {
+        "test_id": _test_id(testcase),
+        "outcome": outcome,
+        "duration_seconds": duration_seconds,
+    }
+
+
 def build_result_index(junit_path: Path) -> dict[str, object]:
     """Build the allowlisted weekly result summary from internal JUnit XML."""
     try:
@@ -113,21 +154,21 @@ def build_result_index(junit_path: Path) -> dict[str, object]:
         raise ValueError("Unable to read pytest JUnit result XML.") from exc
 
     outcomes = {"passed": 0, "failed": 0, "errored": 0, "skipped": 0}
-    failed_tests: list[dict[str, object]] = []
+    failed_tests: list[TestResultEntry] = []
+    slow_tests: list[TestResultEntry] = []
+    skip_reasons: dict[str, int] = {}
     duration_seconds = 0.0
     for testcase in root.findall(".//testcase"):
         outcome = _test_outcome(testcase)
         duration = _duration_seconds(testcase.get("time"))
+        test_entry = _test_result_entry(testcase, outcome, duration)
         outcomes[outcome] += 1
         duration_seconds += duration
+        slow_tests.append(test_entry)
+        if skip_category := _skip_category(testcase):
+            skip_reasons[skip_category] = skip_reasons.get(skip_category, 0) + 1
         if outcome in {"failed", "errored"} and len(failed_tests) < MAX_FAILED_TESTS:
-            failed_tests.append(
-                {
-                    "test_id": _test_id(testcase),
-                    "outcome": outcome,
-                    "duration_seconds": duration,
-                }
-            )
+            failed_tests.append(test_entry)
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -141,6 +182,14 @@ def build_result_index(junit_path: Path) -> dict[str, object]:
         "failed_tests": failed_tests,
         "failed_tests_truncated": outcomes["failed"] + outcomes["errored"]
         > len(failed_tests),
+        "slowest_tests": sorted(
+            slow_tests,
+            key=lambda entry: (
+                -entry["duration_seconds"],
+                entry["test_id"],
+            ),
+        )[:MAX_SLOWEST_TESTS],
+        "skip_reasons": dict(sorted(skip_reasons.items())),
         "related_artifacts": {
             "pytest_log": "slow-e2e.log",
             "preflight_log": "weekly-media-preflight.log",
@@ -170,7 +219,7 @@ def _arguments() -> argparse.Namespace:
 
 
 def main() -> int:
-    """Write the index used by the failed weekly-media artifact bundle."""
+    """Write the index printed on every run and retained after failures."""
     arguments = _arguments()
     write_result_index(
         build_result_index(arguments.junitxml),

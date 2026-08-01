@@ -1,4 +1,4 @@
-"""Focused regression coverage for the sanitized weekly-media result index."""
+"""Regression coverage for the weekly-media index schema, bounds, and redaction."""
 
 from __future__ import annotations
 
@@ -77,6 +77,64 @@ def test_result_index_projects_safe_outcomes_without_failure_text(
     assert "/private/path" not in json.dumps(index)
     assert "postgresql://" not in json.dumps(index)
     assert index["related_artifacts"]["preflight_log"] == "weekly-media-preflight.log"
+
+
+def test_result_index_bounds_and_orders_slowest_tests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timing telemetry should retain only the slowest normalized test entries."""
+    junit_path = tmp_path / "results.xml"
+    case_count = result_index.MAX_SLOWEST_TESTS + 2
+    _write_junit(
+        junit_path,
+        "".join(
+            f'<testcase classname="tests.test_media" name="test_{index}" time="{index}" />'
+            for index in range(case_count)
+        ),
+    )
+    monkeypatch.setattr(result_index, "_environment_versions", lambda: {})
+
+    index = result_index.build_result_index(junit_path)
+    slowest_tests = index["slowest_tests"]
+
+    assert len(slowest_tests) == result_index.MAX_SLOWEST_TESTS
+    assert [entry["duration_seconds"] for entry in slowest_tests] == list(
+        reversed([float(index) for index in range(2, case_count)])
+    )
+
+
+def test_result_index_projects_safe_skip_categories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Skipped cases should expose allowlisted categories rather than raw reasons."""
+    junit_path = tmp_path / "results.xml"
+    _write_junit(
+        junit_path,
+        """
+        <testcase classname="tests.test_media" name="test_optional" time="0.1">
+          <skipped message="Representative asset is unavailable at /private/path" />
+        </testcase>
+        <testcase classname="tests.test_media" name="test_tool" time="0.1">
+          <skipped message="ffmpeg is unavailable" />
+        </testcase>
+        <testcase classname="tests.test_media" name="test_unknown" time="0.1">
+          <skipped message="secret-token" />
+        </testcase>
+        """,
+    )
+    monkeypatch.setattr(result_index, "_environment_versions", lambda: {})
+
+    index = result_index.build_result_index(junit_path)
+
+    assert index["skip_reasons"] == {
+        "media_tool_unavailable": 1,
+        "optional_representative_media": 1,
+        "unclassified": 1,
+    }
+    assert "secret-token" not in json.dumps(index)
+    assert "/private/path" not in json.dumps(index)
 
 
 def test_environment_versions_keep_only_reviewed_media_and_detector_lab_fields(

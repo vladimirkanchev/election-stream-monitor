@@ -93,7 +93,7 @@ credentials, and successful-run artifacts remain outside this bundle.
 | --- | --- | --- |
 | `weekly-media-preflight.log` | Checked-in fixture and tool readiness; no decoder run. | Separates checkout or tool failures from detector regressions. |
 | `slow-e2e.log` | Raw pytest record for the reviewed weekly target. | Traceback context after the result index identifies the failing test. |
-| `weekly-media-results.json` | `weekly_slow_media` outcome counts, allowlisted Python, FFmpeg, FFprobe, OpenCV, and NumPy versions, and up to 24 normalized failed test IDs. | At most 64 KiB; no parameter values, traceback, captured output, paths, URLs, environment values, or exception text. |
+| `weekly-media-results.json` | Outcome counts, total duration, reviewed tool versions, up to 10 slowest normalized tests, safe skip categories, and up to 24 normalized failed test IDs. | At most 64 KiB; excludes parameter values, traceback, captured output, paths, URLs, environment values, and exception text. |
 | `detector-lab-real-media/*.failure.json` | Fixture ID, requested and actual detector-row counts, versions, and allowlisted public rows. | At most 24 rows and 64 KiB per failed execution or assertion. |
 | `detector-lab-real-media/*.csv` | Fixture-relative per-window public detector evidence. | At most 12 files, 512 KiB each, and 4 MiB total. |
 | `ground-truth-failures/*.json` | Reviewed case context plus expected/actual counts and allowlisted alert/result fields. | At most 24 projected alerts, 24 results, and 64 KiB per case. |
@@ -103,6 +103,10 @@ uploaded. Fixture IDs must be catalog-relative names or reviewed case IDs.
 All detector fields are allowlisted; configuration, headers, API keys,
 database URLs, raw driver errors, source URLs, local paths, and full snapshots
 are excluded. Other weekly jobs retain their separately owned failure evidence.
+
+The weekly log prints this sanitized index after test execution. Treat its
+duration, slowest-test list, and skip categories as informational baselines:
+they reveal drift but never fail a run because hosted-runner timing varies.
 
 For ordinary branch pushes and non-`main` pull requests, detector source,
 detector-lab source, tests (including checked-in fixture metadata), `justfile`,
@@ -129,44 +133,6 @@ Representative-media calibration, runtime E2E, soak, and unrelated detector
 tests remain outside this narrow guard. Do not add local focused recipes to the
 manifest only to satisfy registration; move a test only when its validation
 owner actually changes.
-
-Recent weekly-maintenance expectations:
-
-- frontend Node setup is pinned through repo `.nvmrc` and workflow
-  `node-version-file` usage so audit-driven dependency refreshes do not drift
-  between local and CI environments
-- weekly PostgreSQL alert-confidence helpers must run through the runner
-  Python (`sys.executable -m pytest`) instead of assuming a repo-local
-  `.venv` path on GitHub-hosted runners
-- weekly real-media detector confidence should prefer artifact-rich,
-  behavior-based assertions over brittle exact-window calibration
-
-For the current session-store migration work, keep live PostgreSQL session
-confidence in weekly or manual-depth lanes. Do not add a default PR job that
-boots a database service just to restate the focused parity and runtime
-confidence the branch already has.
-
-Also defer broader CI expansion in this branch:
-
-- no nightly-only session-store workflow
-- no OS or Python version matrix for this slice
-- no full file-versus-PostgreSQL backend matrix in ordinary PR CI
-
-Those are reasonable follow-up directions once the focused parity and runtime
-confidence stops being the main branch risk. Treat them as later CI-expansion
-work, not as cleanup that belongs folded back into this branch.
-
-Concrete follow-up branch candidates:
-
-- `ci/live-postgres-session-smoke`
-  - add one opt-in or weekly live PostgreSQL session-store smoke path with
-    explicit service/bootstrap ownership
-- `ci/weekly-session-db-confidence`
-  - extend weekly validation with a small session-store database-confidence
-    bundle once the live smoke path proves stable
-- `ci/session-store-matrix-expansion`
-  - evaluate whether an OS, Python-version, or backend matrix adds enough
-    confidence to justify the extra routine CI cost
 
 ## Important Distinctions
 

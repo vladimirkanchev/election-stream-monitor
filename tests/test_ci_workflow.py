@@ -525,10 +525,12 @@ def test_weekly_slow_media_job_builds_result_index_before_exiting() -> None:
     assert "--junitxml=ci-artifacts/weekly-media-results.junit.xml" in media_command
     assert "build_weekly_media_result_index.py" in media_command
     assert "ci-artifacts/weekly-media-results.json" in media_command
+    assert "cat ci-artifacts/weekly-media-results.json" in media_command
     assert 'exit "$pytest_status"' in media_command
     assert (
         media_command.index("pytest_status=${PIPESTATUS[0]}")
         < media_command.index("build_weekly_media_result_index.py")
+        < media_command.index("cat ci-artifacts/weekly-media-results.json")
         < media_command.index('exit "$pytest_status"')
     )
 

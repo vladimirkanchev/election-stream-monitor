@@ -685,11 +685,11 @@ facing lanes:
   - faster feedback, but still incomplete compared with protected and weekly
     CI lanes
 
-Failure evidence is job-specific. The slow-media weekly job adds a non-decoding
-media/tool preflight and a sanitized result index alongside its bounded
-detector diagnostics; the weekly lifecycle lane retains its owned persisted
-session files. See [ci-maintainer-guide.md](./ci-maintainer-guide.md#weekly-media-failure-artifacts)
-for the artifact allowlist and retention policy.
+Failure evidence is job-specific. The slow-media weekly job prints a sanitized
+outcome, timing, and skip summary, then retains bounded diagnostics only after
+failure; the weekly lifecycle lane retains its owned persisted session files.
+See [ci-maintainer-guide.md](./ci-maintainer-guide.md#weekly-media-failure-artifacts)
+for the artifact allowlist, telemetry fields, and retention policy.
 
 This keeps ordinary branch feedback reasonably fast while giving `main` a
 stricter merge barrier. For exact merge-blocking policy, advisory status, and
