@@ -157,6 +157,7 @@ def test_ground_truth_failure_writes_compact_sanitized_artifact(
         "subset_indices": [],
         "subset_name": "full_fixture",
     }
+    assert artifact["detector_ids"] == ["video_blur", "video_metrics"]
     assert artifact["actual"]["alerts"] == [
         {"detector_id": "video_metrics", "window_index": 0, "window_start_sec": 0.0}
     ]
@@ -200,3 +201,33 @@ def test_ground_truth_failure_artifact_bounds_projected_result_rows(
     assert artifact["actual"]["results_truncated"] is True
     assert len(artifact["actual"]["results"]) == 24
     assert all("source_name" not in row for row in artifact["actual"]["results"])
+
+
+def test_ground_truth_failure_artifact_bounds_alert_rows(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Failure diagnostics should summarize large alert histories compactly."""
+    monkeypatch.setenv("ESM_GROUND_TRUTH_ARTIFACT_DIR", str(tmp_path))
+    expected = _expected_snapshot()
+    alerts = [
+        {
+            **expected["alerts"][0],
+            "window_index": index,
+            "window_start_sec": float(index),
+        }
+        for index in range(25)
+    ]
+
+    with pytest.raises(AssertionError):
+        assert_snapshot_matches_ground_truth(
+            _snapshot(alerts),
+            expected,
+            diagnostic_context=ground_truth_diagnostic_context(
+                {"id": "bounded alerts", "fixture": {"kind": "checked_in"}}
+            ),
+        )
+
+    artifact = json.loads((tmp_path / "bounded-alerts.json").read_text())
+    assert artifact["actual"]["alerts_truncated"] is True
+    assert len(artifact["actual"]["alerts"]) == 24

@@ -1,10 +1,7 @@
-"""Regression tests for the workflow reader and protected CI contract.
+"""Regression coverage for protected, routine, and weekly CI workflow policy.
 
-This module keeps three seams honest:
-- the small YAML reader used by the workflow checks
-- the protected/advisory policy enforced over the live `ci.yml`
-- the workflow split that keeps protected PR statuses separate from branch
-  push feedback
+The tests keep the workflow reader, detector-lane admission, protected PR
+requirements, and bounded weekly-media diagnostics aligned with their owners.
 """
 
 from __future__ import annotations
@@ -17,6 +14,7 @@ import sys
 from typing import Any
 
 import pytest
+import yaml
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / ".github" / "scripts"
@@ -25,9 +23,14 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 ci_workflow = importlib.import_module("ci_workflow")
 ci_workflow_contract = importlib.import_module("ci_workflow_contract")
+check_split_suite_registration = importlib.import_module(
+    "check_split_suite_registration"
+)
 CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "ci.yml"
 BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
-WEEKLY_VALIDATION_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
+WEEKLY_VALIDATION_WORKFLOW_PATH = (
+    SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
+)
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 FRONTEND_INSTALL_COMMAND = "bash ../scripts/install_frontend_dependencies.sh"
@@ -46,6 +49,27 @@ BACKEND_FAST_SELECTOR = ci_workflow_contract.BACKEND_FAST_SELECTOR
 BACKEND_RUFF_STEP = "Run backend Ruff lint"
 FRONTEND_BUILD_COMMAND = "npm run build"
 FRONTEND_BUILD_STEP = "Run frontend production build"
+DETECTOR_BACKEND_PATHS = frozenset(
+    {
+        "src/**",
+        "detector_lab/**",
+        "tests/**",
+        "justfile",
+        ".github/ci_test_targets.json",
+    }
+)
+DETECTOR_WORKFLOW_CONFIGURATION_PATHS = frozenset(
+    {"justfile", ".github/ci_test_targets.json"}
+)
+WEEKLY_ONLY_TARGET_GROUPS = (
+    "weekly_slow_media",
+    "weekly_api_stream_deep",
+    "weekly_lifecycle",
+)
+BRANCH_BACKEND_CONDITION = (
+    "needs.changes.outputs.backend == 'true' || "
+    "needs.changes.outputs.contract == 'true'"
+)
 
 
 def _live_workflow() -> Any:
@@ -56,6 +80,114 @@ def _live_workflow() -> Any:
 def _workflow_text(path: Path) -> str:
     """Return one workflow file as raw text for trigger-shape assertions."""
     return path.read_text()
+
+
+def _workflow_document(workflow_path: Path) -> dict[str, Any]:
+    """Load one checked-in workflow as a validated top-level mapping."""
+    workflow = yaml.safe_load(workflow_path.read_text())
+    assert isinstance(workflow, dict)
+    return workflow
+
+
+def _workflow_jobs(workflow_path: Path) -> dict[str, dict[str, Any]]:
+    """Return validated job mappings from one checked-in workflow."""
+    jobs = _workflow_document(workflow_path).get("jobs")
+    assert isinstance(jobs, dict)
+    assert all(
+        isinstance(name, str) and isinstance(job, dict) for name, job in jobs.items()
+    )
+    return jobs
+
+
+def _workflow_job_steps(
+    workflow_path: Path, job_name: str
+) -> tuple[dict[str, Any], ...]:
+    """Return parsed step mappings for one checked-in workflow job."""
+    job = _workflow_jobs(workflow_path).get(job_name)
+    assert isinstance(job, dict)
+    steps = job.get("steps")
+    assert isinstance(steps, list)
+    assert all(isinstance(step, dict) for step in steps)
+    return tuple(steps)
+
+
+def _workflow_job_commands(workflow_path: Path, job_name: str) -> tuple[str, ...]:
+    """Return the executable commands for one workflow job without step labels."""
+    return tuple(
+        command
+        for step in _workflow_job_steps(workflow_path, job_name)
+        if isinstance(command := step.get("run"), str)
+    )
+
+
+def _workflow_commands(workflow_path: Path) -> tuple[str, ...]:
+    """Return executable commands from every job in one checked-in workflow."""
+    return tuple(
+        command
+        for job in _workflow_jobs(workflow_path).values()
+        for step in job.get("steps", [])
+        if isinstance(step, dict)
+        if isinstance(command := step.get("run"), str)
+    )
+
+
+def _workflow_environment_values(
+    workflow_path: Path,
+    setting_name: str,
+) -> tuple[str, ...]:
+    """Return configured values for one setting across every workflow scope."""
+    workflow = _workflow_document(workflow_path)
+    environment_scopes: list[object] = [workflow.get("env")]
+
+    for job in _workflow_jobs(workflow_path).values():
+        environment_scopes.append(job.get("env"))
+        steps = job.get("steps", [])
+        assert isinstance(steps, list)
+        for step in steps:
+            assert isinstance(step, dict)
+            environment_scopes.append(step.get("env"))
+
+    values: list[str] = []
+    for environment in environment_scopes:
+        if environment is None:
+            continue
+        assert isinstance(environment, dict)
+        if setting_name in environment:
+            values.append(str(environment[setting_name]))
+    return tuple(values)
+
+
+def _weekly_slow_media_steps() -> tuple[dict[str, Any], ...]:
+    """Return the weekly job that owns checked-in slow media confidence."""
+    return _workflow_job_steps(WEEKLY_VALIDATION_WORKFLOW_PATH, "slow-e2e")
+
+
+def _weekly_artifact_uploads() -> tuple[dict[str, Any], ...]:
+    """Return weekly artifact uploads through their stable GitHub Action identity."""
+    return tuple(
+        step
+        for job in _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH).values()
+        for step in job.get("steps", [])
+        if isinstance(step, dict) and step.get("uses") == "actions/upload-artifact@v4"
+    )
+
+
+def _weekly_slow_media_artifact_uploads() -> tuple[dict[str, Any], ...]:
+    """Return failure uploads owned specifically by the weekly slow-media job."""
+    return tuple(
+        step
+        for step in _weekly_slow_media_steps()
+        if step.get("uses") == "actions/upload-artifact@v4"
+    )
+
+
+def _artifact_paths(upload_step: dict[str, Any]) -> frozenset[str]:
+    """Return the normalized path allowlist from one artifact upload step."""
+    options = upload_step.get("with")
+    assert isinstance(options, dict)
+    raw_paths = options.get("path")
+    assert isinstance(raw_paths, str)
+    return frozenset(path.strip() for path in raw_paths.splitlines() if path.strip())
 
 
 def _load_text_workflow(tmp_path: Path, text: str) -> Any:
@@ -144,8 +276,7 @@ def _append_step(
 def _failure_codes(workflow: Any) -> set[str]:
     """Return the stable failure codes emitted for one mutated workflow."""
     return {
-        failure.code
-        for failure in ci_workflow_contract.contract_failures(workflow)
+        failure.code for failure in ci_workflow_contract.contract_failures(workflow)
     }
 
 
@@ -182,15 +313,139 @@ def test_branch_feedback_workflow_is_push_only() -> None:
     assert "pull_request:" not in workflow_text.split("jobs:", 1)[0]
 
 
-def test_routine_workflows_keep_live_alert_postgres_confidence_disabled() -> None:
-    """Routine PR and branch workflows must not start PostgreSQL confidence."""
-    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
-        workflow_text = _workflow_text(workflow_path)
+def _path_filter_paths(workflow_path: Path, filter_name: str) -> frozenset[str]:
+    """Return the configured path patterns for one named workflow filter."""
+    changes_job = _workflow_jobs(workflow_path).get("changes")
+    assert isinstance(changes_job, dict)
+    steps = changes_job.get("steps")
+    assert isinstance(steps, list)
+    filter_steps = [
+        step for step in steps if isinstance(step, dict) and step.get("id") == "filter"
+    ]
 
-        assert "ESM_ALERT_STORE_BACKEND: file" in workflow_text
-        assert 'POSTGRES_ALERT_STORE_REAL_SMOKE: "0"' in workflow_text
-        assert "services:" not in workflow_text
-        assert "postgres_alert_weekly_" not in workflow_text
+    assert len(filter_steps) == 1
+    options = filter_steps[0].get("with")
+    assert isinstance(options, dict)
+    filter_source = options.get("filters")
+    assert isinstance(filter_source, str)
+    filters = yaml.safe_load(filter_source)
+    assert isinstance(filters, dict)
+    paths = filters.get(filter_name)
+    assert isinstance(paths, list)
+    assert all(isinstance(path, str) for path in paths)
+    return frozenset(paths)
+
+
+def _just_recipe_test_targets(recipe_name: str) -> frozenset[str]:
+    """Return direct test-file targets through the registration guard reader."""
+    return check_split_suite_registration.recipe_test_paths(recipe_name)
+
+
+def test_focused_detector_recipes_keep_canonical_targets() -> None:
+    """Focused detector recipes must retain their reviewed ownership sets."""
+    expected_targets_by_recipe = {
+        "test-detectors": {"tests/test_detectors.py"},
+        "test-detector-lab": {
+            "tests/test_detector_lab_runner.py",
+            "tests/test_detector_lab_metrics.py",
+            "tests/test_detector_lab_practical_blur.py",
+            "tests/test_detector_lab_practical_motion.py",
+        },
+        "test-real-media": {
+            "tests/test_detectors_integration.py",
+            "tests/test_detector_lab_real_media.py",
+        },
+    }
+
+    for recipe_name, expected_targets in expected_targets_by_recipe.items():
+        assert _just_recipe_test_targets(recipe_name) == expected_targets
+        assert all(Path(target).is_file() for target in expected_targets)
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_detector_paths_activate_backend_feedback(
+    workflow_path: Path,
+) -> None:
+    """Detector code, tests, and selectors must activate backend feedback."""
+    assert DETECTOR_BACKEND_PATHS <= _path_filter_paths(workflow_path, "backend")
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_detector_validation_configuration_activates_workflow_feedback(
+    workflow_path: Path,
+) -> None:
+    """Detector recipe and manifest edits must also activate workflow checks."""
+    assert DETECTOR_WORKFLOW_CONFIGURATION_PATHS <= _path_filter_paths(
+        workflow_path, "workflow"
+    )
+
+
+def test_backend_admission_keeps_main_pr_force_on_separate() -> None:
+    """Branch pushes use path activation while protected main PRs add force-on."""
+    branch_step = (
+        ci_workflow.load_workflow(BRANCH_CI_WORKFLOW_PATH)
+        .job(BACKEND_TEST_JOB)
+        .step(BACKEND_TEST_STEP)
+    )
+    protected_step = _live_workflow().job(BACKEND_TEST_JOB).step(BACKEND_TEST_STEP)
+
+    assert branch_step.condition == BRANCH_BACKEND_CONDITION
+    assert protected_step.condition is not None
+    assert BRANCH_BACKEND_CONDITION in protected_step.condition
+    assert MAIN_PR_FORCE_ON_CLAUSE in protected_step.condition
+
+
+def test_routine_fast_workflows_exclude_environment_sensitive_confidence() -> None:
+    """Routine feedback must not start slow, external, or weekly confidence."""
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        backend_commands = _workflow_job_commands(workflow_path, BACKEND_TEST_JOB)
+        workflow_commands = _workflow_commands(workflow_path)
+
+        assert any(BACKEND_FAST_SELECTOR in command for command in backend_commands)
+        assert all(
+            target_group not in command
+            for target_group in WEEKLY_ONLY_TARGET_GROUPS
+            for command in workflow_commands
+        )
+        assert "1" not in _workflow_environment_values(
+            workflow_path,
+            "API_STREAM_REAL_SMOKE",
+        )
+        assert all(
+            "API_STREAM_REAL_SMOKE=1" not in command for command in workflow_commands
+        )
+
+
+def test_routine_workflows_keep_live_postgres_confidence_disabled() -> None:
+    """Routine PR and branch workflows must not start live PostgreSQL confidence."""
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        workflow_commands = _workflow_commands(workflow_path)
+
+        assert set(
+            _workflow_environment_values(workflow_path, "ESM_ALERT_STORE_BACKEND")
+        ) == {"file"}
+        for setting_name in (
+            "POSTGRES_ALERT_STORE_REAL_SMOKE",
+            "POSTGRES_SESSION_STORE_REAL_SMOKE",
+        ):
+            assert set(_workflow_environment_values(workflow_path, setting_name)) == {
+                "0"
+            }
+            assert all(
+                f"{setting_name}=1" not in command for command in workflow_commands
+            )
+        assert all(
+            "services" not in job for job in _workflow_jobs(workflow_path).values()
+        )
+        assert all(
+            "postgres_alert_weekly_" not in command for command in workflow_commands
+        )
 
 
 def test_frontend_workflows_use_the_pinned_retrying_installer() -> None:
@@ -220,9 +475,9 @@ def test_frontend_workflows_use_the_pinned_retrying_installer() -> None:
 def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:
     """Scheduled/manual validation must retain both isolated live-alert jobs."""
     workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
-    backend_job = workflow_text.split(
-        "  postgres-alert-backend-confidence:", 1
-    )[1].split("  postgres-alert-runtime-operator-confidence:", 1)[0]
+    backend_job = workflow_text.split("  postgres-alert-backend-confidence:", 1)[
+        1
+    ].split("  postgres-alert-runtime-operator-confidence:", 1)[0]
     runtime_job = workflow_text.split(
         "  postgres-alert-runtime-operator-confidence:", 1
     )[1]
@@ -241,15 +496,114 @@ def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> No
         assert 'POSTGRES_ALERT_STORE_REAL_SMOKE: "1"' in job_text
 
 
-def test_weekly_slow_media_job_uploads_ground_truth_failure_artifacts() -> None:
-    """A failed checked-in truth case should retain its compact diagnostic report."""
-    workflow_text = _workflow_text(WEEKLY_VALIDATION_WORKFLOW_PATH)
-    slow_media_job = workflow_text.split("  slow-e2e:", 1)[1].split(
-        "  api-stream-deep:", 1
-    )[0]
+def test_weekly_slow_media_job_sets_failure_artifact_directories() -> None:
+    """The weekly media command must configure both bounded diagnostic folders."""
+    media_test_steps = [
+        step
+        for step in _weekly_slow_media_steps()
+        if "weekly_slow_media" in str(step.get("run", ""))
+    ]
 
-    assert "ESM_GROUND_TRUTH_ARTIFACT_DIR: ci-artifacts/ground-truth-failures" in slow_media_job
-    assert "ci-artifacts/ground-truth-failures/**" in slow_media_job
+    assert len(media_test_steps) == 1
+    environment = media_test_steps[0].get("env")
+    assert environment == {
+        "ESM_DETECTOR_LAB_ARTIFACT_DIR": "ci-artifacts/detector-lab-real-media",
+        "ESM_GROUND_TRUTH_ARTIFACT_DIR": "ci-artifacts/ground-truth-failures",
+    }
+
+
+def test_weekly_slow_media_job_builds_result_index_before_exiting() -> None:
+    """The weekly media command must build its summary before restoring pytest status."""
+    media_command = next(
+        command
+        for command in _workflow_job_commands(
+            WEEKLY_VALIDATION_WORKFLOW_PATH, "slow-e2e"
+        )
+        if "weekly_slow_media" in command
+    )
+
+    assert "--junitxml=ci-artifacts/weekly-media-results.junit.xml" in media_command
+    assert "build_weekly_media_result_index.py" in media_command
+    assert "ci-artifacts/weekly-media-results.json" in media_command
+    assert "cat ci-artifacts/weekly-media-results.json" in media_command
+    assert 'exit "$pytest_status"' in media_command
+    assert (
+        media_command.index("pytest_status=${PIPESTATUS[0]}")
+        < media_command.index("build_weekly_media_result_index.py")
+        < media_command.index("cat ci-artifacts/weekly-media-results.json")
+        < media_command.index('exit "$pytest_status"')
+    )
+
+
+def test_weekly_artifacts_are_failure_only_and_short_lived() -> None:
+    """Weekly uploads must retain only reviewed evidence for a short period."""
+    upload_steps = _weekly_artifact_uploads()
+
+    assert upload_steps
+    for step in upload_steps:
+        options = step.get("with")
+        assert step.get("if") == "failure()"
+        assert isinstance(options, dict)
+        assert options.get("retention-days") == 7
+
+    excluded_paths = {
+        "ci-artifacts/slow-e2e.log",
+        "ci-artifacts/weekly-media-results.junit.xml",
+    }
+    assert all(
+        not excluded_paths & _artifact_paths(step)
+        for step in upload_steps
+    )
+
+
+def test_weekly_slow_media_failure_upload_has_the_reviewed_artifact_allowlist() -> None:
+    """The weekly media bundle must not retain unreviewed diagnostic files."""
+    expected_paths = {
+        "ci-artifacts/weekly-media-preflight.log",
+        "ci-artifacts/weekly-media-results.json",
+        "ci-artifacts/detector-lab-real-media/**",
+        "ci-artifacts/ground-truth-failures/**",
+    }
+
+    upload_steps = _weekly_slow_media_artifact_uploads()
+
+    assert len(upload_steps) == 1
+    assert _artifact_paths(upload_steps[0]) == expected_paths
+
+
+def test_weekly_slow_media_job_runs_non_decoding_fixture_and_tool_preflight() -> None:
+    """Weekly media failures should be classified before detector execution."""
+    commands = _workflow_job_commands(WEEKLY_VALIDATION_WORKFLOW_PATH, "slow-e2e")
+
+    preflight_index = next(
+        index
+        for index, command in enumerate(commands)
+        if "check_weekly_media_preflight.py" in command
+    )
+    media_test_index = next(
+        index
+        for index, command in enumerate(commands)
+        if "weekly_slow_media" in command
+    )
+
+    assert preflight_index < media_test_index
+    assert "ci-artifacts/weekly-media-preflight.log" in commands[preflight_index]
+
+
+def test_weekly_slow_media_job_reports_media_tool_and_detector_lab_versions() -> None:
+    """Weekly media diagnostics must identify their reviewed toolchain versions."""
+    commands = _workflow_job_commands(WEEKLY_VALIDATION_WORKFLOW_PATH, "slow-e2e")
+
+    assert any("ffmpeg -version" in command for command in commands)
+    assert any("ffprobe -version" in command for command in commands)
+    assert any(
+        ".venv/bin/python --version" in command
+        and "import cv2" in command
+        and "import numpy" in command
+        and "opencv-python-headless==" in command
+        and "numpy==" in command
+        for command in commands
+    )
 
 
 def test_weekly_slow_media_target_ownership_is_explicit() -> None:
@@ -287,10 +641,7 @@ def test_main_gate_requires_exact_protected_job_set() -> None:
     """`main-gate` should keep its exact protected direct dependencies."""
     workflow = _live_workflow()
 
-    assert (
-        frozenset(workflow.job("main-gate").dependencies)
-        == MAIN_GATE_REQUIRED_JOBS
-    )
+    assert frozenset(workflow.job("main-gate").dependencies) == MAIN_GATE_REQUIRED_JOBS
 
 
 def test_feature_gate_requires_exact_protected_job_set() -> None:

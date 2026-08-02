@@ -28,6 +28,8 @@ from stores import BufferedCsvStore
 GROUND_TRUTH_PATH = Path(__file__).parent / "fixtures" / "media" / "ground_truth.json"
 GROUND_TRUTH_ARTIFACT_DIR_ENV = "ESM_GROUND_TRUTH_ARTIFACT_DIR"
 _MAX_DIAGNOSTIC_RESULTS = 24
+_MAX_DIAGNOSTIC_ALERTS = 24
+_MAX_DIAGNOSTIC_BYTES = 64 * 1024
 
 
 def configure_session_output(monkeypatch, tmp_path: Path) -> None:
@@ -286,7 +288,7 @@ def _compact_alerts(alerts: list[dict[str, object]]) -> list[dict[str, object]]:
             "window_index": alert.get("window_index"),
             "window_start_sec": alert.get("window_start_sec"),
         }
-        for alert in alerts
+        for alert in alerts[:_MAX_DIAGNOSTIC_ALERTS]
     ]
 
 
@@ -314,21 +316,39 @@ def _ground_truth_failure_diagnostic(
     context: Mapping[str, object] | None,
 ) -> dict[str, object]:
     """Build a bounded failure report without full snapshots or raw paths."""
-    expected_counts = expected.get("detector_true_counts", {})
+    raw_expected_counts = expected.get("detector_true_counts", {})
+    expected_counts = (
+        raw_expected_counts if isinstance(raw_expected_counts, dict) else {}
+    )
+    raw_selected_detectors = context.get("selected_detectors", ()) if context else ()
+    selected_detectors = (
+        raw_selected_detectors
+        if isinstance(raw_selected_detectors, (list, tuple))
+        else ()
+    )
+    detector_ids = {
+        detector_id
+        for detector_id in (*selected_detectors, *expected_counts)
+        if isinstance(detector_id, str)
+    }
     return {
         "case": dict(context or {}),
+        "detector_ids": sorted(detector_ids),
         "environment": _environment_versions(),
         "expected": {
             "result_count": expected["result_count"],
             "alert_count": expected["alert_count"],
             "detector_true_counts": expected_counts,
             "alerts": _compact_alerts(expected.get("alerts", [])),
+            "alerts_truncated": len(expected.get("alerts", []))
+            > _MAX_DIAGNOSTIC_ALERTS,
         },
         "actual": {
             "result_count": len(snapshot["results"]),
             "alert_count": len(snapshot["alerts"]),
             "detector_true_counts": _count_detector_truths(snapshot, expected_counts),
             "alerts": _compact_alerts(project_alerts(snapshot)),
+            "alerts_truncated": len(snapshot["alerts"]) > _MAX_DIAGNOSTIC_ALERTS,
             "results": _compact_results(snapshot),
             "results_truncated": len(snapshot["results"]) > _MAX_DIAGNOSTIC_RESULTS,
         },
@@ -343,6 +363,10 @@ def _emit_ground_truth_failure_diagnostic(
     """Print and optionally persist one sanitized ground-truth failure report."""
     diagnostic = _ground_truth_failure_diagnostic(snapshot, expected, context)
     serialized = json.dumps(diagnostic, sort_keys=True)
+    artifact_payload = f"{json.dumps(diagnostic, indent=2, sort_keys=True)}\n"
+    if len(artifact_payload.encode()) > _MAX_DIAGNOSTIC_BYTES:
+        print("[ground-truth] failure diagnostic omitted: size limit exceeded")
+        return
     print(f"[ground-truth] failure diagnostics: {serialized}")
 
     artifact_dir = os.environ.get(GROUND_TRUTH_ARTIFACT_DIR_ENV, "").strip()
@@ -352,12 +376,13 @@ def _emit_ground_truth_failure_diagnostic(
     case_id = str(diagnostic["case"].get("case_id", "unknown"))
     artifact_name = re.sub(r"[^A-Za-z0-9_.-]+", "-", case_id).strip("-")
     output_path = Path(artifact_dir) / f"{artifact_name or 'unknown'}.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        f"{json.dumps(diagnostic, indent=2, sort_keys=True)}\n",
-        encoding="utf-8",
-    )
-    print(f"[ground-truth] failure artifact: {output_path}")
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(artifact_payload, encoding="utf-8")
+    except OSError:
+        print("[ground-truth] failure artifact could not be persisted")
+        return
+    print(f"[ground-truth] failure artifact written for case={case_id}")
 
 
 def assert_key_results(
@@ -429,5 +454,8 @@ def assert_snapshot_matches_ground_truth(
 
         assert_key_results(snapshot, expected.get("key_results", []))
     except AssertionError:
-        _emit_ground_truth_failure_diagnostic(snapshot, expected, diagnostic_context)
+        try:
+            _emit_ground_truth_failure_diagnostic(snapshot, expected, diagnostic_context)
+        except Exception:
+            print("[ground-truth] failure diagnostic could not be generated")
         raise

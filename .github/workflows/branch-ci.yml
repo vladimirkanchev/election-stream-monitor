@@ -46,6 +46,10 @@ jobs:
               - 'src/**'
               - 'detector_lab/**'
               - 'tests/**'
+              # These files select detector-validation work; changing either
+              # must wake the same backend feedback as changing a test target.
+              - 'justfile'
+              - '.github/ci_test_targets.json'
             frontend:
               - 'frontend/**'
               - '!frontend/README.md'
@@ -56,6 +60,8 @@ jobs:
             workflow:
               - '.github/workflows/**'
               - '.github/scripts/**'
+              - 'justfile'
+              - '.github/ci_test_targets.json'
               - 'frontend/package.json'
               - 'pyproject.toml'
             contract:

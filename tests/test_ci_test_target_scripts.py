@@ -1,11 +1,7 @@
-"""Regression tests for CI helper scripts and ownership rules.
+"""Regression coverage for CI target ownership and helper scripts.
 
-This module covers the helper layer around the protected workflow contract:
-- manifest-backed target ownership
-- CI-owned path existence guards
-- protected-lane drift checks
-- guarded split-suite registration
-- focused script CLI behavior
+The helper layer owns manifest-backed target groups, focused detector and
+weekly-lane registration, CI-owned path checks, and protected-lane drift.
 """
 
 from __future__ import annotations
@@ -103,12 +99,15 @@ FRONTEND_CONTRACT_WORKFLOW_COMMAND = (
 REGISTERED_SHARED_MANIFEST_SPLIT_SUITE = "tests/test_api_boundary_contracts.py"
 UNREGISTERED_GUARDED_SPLIT_SUITE = "tests/test_api_boundary_new_split.py"
 REGISTERED_LOCAL_ONLY_SPLIT_SUITE = "frontend/electron/playbackSourcePolicy.test.mjs"
+REGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE = "tests/test_detector_lab_runner.py"
+UNREGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE = "tests/test_detector_lab_runner_new.py"
 NON_GUARDED_NEW_TEST_FILE = "tests/test_ci_test_target_scripts.py"
 GUARDED_OWNER_SEAM_EXEMPLARS = (
     "tests/test_api_boundary_contracts.py",
     "tests/test_stream_loader_contracts.py",
     "frontend/src/bridge/contract.errors.test.ts",
     "frontend/electron/playbackSourcePolicy.test.mjs",
+    "tests/test_detector_lab_runner.py",
 )
 PATH_EXISTENCE_SUMMARY_LABELS = (
     "all ci-owned test paths",
@@ -118,6 +117,7 @@ PATH_EXISTENCE_SUMMARY_LABELS = (
 )
 SHARED_OR_POLICY_SURFACES = ("shared_manifest", "policy_owned")
 LOCAL_ONLY_POLICY_SURFACES = ("local_only_policy",)
+FOCUSED_DETECTOR_RECIPE_SURFACES = ("focused_detector_recipe",)
 
 
 def _current_ci_workflow_text() -> str:
@@ -803,9 +803,11 @@ def test_split_suite_registration_prefers_explicit_changed_files_over_diff_range
     )
     monkeypatch.setattr(
         check_split_suite_registration,
-        "_added_files",
+        "_added_or_renamed_files",
         lambda diff_range: (_ for _ in ()).throw(
-            AssertionError("_added_files should not run when --changed-file is present")
+            AssertionError(
+                "_added_or_renamed_files should not run when --changed-file is present"
+            )
         ),
     )
 
@@ -818,7 +820,31 @@ def test_split_suite_registration_prefers_explicit_changed_files_over_diff_range
     assert exit_code == 0
     assert err == ""
     assert "split-suite registration check passed" in out
-    assert "new guarded files=1" in out
+    assert "guarded files=1" in out
+
+
+def test_split_suite_registration_collects_added_and_renamed_destinations(
+    monkeypatch,
+) -> None:
+    """Rename destinations need the same registration review as added files."""
+    monkeypatch.setattr(
+        check_split_suite_registration.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout=(
+                "A\ttests/test_detector_lab_runner_new.py\n"
+                "R100\ttests/test_detector_lab_runner.py\t"
+                "tests/test_detector_lab_runner_moved.py\n"
+            )
+        ),
+    )
+
+    assert check_split_suite_registration._added_or_renamed_files(
+        "origin/main...HEAD"
+    ) == (
+        "tests/test_detector_lab_runner_new.py",
+        "tests/test_detector_lab_runner_moved.py",
+    )
 
 
 def test_split_suite_registration_main_reports_missing_cli_inputs(
@@ -851,7 +877,7 @@ def test_split_suite_registration_main_reports_subprocess_failures(
     )
     monkeypatch.setattr(
         check_split_suite_registration,
-        "_added_files",
+        "_added_or_renamed_files",
         lambda diff_range: (_ for _ in ()).throw(
             subprocess.CalledProcessError(
                 1,
@@ -948,6 +974,29 @@ def test_split_suite_registration_accepts_local_only_policy_guarded_file() -> No
     assert status.is_registered("local_only_policy") is True
 
 
+def test_split_suite_registration_accepts_focused_detector_recipe_file() -> None:
+    """Reviewed detector splits should stay registered through a focused recipe."""
+    _assert_registration_passes(
+        REGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE,
+        accepted_surfaces=FOCUSED_DETECTOR_RECIPE_SURFACES,
+    )
+    status = _registration_status_for(REGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE)
+
+    assert status.is_registered("focused_detector_recipe") is True
+
+
+def test_split_suite_registration_rejects_unregistered_focused_detector_split() -> None:
+    """A new focused detector owner must not be omitted from every recipe."""
+    status = _registration_status_for(UNREGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE)
+
+    assert status.ok is False
+    assert status.accepted_surfaces() == FOCUSED_DETECTOR_RECIPE_SURFACES
+    assert status.registered_surfaces == frozenset()
+
+    failure = _registration_failure_for(UNREGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE)
+    assert "focused_detector_recipe=False" in failure
+
+
 def test_split_suite_registration_uses_any_accepted_surface_not_all() -> None:
     """One accepted surface is enough; the guard does not require every surface."""
     status = _registration_status_for(REGISTERED_SHARED_MANIFEST_SPLIT_SUITE)
@@ -997,6 +1046,7 @@ def test_split_suite_registration_matches_current_guarded_patterns() -> None:
     changed_files = (
         "tests/test_stream_loader_contracts.py",
         "frontend/src/hooks/useMonitoringSessionState.test.tsx",
+        REGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE,
         NON_GUARDED_NEW_TEST_FILE,
     )
 
@@ -1005,6 +1055,7 @@ def test_split_suite_registration_matches_current_guarded_patterns() -> None:
     assert tuple(status.relative_path for status in statuses) == (
         "tests/test_stream_loader_contracts.py",
         "frontend/src/hooks/useMonitoringSessionState.test.tsx",
+        REGISTERED_FOCUSED_DETECTOR_SPLIT_SUITE,
     )
 
 
@@ -1016,11 +1067,12 @@ def test_split_suite_registration_stays_aligned_with_current_owner_seams() -> No
         tuple(status.relative_path for status in statuses)
         == GUARDED_OWNER_SEAM_EXEMPLARS
     )
-    assert [status.ok for status in statuses] == [True, True, True, True]
+    assert [status.ok for status in statuses] == [True, True, True, True, True]
     assert statuses[0].accepted_surfaces() == SHARED_OR_POLICY_SURFACES
     assert statuses[1].accepted_surfaces() == SHARED_OR_POLICY_SURFACES
     assert statuses[2].accepted_surfaces() == SHARED_OR_POLICY_SURFACES
     assert statuses[3].accepted_surfaces() == LOCAL_ONLY_POLICY_SURFACES
+    assert statuses[4].accepted_surfaces() == FOCUSED_DETECTOR_RECIPE_SURFACES
     assert check_split_suite_registration.registration_failures(
         GUARDED_OWNER_SEAM_EXEMPLARS
     ) == []
