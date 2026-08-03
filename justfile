@@ -35,12 +35,15 @@ default:
 
 help: default
 
+# Reproducible contributor bootstrap. Host tools stay outside this repository.
+setup:
+    uv sync --locked --extra dev
+    cd frontend && bash ../scripts/install_frontend_dependencies.sh
+    just env-check
+
 # Lightweight local environment sanity check.
 env-check:
-    python3 --version
-    node --version
-    ffmpeg -version | head -n 1
-    if command -v just >/dev/null 2>&1; then just --version; else echo "just: not installed"; fi
+    python3 .github/scripts/check_development_environment.py
 
 # Core local validation loop:
 # - fast production backend detector/rule confidence
