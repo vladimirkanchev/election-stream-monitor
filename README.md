@@ -256,7 +256,8 @@ cd frontend
 bash ../scripts/install_frontend_dependencies.sh
 ```
 
-For repo commands after setup, prefer the repo-local interpreter explicitly:
+After installing the `test` or `dev` extra, prefer the repo-local interpreter
+explicitly for test and script commands:
 
 ```bash
 ./.venv/bin/python -m pytest
@@ -271,7 +272,7 @@ For a locked contributor or AI-agent environment, use the committed
 [`uv.lock`](./uv.lock):
 
 ```bash
-uv sync --extra dev
+uv sync --locked --extra dev
 ```
 
 `pip install -e ...` remains supported for editable-install and packaging
@@ -540,8 +541,9 @@ and **validated** is the version exercised by CI.
 
 FFmpeg and FFprobe are host tools, not lockfile-managed dependencies. Their
 `6.1.1-3ubuntu5` value is the weekly Ubuntu CI reference, not an exact
-cross-platform local requirement. Use `uv sync` for a locked contributor
-environment; retain `pip` for editable-install and packaging compatibility.
+cross-platform local requirement. Use `uv sync --locked` for a locked
+contributor environment; retain `pip` for editable-install and packaging
+compatibility.
 
 ## Example Inputs
 

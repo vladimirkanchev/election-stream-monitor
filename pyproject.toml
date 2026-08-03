@@ -30,11 +30,9 @@ dependencies = [
     "python-ffmpeg>=2.0.12",
     "m3u8>=6.0.0",
     "pydantic>=2.13.1",
-    "bandit>=1.9.4",
     "cffi>=2.0.0",
     "pynacl==1.5.0",
     "mcp==1.27.0",
-    "pytest>=9.0.2",
 ]
 
 [project.optional-dependencies]
@@ -45,7 +43,7 @@ detectorlab = [
 test = [
     "httpx>=0.28.1",
     "PyYAML>=6.0.3",
-    "pytest>=8.4.2",
+    "pytest>=9.0.2",
 ]
 lint = [
     "bandit>=1.9.4",
@@ -57,17 +55,8 @@ typecheck = [
     "pyright[nodejs]>=1.1.408",
 ]
 dev = [
-    "bandit>=1.9.4",
-    "black>=26.3.1",
-    "httpx>=0.28.1",
-    "mypy>=1.19.1",
-    "numpy>=2.1.0",
-    "opencv-python-headless>=4.10.0",
+    "election-stream-monitor[detectorlab,lint,test,typecheck]",
     "pre-commit>=4.3.0",
-    "PyYAML>=6.0.3",
-    "pyright[nodejs]>=1.1.408",
-    "ruff>=0.13.0",
-    "pytest>=8.4.2",
 ]
 
 [project.scripts]

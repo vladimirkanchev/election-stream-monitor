@@ -88,6 +88,8 @@ Use these first depending on what you are doing:
     - if `pyproject.toml` or `uv.lock` changes, explain why in the PR or commit
     - if it is unclear whether they belong, use
       `./.agents/skills/dependency-change-review/`
+    - [dependency-ownership-audit.md](./dependency-ownership-audit.md) owns
+      Python dependency-source policy and its current consumer audit
   - commit-message rule:
     - describe the actual change, not the branch purpose
     - keep one clear theme per commit when practical
