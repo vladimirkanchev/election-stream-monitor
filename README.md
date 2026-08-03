@@ -244,20 +244,21 @@ You will need:
 - Node.js `22.x` selected from [`.nvmrc`](./.nvmrc)
 - npm, which the frontend installer sets to the declared `11.15.0`
 - `ffmpeg` and `ffprobe` on `PATH`
-- optional `uv` for the locked contributor and AI-agent setup flow
+- `uv` for the locked contributor and AI-agent setup flow
+- `just` for the repository setup and validation commands
 
-Quick setup for the backend and desktop app:
+Recommended setup for contributors and AI agents:
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
-cd frontend
-bash ../scripts/install_frontend_dependencies.sh
+just setup
 ```
 
-After installing the `test` or `dev` extra, prefer the repo-local interpreter
-explicitly for test and script commands:
+`just setup` synchronizes the locked Python contributor environment, installs
+the frontend lockfile, and runs the local environment check. It does not
+install host tools, PostgreSQL, Git LFS media, or representative local media.
+
+After setup, prefer the repo-local interpreter explicitly for test and script
+commands:
 
 ```bash
 ./.venv/bin/python -m pytest
@@ -268,7 +269,7 @@ Do not assume `python3`, `pip`, or `pytest` from `PATH` point at this repo's
 virtualenv. This is especially important for AI-assisted tools launched from a
 different project shell.
 
-For a locked contributor or AI-agent environment, use the committed
+For a direct locked setup without the frontend step, use the committed
 [`uv.lock`](./uv.lock):
 
 ```bash
@@ -305,9 +306,7 @@ below in [Running The Project](./README.md#running-the-project).
 Quick check:
 
 ```bash
-python --version
-node -v
-ffmpeg -version | head -n 1
+just env-check
 ```
 
 ## Developer Harness
@@ -340,7 +339,7 @@ Workflow ownership stays split on purpose:
 Current high-value commands:
 
 - `just env-check`
-  - lightweight local tool and version sanity check
+  - environment readiness diagnostic after setup or toolchain changes
 - focused lanes first
   - use `just test-detectors`, `just test-processor`, `just test-alert-rules`,
     `just test-hls`, or `just test-frontend` when the changed seam is already clear
@@ -465,6 +464,11 @@ npm --prefix frontend run dev:web
 ```
 
 This does not replace the normal Electron desktop flow.
+
+Optional local configuration is documented in [`.env.example`](./.env.example).
+The application does not load that file automatically: source it explicitly or
+export only the variables needed for the command you run. It contains no usable
+API key or database URL.
 
 Temporary shared demo access:
 

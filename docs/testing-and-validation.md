@@ -126,9 +126,11 @@ Use the [environment version contract](../README.md#version-contract) for
 supported, default, and CI-validated tool versions. This guide owns validation
 lanes and their limits; a successful lane does not extend platform support.
 
-For a reproducible contributor or AI-agent environment, use `uv sync --locked`
-with the committed lockfile and required extras. The editable `pip` path
-remains for packaging compatibility and focused-extra checks.
+Set up a reproducible contributor or AI-agent environment with `just setup`.
+For a direct backend-only locked setup, use `uv sync --locked --extra dev`; the
+editable `pip` path remains for packaging compatibility and focused-extra
+checks. The [development-environment audit](./development-environment-audit.md)
+owns prerequisites and optional-capability policy.
 
 ### Execution Guide
 
@@ -589,9 +591,17 @@ tests/test_detector_lab_practical_motion.py -q
 If you want the standardized local harness entrypoint instead of copying the
 commands directly, use the matching `justfile` recipes:
 
+- `just setup`
+  - recommended contributor and AI-agent setup path
+  - synchronizes the locked Python `dev` environment, installs frontend
+    dependencies through the shared installer, then runs `just env-check`
+  - host tools, PostgreSQL, Git LFS media, and representative local assets stay
+    outside this command
 - `just env-check`
-  - lightweight local tool and version sanity check
-  - confirms `python3`, `node`, `ffmpeg`, and `just`
+  - deterministic local setup diagnostic for Python, Node/npm, uv, just,
+    FFmpeg/FFprobe, Git, Git LFS, and the repository virtual environment
+  - reports PostgreSQL and representative-media availability without printing
+    values, connecting to services, or making optional capabilities fail
 - `just test-detectors`
   - focused production detector contract and metric lane
 - `just test-processor`

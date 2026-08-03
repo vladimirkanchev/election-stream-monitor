@@ -31,8 +31,10 @@ That checklist now forces three useful questions early:
 
 Use the smallest honest lane first:
 
+- `just setup`
+  - recommended first-run setup for contributors and AI agents
 - `just env-check`
-  - toolchain sanity check after local setup or dependency changes
+  - environment readiness diagnostic after setup or toolchain changes
 - focused lanes such as `just test-detectors`, `just test-alert-rules`, or
   `just test-hls`
   - use when the changed seam is already clear
@@ -68,6 +70,8 @@ Keep one clear owner per topic:
   - maintainer routing
 - [docs/testing-and-validation.md](./docs/testing-and-validation.md)
   - validation lanes and CI shape
+- [docs/development-environment-audit.md](./docs/development-environment-audit.md)
+  - setup ownership, prerequisites, and optional local capabilities
 - [`.agents/skills/`](./.agents/skills/)
   - repo-local skill behavior only
 
