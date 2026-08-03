@@ -14,6 +14,9 @@ Before running Python commands, prefer the repo-local interpreter or a `just`
 recipe. This repo does not auto-activate `.venv`, so inherited shell state can
 still point at another project's environment.
 
+For supported, contributor-default, and CI-validated tool versions, use the
+[root environment contract](../README.md#version-contract).
+
 ## Best First Reads
 
 If you are new to the repo, read these in order:

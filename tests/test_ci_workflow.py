@@ -10,6 +10,7 @@ from dataclasses import replace
 import importlib
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -32,6 +33,9 @@ WEEKLY_VALIDATION_WORKFLOW_PATH = (
     SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
 )
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
+PYTHON_VERSION_PATH = Path(".python-version")
+NVMRC_PATH = Path(".nvmrc")
+FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 FRONTEND_INSTALL_COMMAND = "bash ../scripts/install_frontend_dependencies.sh"
 MAIN_GATE_REQUIRED_JOBS = ci_workflow_contract.MAIN_GATE_REQUIRED_JOBS
@@ -154,6 +158,29 @@ def _workflow_environment_values(
         assert isinstance(environment, dict)
         if setting_name in environment:
             values.append(str(environment[setting_name]))
+    return tuple(values)
+
+
+def _workflow_action_values(
+    workflow_path: Path,
+    action_prefix: str,
+    setting_name: str,
+) -> tuple[str, ...]:
+    """Return one `with:` setting from actions selected by stable identity."""
+    values: list[str] = []
+    for job in _workflow_jobs(workflow_path).values():
+        steps = job.get("steps", [])
+        assert isinstance(steps, list)
+        for step in steps:
+            assert isinstance(step, dict)
+            action = step.get("uses")
+            if not isinstance(action, str) or not action.startswith(action_prefix):
+                continue
+            settings = step.get("with")
+            assert isinstance(settings, dict)
+            value = settings.get(setting_name)
+            assert isinstance(value, str)
+            values.append(value)
     return tuple(values)
 
 
@@ -448,8 +475,8 @@ def test_routine_workflows_keep_live_postgres_confidence_disabled() -> None:
         )
 
 
-def test_frontend_workflows_use_the_pinned_retrying_installer() -> None:
-    """Every frontend install lane should share the pinned toolchain helper."""
+def test_frontend_workflows_use_the_shared_installer() -> None:
+    """Every frontend install lane should use the shared toolchain helper."""
 
     for workflow_path in (
         CI_WORKFLOW_PATH,
@@ -467,9 +494,49 @@ def test_frontend_workflows_use_the_pinned_retrying_installer() -> None:
         assert install_steps
         assert all(step.command == FRONTEND_INSTALL_COMMAND for step in install_steps)
 
+
+def test_environment_toolchain_owners_stay_aligned() -> None:
+    """Tracked defaults, CI setup, and frontend declarations must agree."""
+    workflow_paths = (
+        CI_WORKFLOW_PATH,
+        BRANCH_CI_WORKFLOW_PATH,
+        WEEKLY_VALIDATION_WORKFLOW_PATH,
+    )
+    python_default = PYTHON_VERSION_PATH.read_text().strip()
+    node_default = NVMRC_PATH.read_text().strip()
+    frontend_package = json.loads(FRONTEND_PACKAGE_PATH.read_text())
+
+    assert re.fullmatch(r"\d+\.\d+", python_default)
+    assert {
+        value
+        for workflow_path in workflow_paths
+        for value in _workflow_action_values(
+            workflow_path, "actions/setup-python@", "python-version"
+        )
+    } == {python_default}
+    assert node_default.isdecimal()
+    assert frontend_package["engines"]["node"] == f"{node_default}.x"
+    assert {
+        value
+        for workflow_path in workflow_paths
+        for value in _workflow_action_values(
+            workflow_path, "actions/setup-node@", "node-version-file"
+        )
+    } == {str(NVMRC_PATH)}
+
+    npm_spec = frontend_package.get("packageManager")
+    assert isinstance(npm_spec, str)
+    match = re.fullmatch(r"npm@(\d+)\.\d+\.\d+", npm_spec)
+    assert match is not None
+    assert frontend_package["engines"]["npm"] == f"{match.group(1)}.x"
+
     installer = FRONTEND_INSTALLER_PATH.read_text()
-    assert 'REQUIRED_NPM_VERSION="11.15.0"' in installer
-    assert "npm ci" in installer
+    assert '"${REPO_ROOT}/.nvmrc"' in installer
+    assert "packageJson.packageManager" in installer
+    assert re.search(
+        r'REQUIRED_NPM_VERSION="\$\{REQUIRED_NPM_SPEC#npm@\}"', installer
+    )
+    assert 'npm@${REQUIRED_NPM_VERSION}' in installer
 
 
 def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:

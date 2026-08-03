@@ -122,6 +122,15 @@ For AI-assisted tools, use this doc as the execution owner:
 
 Choose the smallest honest lane first.
 
+Use the [environment version contract](../README.md#version-contract) for
+supported, default, and CI-validated tool versions. This guide owns validation
+lanes and their limits; a successful lane does not extend platform support.
+
+For a reproducible contributor or AI-agent environment, use `uv sync` with the
+committed lockfile and required extras. The editable `pip` path remains for
+packaging compatibility; dependency-ownership work will consolidate the setup
+implementations separately.
+
 ### Execution Guide
 
 | Change shape | Start locally | CI follow-up | Local limit |

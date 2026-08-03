@@ -241,9 +241,10 @@ Installation is still developer-oriented rather than one-click.
 You will need:
 
 - Python `3.12+`
-- Node.js and npm
+- Node.js `22.x` selected from [`.nvmrc`](./.nvmrc)
+- npm, which the frontend installer sets to the declared `11.15.0`
 - `ffmpeg` and `ffprobe` on `PATH`
-- optionally, `uv` if you prefer that setup flow
+- optional `uv` for the locked contributor and AI-agent setup flow
 
 Quick setup for the backend and desktop app:
 
@@ -252,7 +253,7 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 cd frontend
-npm install
+bash ../scripts/install_frontend_dependencies.sh
 ```
 
 For repo commands after setup, prefer the repo-local interpreter explicitly:
@@ -266,16 +267,18 @@ Do not assume `python3`, `pip`, or `pytest` from `PATH` point at this repo's
 virtualenv. This is especially important for AI-assisted tools launched from a
 different project shell.
 
-If you use `uv`, the Python part can look like this:
+For a locked contributor or AI-agent environment, use the committed
+[`uv.lock`](./uv.lock):
 
 ```bash
-uv venv
-. .venv/bin/activate
-uv pip install -e .
+uv sync --extra dev
 ```
 
-If you also want the fuller backend test toolchain locally, install the `test`
-extra:
+`pip install -e ...` remains supported for editable-install and packaging
+compatibility checks. It is useful when testing package installation itself,
+but does not provide the same lockfile-based environment as `uv sync`.
+
+For a smaller pip-managed backend test environment, install the `test` extra:
 
 ```bash
 pip install -e .[test]
@@ -522,13 +525,23 @@ If Electron startup behaves differently on your machine, start here:
 
 PostgreSQL is optional and not needed for the default local workflow.
 
-Tested with:
+### Version Contract
 
-- React `19.1.0`
-- Node.js `20.20.0`
-- npm `10.8.2`
-- `ffmpeg` `6.1.1`
-- `ffprobe` `6.1.1`
+Use this matrix when choosing or reporting a local environment. **Supported**
+is the compatibility claim, **default** is the contributor/AI-agent choice,
+and **validated** is the version exercised by CI.
+
+| Component | Supported | Default | Validated |
+| --- | --- | --- | --- |
+| Python | `>=3.12` | `3.12` | `3.12` in CI |
+| Node.js | `22.x` | `22` from [`.nvmrc`](./.nvmrc) | `22` in frontend CI |
+| npm | `11.x` | `11.15.0` from `packageManager` | `11.15.0` through the frontend installer |
+| FFmpeg / FFprobe | available on `PATH` | host-provided | `6.1.1-3ubuntu5` in weekly Ubuntu media CI |
+
+FFmpeg and FFprobe are host tools, not lockfile-managed dependencies. Their
+`6.1.1-3ubuntu5` value is the weekly Ubuntu CI reference, not an exact
+cross-platform local requirement. Use `uv sync` for a locked contributor
+environment; retain `pip` for editable-install and packaging compatibility.
 
 ## Example Inputs
 
