@@ -27,4 +27,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["electron/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
 );

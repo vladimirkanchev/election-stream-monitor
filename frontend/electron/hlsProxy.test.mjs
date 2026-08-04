@@ -38,10 +38,6 @@ function assetResponse(
   return [status, body, contentType, headers];
 }
 
-function expectProxyPath(proxyUrl) {
-  expect(proxyUrl).toContain("local-media://proxy/");
-}
-
 describe("electron HLS proxy helpers", () => {
   it("detects direct remote HLS URLs", () => {
     expect(isRemoteHlsUrl("https://cdn.example.com/live/playlist.m3u8")).toBe(true);
