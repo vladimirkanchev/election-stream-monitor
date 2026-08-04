@@ -66,12 +66,12 @@ def _decode_json_param(value: object) -> object:
 class InMemoryPostgresSessionStoreCursor:
     """SQL-aware cursor double for the fast adapter-contract lane."""
 
-    def __init__(self, connection: "InMemoryPostgresSessionStoreConnection") -> None:
+    def __init__(self, connection: InMemoryPostgresSessionStoreConnection) -> None:
         self._connection = connection
         self._fetchone_result: object | None = None
         self._fetchall_result: list[object] = []
 
-    def __enter__(self) -> "InMemoryPostgresSessionStoreCursor":
+    def __enter__(self) -> InMemoryPostgresSessionStoreCursor:
         return self
 
     def __exit__(

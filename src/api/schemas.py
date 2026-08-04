@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field, StringConstraints
 
 from read_resource_policy import MAX_READ_PAGE_LIMIT
 
-
 ApiInputMode = Literal["video_segments", "video_files", "api_stream"]
 ApiSessionStatus = Literal[
     "pending",

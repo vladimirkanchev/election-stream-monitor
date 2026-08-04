@@ -11,16 +11,20 @@ explicitly configured disposable databases, not runtime migration.
 
 from __future__ import annotations
 
-from datetime import datetime
 import importlib
+from datetime import datetime
 from typing import Any, Protocol, Self, cast
 
+from postgres_diagnostics import (
+    SAFE_POSTGRES_DIAGNOSTIC,
+    redact_postgres_database_url,
+)
 from read_resource_policy import validate_optional_row_limit
 from session_alert_store import (
-    AlertReadLimitExceededError,
     AlertEventPayload,
-    require_known_session,
+    AlertReadLimitExceededError,
     SessionAlertStore,
+    require_known_session,
 )
 from session_alert_store_postgres_config import (
     PostgresAlertStoreConfigurationError,
@@ -29,10 +33,6 @@ from session_alert_store_postgres_config import (
     validate_postgres_alert_store_settings,
 )
 from session_models import AlertEvent, EventSeverity
-from postgres_diagnostics import (
-    SAFE_POSTGRES_DIAGNOSTIC,
-    redact_postgres_database_url,
-)
 
 POSTGRES_ALERT_EVENTS_TABLE_NAME = "session_alert_events"
 POSTGRES_ALERT_EVENT_COLUMNS: tuple[str, ...] = (

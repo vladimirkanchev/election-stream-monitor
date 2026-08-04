@@ -22,12 +22,11 @@ from tests.representative_hls_test_support import (
     range_indices,
     representative_hls_subset,
     representative_video_file_subset,
-    require_representative_local_hls,
     require_representative_local_files,
+    require_representative_local_hls,
     run_video_files_subset_session,
     run_video_segments_subset_session,
 )
-
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 

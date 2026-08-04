@@ -8,11 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.e2e_session_test_support import assert_completed_session, configure_session_output
-from tests.session_runner_api_stream_test_support import _patch_runner_store_flushes
 from session_io import read_session_snapshot
 from session_runner import run_local_session
-
+from tests.e2e_session_test_support import (
+    assert_completed_session,
+    configure_session_output,
+)
+from tests.session_runner_api_stream_test_support import _patch_runner_store_flushes
 
 pytestmark = pytest.mark.e2e
 

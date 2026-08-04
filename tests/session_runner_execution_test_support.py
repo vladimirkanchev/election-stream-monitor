@@ -4,18 +4,17 @@ These helpers keep cancellation tests focused on runner behavior rather than
 repeating file setup and synthetic slice construction in each suite.
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 import config
+import session_runner_execution
 from analyzer_contract import AnalysisSlice, InputMode
 from session_io import initialize_session, write_session_progress
-from session_models import SessionMetadata, SessionProgress
-from session_models import SessionStatus
+from session_models import SessionMetadata, SessionProgress, SessionStatus
 from session_store import SessionStore
 from session_store_file import FileSessionStore
-import session_runner_execution
 from stream_loader_contracts import ApiStreamSourceContract, ApiStreamTelemetrySnapshot
 
 DEFAULT_TIMESTAMP_UTC = "2026-04-28 12:00:00"

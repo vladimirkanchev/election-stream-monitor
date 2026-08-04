@@ -18,8 +18,8 @@ from time import perf_counter
 
 from session_alert_incidents import build_session_timeline
 from tests.session_alert_test_support import (
-    build_timeline_entry,
     build_persisted_alert,
+    build_timeline_entry,
     configure_session_alert_test,
     write_alert_log,
     write_known_session,

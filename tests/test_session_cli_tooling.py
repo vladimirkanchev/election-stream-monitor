@@ -16,16 +16,16 @@ import pytest
 import session_cli
 import session_runner
 from detectors.registry import list_available_detectors
-from session_models import SessionMetadata, SessionProgress
 from session_alert_store import clear_default_session_alert_store_cache
+from session_models import SessionMetadata, SessionProgress
 from session_store_file import DEFAULT_FILE_SESSION_STORE
 from session_store_postgres import PostgresSessionStoreBootstrapError
 from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
 from session_store_runtime import clear_default_session_store_cache
 from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
 from tests.session_alert_test_support import (
-    FailingReadAlertStore,
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    FailingReadAlertStore,
     build_alert_event,
     build_live_runtime_postgres_store,
     build_normalized_alert,

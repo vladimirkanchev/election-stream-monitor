@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import config
-from data_io import stream_local_prefix
 import processor
+from data_io import stream_local_prefix
 
 
 @dataclass(slots=True)

@@ -6,10 +6,11 @@ black-screen and blur policies.
 """
 
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from statistics import median
-from typing import Callable
 
+import config
 from analyzer_contract import (
     AlertRuleCatalogEntry,
     DetectorOrigin,
@@ -17,10 +18,8 @@ from analyzer_contract import (
     RuleEvaluationContext,
     RuntimeResultRow,
 )
-import config
 from logger import format_log_context, get_logger
 from session_models import AlertEvent, EventSeverity
-
 
 RuleRowLike = RuntimeResultRow | dict[str, object]
 Predicate = Callable[[RuntimeResultRow], bool]

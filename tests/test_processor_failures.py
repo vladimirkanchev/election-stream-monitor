@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import processor
 import pytest
+
+import processor
 from analyzer_contract import AnalysisSlice
 from tests.processor_test_support import (
     DummyStore,

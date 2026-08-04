@@ -11,7 +11,6 @@ from pathlib import Path
 
 from tests.skill_test_support import ScenarioExpectation, SnapshotExpectation
 
-
 EXPECTED_SKILL_ORDER = (
     "alert-backend-parity-review",
     "architecture-diagram-review",

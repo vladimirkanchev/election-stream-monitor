@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import session_runner
 
+import session_runner
 from tests.e2e_session_test_support import (
     assert_completed_session,
     configure_session_output,
@@ -22,13 +22,12 @@ from tests.e2e_session_test_support import (
     run_and_read_local_session,
 )
 from tests.representative_hls_test_support import (
-    representative_local_file_path,
     representative_expected_case,
+    representative_local_file_path,
     representative_video_file_subset,
     require_representative_local_files,
     run_video_files_subset_session,
 )
-
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
@@ -240,7 +239,7 @@ def _assert_selected_detector_contract(
     selected_detectors: list[str],
 ) -> None:
     """Assert that session metadata records the detector set honestly."""
-    assert getattr(run.metadata, "selected_detectors") == selected_detectors
+    assert run.metadata.selected_detectors == selected_detectors
 
 
 def _assert_completed_soak_run(

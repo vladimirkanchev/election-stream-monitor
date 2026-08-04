@@ -34,7 +34,10 @@ from tests.api_boundary_env_test_support import (
 )
 from tests.api_boundary_test_support import request
 from tests.mcp_alert_test_support import call_mcp_tool, tool_error_text
-from tests.session_alert_test_support import configure_session_alert_test, write_known_session
+from tests.session_alert_test_support import (
+    configure_session_alert_test,
+    write_known_session,
+)
 
 JsonDict = dict[str, object]
 

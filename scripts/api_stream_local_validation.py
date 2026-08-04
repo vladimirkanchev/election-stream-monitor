@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
+import time
 from contextlib import contextmanager
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-import json
 from pathlib import Path
-import sys
 from threading import Thread
-import time
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXPECTATIONS_PATH = REPO_ROOT / "tests" / "fixtures" / "media" / "api_stream_expectations.json"

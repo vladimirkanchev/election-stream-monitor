@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+
 import session_runner
 import stream_loader_http_hls
 from session_io import read_session_snapshot

@@ -6,16 +6,17 @@ isolation, request access, and cleanup for the real FastAPI-to-worker lane.
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-import os
 from pathlib import Path
-import shutil
 
-import config
 import httpx
 import pytest
+
+import config
 from session_alert_store import clear_default_session_alert_store_cache
 from session_store_postgres_config import (
     POSTGRES_SESSION_AUTO_CREATE_TABLES_ENV,

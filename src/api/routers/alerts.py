@@ -19,23 +19,25 @@ policy in `api/alert_route_policy.py`. That keeps authentication and rate
 limiting at the HTTP boundary and out of the shared alert service modules.
 """
 
-from typing import TypeVar
-
 from fastapi import APIRouter, Depends
 
 from api.alert_route_policy import ALERT_ROUTE_RESPONSES, require_http_alert_principal
-from api.errors import AlertQueryLimitExceededError, SessionNotFoundError, ValidationFailedError
+from api.errors import (
+    AlertQueryLimitExceededError,
+    SessionNotFoundError,
+    ValidationFailedError,
+)
 from api.schemas import (
     AlertTimestampFilter,
     ApiAlertSeverity,
     DetectorIdentifier,
     ReadPageLimit,
     ReadPageOffset,
-    SessionIdentifier,
-    SessionAlertTimelineResponse,
     SessionAlertQueryResponse,
-    SessionIncidentSummaryResponse,
     SessionAlertSummaryResponse,
+    SessionAlertTimelineResponse,
+    SessionIdentifier,
+    SessionIncidentSummaryResponse,
 )
 from read_resource_policy import DEFAULT_READ_PAGE_LIMIT, paginate_read_items
 from session_alert_adapter import (
@@ -43,11 +45,12 @@ from session_alert_adapter import (
     build_alert_filter_kwargs,
     call_alert_service,
 )
-from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alert_incidents import (
+    build_session_incident_summary,
+    build_session_timeline,
+)
 from session_alert_store import AlertReadLimitExceededError
 from session_alerts import filter_session_alert_events, summarize_session_alert_events
-
-ServiceResult = TypeVar("ServiceResult")
 
 # Router-level protection is intentionally attached here so all alert-query
 # routes share the same auth and rate-limit boundary without repeating it per
@@ -58,7 +61,7 @@ router = APIRouter(
 )
 
 
-def _call_http_alert_service(
+def _call_http_alert_service[ServiceResult](
     service_fn: AlertServiceCallable[ServiceResult],
     *,
     session_id: str,

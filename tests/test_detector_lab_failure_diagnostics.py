@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from tests.detector_lab_failure_diagnostics import (
-    DetectorLabDiagnosticContext,
     MAX_DIAGNOSTIC_ROWS,
+    DetectorLabDiagnosticContext,
     build_failure_diagnostic,
     emit_failure_diagnostic_on_error,
     persist_csv_artifact,

@@ -7,12 +7,13 @@ faster than they would in the larger session-runner integration suites.
 from pathlib import Path
 from types import SimpleNamespace
 
-import config
 import pytest
+
+import config
+import session_runner_execution
 from analyzer_contract import AnalysisSlice
 from session_io import initialize_session, read_session_snapshot, write_session_progress
 from session_models import SessionMetadata, SessionProgress
-import session_runner_execution
 from stream_loader_contracts import ApiStreamTelemetrySnapshot
 
 

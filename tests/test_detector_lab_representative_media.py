@@ -24,7 +24,6 @@ from tests.representative_hls_test_support import (
     require_representative_local_files,
 )
 
-
 pytestmark = pytest.mark.slow
 
 BLACK_FRAME_ALERT = "practical.black_frame_alert_v1"

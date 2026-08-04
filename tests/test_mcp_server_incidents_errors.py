@@ -17,8 +17,9 @@ easy-to-scan places.
 from collections.abc import Iterator
 from pathlib import Path
 
-import esm_mcp.alert_tools as alert_tools
 import pytest
+
+import esm_mcp.alert_tools as alert_tools
 from session_alert_store import clear_default_session_alert_store_cache
 from session_alerts import SessionAlertsNotFoundError
 from tests.mcp_alert_test_support import (
@@ -30,8 +31,8 @@ from tests.mcp_server_incidents_test_support import (
     write_incident_tool_session,
 )
 from tests.session_alert_test_support import (
-    FailingReadAlertStore,
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    FailingReadAlertStore,
     build_live_runtime_postgres_store,
     build_unique_session_id,
     close_store_if_possible,

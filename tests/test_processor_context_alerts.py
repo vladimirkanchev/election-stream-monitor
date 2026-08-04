@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import cast
 
 import processor
-from analyzer_contract import AnalysisSlice, RuntimeResultRow, VideoMetricsRow
 from alert_rules import reset_session_rule_state
+from analyzer_contract import AnalysisSlice, RuntimeResultRow, VideoMetricsRow
 from session_models import AlertEvent
 from tests.processor_test_support import (
     DummyStore,

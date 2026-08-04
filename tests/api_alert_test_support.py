@@ -13,11 +13,11 @@ boundary vocabulary under mypy.
 
 from collections.abc import Mapping
 
-from api_boundary_config import ApiAuthMode, ApiRateLimitStrategy
 from api.errors import UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
-from config import ApiAuthSettings, ApiRateLimitSettings
-from api_auth import AuthPrincipal, AuthenticationError, AuthType
+from api_auth import AuthenticationError, AuthPrincipal, AuthType
+from api_boundary_config import ApiAuthMode, ApiRateLimitStrategy
 from api_rate_limit import reset_api_rate_limit_state
+from config import ApiAuthSettings, ApiRateLimitSettings
 from tests.session_alert_test_support import (
     build_alert_summary_payload,
     build_incident_summary_payload,

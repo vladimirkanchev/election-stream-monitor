@@ -26,8 +26,8 @@ from tests.repo_skill_expectations import (
     expected_skill_files,
 )
 from tests.skill_test_support import (
-    SKILLS_ROOT,
     SKILL_SECTION_ORDER,
+    SKILLS_ROOT,
     ScenarioExpectation,
     SnapshotExpectation,
     assert_all_snippets_absent,
@@ -37,8 +37,8 @@ from tests.skill_test_support import (
     extract_headings,
     list_skill_files,
     load_all_skills,
-    load_snapshot,
     load_skill,
+    load_snapshot,
     snapshot_heading_matches_skill_text,
 )
 

@@ -1,7 +1,7 @@
 """Focused resource-policy tests for playback-source resolution."""
 
-from collections.abc import Generator
 import logging
+from collections.abc import Generator
 
 import pytest
 

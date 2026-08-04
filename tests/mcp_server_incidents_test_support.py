@@ -11,8 +11,9 @@ It intentionally stays small so the grouped behavior and error suites remain
 easy to scan as service-boundary specs rather than as fixture-driven tests.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from tests.mcp_alert_test_support import tool_error_text
 from tests.session_alert_test_support import (

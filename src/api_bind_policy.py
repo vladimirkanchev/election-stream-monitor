@@ -6,9 +6,9 @@ valid hosts. Hostnames are checked syntactically, never resolved through DNS.
 
 from __future__ import annotations
 
-from enum import StrEnum
 import ipaddress
 import re
+from enum import StrEnum
 
 
 class BindHostClass(StrEnum):

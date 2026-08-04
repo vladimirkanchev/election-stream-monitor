@@ -18,8 +18,8 @@ import hashlib
 
 import pytest
 
-from config import ApiAuthSettings
 from api_auth import AuthenticationError, authenticate_api_request
+from config import ApiAuthSettings
 
 
 def test_authenticate_api_request_returns_local_principal_when_disabled() -> None:
@@ -40,7 +40,7 @@ def test_authenticate_api_request_returns_local_principal_when_disabled() -> Non
 
 def test_authenticate_api_request_returns_fingerprinted_principal_for_valid_key() -> None:
     """Validated keys should become fingerprint-based principals, not raw secrets."""
-    fingerprint = hashlib.sha256("alpha-secret".encode("utf-8")).hexdigest()[:12]
+    fingerprint = hashlib.sha256(b"alpha-secret").hexdigest()[:12]
     principal = authenticate_api_request(
         x_api_key="alpha-secret",
         settings=ApiAuthSettings(
@@ -57,7 +57,7 @@ def test_authenticate_api_request_returns_fingerprinted_principal_for_valid_key(
 
 def test_authenticate_api_request_accepts_generated_share_mode_key() -> None:
     """Generated share-mode keys should behave like ordinary configured API keys."""
-    fingerprint = hashlib.sha256("esm_share_demo-secret".encode("utf-8")).hexdigest()[:12]
+    fingerprint = hashlib.sha256(b"esm_share_demo-secret").hexdigest()[:12]
     principal = authenticate_api_request(
         x_api_key="esm_share_demo-secret",
         settings=ApiAuthSettings(

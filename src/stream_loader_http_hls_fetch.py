@@ -24,7 +24,6 @@ from stream_loader_contracts import (
     _build_api_stream_failure,
 )
 
-
 _API_STREAM_FETCH_READ_CHUNK_BYTES = 64 * 1024
 _API_STREAM_USER_AGENT = "election-stream-monitor/1.0"
 

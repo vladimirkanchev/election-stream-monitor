@@ -12,13 +12,19 @@ import inspect
 from collections.abc import Callable
 from typing import TypedDict, cast
 
-from analyzer_contract import AnalysisSlice, InputMode
-from session_io import append_alert
-from session_models import AlertEvent, EventSeverity, ResultEvent, SessionMetadata, SessionProgress
-from session_store import SessionStore
-from session_store_runtime import get_default_session_store
 import session_runner_progress
 import session_runner_terminal
+from analyzer_contract import AnalysisSlice, InputMode
+from session_io import append_alert
+from session_models import (
+    AlertEvent,
+    EventSeverity,
+    ResultEvent,
+    SessionMetadata,
+    SessionProgress,
+)
+from session_store import SessionStore
+from session_store_runtime import get_default_session_store
 from stream_loader import ApiStreamLoader, iter_api_stream_slices
 
 

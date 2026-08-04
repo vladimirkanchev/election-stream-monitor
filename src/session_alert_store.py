@@ -27,8 +27,7 @@ from session_alert_store_runtime_config import (
     get_alert_store_runtime_settings,
 )
 from session_io import get_session_dir
-from session_models import AlertEvent, EventSeverity
-from session_models import parse_alert_event_payload
+from session_models import AlertEvent, EventSeverity, parse_alert_event_payload
 from session_store_runtime import get_default_session_store
 
 logger = get_logger(__name__)

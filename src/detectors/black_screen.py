@@ -121,7 +121,10 @@ def _probe_video_duration(file_path: Path) -> float:
     if data is None:
         return 0.0
     try:
-        return float(data.get("format", {}).get("duration", 0.0) or 0.0)
+        format_data = data.get("format")
+        if not isinstance(format_data, dict):
+            raise ValueError("ffprobe format payload is not a mapping")
+        return float(format_data.get("duration", 0.0) or 0.0)
     except (TypeError, ValueError, AttributeError):
         from logger import logger
 

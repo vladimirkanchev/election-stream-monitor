@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, TypeVar
+from typing import Any
 
 import anyio
-
-from esm_mcp.server import build_mcp_server
 from mcp.shared.memory import create_connected_server_and_client_session
 
-RunReturn = TypeVar("RunReturn")
+from esm_mcp.server import build_mcp_server
 
 
-def run_with_mcp_session(
+def run_with_mcp_session[RunReturn](
     callback: Callable[[Any], Awaitable[RunReturn]],
 ) -> RunReturn:
     """Run a callback against a fresh in-memory MCP client/server session."""

@@ -13,6 +13,7 @@ from session_alert_incidents import (
 )
 from session_alert_store import FileSessionAlertStore, SessionAlertsNotFoundError
 from session_alerts import summarize_session_alert_events
+from session_models import AlertEvent, EventSeverity
 from tests.session_alert_test_support import (
     build_normalized_alert,
     build_persisted_alert,
@@ -20,7 +21,6 @@ from tests.session_alert_test_support import (
     write_alert_log,
     write_known_session,
 )
-from session_models import AlertEvent, EventSeverity
 
 
 def _file_store() -> FileSessionAlertStore:

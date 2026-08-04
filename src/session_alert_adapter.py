@@ -13,7 +13,7 @@ MCP adapters behind a larger abstraction.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol, TypeVar, TypedDict
+from typing import Protocol, TypedDict
 
 from session_alerts import SessionAlertsNotFoundError
 
@@ -31,12 +31,11 @@ class AlertFilterKwargs(TypedDict):
     end_time_utc: str | None
 
 
-ServiceReturn = TypeVar("ServiceReturn", covariant=True)
 AlertNotFoundMapper = Callable[[str], Exception]
 AlertValidationErrorMapper = Callable[[ValueError], Exception]
 
 
-class AlertServiceCallable(Protocol[ServiceReturn]):
+class AlertServiceCallable[ServiceReturn](Protocol):
     """Callable shape shared by the raw and incident alert service seams.
 
     The service modules stay plain functions, but the adapters still benefit
@@ -76,7 +75,7 @@ def build_alert_filter_kwargs(
     }
 
 
-def call_alert_service(
+def call_alert_service[ServiceReturn](
     service_fn: AlertServiceCallable[ServiceReturn],
     *,
     session_id: str,

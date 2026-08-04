@@ -13,10 +13,11 @@ handling to the existing boundary modules.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import os
 import sys
-from typing import Callable, TextIO
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TextIO
 
 import uvicorn
 

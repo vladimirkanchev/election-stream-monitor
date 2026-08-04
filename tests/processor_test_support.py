@@ -1,8 +1,9 @@
 """Shared builders for focused processor boundary tests."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 import config
 import processor

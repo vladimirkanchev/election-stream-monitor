@@ -28,7 +28,6 @@ from detectors import (
     analyze_video_metrics,
 )
 
-
 BLUR_SAMPLE_BOUNDS = (
     config.VIDEO_BLUR_SAMPLE_MAX_WIDTH,
     config.VIDEO_BLUR_SAMPLE_MAX_HEIGHT,

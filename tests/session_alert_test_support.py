@@ -8,21 +8,21 @@ are limited to disposable-database smoke tests.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 import json
 import os
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
-import config
 import pytest
-from session_alert_report import SessionAlertReport, build_session_alert_report
+
+import config
 from session_alert_incidents import AlertTimelineEntryPayload, IncidentSummaryPayload
-from session_alerts import AlertSummaryPayload
+from session_alert_report import SessionAlertReport, build_session_alert_report
 from session_alert_store import (
-    AlertReadLimitExceededError,
     AlertEventPayload,
+    AlertReadLimitExceededError,
     SessionAlertStore,
     clear_default_session_alert_store_cache,
     get_default_session_alert_store,
@@ -38,6 +38,7 @@ from session_alert_store_postgres_config import (
     POSTGRES_ALERT_DATABASE_URL_ENV,
 )
 from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
+from session_alerts import AlertSummaryPayload
 from session_models import AlertEvent, EventSeverity
 
 AlertPayload = dict[str, object]

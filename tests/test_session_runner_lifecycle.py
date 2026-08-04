@@ -8,9 +8,9 @@ runner suites.
 from pathlib import Path
 
 import config
+import session_runner_lifecycle
 from session_io import initialize_session, read_session_snapshot, write_session_progress
 from session_models import SessionMetadata, SessionProgress
-import session_runner_lifecycle
 
 
 def _configure_session_output(monkeypatch, tmp_path: Path) -> None:

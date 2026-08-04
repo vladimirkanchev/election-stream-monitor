@@ -11,8 +11,8 @@ from threading import Event, Thread
 from typing import cast
 
 import pytest
-import config
 
+import config
 import session_service
 from analyzer_contract import InputMode
 from session_alert_store import clear_default_session_alert_store_cache

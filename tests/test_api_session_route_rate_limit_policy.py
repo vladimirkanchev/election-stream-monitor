@@ -9,10 +9,10 @@ from collections.abc import Generator
 
 import pytest
 
+from analyzer_contract import InputMode
 from api_auth import AuthPrincipal
 from api_boundary_config import ApiRateLimitSettings
 from api_rate_limit import reset_api_rate_limit_state
-from analyzer_contract import InputMode
 from session_models import SessionMetadata
 from tests.api_boundary_sessions_test_support import (
     DEFAULT_VIDEO_FILES_INPUT,

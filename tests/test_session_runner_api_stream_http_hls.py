@@ -12,9 +12,10 @@ or to the concrete HTTP/HLS transport path.
 from pathlib import Path
 
 import pytest
-from analyzer_contract import AnalyzerRegistration
+
 import session_runner
 import stream_loader_http_hls
+from analyzer_contract import AnalyzerRegistration
 from session_io import read_session_snapshot
 from session_runner import run_local_session
 from tests.session_runner_api_stream_test_support import (

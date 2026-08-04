@@ -26,7 +26,10 @@ from typing import Any, Literal
 
 import pytest
 
-from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alert_incidents import (
+    build_session_incident_summary,
+    build_session_timeline,
+)
 from session_alert_store import (
     FileSessionAlertStore,
     SessionAlertsNotFoundError,
@@ -77,11 +80,11 @@ ALERT_STORE_PARITY_PUBLIC_API: tuple[str, ...] = (
 class InMemoryPostgresParityCursor:
     """Tiny cursor double for the Postgres alert-store SQL used in parity tests."""
 
-    def __init__(self, connection: "InMemoryPostgresParityConnection") -> None:
+    def __init__(self, connection: InMemoryPostgresParityConnection) -> None:
         self._connection = connection
         self._rows: list[tuple[object, ...]] = []
 
-    def __enter__(self) -> "InMemoryPostgresParityCursor":
+    def __enter__(self) -> InMemoryPostgresParityCursor:
         return self
 
     def __exit__(

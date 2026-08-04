@@ -16,9 +16,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.errors import (
+    UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
     ApiDomainError,
     RequestBodyTooLargeError,
-    UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL,
 )
 from api.routers import alerts, detectors, health, playback, sessions
 from api_boundary_config import (
@@ -27,7 +27,6 @@ from api_boundary_config import (
     validate_fastapi_boundary_settings,
 )
 from logger import get_logger
-
 
 _HttpRequestHandler = Callable[[Request], Awaitable[Response]]
 _LOCAL_ONLY_FRAMEWORK_PATHS = frozenset(

@@ -16,10 +16,10 @@ the HTTP protection seam easier to find, review, and evolve.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import lru_cache
 import os
 import secrets
+from dataclasses import dataclass
+from functools import lru_cache
 from typing import Literal, cast
 
 ApiAuthMode = Literal["api_key", "jwt"]

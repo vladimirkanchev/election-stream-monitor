@@ -1,7 +1,8 @@
 """Focused tests for live api_stream execution helpers in session_runner_execution."""
 
-import pytest
 from typing import cast
+
+import pytest
 
 import session_runner_execution
 from tests.session_runner_execution_test_support import (

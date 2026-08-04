@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 EXPECTATIONS_PATH = Path(__file__).parent / "fixtures" / "media" / "api_stream_expectations.json"
 GROUND_TRUTH_PATH = Path(__file__).parent / "fixtures" / "media" / "ground_truth.json"
 MEDIA_ROOT = Path(__file__).parent / "fixtures" / "media"

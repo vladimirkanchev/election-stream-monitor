@@ -10,21 +10,21 @@ from typing import cast
 import pytest
 
 from session_alert_store import clear_default_session_alert_store_cache
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
+from session_alerts import SessionAlertsNotFoundError
 from tests.api_alert_test_support import (
     assert_request_validation_payload,
     build_internal_error_payload,
     build_session_not_found_payload,
     build_validation_error_payload,
 )
-from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
-from session_alerts import SessionAlertsNotFoundError
 from tests.api_boundary_test_support import request
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import assert_mcp_tool_success
 from tests.session_alert_test_support import (
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     AlertLogRow,
     FailingReadAlertStore,
-    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     StaticAlertStore,
     build_alert_event,
     build_alert_summary_payload,

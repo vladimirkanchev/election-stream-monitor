@@ -1,8 +1,8 @@
 """Local file discovery, loading, and replay helpers for video inputs."""
 
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 import config
 from logger import logger
@@ -11,9 +11,9 @@ from logger import logger
 # pylint: disable=too-many-branches
 def stream_local_prefix(
     prefix: str,
-    on_segment: Optional[Callable[[Path, str], None]] = None,
+    on_segment: Callable[[Path, str], None] | None = None,
     poll_interval: float = 2.0,
-    max_segments: Optional[int] = None,
+    max_segments: int | None = None,
 ) -> None:
     """
     Replay local input files in timestamp order and dispatch them for analysis.

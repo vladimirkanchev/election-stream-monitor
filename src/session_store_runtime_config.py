@@ -11,9 +11,9 @@ store. The current rollout stays explicit:
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
-import os
 from typing import Literal, cast
 
 from session_store_postgres_config import (

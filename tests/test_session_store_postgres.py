@@ -12,7 +12,11 @@ from typing import Any, cast
 import pytest
 
 from session_models import ResultEvent, SessionMetadata, SessionProgress
-from session_store import SESSION_SNAPSHOT_KEYS, SessionStore, build_session_snapshot_payload
+from session_store import (
+    SESSION_SNAPSHOT_KEYS,
+    SessionStore,
+    build_session_snapshot_payload,
+)
 from session_store_postgres import (
     POSTGRES_SESSION_CANCEL_FIELDS,
     POSTGRES_SESSION_CANCEL_TABLE_NAME,
@@ -20,19 +24,19 @@ from session_store_postgres import (
     POSTGRES_SESSION_METADATA_FIELDS,
     POSTGRES_SESSION_METADATA_TABLE_NAME,
     POSTGRES_SESSION_METADATA_TABLE_SQL,
-    POSTGRES_SESSION_RESULTS_INSERT_SQL,
-    POSTGRES_SESSION_RESULTS_SELECT_SQL,
-    PostgresSessionStore,
     POSTGRES_SESSION_PROGRESS_FIELDS,
     POSTGRES_SESSION_PROGRESS_TABLE_NAME,
     POSTGRES_SESSION_PROGRESS_TABLE_SQL,
     POSTGRES_SESSION_RESULT_FIELDS,
+    POSTGRES_SESSION_RESULTS_INSERT_SQL,
+    POSTGRES_SESSION_RESULTS_SELECT_SQL,
     POSTGRES_SESSION_RESULTS_TABLE_NAME,
     POSTGRES_SESSION_RESULTS_TABLE_SQL,
     POSTGRES_SESSION_STORE_METHOD_TABLE_MAP,
     POSTGRES_SESSION_STORE_SCHEMA_DROP_STATEMENTS,
     POSTGRES_SESSION_STORE_SCHEMA_STATEMENTS,
     POSTGRES_SESSION_STORE_TABLE_SPECS,
+    PostgresSessionStore,
     PostgresSessionStoreBootstrapError,
     bootstrap_postgres_session_store,
     connect_postgres_session_store,
@@ -48,10 +52,10 @@ from session_store_postgres_config import (
 )
 from tests import session_store_postgres_test_support
 from tests.session_store_postgres_test_support import (
-    InMemoryPostgresSessionStoreConnection,
     REAL_POSTGRES_SESSION_STORE_SMOKE_ENABLED,
-    build_isolated_postgres_session_store,
+    InMemoryPostgresSessionStoreConnection,
     bootstrap_isolated_postgres_session_store,
+    build_isolated_postgres_session_store,
     close_postgres_session_store_connection_if_possible,
 )
 
@@ -194,7 +198,7 @@ class RecordingCursor:
     def __init__(self, *, executed_statements: list[tuple[str, object | None]]) -> None:
         self._executed_statements = executed_statements
 
-    def __enter__(self) -> "RecordingCursor":
+    def __enter__(self) -> RecordingCursor:
         return self
 
     def __exit__(
@@ -261,7 +265,7 @@ class MidSchemaFailureCursor:
     def __init__(self) -> None:
         self.calls = 0
 
-    def __enter__(self) -> "MidSchemaFailureCursor":
+    def __enter__(self) -> MidSchemaFailureCursor:
         return self
 
     def __exit__(

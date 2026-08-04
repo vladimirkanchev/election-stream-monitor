@@ -6,16 +6,15 @@ weekly-lane registration, CI-owned path checks, and protected-lane drift.
 
 from __future__ import annotations
 
-from dataclasses import replace
 import importlib
-from pathlib import Path
 import subprocess
 import sys
+from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / ".github" / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:

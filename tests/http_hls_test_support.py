@@ -10,17 +10,17 @@ This module is intentionally small and procedural. It exists to remove setup
 noise from the test files, not to hide test meaning behind a framework.
 """
 
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
-from typing import Callable, Iterator, Sequence, TypeAlias
 
 import pytest
 
-from analyzer_contract import AnalysisSlice
 import config
 import stream_loader_http_hls
+from analyzer_contract import AnalysisSlice
 from stream_loader import (
     HttpHlsApiStreamLoader,
     build_api_stream_source_contract,
@@ -31,12 +31,12 @@ from stream_loader_contracts import ApiStreamSourceContract
 
 _HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"
 _TS_CONTENT_TYPE = "video/mp2t"
-RouteHeaders: TypeAlias = dict[str, str]
-RouteResponse: TypeAlias = tuple[int, str | bytes, str] | tuple[
+type RouteHeaders = dict[str, str]
+type RouteResponse = tuple[int, str | bytes, str] | tuple[
     int, str | bytes, str, RouteHeaders
 ]
-RouteSpec: TypeAlias = RouteResponse | list[RouteResponse]
-DynamicRouteBuilder: TypeAlias = Callable[[str], dict[str, RouteSpec]]
+type RouteSpec = RouteResponse | list[RouteResponse]
+type DynamicRouteBuilder = Callable[[str], dict[str, RouteSpec]]
 
 
 def no_sleep(_: float) -> None:

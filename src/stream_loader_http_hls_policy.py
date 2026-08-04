@@ -13,8 +13,8 @@ mutable runtime-state container.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from stream_loader_contracts import ApiStreamPlaylistSegment
 from stream_loader_http_hls_playlist import _build_playlist_segment_key

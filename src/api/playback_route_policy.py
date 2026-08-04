@@ -14,7 +14,7 @@ PLAYBACK_RESOLUTION_BUDGET = "playback-resolution"
 
 async def require_http_playback_principal(
     request: Request,
-    principal: AuthPrincipal = Depends(require_http_principal),
+    principal: AuthPrincipal = Depends(require_http_principal),  # noqa: B008
 ) -> AuthPrincipal:
     """Authenticate one playback request and enforce its separate budget."""
 

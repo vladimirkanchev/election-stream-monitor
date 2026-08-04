@@ -7,12 +7,12 @@ that should stay stable regardless of the detector-specific policy details.
 import pytest
 
 import alert_rules
-from analyzer_contract import RuleEvaluationContext, RuntimeResultRow
 from alert_rules import (
     evaluate_alerts,
     list_available_alert_rules,
     reset_session_rule_state,
 )
+from analyzer_contract import RuleEvaluationContext, RuntimeResultRow
 from tests.alert_rules_test_support import black_row, blur_row
 
 

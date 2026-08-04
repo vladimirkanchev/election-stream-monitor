@@ -167,7 +167,7 @@ def test_http_hls_loader_handles_longer_sliding_runs_without_replay_cache_growth
     for index in range(300, 308):
         routes[f"/live/segment_{index}.ts"] = (
             200,
-            f"{index}".encode("utf-8"),
+            f"{index}".encode(),
             _TS_CONTENT_TYPE,
         )
 

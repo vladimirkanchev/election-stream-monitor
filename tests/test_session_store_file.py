@@ -5,12 +5,13 @@ API first, then compare selected reads with `session_io` so the adapter keeps
 current parity without coupling the suite to private helper internals.
 """
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 from pathlib import Path
 
-import config
 import pytest
+
+import config
 from session_io import (
     append_result,
     is_session_cancel_requested,

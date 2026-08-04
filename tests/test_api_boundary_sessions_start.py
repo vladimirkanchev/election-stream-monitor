@@ -2,8 +2,8 @@
 
 import pytest
 
-from api.routers.sessions import SessionServiceStartFailedError
 from analyzer_contract import InputMode
+from api.routers.sessions import SessionServiceStartFailedError
 from session_models import SessionMetadata
 from tests.api_boundary_sessions_test_support import (
     DEFAULT_VIDEO_FILES_INPUT,

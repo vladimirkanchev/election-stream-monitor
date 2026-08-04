@@ -24,7 +24,6 @@ from stream_loader import (
     HttpHlsApiStreamLoader,
     StaticApiStreamLoader,
     build_api_stream_analysis_slice,
-    create_api_stream_loader,
     build_api_stream_playback_contract,
     build_api_stream_slice_identity_key,
     build_api_stream_source_contract,
@@ -32,6 +31,7 @@ from stream_loader import (
     build_api_stream_temp_session_dir,
     cleanup_api_stream_temp_session_dir,
     collect_api_stream_slices,
+    create_api_stream_loader,
     select_api_stream_master_playlist_variant,
     validate_api_stream_chunk_sequence,
 )
@@ -43,6 +43,7 @@ from stream_loader_contracts import (
     build_api_stream_runtime_policy,
     build_api_stream_temp_file_policy,
 )
+
 
 @pytest.mark.parametrize(
     ("builder", "expected_type", "expected_fields"),

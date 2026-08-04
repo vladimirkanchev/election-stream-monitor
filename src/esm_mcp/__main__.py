@@ -6,6 +6,5 @@ script is not present or you intentionally want an explicit module entrypoint.
 
 from esm_mcp.server import main
 
-
 if __name__ == "__main__":
     main()

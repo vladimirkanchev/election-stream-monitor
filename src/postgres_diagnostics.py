@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-
 REDACTED_POSTGRES_VALUE = "<redacted>"
 REDACTED_POSTGRES_URL = "<redacted-postgres-url>"
 SAFE_POSTGRES_DIAGNOSTIC = "PostgreSQL backend operation failed"

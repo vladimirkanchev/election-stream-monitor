@@ -28,7 +28,6 @@ from tests.session_runner_api_stream_test_support import (
     _patch_runner_store_flushes,
 )
 
-
 pytestmark = pytest.mark.e2e
 
 SIMULATED_API_STREAM_CASES = load_ground_truth_cases("simulated_api_stream_cases")

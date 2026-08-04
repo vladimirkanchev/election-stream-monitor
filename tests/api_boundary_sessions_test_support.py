@@ -1,8 +1,7 @@
 """Shared request/response builders for the split FastAPI session adapter tests."""
 
 from analyzer_contract import InputMode
-from session_models import SessionMetadata
-from session_models import SessionStatus
+from session_models import SessionMetadata, SessionStatus
 
 DEFAULT_VIDEO_FILES_INPUT = "tests/fixtures/media/video_files/black_trigger.mp4"
 

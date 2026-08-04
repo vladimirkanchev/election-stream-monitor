@@ -12,24 +12,23 @@ from types import SimpleNamespace
 
 import pytest
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 import postgres_alert_weekly_confidence as weekly_confidence  # noqa: E402
 import postgres_alert_weekly_confidence_support as live_confidence_support  # noqa: E402
-from postgres_alert_weekly_confidence_support import (  # noqa: E402
-    build_live_postgres_env,
-    print_run_plan,
-    require_database_url,
-    run_live_postgres_test_group,
-)
 from postgres_alert_weekly_backend_confidence import (  # noqa: E402
     BACKEND_CONFIDENCE_TESTS,
     BACKEND_CONFIDENCE_TITLE,
     SEEDED_READER_CONFIDENCE_TESTS,
     STORE_CONFIDENCE_TESTS,
+)
+from postgres_alert_weekly_confidence_support import (  # noqa: E402
+    build_live_postgres_env,
+    print_run_plan,
+    require_database_url,
+    run_live_postgres_test_group,
 )
 from postgres_alert_weekly_runtime_operator_confidence import (  # noqa: E402
     CANONICAL_RUNTIME_OPERATOR_SMOKE,

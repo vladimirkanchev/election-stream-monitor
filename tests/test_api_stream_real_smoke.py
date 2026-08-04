@@ -35,7 +35,6 @@ from stream_loader import (
     cleanup_api_stream_temp_session_dir,
 )
 
-
 pytestmark = pytest.mark.skipif(
     os.getenv("API_STREAM_REAL_SMOKE") != "1",
     reason="Real public-stream smoke tests are opt-in.",

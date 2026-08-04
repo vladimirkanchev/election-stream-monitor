@@ -5,8 +5,8 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-from analyzer_contract import InputMode
 import session_service
+from analyzer_contract import InputMode
 
 DEFAULT_INPUT_PATH = "tests/fixtures/media/video_files/black_trigger.mp4"
 DEFAULT_DETECTORS = ["video_metrics"]

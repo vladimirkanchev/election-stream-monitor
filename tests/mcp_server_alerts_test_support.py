@@ -11,8 +11,9 @@ It intentionally does not own any MCP business behavior. The goal is to reduce
 setup noise in the split suites without hiding the actual raw tool contracts.
 """
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from tests.mcp_alert_test_support import tool_error_text
 from tests.session_alert_test_support import (

@@ -13,7 +13,11 @@ from __future__ import annotations
 
 import pytest
 
-from session_alert_adapter import AlertFilterKwargs, build_alert_filter_kwargs, call_alert_service
+from session_alert_adapter import (
+    AlertFilterKwargs,
+    build_alert_filter_kwargs,
+    call_alert_service,
+)
 from session_alerts import SessionAlertsNotFoundError
 
 DEFAULT_FILTER_KWARGS: AlertFilterKwargs = {

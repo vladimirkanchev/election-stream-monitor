@@ -25,8 +25,8 @@ import pytest
 from api_auth import AuthPrincipal
 from api_rate_limit import (
     InMemoryFixedWindowRateLimiter,
-    RateLimitError,
     RateLimiterBackend,
+    RateLimitError,
     enforce_api_rate_limit,
     reset_api_rate_limit_state,
 )

@@ -11,6 +11,7 @@ It groups the cases where work has to end in `failed`, including:
 from pathlib import Path
 
 import pytest
+
 import session_runner
 from session_io import read_session_snapshot
 from session_runner import run_local_session
@@ -22,11 +23,11 @@ from tests.session_runner_api_stream_test_support import (
     _build_result_only_bundle,
     _configure_api_stream_runner_test,
     _fake_chunk_event,
-    _fake_terminal_failure_event,
     _fake_temporary_failure_event,
+    _fake_terminal_failure_event,
     _install_static_api_stream_loader,
-    _patch_runner_bundle,
     _patch_processor_with_analyzer,
+    _patch_runner_bundle,
 )
 
 

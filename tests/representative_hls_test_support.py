@@ -12,17 +12,17 @@ fixture model:
 
 from __future__ import annotations
 
+import json
+import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-import json
 from functools import lru_cache
 from pathlib import Path
-import shutil
 
 import pytest
 
-from analyzer_contract import AnalysisSlice
 import session_runner as session_runner_module
+from analyzer_contract import AnalysisSlice
 from session_io import read_session_snapshot
 from session_runner import run_local_session
 from stream_loader import build_api_stream_temp_session_dir
@@ -34,7 +34,6 @@ from tests.e2e_session_test_support import (
 )
 from tests.local_hls_test_support import _serve_local_hls
 from tests.session_runner_api_stream_test_support import _configure_http_hls_runner_test
-
 
 REPRESENTATIVE_MEDIA_DIR = Path(__file__).parent / "fixtures" / "media" / "representative"
 REPRESENTATIVE_LOCAL_FILES_DIR = REPRESENTATIVE_MEDIA_DIR / "local_files"

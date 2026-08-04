@@ -9,13 +9,16 @@ import os
 import re
 from pathlib import Path
 
-import config
 import pytest
+
+import config
 from session_models import ResultEvent, SessionMetadata, SessionProgress
 from session_store import SessionStore
 from session_store_file import DEFAULT_FILE_SESSION_STORE, FileSessionStore
-from session_store_postgres import PostgresSessionStore
-from session_store_postgres import PostgresSessionStoreBootstrapError
+from session_store_postgres import (
+    PostgresSessionStore,
+    PostgresSessionStoreBootstrapError,
+)
 from session_store_postgres_config import (
     POSTGRES_SESSION_AUTO_CREATE_TABLES_ENV,
     POSTGRES_SESSION_DATABASE_URL_ENV,
@@ -34,10 +37,10 @@ from session_store_runtime_config import (
     get_session_store_runtime_settings,
     validate_session_store_runtime_settings,
 )
+from tests import session_store_postgres_test_support
 from tests.api_boundary_sessions_runtime_test_support import (
     live_postgres_runtime_fixture,
 )
-from tests import session_store_postgres_test_support
 
 VALID_POSTGRES_SESSION_URL = "postgresql://session:secret@db.example/esm"
 

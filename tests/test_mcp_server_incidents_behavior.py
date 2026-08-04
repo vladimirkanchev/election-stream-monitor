@@ -11,9 +11,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 
-import esm_mcp.alert_tools as alert_tools
 import pytest
 
+import esm_mcp.alert_tools as alert_tools
 from session_alert_store import (
     AlertEventPayload,
     clear_default_session_alert_store_cache,
@@ -22,20 +22,20 @@ from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_incidents_test_support import (
     assert_mcp_tool_success,
     write_empty_incident_session,
-    write_known_incident_alert_session,
     write_incident_tool_session,
+    write_known_incident_alert_session,
 )
 from tests.session_alert_test_support import (
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     StaticAlertStore,
     build_alert_event,
     build_alert_summary_payload,
+    build_incident_summary_payload,
     build_live_runtime_postgres_store,
     build_normalized_alert,
-    build_unique_session_id,
-    build_incident_summary_payload,
     build_persisted_alert,
     build_timeline_entry,
+    build_unique_session_id,
     close_store_if_possible,
     select_runtime_postgres_store,
     write_known_session,

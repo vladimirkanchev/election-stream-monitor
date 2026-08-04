@@ -8,12 +8,14 @@ This module supports two lightweight use cases:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import tempfile
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Literal
 
 from analyzer_contract import AnalysisSlice
+from source_validation import validate_api_stream_url
 from stream_loader_contracts import (
     ApiStreamSourceContract,
     ApiStreamTelemetrySnapshot,
@@ -21,7 +23,6 @@ from stream_loader_contracts import (
     _classify_api_stream_source_url,
     build_api_stream_analysis_slice,
 )
-from source_validation import validate_api_stream_url
 
 
 class StaticApiStreamLoader:
@@ -127,7 +128,7 @@ class _FakeApiStreamIterator:
         self._events = list(events)
         self._index = 0
 
-    def __iter__(self) -> "_FakeApiStreamIterator":
+    def __iter__(self) -> _FakeApiStreamIterator:
         return self
 
     def __next__(self) -> AnalysisSlice:
