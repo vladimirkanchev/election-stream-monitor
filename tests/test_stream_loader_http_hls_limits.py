@@ -104,7 +104,7 @@ def _segment_routes(
     return {
         f"{prefix}/segment_{index:03d}.ts": (
             200,
-            f"{body_prefix}{index}".encode("utf-8"),
+            f"{body_prefix}{index}".encode(),
             _TS_CONTENT_TYPE,
         )
         for index in indexes

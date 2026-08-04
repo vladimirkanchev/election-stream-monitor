@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRE_PUSH_HOOK = REPO_ROOT / "scripts" / "git-hooks" / "pre-push"
 CAPTURE_ONLY_ENV = {"PRE_PUSH_CAPTURE_ONLY": "1"}

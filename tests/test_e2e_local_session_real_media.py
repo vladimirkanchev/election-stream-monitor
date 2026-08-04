@@ -16,7 +16,6 @@ from tests.e2e_session_test_support import (
     run_and_read_local_session,
 )
 
-
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
 

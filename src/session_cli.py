@@ -16,14 +16,18 @@ import json
 
 from detectors.registry import list_available_detectors
 from logger import format_log_context, get_logger
-from postgres_diagnostics import redact_postgres_diagnostic
 from playback_sources import resolve_playback_source
+from postgres_diagnostics import redact_postgres_diagnostic
 from session_runner import run_local_session
 from session_service import (
     SessionServiceNotFoundError,
     build_empty_session_snapshot,
-    cancel_session as cancel_session_service,
     read_session_snapshot_or_none,
+)
+from session_service import (
+    cancel_session as cancel_session_service,
+)
+from session_service import (
     start_session as start_session_service,
 )
 from source_validation import validate_source_input

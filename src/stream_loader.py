@@ -21,8 +21,8 @@ from stream_loader_contracts import (
     ApiStreamLoader,
     ApiStreamLoaderError,
     ApiStreamMediaPlaylistSnapshot,
-    ApiStreamPlaylistSegment,
     ApiStreamPlaybackContract,
+    ApiStreamPlaylistSegment,
     ApiStreamSourceContract,
     ApiStreamStartSessionContract,
     ApiStreamTelemetrySnapshot,
@@ -43,7 +43,6 @@ from stream_loader_fakes import (
     StaticApiStreamLoader,
 )
 from stream_loader_http_hls import HttpHlsApiStreamLoader
-
 
 logger = get_logger(__name__)
 

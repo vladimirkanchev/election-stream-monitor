@@ -16,7 +16,6 @@ import os
 from config import clear_fastapi_boundary_settings_caches
 from tests.api_alert_test_support import reset_alert_route_rate_limit_state
 
-
 BOUNDARY_ENV_NAMES: tuple[str, ...] = (
     "ESM_FASTAPI_RUN_MODE",
     "ESM_API_AUTH_ENABLED",

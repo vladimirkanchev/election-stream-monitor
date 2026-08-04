@@ -19,16 +19,16 @@ from pathlib import Path
 from time import gmtime, strftime
 from uuid import uuid4
 
+import session_runner_discovery
+import session_runner_execution
+import session_runner_lifecycle
+import session_runner_terminal
 from alert_rules import reset_session_rule_state
 from analyzer_contract import AnalysisSlice, InputMode
 from processor import run_enabled_analyzers_bundle
 from session_models import SessionMetadata, SessionProgress
 from session_store import SessionStore
 from session_store_runtime import get_default_session_store
-import session_runner_discovery
-import session_runner_execution
-import session_runner_lifecycle
-import session_runner_terminal
 from source_validation import (
     validate_source_input,
 )

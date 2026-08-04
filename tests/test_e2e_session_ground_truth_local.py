@@ -18,7 +18,6 @@ from tests.e2e_session_test_support import (
     run_and_read_local_session,
 )
 
-
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
 LOCAL_SESSION_CASES = load_ground_truth_cases("local_session_cases")

@@ -6,8 +6,8 @@ durable `cancelled` flow visible to API callers.
 """
 
 import pytest
-import config
 
+import config
 from api.routers.sessions import (
     SessionServiceCancelFailedError,
     SessionServiceNotFoundError,

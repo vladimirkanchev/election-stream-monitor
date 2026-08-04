@@ -4,10 +4,10 @@ This module intentionally stays narrow: it only hosts the tiny reusable local
 HTTP server used by multiple HLS-oriented test families.
 """
 
+from collections.abc import Mapping
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
-from typing import Mapping
 
 import pytest
 

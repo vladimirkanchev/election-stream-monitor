@@ -6,14 +6,16 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-import config
 import pytest
 
+import config
 from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
 from session_store import SESSION_SNAPSHOT_KEYS, SessionStore
 from session_store_file import FileSessionStore
 from session_store_postgres import PostgresSessionStore
-from tests.session_store_postgres_test_support import InMemoryPostgresSessionStoreConnection
+from tests.session_store_postgres_test_support import (
+    InMemoryPostgresSessionStoreConnection,
+)
 
 
 @pytest.fixture

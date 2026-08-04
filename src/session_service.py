@@ -8,11 +8,11 @@ returned to callers.
 
 from __future__ import annotations
 
-from io import TextIOWrapper
 import os
-from pathlib import Path
 import subprocess  # nosec B404
 import sys
+from io import TextIOWrapper
+from pathlib import Path
 
 from analyzer_contract import InputMode
 from logger import format_log_context, get_logger

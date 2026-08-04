@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urljoin, urlparse
 
-from stream_loader_contracts import ApiStreamMediaPlaylistSnapshot, ApiStreamPlaylistSegment
+from stream_loader_contracts import (
+    ApiStreamMediaPlaylistSnapshot,
+    ApiStreamPlaylistSegment,
+)
 
 
 def _detect_hls_playlist_kind(playlist_text: str) -> Literal["master", "media", "unknown"]:

@@ -27,7 +27,7 @@ venv_pyright := ".venv/bin/pyright"
 pytest_base_flags := "-p no:cacheprovider -q"
 pytest_env_prefix := "PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
 live_session_postgres_env_prefix := "ESM_SESSION_STORE_BACKEND=postgres ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 POSTGRES_SESSION_STORE_REAL_SMOKE=1"
-backend_typecheck_targets := "src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alert_report.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py"
+backend_typecheck_target_file := ".github/backend_typecheck_targets.txt"
 backend_fast_synthetic_selector := "-m 'not e2e and not slow'"
 
 default:
@@ -154,10 +154,29 @@ branch-cleanup:
     echo "== staged files =="
     git diff --cached --stat
 
-# Aggregated lint lane matching the current backend/frontend split.
-lint:
+# Protected backend Python lint gate.
+lint-backend:
     {{venv_ruff}} check src scripts tests
-    npm --prefix frontend run lint:frontend
+
+# Protected renderer lint gate.
+lint-renderer:
+    npm --prefix frontend run lint:renderer
+
+# Advisory Electron main-process, bridge, and local-proxy lint feedback.
+lint-electron-advisory:
+    npm --prefix frontend run lint:electron
+
+# Full local lint feedback, including the advisory Electron companion.
+lint: lint-backend lint-renderer lint-electron-advisory
+
+# Check the shared Python formatting contract without rewriting the worktree.
+format-check:
+    {{venv_ruff}} format --check src scripts tests
+
+# Apply the shared Python formatter. Keep its mechanical baseline separate from
+# behavior changes so reviews remain readable.
+format:
+    {{venv_ruff}} format src scripts tests
 
 # Fast detector-lab lane for synthetic and runner-scaffold confidence.
 test-detector-lab:
@@ -223,14 +242,21 @@ _backend-tests-fast:
 # Local fast-CI reproduction lane.
 # This intentionally mirrors the everyday branch-feedback checks, not the
 # weekly, slow, or PR-only policy lanes that stay owned by GitHub Actions.
-ci-local: _backend-tests-fast lint typecheck
+ci-local: _backend-tests-fast lint-backend lint-renderer typecheck-backend typecheck-frontend
     npm --prefix frontend run test:frontend-checkpoint
 
-# Aggregated type lane:
-# - backend mypy remains the primary Python type gate
-# - backend pyright stays included as the editor-aligned companion signal
-# - frontend TypeScript typecheck protects the renderer and bridge layers
-typecheck:
-    MYPYPATH=src {{venv_mypy}} --explicit-package-bases {{backend_typecheck_targets}}
-    {{venv_pyright}} --project pyrightconfig.json {{backend_typecheck_targets}}
+# Protected backend Python type gate.
+typecheck-backend:
+    MYPYPATH=src xargs {{venv_mypy}} --explicit-package-bases < {{backend_typecheck_target_file}}
+
+# Advisory editor-aligned Python type feedback. Run separately so its findings
+# do not block the local protected gate.
+typecheck-advisory:
+    xargs {{venv_pyright}} --project pyrightconfig.json < {{backend_typecheck_target_file}}
+
+# Protected renderer and Electron TypeScript type gate.
+typecheck-frontend:
     npm --prefix frontend run typecheck
+
+# Full local type feedback, including the advisory Pyright companion.
+typecheck: typecheck-backend typecheck-advisory typecheck-frontend

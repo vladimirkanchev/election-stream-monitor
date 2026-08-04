@@ -16,15 +16,14 @@ import json
 import subprocess  # nosec B404
 from pathlib import Path
 
-from analyzer_contract import AnalysisSlice, InputMode
 import config
+from analyzer_contract import AnalysisSlice, InputMode
 from logger import get_logger
 from source_validation import (
     ensure_path_within_root,
     resolve_validated_local_input_path,
     validate_local_media_size,
 )
-
 
 logger = get_logger(__name__)
 

@@ -14,9 +14,9 @@ from unittest.mock import ANY, Mock
 
 import pytest
 
+from api_boundary_config import get_api_auth_settings
 from api_server_cli import prepare_cli_runtime, run_from_args
 from config import ApiBoundaryConfigurationError
-from api_boundary_config import get_api_auth_settings
 from tests.api_boundary_env_test_support import (
     reset_boundary_test_state,
     restore_boundary_test_state,

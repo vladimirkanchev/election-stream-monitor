@@ -9,8 +9,8 @@ alerts remain the default runtime backend outside this explicit seam.
 
 from __future__ import annotations
 
-from datetime import datetime
 import os
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -19,21 +19,16 @@ from session_alert_incidents import (
     build_session_incident_summary,
     build_session_timeline,
 )
-from session_alerts import (
-    filter_session_alert_events,
-    read_session_alert_events,
-    summarize_session_alert_events,
-)
 from session_alert_store import (
     AlertEventPayload,
     AlertReadLimitExceededError,
     SessionAlertsNotFoundError,
 )
 from session_alert_store_postgres import (
-    POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
     POSTGRES_ALERT_EVENT_COLUMNS,
     POSTGRES_ALERT_EVENT_NULLABLE_COLUMNS,
     POSTGRES_ALERT_EVENT_READ_ORDER,
+    POSTGRES_ALERT_EVENTS_BOUNDED_READ_SQL,
     POSTGRES_ALERT_EVENTS_INSERT_SQL,
     POSTGRES_ALERT_EVENTS_READ_SQL,
     POSTGRES_ALERT_STORE_SCHEMA_DROP_STATEMENTS,
@@ -49,6 +44,11 @@ from session_alert_store_postgres import (
 from session_alert_store_postgres_config import (
     POSTGRES_ALERT_DATABASE_URL_ENV,
     PostgresAlertStoreSettings,
+)
+from session_alerts import (
+    filter_session_alert_events,
+    read_session_alert_events,
+    summarize_session_alert_events,
 )
 from session_models import AlertEvent, EventSeverity
 from tests.session_alert_test_support import (
@@ -72,7 +72,7 @@ class RecordingCursor:
         self._executed_statements = executed_statements
         self._rows = rows or []
 
-    def __enter__(self) -> "RecordingCursor":
+    def __enter__(self) -> RecordingCursor:
         """Return the same cursor inside the context manager block."""
         return self
 
@@ -119,7 +119,7 @@ class RecordingConnection:
 class FailingCursor:
     """Cursor that raises on execute so failure paths stay easy to assert."""
 
-    def __enter__(self) -> "FailingCursor":
+    def __enter__(self) -> FailingCursor:
         """Return the same failing cursor inside the context manager block."""
         return self
 
@@ -159,7 +159,7 @@ class FailingConnection:
 class MissingSchemaCursor:
     """Small cursor that simulates a missing alert table after bootstrap."""
 
-    def __enter__(self) -> "MissingSchemaCursor":
+    def __enter__(self) -> MissingSchemaCursor:
         """Return the same missing-schema cursor inside the context manager block."""
         return self
 
@@ -199,7 +199,7 @@ class MidSchemaFailureCursor:
     def __init__(self) -> None:
         self.calls = 0
 
-    def __enter__(self) -> "MidSchemaFailureCursor":
+    def __enter__(self) -> MidSchemaFailureCursor:
         """Return the same cursor inside the context manager block."""
         return self
 

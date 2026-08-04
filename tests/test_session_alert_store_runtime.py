@@ -10,23 +10,13 @@ visible only through the explicitly selected backend.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import tests.session_alert_test_support as session_alert_test_support
-from tests.session_alert_test_support import (
-    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
-    REAL_POSTGRES_ALERT_STORE_SMOKE_ENV,
-    build_normalized_alert,
-    close_store_if_possible,
-    configure_session_alert_test,
-    is_real_postgres_alert_store_smoke_enabled,
-    select_live_runtime_postgres_alert_store,
-    write_known_session,
-)
 
+import tests.session_alert_test_support as session_alert_test_support
 from session_alert_store import (
     DEFAULT_SESSION_ALERT_STORE,
     FileSessionAlertStore,
@@ -55,6 +45,16 @@ from session_models import AlertEvent
 from session_store_postgres_config import POSTGRES_SESSION_DATABASE_URL_ENV
 from session_store_runtime import clear_default_session_store_cache
 from session_store_runtime_config import SESSION_STORE_BACKEND_ENV
+from tests.session_alert_test_support import (
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENV,
+    build_normalized_alert,
+    close_store_if_possible,
+    configure_session_alert_test,
+    is_real_postgres_alert_store_smoke_enabled,
+    select_live_runtime_postgres_alert_store,
+    write_known_session,
+)
 
 STALE_POSTGRES_ALERT_DATABASE_URL = (
     "postgresql://stale:stale@localhost:5432/election_stream_monitor"
@@ -138,11 +138,11 @@ class RecordingRuntimeAlertStore:
 class InMemoryRuntimePostgresAlertCursor:
     """Small cursor double for runtime tests that exercise the real store mapper."""
 
-    def __init__(self, connection: "InMemoryRuntimePostgresAlertConnection") -> None:
+    def __init__(self, connection: InMemoryRuntimePostgresAlertConnection) -> None:
         self._connection = connection
         self._rows: list[tuple[object, ...]] = []
 
-    def __enter__(self) -> "InMemoryRuntimePostgresAlertCursor":
+    def __enter__(self) -> InMemoryRuntimePostgresAlertCursor:
         """Return the cursor itself for store code that uses context managers."""
         return self
 
@@ -231,10 +231,10 @@ class MissingSchemaRuntimeAlertConnection:
     a bootstrap configuration failure that the runtime boundary translates.
     """
 
-    def cursor(self) -> "MissingSchemaRuntimeAlertConnection":
+    def cursor(self) -> MissingSchemaRuntimeAlertConnection:
         return self
 
-    def __enter__(self) -> "MissingSchemaRuntimeAlertConnection":
+    def __enter__(self) -> MissingSchemaRuntimeAlertConnection:
         return self
 
     def __exit__(

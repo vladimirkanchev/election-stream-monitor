@@ -5,8 +5,8 @@ their focused suites.
 """
 
 import importlib
-from pathlib import Path
 import tomllib
+from pathlib import Path
 
 from esm_mcp.server import SERVER_INSTRUCTIONS
 from tests.mcp_alert_test_support import list_mcp_tools

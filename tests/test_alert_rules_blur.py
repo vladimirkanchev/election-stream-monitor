@@ -1,11 +1,14 @@
 """Stateful blur-rule scenarios for the production ``video_blur`` path."""
 
-import config
 import pytest
+
+import config
 from alert_rules import evaluate_alerts, reset_session_rule_state
-
-from tests.alert_rules_test_support import assert_no_alerts, blur_row, evaluate_detector_rows
-
+from tests.alert_rules_test_support import (
+    assert_no_alerts,
+    blur_row,
+    evaluate_detector_rows,
+)
 
 THRESHOLD = config.VIDEO_BLUR_ALERT_THRESHOLD
 RECOVERY_THRESHOLD = config.VIDEO_BLUR_RECOVERY_THRESHOLD

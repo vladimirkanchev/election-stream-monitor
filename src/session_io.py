@@ -7,21 +7,22 @@ stays here as the compatibility entrypoint for existing callers.
 """
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Callable, TypeVar, cast
+from typing import cast
 
 import config
 from logger import get_logger
 from session_models import (
     AlertEvent,
-    parse_result_event_payload,
-    parse_session_metadata_payload,
-    parse_session_progress_payload,
     ResultEvent,
     SessionMetadata,
     SessionProgress,
     SessionStatus,
+    parse_result_event_payload,
+    parse_session_metadata_payload,
+    parse_session_progress_payload,
 )
 from session_store import (
     ResultEventPayload,
@@ -32,8 +33,6 @@ from session_store import (
 )
 
 JsonObject = dict[str, object]
-ParsedJsonObject = TypeVar("ParsedJsonObject", bound=JsonObject)
-
 logger = get_logger(__name__)
 
 
@@ -258,7 +257,10 @@ def _read_snapshot_alerts(
     if metadata is None:
         return []
 
-    from session_alert_store import DEFAULT_SESSION_ALERT_STORE, SessionAlertsNotFoundError
+    from session_alert_store import (
+        DEFAULT_SESSION_ALERT_STORE,
+        SessionAlertsNotFoundError,
+    )
 
     try:
         return cast(
@@ -337,7 +339,7 @@ def _read_json_file(file_path: Path) -> dict[str, object] | None:
     return payload
 
 
-def _read_jsonl_file(
+def _read_jsonl_file[ParsedJsonObject: JsonObject](
     file_path: Path,
     *,
     parser: Callable[[object], ParsedJsonObject | None],

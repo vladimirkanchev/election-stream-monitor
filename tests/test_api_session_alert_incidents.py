@@ -26,18 +26,18 @@ from tests.api_boundary_test_support import request
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_incidents_test_support import assert_mcp_tool_success
 from tests.session_alert_test_support import (
+    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     AlertLogRow,
     FailingReadAlertStore,
-    REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
     StaticAlertStore,
     build_alert_event,
+    build_incident_summary_payload,
     build_live_runtime_postgres_store,
     build_normalized_alert,
+    build_persisted_alert,
+    build_timeline_entry,
     build_unique_session_id,
     close_store_if_possible,
-    build_persisted_alert,
-    build_incident_summary_payload,
-    build_timeline_entry,
     configure_session_alert_test,
     install_runtime_postgres_bootstrap_failure,
     select_runtime_postgres_store,

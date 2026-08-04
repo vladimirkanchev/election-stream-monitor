@@ -21,7 +21,6 @@ from tests.detector_lab_failure_diagnostics import (
     persist_csv_artifact,
 )
 
-
 pytestmark = pytest.mark.slow
 
 

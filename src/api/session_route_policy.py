@@ -23,7 +23,7 @@ SESSION_START_BUDGET = "session-start"
 
 async def require_http_session_start_principal(
     request: Request,
-    principal: AuthPrincipal = Depends(require_http_principal),
+    principal: AuthPrincipal = Depends(require_http_principal),  # noqa: B008
 ) -> AuthPrincipal:
     """Authenticate one start request and reserve cancellation capacity.
 
@@ -48,7 +48,7 @@ async def require_http_session_start_principal(
 
 async def require_http_session_cancel_principal(
     request: Request,
-    principal: AuthPrincipal = Depends(require_http_principal),
+    principal: AuthPrincipal = Depends(require_http_principal),  # noqa: B008
 ) -> AuthPrincipal:
     """Authenticate one cancellation against the shared control budget."""
 

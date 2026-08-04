@@ -20,7 +20,10 @@ from tests.alert_incident_service_test_support import (
     single_time_filter_kwargs,
     write_single_grouped_alert_session,
 )
-from tests.session_alert_test_support import configure_session_alert_test, write_known_session
+from tests.session_alert_test_support import (
+    configure_session_alert_test,
+    write_known_session,
+)
 
 
 def test_build_session_incident_summary_returns_empty_summary_for_filtered_no_match(

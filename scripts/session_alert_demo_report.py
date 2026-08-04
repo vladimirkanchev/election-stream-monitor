@@ -5,9 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
-
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,11 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     """Read one persisted session snapshot and print the requested report view."""
     ensure_src_on_path()
-    from session_io import read_session_snapshot
     from session_alert_report import (
         build_session_alert_report,
         format_session_alert_report_table,
     )
+    from session_io import read_session_snapshot
 
     args = build_parser().parse_args()
     report = build_session_alert_report(read_session_snapshot(args.session_id))

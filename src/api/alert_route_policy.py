@@ -45,7 +45,7 @@ ALERT_ROUTE_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 async def require_http_alert_principal(
     request: Request,
-    principal: AuthPrincipal = Depends(require_http_principal),
+    principal: AuthPrincipal = Depends(require_http_principal),  # noqa: B008
 ) -> AuthPrincipal:
     """Authenticate and rate-limit one protected alert-route request.
 

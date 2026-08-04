@@ -22,8 +22,12 @@ import session_runner
 import stream_loader_http_hls
 from analyzer_contract import AnalysisSlice, AnalyzerRegistration, InputMode, StoreName
 from session_io import request_session_cancel
+from stream_loader import (
+    FakeApiStreamEvent,
+    HttpHlsApiStreamLoader,
+    StaticApiStreamLoader,
+)
 from tests.local_hls_test_support import _serve_local_hls  # noqa: F401
-from stream_loader import FakeApiStreamEvent, HttpHlsApiStreamLoader, StaticApiStreamLoader
 
 
 @dataclass(slots=True)
@@ -203,7 +207,7 @@ def _segment_routes(
     for segment_name in segment_names:
         routes[f"{prefix}/{segment_name}"] = (
             200,
-            f"{body_prefix}{segment_name}".encode("utf-8"),
+            f"{body_prefix}{segment_name}".encode(),
             "video/mp2t",
         )
     return routes

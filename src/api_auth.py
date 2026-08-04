@@ -13,9 +13,9 @@ their own authorization and resource-control policies.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import hmac
+from dataclasses import dataclass
 from typing import Literal
 
 from api_boundary_config import ApiAuthSettings, get_api_auth_settings

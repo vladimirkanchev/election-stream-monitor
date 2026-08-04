@@ -6,7 +6,6 @@ alert-rule timelines that the black and blur suites are protecting.
 """
 
 import config
-
 from alert_rules import evaluate_alerts
 
 

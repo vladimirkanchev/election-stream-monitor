@@ -8,5 +8,7 @@ router = APIRouter(tags=["detectors"])
 
 
 @router.get("/detectors", response_model=list[DetectorOptionResponse])
-async def get_detectors(mode: ApiInputMode | None = Query(default=None)) -> list[DetectorCatalogEntry]:
+async def get_detectors(
+    mode: ApiInputMode | None = Query(default=None),  # noqa: B008
+) -> list[DetectorCatalogEntry]:
     return list_available_detectors(mode)

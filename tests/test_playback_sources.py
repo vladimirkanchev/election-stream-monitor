@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import config
 import pytest
+
+import config
 from playback_sources import resolve_playback_source
 
 

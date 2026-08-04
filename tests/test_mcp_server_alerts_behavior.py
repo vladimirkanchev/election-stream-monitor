@@ -19,8 +19,9 @@ parity coverage lives in ``test_mcp_fastapi_boundary_split.py``,
 from collections.abc import Iterator
 from pathlib import Path
 
-import esm_mcp.alert_tools as alert_tools
 import pytest
+
+import esm_mcp.alert_tools as alert_tools
 from session_alert_store import clear_default_session_alert_store_cache
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import (
@@ -36,8 +37,8 @@ from tests.session_alert_test_support import (
     build_alert_summary_payload,
     build_live_runtime_postgres_store,
     build_normalized_alert,
-    build_unique_session_id,
     build_persisted_alert,
+    build_unique_session_id,
     close_store_if_possible,
     select_runtime_postgres_store,
     write_known_session,

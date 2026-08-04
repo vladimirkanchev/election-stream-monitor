@@ -8,11 +8,10 @@ config module.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
-import os
 from typing import Literal, cast
-
 
 AlertStoreBackend = Literal["file", "postgres"]
 DEFAULT_ALERT_STORE_BACKEND: AlertStoreBackend = "file"

@@ -1,22 +1,22 @@
-"""Regression coverage for protected, routine, and weekly CI workflow policy.
+"""Regression coverage for CI workflow and static-analysis policy.
 
 The tests keep the workflow reader, detector-lane admission, protected PR
-requirements, and bounded weekly-media diagnostics aligned with their owners.
+requirements, static-analysis ownership, and bounded weekly-media diagnostics
+aligned with their owners.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
 import importlib
 import json
-from pathlib import Path
 import re
 import sys
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
-
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / ".github" / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -36,7 +36,10 @@ FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
 FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
+FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
+BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
+JUSTFILE_PATH = Path("justfile")
 FRONTEND_INSTALL_COMMAND = "bash ../scripts/install_frontend_dependencies.sh"
 MAIN_GATE_REQUIRED_JOBS = ci_workflow_contract.MAIN_GATE_REQUIRED_JOBS
 FEATURE_GATE_REQUIRED_JOBS = ci_workflow_contract.FEATURE_GATE_REQUIRED_JOBS
@@ -133,6 +136,21 @@ def _workflow_commands(workflow_path: Path) -> tuple[str, ...]:
         if isinstance(step, dict)
         if isinstance(command := step.get("run"), str)
     )
+
+
+def _backend_typecheck_targets() -> tuple[str, ...]:
+    """Return reviewed backend type targets from their sole owner."""
+    targets = tuple(
+        line.strip()
+        for line in BACKEND_TYPECHECK_TARGETS_PATH.read_text().splitlines()
+        if line.strip()
+    )
+    assert targets
+    assert len(targets) == len(set(targets))
+    assert all(
+        target.startswith("src/") and Path(target).is_file() for target in targets
+    )
+    return targets
 
 
 def _workflow_environment_values(
@@ -537,6 +555,113 @@ def test_environment_toolchain_owners_stay_aligned() -> None:
         r'REQUIRED_NPM_VERSION="\$\{REQUIRED_NPM_SPEC#npm@\}"', installer
     )
     assert 'npm@${REQUIRED_NPM_VERSION}' in installer
+
+
+def test_backend_typecheck_target_manifest_is_valid() -> None:
+    """The shared typecheck manifest must contain reviewed backend modules."""
+    targets = _backend_typecheck_targets()
+
+    assert {
+        "src/analyzer_contract.py",
+        "src/analyzer_registry.py",
+        "src/api/errors.py",
+        "src/api/http_auth_policy.py",
+        "src/api/http_rate_limit_policy.py",
+        "src/api_bind_policy.py",
+        "src/detectors/black_screen.py",
+        "src/detectors/blur.py",
+        "src/detectors/registry.py",
+    }.issubset(targets)
+
+
+def test_local_typecheck_recipes_share_backend_target_manifest() -> None:
+    """Local protected and advisory type checks must use the shared manifest."""
+    justfile = JUSTFILE_PATH.read_text()
+
+    assert 'backend_typecheck_target_file := ".github/backend_typecheck_targets.txt"' in justfile
+    assert (
+        "MYPYPATH=src xargs {{venv_mypy}} --explicit-package-bases "
+        "< {{backend_typecheck_target_file}}"
+    ) in justfile
+    assert (
+        "xargs {{venv_pyright}} --project pyrightconfig.json "
+        "< {{backend_typecheck_target_file}}"
+    ) in justfile
+    assert "typecheck-backend:" in justfile
+    assert "typecheck-advisory:" in justfile
+    assert "typecheck-frontend:" in justfile
+    assert (
+        "typecheck: typecheck-backend typecheck-advisory typecheck-frontend"
+    ) in justfile
+
+
+def test_ci_typecheck_jobs_share_backend_target_manifest() -> None:
+    """Protected and branch CI must use the same backend typecheck manifest."""
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        workflow = ci_workflow.load_workflow(workflow_path)
+        assert workflow.job("backend-typecheck").step("Run backend typecheck").command == (
+            "MYPYPATH=src xargs mypy --explicit-package-bases "
+            "< .github/backend_typecheck_targets.txt"
+        )
+        assert workflow.job("backend-pyright").step("Run backend pyright").command == (
+            "xargs .venv/bin/pyright --project pyrightconfig.json "
+            "< .github/backend_typecheck_targets.txt"
+        )
+
+
+def test_frontend_lint_keeps_electron_advisory_and_renderer_protected() -> None:
+    """Electron lint must use Node globals without widening the protected baseline."""
+    frontend_package = json.loads(FRONTEND_PACKAGE_PATH.read_text())
+    scripts = frontend_package["scripts"]
+
+    assert scripts["lint:renderer"] == "eslint src"
+    assert scripts["lint:electron"] == "eslint electron"
+    assert scripts["lint:frontend"] == "npm run lint:renderer && npm run lint:electron"
+
+    eslint_config = FRONTEND_ESLINT_CONFIG_PATH.read_text()
+    assert 'files: ["src/**/*.{ts,tsx}"]' in eslint_config
+    assert "...globals.browser" in eslint_config
+    assert 'files: ["electron/**/*.mjs"]' in eslint_config
+    assert "...globals.node" in eslint_config
+
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        workflow = ci_workflow.load_workflow(workflow_path)
+        assert workflow.job("frontend-lint").continue_on_error is True
+        assert workflow.job("frontend-lint").step("Run frontend lint").command == (
+            "npm run lint:frontend"
+        )
+
+    assert _live_workflow().job("contract-checks").step(
+        "Run frontend lint"
+    ).command == "npm run lint:renderer"
+
+
+def test_static_analysis_policy_keeps_protected_and_advisory_owners() -> None:
+    """Static-analysis commands must retain their reviewed coverage and status."""
+    justfile = JUSTFILE_PATH.read_text()
+
+    assert "lint-backend:\n    {{venv_ruff}} check src scripts tests" in justfile
+    assert "format-check:\n    {{venv_ruff}} format --check src scripts tests" in justfile
+    assert "lint-renderer:\n    npm --prefix frontend run lint:renderer" in justfile
+    assert "lint-electron-advisory:\n    npm --prefix frontend run lint:electron" in justfile
+    assert (
+        "ci-local: _backend-tests-fast lint-backend lint-renderer "
+        "typecheck-backend typecheck-frontend"
+    ) in justfile
+
+    for workflow_path in (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH):
+        workflow = ci_workflow.load_workflow(workflow_path)
+        feature_gate = workflow.job("feature-gate")
+
+        assert "backend-ruff" in feature_gate.dependencies
+        assert "backend-typecheck" in feature_gate.dependencies
+        assert workflow.job("backend-ruff").continue_on_error in (None, False)
+        assert workflow.job("backend-typecheck").continue_on_error in (None, False)
+        assert workflow.job("backend-pyright").continue_on_error is True
+        assert workflow.job("frontend-lint").continue_on_error is True
+        assert workflow.job("backend-ruff").step("Run backend Ruff lint").command == (
+            "ruff check src scripts tests"
+        )
 
 
 def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:

@@ -8,10 +8,9 @@ is a rollout setting for that opt-in path, not a migration policy.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
-import os
-
 
 POSTGRES_ALERT_DATABASE_URL_ENV = "ESM_POSTGRES_ALERT_DATABASE_URL"
 POSTGRES_ALERT_AUTO_CREATE_TABLES_ENV = "ESM_POSTGRES_ALERT_AUTO_CREATE_TABLES"

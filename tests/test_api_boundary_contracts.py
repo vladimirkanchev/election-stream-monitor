@@ -10,7 +10,6 @@ This suite protects the outer HTTP contract when backend internals move:
 import pytest
 
 from api.errors import UNEXPECTED_BACKEND_ERROR_STATUS_DETAIL
-
 from api.routers.sessions import SessionServiceCancelFailedError
 from detectors.registry import list_available_detectors
 from tests.api_boundary_test_support import request

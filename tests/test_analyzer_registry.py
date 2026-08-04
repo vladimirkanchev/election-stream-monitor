@@ -12,11 +12,12 @@ import analyzer_registry
 from alert_rules import list_available_alert_rules
 from analyzer_registry import (
     get_enabled_analyzers as get_enabled_analyzers_compat,
+)
+from analyzer_registry import (
     list_available_detectors as list_available_detectors_compat,
 )
 from detectors import registry as detector_registry
 from detectors.registry import get_enabled_analyzers, list_available_detectors
-
 
 EXPLICIT_PUBLIC_SURFACE = (
     "ENABLED_ANALYZERS",

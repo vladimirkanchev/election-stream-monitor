@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import importlib
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
-
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / ".github" / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:

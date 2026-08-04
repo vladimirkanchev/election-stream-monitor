@@ -7,8 +7,8 @@ separately.
 
 from __future__ import annotations
 
-from collections.abc import Generator
 import logging
+from collections.abc import Generator
 
 import pytest
 
@@ -24,13 +24,12 @@ from tests.api_boundary_env_test_support import (
 )
 from tests.api_boundary_test_support import request
 from tests.api_server_cli_test_support import (
-    EMPTY_ALERTS_RESPONSE,
     EMPTY_ALERT_SUMMARY_RESPONSE,
+    EMPTY_ALERTS_RESPONSE,
     build_runtime_headers,
     install_one_request_rate_limit_env,
     prepare_runtime_with_empty_alert_routes,
 )
-
 
 _SHARE_PUBLIC_OPERATIONS = frozenset(
     {

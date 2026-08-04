@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 
 import config
-
 from tests.http_hls_test_support import configure_http_hls_loader_test
 
 

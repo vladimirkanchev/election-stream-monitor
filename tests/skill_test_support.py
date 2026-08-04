@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
-
 
 SKILLS_ROOT = Path(__file__).resolve().parent.parent / ".agents" / "skills"
 SNAPSHOTS_ROOT = Path(__file__).resolve().parent / "fixtures" / "skill_output_snapshots"

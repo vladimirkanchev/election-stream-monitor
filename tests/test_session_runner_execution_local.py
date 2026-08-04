@@ -5,6 +5,17 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+
+import session_runner_execution
+from session_alert_store import (
+    AlertEventPayload,
+    AlertReadLimitExceededError,
+    clear_default_session_alert_store_cache,
+)
+from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
+from session_alerts import read_session_alert_events
+from session_io import initialize_session, read_session_snapshot
+from session_models import AlertEvent, SessionMetadata, SessionProgress
 from tests.api_boundary_test_support import request
 from tests.mcp_alert_test_support import call_mcp_tool
 from tests.mcp_server_alerts_test_support import assert_mcp_tool_success
@@ -16,16 +27,6 @@ from tests.session_alert_test_support import (
     close_store_if_possible,
     select_live_runtime_postgres_alert_store,
 )
-from session_alert_store import (
-    AlertReadLimitExceededError,
-    AlertEventPayload,
-    clear_default_session_alert_store_cache,
-)
-from session_alert_store_runtime_config import ALERT_STORE_BACKEND_ENV
-from session_io import initialize_session, read_session_snapshot
-from session_alerts import read_session_alert_events
-from session_models import AlertEvent, SessionMetadata, SessionProgress
-import session_runner_execution
 from tests.session_runner_execution_test_support import (
     build_metadata,
     build_progress,

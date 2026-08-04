@@ -23,27 +23,34 @@ from api.errors import (
     SessionStartFailedError,
     ValidationFailedError,
 )
-from api.http_auth_policy import AUTHENTICATION_FAILURE_RESPONSES, require_http_principal
-from api.session_route_policy import (
-    require_http_session_cancel_principal,
-    require_http_session_start_principal,
+from api.http_auth_policy import (
+    AUTHENTICATION_FAILURE_RESPONSES,
+    require_http_principal,
 )
 from api.schemas import (
     ApiErrorResponse,
     ApiRateLimitErrorResponse,
     CancelSessionResponse,
-    SessionSnapshotResponse,
     SessionIdentifier,
+    SessionSnapshotResponse,
     SessionSummaryResponse,
     StartSessionRequest,
+)
+from api.session_route_policy import (
+    require_http_session_cancel_principal,
+    require_http_session_start_principal,
 )
 from read_resource_policy import MAX_SESSION_SNAPSHOT_RESPONSE_BYTES
 from session_service import (
     SessionServiceCancelFailedError,
     SessionServiceNotFoundError,
     SessionServiceStartFailedError,
-    cancel_session as cancel_session_service,
     read_session_snapshot_or_none,
+)
+from session_service import (
+    cancel_session as cancel_session_service,
+)
+from session_service import (
     start_session as start_session_service,
 )
 
@@ -129,7 +136,7 @@ async def cancel_session(session_id: SessionIdentifier) -> CancelSessionResponse
     try:
         summary = cancel_session_service(session_id)
     except SessionServiceNotFoundError:
-        raise SessionNotFoundError(session_id)
+        raise SessionNotFoundError(session_id) from None
     except SessionServiceCancelFailedError as err:
         raise CancelFailedError(session_id, err.current_status) from err
     except ValueError as err:

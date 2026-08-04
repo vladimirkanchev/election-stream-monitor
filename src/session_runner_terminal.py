@@ -7,12 +7,12 @@ metadata and progress, flush metric stores when needed, clean processed
 
 from __future__ import annotations
 
+import session_runner_progress
 from analyzer_contract import AnalysisSlice, InputMode
 from logger import format_log_context, get_logger
 from session_models import SessionMetadata, SessionProgress, SessionStatus
 from session_store import SessionStore
 from session_store_runtime import get_default_session_store
-import session_runner_progress
 from stores import black_frame_store, blur_metrics_store
 from stream_loader import ApiStreamLoader
 

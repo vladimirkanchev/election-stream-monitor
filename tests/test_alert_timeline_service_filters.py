@@ -21,8 +21,8 @@ from tests.alert_incident_service_test_support import (
 from tests.session_alert_test_support import (
     StaticAlertStore,
     build_normalized_alert,
-    build_timeline_entry,
     build_persisted_alert,
+    build_timeline_entry,
     configure_session_alert_test,
     write_known_session,
 )

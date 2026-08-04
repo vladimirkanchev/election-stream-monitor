@@ -8,12 +8,13 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-import config
 import pytest
+
+import config
 import session_alert_store
 from session_alert_incidents import build_session_timeline
-from session_alerts import read_session_alert_events, summarize_session_alert_events
 from session_alert_store import clear_default_session_alert_store_cache
+from session_alerts import read_session_alert_events, summarize_session_alert_events
 from session_io import (
     append_alert,
     append_result,

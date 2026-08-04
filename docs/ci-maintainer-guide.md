@@ -141,9 +141,9 @@ Keep these five distinctions explicit when reviewing or editing CI:
 
 - `main-gate` is the external required status for `main` branch
   protection
-- standalone `frontend-lint` and `backend-pyright` are advisory jobs, even
-  though protected `main` PRs still enforce frontend lint through
-  `contract-checks`
+- standalone `frontend-lint` and `backend-pyright` are advisory jobs; protected
+  `main` PRs enforce the renderer ESLint baseline through `contract-checks`,
+  while Electron ESLint remains advisory
 - informational jobs are not the same as advisory jobs; they report process or
   policy state outside the protected merge contract
 - weekly checks fail the weekly workflow when they break, but they do not
@@ -191,8 +191,8 @@ Use this as the shortest branch decision artifact for `main` protection.
   - `backend-typecheck`
   - `backend-ruff`
 - advisory only:
-  - standalone `frontend-lint`; protected `main` PRs still enforce frontend
-    lint through `contract-checks`
+  - standalone `frontend-lint`; protected `main` PRs enforce renderer lint
+    through `contract-checks`, while Electron lint remains advisory
   - `backend-pyright`; `backend-typecheck` remains the protected primary
     Python type gate
 - informational, not protected:
@@ -214,7 +214,7 @@ The internal required graph for pull requests targeting `main` is:
 | `feature-gate` | yes | yes | aggregate fast required checks: `frontend-checkpoint`, `backend-tests`, `frontend-typecheck`, `backend-typecheck`, `backend-ruff` |
 | `main-pr-consistency` | yes | yes | protected-PR manifest structure, CI-owned path existence, fixture/environment policy assumptions, workflow/policy drift, split-suite registration, and narrower `main` PR policy |
 | `integration-smoke` | yes | yes | small backend integration smoke through `tests/test_e2e_local_session.py` |
-| `contract-checks` | yes | yes | PR-only protected boundary lane that currently enforces frontend lint in the contract-sensitive PR path |
+| `contract-checks` | yes | yes | PR-only protected boundary lane that enforces the renderer ESLint baseline in the contract-sensitive PR path |
 | `test-and-build` | yes | yes | manifest/path/drift checks, shared backend/frontend `contract_boundary` suites, full frontend tests, and frontend build |
 
 This keeps the GitHub settings layer simple while preserving the internal
@@ -243,7 +243,7 @@ checks.
 | integration smoke | `main-gate -> integration-smoke` | yes | protected `main` PR smoke path |
 | CI consistency checks | `main-gate -> main-pr-consistency`; `docs-consistency` stays non-`main` | yes | `main-pr-consistency` is the protected `main` policy owner; `docs-consistency` remains the non-`main` early-feedback lane |
 | PR-template completeness | standalone `pr-template-completeness` job | no | intentionally informational process policy, not part of `main-gate` |
-| standalone frontend lint | standalone `frontend-lint` stays advisory; protected `main` PRs still block on frontend lint through `contract-checks` | yes, through `contract-checks` | no separate top-level protected frontend-lint status is currently intended |
+| standalone frontend lint | `frontend-lint` stays advisory for renderer plus Electron; protected `main` PRs block only on renderer lint through `contract-checks` | yes, renderer only through `contract-checks` | no separate top-level protected frontend-lint status is currently intended |
 
 ## Frontend Validation Split For `main` PRs
 
@@ -295,7 +295,7 @@ Keep the current lint shape unless you intentionally want a separate required
 status:
 
 - standalone `frontend-lint` remains advisory
-- protected `main` PRs still block on frontend lint through `contract-checks`
+- protected `main` PRs still block on renderer lint through `contract-checks`
 - do not add `frontend-lint` separately into `feature-gate` or `main-gate`
   unless you want an additional top-level blocking policy surface
 
@@ -359,7 +359,8 @@ rather than a code-correctness requirement:
   handoff, or enterprise-style merge control expectations
 
 Nuance: standalone `frontend-lint` is advisory, but protected `main` PRs still
-block on frontend lint through `contract-checks`.
+block on renderer lint through `contract-checks`; Electron lint remains
+advisory until its baseline is deliberately promoted.
 
 ## Skip And Forced-On Behavior For `main` PRs
 

@@ -19,8 +19,7 @@ def _run_ffmpeg(args: list[str]) -> None:
     """Run ffmpeg/ffprobe command and fail loudly on unexpected errors."""
     completed = subprocess.run(
         args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         check=False,
     )

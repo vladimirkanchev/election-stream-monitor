@@ -18,8 +18,8 @@ from detector_lab.blur_experiments import (
 )
 from detector_lab.practical_alerts import (
     _BLACK_WINDOW_ROW_CACHE,
-    _dark_frame_ratio,
     PracticalEvaluationContext,
+    _dark_frame_ratio,
     analyze_practical_black_alert,
     analyze_practical_blur_alert,
     analyze_practical_blur_alert_v2,

@@ -10,13 +10,13 @@ confidence remains a separate opt-in smoke lane.
 
 from __future__ import annotations
 
+import json
+import shutil
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-import json
 from pathlib import Path
-import shutil
-import time
 from typing import cast
 from uuid import uuid4
 

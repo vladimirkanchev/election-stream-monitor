@@ -1,7 +1,7 @@
 """Focused tests for detached worker launch, logging, and env inheritance."""
 
-from io import StringIO, TextIOWrapper
 import os
+from io import StringIO, TextIOWrapper
 from pathlib import Path
 from typing import cast
 

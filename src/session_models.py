@@ -6,8 +6,8 @@ consumed by API, CLI, and bridge code.
 """
 
 from dataclasses import asdict, dataclass, field
-from typing import Literal
 from time import gmtime, strftime
+from typing import Literal
 
 from analyzer_contract import InputMode
 

@@ -93,6 +93,8 @@ Use these first depending on what you are doing:
       `./.agents/skills/dependency-change-review/`
     - [dependency-ownership-audit.md](./dependency-ownership-audit.md) owns
       Python dependency-source policy and its current consumer audit
+    - [static-analysis-audit.md](./static-analysis-audit.md) owns the current
+      lint, formatting, and type-check baseline and its follow-up gaps
     - [development-environment-audit.md](./development-environment-audit.md)
       maps current setup, host-tool, and diagnostic ownership
   - commit-message rule:

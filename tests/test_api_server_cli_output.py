@@ -34,8 +34,8 @@ from tests.api_boundary_env_test_support import (
 )
 from tests.api_boundary_test_support import request
 from tests.api_server_cli_test_support import (
-    CliMode,
     EMPTY_ALERTS_RESPONSE,
+    CliMode,
     assert_server_runner_called_once,
     run_cli_and_capture_output,
 )

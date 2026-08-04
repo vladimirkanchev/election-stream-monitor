@@ -9,11 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import session_runner_progress
 from analyzer_contract import InputMode
 from session_models import SessionMetadata, SessionProgress
 from session_store import SessionStore
 from session_store_runtime import get_default_session_store
-import session_runner_progress
 
 ProgressStatusBuilder = Callable[..., SessionProgress]
 

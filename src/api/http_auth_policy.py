@@ -16,8 +16,8 @@ from api.errors import AuthenticationFailedError
 from api.schemas import ApiAuthenticationErrorResponse
 from api_auth import (
     API_KEY_HEADER_NAME,
-    AuthPrincipal,
     AuthenticationError,
+    AuthPrincipal,
     authenticate_api_request,
 )
 

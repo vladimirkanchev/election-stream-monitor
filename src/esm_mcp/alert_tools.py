@@ -4,8 +4,6 @@ Registration stays in ``server.py``. These adapters expose reviewed input
 errors and hide unexpected storage diagnostics at the stdio boundary.
 """
 
-from typing import TypeVar
-
 from api.schemas import (
     ReadPageLimit,
     ReadPageOffset,
@@ -20,16 +18,17 @@ from session_alert_adapter import (
     build_alert_filter_kwargs,
     call_alert_service,
 )
-from session_alert_incidents import build_session_incident_summary, build_session_timeline
+from session_alert_incidents import (
+    build_session_incident_summary,
+    build_session_timeline,
+)
+from session_alert_store import AlertReadLimitExceededError
 from session_alerts import (
     ALERT_TIMESTAMP_FORMAT,
     filter_session_alert_events,
     summarize_session_alert_events,
 )
-from session_alert_store import AlertReadLimitExceededError
 from session_models import EventSeverity
-
-ServiceResult = TypeVar("ServiceResult")
 
 _MCP_ALERT_STORAGE_UNAVAILABLE_MESSAGE = "Alert storage is unavailable"
 _MCP_SAFE_VALIDATION_MESSAGES = frozenset(
@@ -41,7 +40,7 @@ _MCP_SAFE_VALIDATION_MESSAGES = frozenset(
 )
 
 
-def _call_tool_alert_service(
+def _call_tool_alert_service[ServiceResult](
     service_fn: AlertServiceCallable[ServiceResult],
     *,
     session_id: str,

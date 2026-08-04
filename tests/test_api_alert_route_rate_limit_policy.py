@@ -21,6 +21,7 @@ import logging
 import httpx
 import pytest
 
+from session_alert_store import clear_default_session_alert_store_cache
 from tests.api_alert_test_support import (
     build_api_key_headers,
     build_internal_error_payload,
@@ -30,9 +31,7 @@ from tests.api_alert_test_support import (
     install_rate_limited_alert_routes,
 )
 from tests.api_boundary_test_support import request
-from session_alert_store import clear_default_session_alert_store_cache
 from tests.session_alert_test_support import install_runtime_postgres_bootstrap_failure
-
 
 # Principal-strategy and fixed-window behavior
 
@@ -193,7 +192,7 @@ def test_get_session_alerts_reopens_budget_exactly_at_window_boundary(monkeypatc
 def test_rate_limit_rejections_log_strategy_and_safe_subject(monkeypatch, caplog) -> None:
     """Rate-limit logs should include strategy and subject without leaking raw keys."""
     install_rate_limited_alert_routes(monkeypatch)
-    fingerprint = hashlib.sha256("valid-key".encode("utf-8")).hexdigest()[:12]
+    fingerprint = hashlib.sha256(b"valid-key").hexdigest()[:12]
 
     with caplog.at_level(logging.INFO, logger="api.http_rate_limit_policy"):
         first_response = request(

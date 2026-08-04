@@ -19,8 +19,8 @@ from datetime import datetime
 from typing import TypedDict
 
 from session_alert_store import (
-    AlertEventPayload,
     DEFAULT_SESSION_ALERT_STORE,
+    AlertEventPayload,
     SessionAlertStore,
 )
 from session_alerts import (

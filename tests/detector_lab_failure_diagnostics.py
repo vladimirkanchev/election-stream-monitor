@@ -6,18 +6,17 @@ artifacts. Diagnostic failures never replace the original test failure.
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import csv
-from dataclasses import dataclass
-from io import StringIO
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Generator, Mapping, Sequence
-
+from collections.abc import Generator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from io import StringIO
+from pathlib import Path
 
 ARTIFACT_DIR_ENV = "ESM_DETECTOR_LAB_ARTIFACT_DIR"
 MAX_DIAGNOSTIC_ROWS = 24

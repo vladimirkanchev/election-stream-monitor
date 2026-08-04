@@ -1,10 +1,10 @@
 """Tests for the small future-facing plugin manifest validation contract."""
 
+from alert_rules import list_available_alert_rules
 from analyzer_contract import (
     PluginManifestValidationError,
     validate_plugin_manifest,
 )
-from alert_rules import list_available_alert_rules
 from detectors.registry import list_available_detectors
 
 

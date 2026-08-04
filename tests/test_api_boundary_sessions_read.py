@@ -10,18 +10,25 @@ from pathlib import Path
 from threading import Event, Thread
 
 import pytest
-import config
 
-from session_alert_store import AlertEventPayload
-from session_alert_store import clear_default_session_alert_store_cache
+import config
+from session_alert_store import (
+    AlertEventPayload,
+    clear_default_session_alert_store_cache,
+)
 from session_io import append_result, initialize_session, write_session_progress
 from session_models import ResultEvent, SessionMetadata, SessionProgress, SessionStatus
 from session_store import SESSION_SNAPSHOT_KEYS, SessionSnapshotPayload
 from session_store_runtime import clear_default_session_store_cache
 from tests.api_alert_test_support import build_internal_error_payload
+from tests.api_boundary_sessions_test_support import (
+    session_not_found_payload,
+    validation_error_payload,
+)
+from tests.api_boundary_test_support import request
 from tests.session_alert_test_support import (
-    FailingReadAlertStore,
     REAL_POSTGRES_ALERT_STORE_SMOKE_ENABLED,
+    FailingReadAlertStore,
     StaticAlertStore,
     build_alert_event,
     build_live_runtime_postgres_store,
@@ -31,12 +38,6 @@ from tests.session_alert_test_support import (
     install_runtime_postgres_session_alerts,
     select_runtime_postgres_store,
 )
-
-from tests.api_boundary_sessions_test_support import (
-    session_not_found_payload,
-    validation_error_payload,
-)
-from tests.api_boundary_test_support import request
 
 
 @pytest.fixture(autouse=True)

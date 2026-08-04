@@ -9,8 +9,11 @@ from alert_rules import (
     reset_session_rule_state,
     should_alert_video_black,
 )
-
-from tests.alert_rules_test_support import assert_no_alerts, black_row, evaluate_detector_rows
+from tests.alert_rules_test_support import (
+    assert_no_alerts,
+    black_row,
+    evaluate_detector_rows,
+)
 
 
 def test_video_black_rule_raises_alert_for_long_black_interval() -> None:

@@ -13,18 +13,22 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Any, Mapping, Protocol, Self, cast
+from typing import Any, Protocol, Self, cast
 
+from postgres_diagnostics import (
+    SAFE_POSTGRES_DIAGNOSTIC,
+    redact_postgres_database_url,
+)
 from session_models import (
     ResultEvent,
     SessionMetadata,
     SessionProgress,
+    parse_result_event_payload,
     parse_session_metadata_payload,
     parse_session_progress_payload,
-    parse_result_event_payload,
 )
 from session_store import (
     ResultEventPayload,
@@ -35,11 +39,6 @@ from session_store import (
     build_empty_session_snapshot_payload,
     build_session_snapshot_payload,
 )
-from postgres_diagnostics import (
-    SAFE_POSTGRES_DIAGNOSTIC,
-    redact_postgres_database_url,
-)
-
 from session_store_postgres_config import (
     PostgresSessionStoreConfigurationError,
     PostgresSessionStoreSettings,
@@ -47,7 +46,6 @@ from session_store_postgres_config import (
     should_auto_create_postgres_session_store_tables,
     validate_postgres_session_store_settings,
 )
-
 
 POSTGRES_SESSION_METADATA_TABLE_NAME = "session_metadata"
 POSTGRES_SESSION_PROGRESS_TABLE_NAME = "session_progress"
@@ -553,7 +551,7 @@ def _row_to_payload(columns: tuple[str, ...], row: object) -> dict[str, object]:
     if isinstance(row, Mapping):
         return {column: row[column] for column in columns}
     if hasattr(row, "_mapping"):
-        mapping = cast(Mapping[str, object], getattr(row, "_mapping"))
+        mapping = cast(Mapping[str, object], row._mapping)
         return {column: mapping[column] for column in columns}
     if isinstance(row, tuple):
         return dict(zip(columns, row, strict=True))

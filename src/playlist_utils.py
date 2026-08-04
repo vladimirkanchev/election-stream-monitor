@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 import m3u8
+
 from logger import logger
 from time_utils import parse_timestamp
 
@@ -20,7 +21,7 @@ def safe_m3u8_load(path_or_url: str | Path):
     """Load an m3u8 playlist from a file/URL, handle local files properly."""
     path_str = str(path_or_url)
     if Path(path_str).is_file():
-        return m3u8.load(open(path_str, "r", encoding="utf-8"))
+        return m3u8.load(open(path_str, encoding="utf-8"))
     return m3u8.load(path_str)
 
 

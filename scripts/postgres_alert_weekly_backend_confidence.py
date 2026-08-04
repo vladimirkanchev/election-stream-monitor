@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from postgres_alert_weekly_confidence_support import run_live_postgres_test_group
 
-
 BACKEND_CONFIDENCE_TITLE = "weekly/manual live Postgres backend confidence bundle"
 
 STORE_CONFIDENCE_TESTS: tuple[str, ...] = (

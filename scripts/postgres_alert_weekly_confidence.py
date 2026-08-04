@@ -13,7 +13,6 @@ from postgres_alert_weekly_runtime_operator_confidence import (
     RUNTIME_OPERATOR_CONFIDENCE_TITLE,
 )
 
-
 LIVE_CONFIDENCE_BUNDLES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (BACKEND_CONFIDENCE_TITLE, BACKEND_CONFIDENCE_TESTS),
     (RUNTIME_OPERATOR_CONFIDENCE_TITLE, RUNTIME_OPERATOR_CONFIDENCE_TESTS),

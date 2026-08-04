@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from tests.e2e_session_test_support import (
-    ground_truth_diagnostic_context,
     assert_snapshot_matches_ground_truth,
+    ground_truth_diagnostic_context,
 )
 from tests.representative_hls_test_support import (
     representative_video_file_ground_truth_cases,
@@ -18,7 +18,6 @@ from tests.representative_hls_test_support import (
     require_representative_local_files,
     run_video_files_subset_session,
 )
-
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 

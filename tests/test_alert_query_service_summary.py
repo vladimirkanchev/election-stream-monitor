@@ -14,11 +14,11 @@ from tests.alert_query_service_test_support import (
     write_known_session_without_alerts,
 )
 from tests.session_alert_test_support import (
+    StaticAlertStore,
     build_alert_summary_payload,
     build_normalized_alert,
     build_persisted_alert,
     configure_session_alert_test,
-    StaticAlertStore,
     write_known_session,
 )
 

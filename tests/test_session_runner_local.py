@@ -9,8 +9,9 @@ import json
 import re
 from pathlib import Path
 
-import config
 import pytest
+
+import config
 import session_runner
 import session_service
 from analyzer_contract import AnalysisSlice

@@ -4,7 +4,6 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiHttpError } from "./apiErrors.mjs";
 import { createFastApiClient } from "./fastApiClient.mjs";
 
 describe("fastApiClient", () => {

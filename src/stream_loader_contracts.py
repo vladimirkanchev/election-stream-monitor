@@ -6,15 +6,15 @@ loader without mixing them with the concrete HTTP/HLS transport mechanics.
 
 from __future__ import annotations
 
+import shutil
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-import shutil
-from typing import Iterator, Literal, Protocol
+from typing import Literal, Protocol
 
-from analyzer_contract import AnalysisSlice
 import config
+from analyzer_contract import AnalysisSlice
 from source_validation import validate_api_stream_url
-
 
 ApiStreamFailureKind = Literal["temporary_failure", "retryable_failure", "terminal_failure"]
 

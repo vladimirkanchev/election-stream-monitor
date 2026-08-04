@@ -22,8 +22,8 @@ from typing import TypedDict
 from logger import get_logger
 from read_resource_policy import MAX_ALERT_QUERY_ROWS
 from session_alert_store import (
-    AlertEventPayload,
     DEFAULT_SESSION_ALERT_STORE,
+    AlertEventPayload,
     SessionAlertsNotFoundError,
     SessionAlertStore,
 )

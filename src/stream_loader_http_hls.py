@@ -26,16 +26,17 @@ callers. Helper modules should stay implementation details.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-import time
-from typing import Iterator, overload
+from typing import overload
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
-from analyzer_contract import AnalysisSlice
 import config
+from analyzer_contract import AnalysisSlice
 from logger import format_log_context, get_logger
 from session_io import (
     append_api_stream_seen_chunk_key,
@@ -43,6 +44,7 @@ from session_io import (
 )
 from session_store import SessionStore
 from session_store_runtime import get_default_session_store
+from source_validation import validate_api_stream_url
 from stream_loader_contracts import (
     ApiStreamHttpLoaderContract,
     ApiStreamLoaderError,
@@ -68,12 +70,6 @@ from stream_loader_http_hls_materialize import (
     _count_file_bytes_in_directory,
     _write_api_stream_temp_file,
 )
-from stream_loader_http_hls_policy import (
-    _calculate_window_advance_gap,
-    _finalize_pending_segment_state,
-    _prune_emitted_segment_keys,
-    _queue_unseen_playlist_segments,
-)
 from stream_loader_http_hls_playlist import (
     _build_playlist_segment_key,
     _derive_api_stream_poll_interval,
@@ -81,8 +77,12 @@ from stream_loader_http_hls_playlist import (
     _parse_master_playlist_variants,
     _parse_media_playlist,
 )
-from source_validation import validate_api_stream_url
-
+from stream_loader_http_hls_policy import (
+    _calculate_window_advance_gap,
+    _finalize_pending_segment_state,
+    _prune_emitted_segment_keys,
+    _queue_unseen_playlist_segments,
+)
 
 logger = get_logger(__name__)
 _API_STREAM_MASTER_PLAYLIST_MAX_DEPTH = 3
@@ -654,7 +654,7 @@ class _HttpHlsApiStreamIterator:
     def __init__(self, loader: HttpHlsApiStreamLoader) -> None:
         self._loader = loader
 
-    def __iter__(self) -> "_HttpHlsApiStreamIterator":
+    def __iter__(self) -> _HttpHlsApiStreamIterator:
         return self
 
     def __next__(self) -> AnalysisSlice:
