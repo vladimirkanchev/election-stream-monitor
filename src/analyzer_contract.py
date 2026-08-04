@@ -10,9 +10,16 @@ modeling layer. The important seam is:
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Iterator, Literal, Mapping, NotRequired, Protocol, TypeAlias, TypedDict, Union
+from typing import (
+    Literal,
+    NotRequired,
+    Protocol,
+    TypedDict,
+    cast,
+)
 
 
 class AnalyzerResult(TypedDict):
@@ -48,7 +55,21 @@ class AnalyzerResult(TypedDict):
     min_duration_sec: NotRequired[float]
 
 
-DetectorResult: TypeAlias = Union[AnalyzerResult, "AnalyzerRow"]
+class DetectorRowFields(TypedDict):
+    """Required shared fields for typed production detector rows."""
+
+    analyzer: str
+    source_type: str
+    source_group: str
+    source_name: str
+    window_index: int | None
+    window_start_sec: float | None
+    window_duration_sec: float | None
+    timestamp_utc: str
+    processing_sec: float
+
+
+type DetectorResult = AnalyzerResult | AnalyzerRow
 
 
 @dataclass(frozen=True)
@@ -94,7 +115,7 @@ class DetectorRowBase(AnalyzerRow):
     timestamp_utc: str
     processing_sec: float
 
-    def shared_fields(self) -> dict[str, object]:
+    def shared_fields(self) -> DetectorRowFields:
         """Return constructor-ready metadata for typed detector result rows."""
         return {
             "analyzer": self.analyzer,
@@ -168,7 +189,7 @@ class RuntimeResultRow:
     )
 
     @classmethod
-    def from_mapping(cls, row: Mapping[str, object]) -> "RuntimeResultRow | None":
+    def from_mapping(cls, row: Mapping[str, object]) -> RuntimeResultRow | None:
         """Build one runtime row from any dict-like detector result."""
         required_fields = {
             "analyzer",
@@ -195,15 +216,17 @@ class RuntimeResultRow:
                 else None
             ),
             source_name=str(shared_values["source_name"]),
-            window_index=shared_values["window_index"],
-            window_start_sec=shared_values["window_start_sec"],
-            window_duration_sec=shared_values["window_duration_sec"],
+            window_index=cast(int | None, shared_values["window_index"]),
+            window_start_sec=cast(float | None, shared_values["window_start_sec"]),
+            window_duration_sec=cast(
+                float | None, shared_values["window_duration_sec"]
+            ),
             timestamp_utc=str(shared_values["timestamp_utc"]),
-            processing_sec=float(shared_values["processing_sec"]),
+            processing_sec=float(cast(float, shared_values["processing_sec"])),
             extra_fields=extra_fields,
         )
 
-    def clone(self) -> "RuntimeResultRow":
+    def clone(self) -> RuntimeResultRow:
         """Return a detached copy for stateful rule evaluation."""
         return RuntimeResultRow.from_mapping(self.to_dict()) or RuntimeResultRow(
             analyzer=self.analyzer,
@@ -329,6 +352,7 @@ class Detector(Protocol):
         window_duration_sec: float | None = None,
     ) -> DetectorResult:
         """Analyze one file and return a standardized typed row or dict."""
+        ...
 
 
 class Analyzer(Detector, Protocol):

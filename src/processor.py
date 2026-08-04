@@ -10,10 +10,11 @@ session processing:
 """
 
 import inspect
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import Mapping, cast
+from typing import cast
 
+from alert_rules import evaluate_alerts
 from analyzer_contract import (
     AnalysisSlice,
     AnalyzerRegistration,
@@ -23,7 +24,6 @@ from analyzer_contract import (
     InputMode,
     RuntimeResultRow,
 )
-from alert_rules import evaluate_alerts
 from detectors.registry import get_enabled_analyzers
 from logger import format_log_context, get_logger
 from session_models import ResultEvent
@@ -199,7 +199,8 @@ def _run_analyzer(
         for key, value in kwargs.items()
         if key in accepted
     }
-    return detector(**filtered_kwargs)
+    dynamic_detector = cast(Callable[..., DetectorResult], detector)
+    return dynamic_detector(**filtered_kwargs)
 
 
 def _serialize_result_row(row: object) -> dict[str, object]:
