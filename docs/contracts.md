@@ -1055,6 +1055,12 @@ Notes:
   `video_blur`; user-facing relabeling belongs in presentation layers, not in
   the API contract
 
+Current `video_metrics` failure handling:
+
+- unavailable or malformed FFprobe duration metadata yields `duration_sec: 0.0`
+  and `black_ratio: 0.0`; valid FFmpeg black-detection intervals remain
+  reportable
+
 Current `video_blur` detector-output semantics:
 
 - persisted blur rows may include `sample_count`, `sharpness_p10`,
