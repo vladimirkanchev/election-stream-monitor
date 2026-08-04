@@ -122,6 +122,16 @@ For AI-assisted tools, use this doc as the execution owner:
 
 Choose the smallest honest lane first.
 
+Use the [environment version contract](../README.md#version-contract) for
+supported, default, and CI-validated tool versions. This guide owns validation
+lanes and their limits; a successful lane does not extend platform support.
+
+Set up a reproducible contributor or AI-agent environment with `just setup`.
+For a direct backend-only locked setup, use `uv sync --locked --extra dev`; the
+editable `pip` path remains for packaging compatibility and focused-extra
+checks. The [development-environment audit](./development-environment-audit.md)
+owns prerequisites and optional-capability policy.
+
 ### Execution Guide
 
 | Change shape | Start locally | CI follow-up | Local limit |
@@ -581,9 +591,17 @@ tests/test_detector_lab_practical_motion.py -q
 If you want the standardized local harness entrypoint instead of copying the
 commands directly, use the matching `justfile` recipes:
 
+- `just setup`
+  - recommended contributor and AI-agent setup path
+  - synchronizes the locked Python `dev` environment, installs frontend
+    dependencies through the shared installer, then runs `just env-check`
+  - host tools, PostgreSQL, Git LFS media, and representative local assets stay
+    outside this command
 - `just env-check`
-  - lightweight local tool and version sanity check
-  - confirms `python3`, `node`, `ffmpeg`, and `just`
+  - deterministic local setup diagnostic for Python, Node/npm, uv, just,
+    FFmpeg/FFprobe, Git, Git LFS, and the repository virtual environment
+  - reports PostgreSQL and representative-media availability without printing
+    values, connecting to services, or making optional capabilities fail
 - `just test-detectors`
   - focused production detector contract and metric lane
 - `just test-processor`
@@ -1902,18 +1920,19 @@ PYTHONPATH=src .venv/bin/python -m esm_mcp
 Both start the current MCP server over `stdio`, which is the intended local
 client transport for the current project stage.
 The installed `esm-mcp` entrypoint is available after refreshing the editable
-environment (for example with `uv sync` or a fresh editable install). Use the
+environment (for example with `uv sync --locked` or a fresh editable install). Use the
 module form when you want a raw-checkout path that does not depend on the
 console script already existing in `.venv/bin/`.
 
 The current backend packaging split is:
 
 - `pip install -e .`
-  - runtime dependencies only
+  - declared base dependencies; engineering tools are available through focused
+    extras
 - `pip install -e .[test]`
   - runtime plus backend test tooling
 - `pip install -e .[dev]`
-  - runtime plus test, Ruff lint, and type-check tooling
+  - aggregate contributor environment: focused extras plus `pre-commit`
 
 Current backend import/run expectations:
 
@@ -1938,9 +1957,10 @@ python3 -m venv /tmp/esm-packaging-check
 Runtime import smoke check:
 
 ```bash
-. .venv/bin/activate
-pip install -e .[test]
-python -c "import api.app, api.routers.sessions, session_service, session_cli"
+python3 -m venv /tmp/esm-runtime-check
+/tmp/esm-runtime-check/bin/python -m pip install --upgrade pip
+/tmp/esm-runtime-check/bin/python -m pip install -e .
+/tmp/esm-runtime-check/bin/python -c "import api.app, api.routers.sessions, session_service, session_cli"
 ```
 
 Raw-checkout import/debug check:
@@ -1951,9 +1971,8 @@ PYTHONPATH=src .venv/bin/python -c "import api.app, api.routers.sessions, sessio
 
 The first check confirms that editable installs still build cleanly with the
 current package metadata. The second confirms that the backend import surface
-still works in a runtime-capable environment after packaging changes. The
-third is useful when you want to confirm raw-checkout backend imports still
-work with the current `src/` layout.
+works with base dependencies only. The third is useful when you want to
+confirm raw-checkout backend imports still work with the current `src/` layout.
 
 If you are validating the MCP slice specifically, include the new shared
 service and MCP adapter in the import smoke check:
@@ -1972,12 +1991,12 @@ entrypoint resolves:
 Dedicated backend typecheck:
 
 ```bash
-uv sync --extra typecheck
+uv sync --locked --extra typecheck
 MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_bind_policy.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
 ```
 
-Use `uv sync --extra typecheck` to make sure the local typecheck env has the
-required checker deps.
+Use `uv sync --locked --extra typecheck` to make sure the local typecheck env
+has the required checker deps from the committed resolution.
 Use `MYPYPATH=src` so mypy resolves the flat `src/` modules as source files
 rather than treating them like installed third-party packages.
 Use this after changing the Python contracts that sit closest to the frontend

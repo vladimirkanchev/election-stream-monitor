@@ -9,10 +9,16 @@ If you want the gentlest product-level overview first, start with the root
 
 If you want the shortest contributor entrypoint for branch flow, local
 commands, and docs ownership, start with [../CONTRIBUTING.md](../CONTRIBUTING.md).
+For a fresh contributor environment, run `just setup`; the
+[development-environment audit](./development-environment-audit.md) owns its
+prerequisites and optional-capability policy.
 
 Before running Python commands, prefer the repo-local interpreter or a `just`
 recipe. This repo does not auto-activate `.venv`, so inherited shell state can
 still point at another project's environment.
+
+For supported, contributor-default, and CI-validated tool versions, use the
+[root environment contract](../README.md#version-contract).
 
 ## Best First Reads
 
@@ -85,6 +91,10 @@ Use these first depending on what you are doing:
     - if `pyproject.toml` or `uv.lock` changes, explain why in the PR or commit
     - if it is unclear whether they belong, use
       `./.agents/skills/dependency-change-review/`
+    - [dependency-ownership-audit.md](./dependency-ownership-audit.md) owns
+      Python dependency-source policy and its current consumer audit
+    - [development-environment-audit.md](./development-environment-audit.md)
+      maps current setup, host-tool, and diagnostic ownership
   - commit-message rule:
     - describe the actual change, not the branch purpose
     - keep one clear theme per commit when practical
