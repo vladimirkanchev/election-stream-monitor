@@ -658,14 +658,31 @@ commands directly, use the matching `justfile` recipes:
   - slower decoded production-detector and detector-lab confidence lane backed
     by checked-in fixtures; excludes session E2E and representative local media
 - `just lint`
-  - backend Ruff plus frontend ESLint
+  - full local lint feedback: protected backend and renderer lint plus advisory
+    Electron lint
+- `just lint-electron-advisory`
+  - Electron main-process, preload bridge, local proxy, subprocess startup, and
+    Electron-test lint
+- `just format-check`
+  - verifies the Python Ruff formatter contract without modifying files
+- `just format`
+  - applies the Python Ruff formatter; use it in a dedicated mechanical commit
+    rather than alongside behavior changes
+- `just typecheck-backend`
+  - protected backend Mypy gate
+- `just typecheck-advisory`
+  - non-blocking local Pyright feedback on the same reviewed backend targets
 - `just typecheck`
-  - backend mypy, backend pyright, and frontend TypeScript typecheck
+  - convenient aggregate: backend Mypy, advisory Pyright, and frontend
+    TypeScript; use the explicit commands when only one signal is needed
 - `just ci-local`
   - best local "ready to push?" lane
   - approximates the current fast branch-feedback CI shape:
     `backend-tests` fast synthetic lane, `frontend-checkpoint`, backend Ruff,
-    backend mypy, backend pyright, frontend ESLint, and frontend typecheck
+    renderer ESLint, protected backend Mypy, and frontend typecheck
+  - does not run advisory Pyright or Electron ESLint; use
+    `just typecheck-advisory` or `just lint-electron-advisory` separately when
+    that second opinion is useful
   - does not reproduce CI environment setup, the editable-install packaging
     check, full frontend test/build, PR-only policy guards, or weekly lanes
 
@@ -681,7 +698,7 @@ facing lanes:
 - fast branch feedback
   - `Branch CI` on ordinary branch pushes
   - `frontend-checkpoint`, `backend-tests`, Ruff, frontend typecheck, and
-    advisory Pyright/frontend lint
+    advisory Pyright plus combined frontend lint, including Electron ESLint
   - closest local proxy: `just ci-local`
 - protected `main` PR validation
   - `CI` on pull requests, with `main-gate` plus its required dependency
@@ -1988,19 +2005,23 @@ entrypoint resolves:
 .venv/bin/python -c "import esm_mcp.server; print(callable(esm_mcp.server.main))"
 ```
 
-Dedicated backend typecheck:
+Protected backend Mypy check:
 
 ```bash
 uv sync --locked --extra typecheck
-MYPYPATH=src mypy --explicit-package-bases src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_bind_policy.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+MYPYPATH=src xargs .venv/bin/mypy --explicit-package-bases < .github/backend_typecheck_targets.txt
 ```
 
 Use `uv sync --locked --extra typecheck` to make sure the local typecheck env
 has the required checker deps from the committed resolution.
 Use `MYPYPATH=src` so mypy resolves the flat `src/` modules as source files
 rather than treating them like installed third-party packages.
-Use this after changing the Python contracts that sit closest to the frontend
-bridge, session lifecycle, or alert-rule boundary.
+`.github/backend_typecheck_targets.txt` is the canonical protected backend
+target set for local Mypy, CI Mypy, and advisory Pyright. Expand it only in
+reviewed module families; it is intentionally not a project-wide `src` scan.
+Use `just typecheck-backend` for the same protected check. Use this after
+changing the Python contracts that sit closest to the frontend bridge, session
+lifecycle, or alert-rule boundary.
 
 Focused alert-query typecheck slice:
 
@@ -2019,8 +2040,10 @@ python -m pip install -e .[lint]
 ruff check src scripts tests
 ```
 
-Use this as the main Python lint gate now that Ruff is the standardized
-linter. Keep Bandit separate for security-focused checks.
+Use `just lint-backend` as the protected local Python lint gate. It checks core
+syntax and undefined names, import ordering, Python 3.12 modernization, and
+selected correctness patterns. Keep Bandit separate for security-focused
+checks.
 
 CI currently runs the Ruff job as a fast backend gate on backend or contract
 changes, and on `main` pull requests.
@@ -2031,13 +2054,16 @@ Advisory backend pyright check:
 python -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/pip install -e .[typecheck]
-.venv/bin/pyright --project pyrightconfig.json src/alert_rules.py src/api/app.py src/api/routers/alerts.py src/api/routers/detectors.py src/api/routers/health.py src/api/routers/playback.py src/api/routers/sessions.py src/api/schemas.py src/api_auth.py src/api_bind_policy.py src/api_boundary_config.py src/api_rate_limit.py src/api_server_cli.py src/esm_mcp/alert_tools.py src/esm_mcp/server.py src/session_alert_adapter.py src/session_alert_incidents.py src/session_alerts.py src/session_alert_store.py src/session_alert_store_runtime_config.py src/session_alert_store_postgres.py src/session_alert_store_postgres_config.py src/session_io.py src/session_models.py src/session_runner.py src/session_service.py src/stream_loader_contracts.py
+xargs .venv/bin/pyright --project pyrightconfig.json < .github/backend_typecheck_targets.txt
 ```
 
-Use this as a non-blocking editor-aligned signal if you want pyright feedback
-without making it the required branch gate yet.
+Use `just typecheck-advisory` for the same non-blocking editor-aligned signal.
+It intentionally remains outside `just ci-local` and the required branch gate.
 The repo's `typecheck` dependency group installs `pyright[nodejs]`, so this
-path does not rely on a separately installed system `node` binary.
+path does not rely on a separately installed system `node` binary. `just
+typecheck` remains a convenience aggregate and therefore stops if Pyright finds
+an issue; use the explicit protected or advisory command when their outcomes
+need to stay separate.
 
 Focused alert-query pyright slice:
 
@@ -2092,14 +2118,17 @@ Common local command:
 npm --prefix frontend run test
 ```
 
-Advisory frontend lint check:
+Frontend lint feedback:
 
 ```bash
 npm --prefix frontend run lint:frontend
 ```
 
-Use this as a lightweight frontend quality signal. It is not yet part of the
-required merge gate, but it is already wired into CI as a non-blocking job.
+This combines the protected renderer baseline with advisory Electron lint. The
+Electron scope uses Node globals and covers the main process, preload bridge,
+local proxy, subprocess startup, and related tests. Protected PR contract
+checks run `npm run lint:renderer` only; Electron lint can mature separately
+before any promotion decision.
 
 ## FastAPI And Bridge Contract Checks
 
