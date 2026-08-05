@@ -46,7 +46,7 @@ below explain the required dependency graph and activation details.
 | Lane | Examples | Blocks `main` merge? | Activation |
 | --- | --- | --- | --- |
 | Required | `main-gate` and its protected dependency chain | yes | path-aware normally; protected work is forced on for `main` PRs |
-| Advisory | standalone `frontend-lint`, `backend-pyright` | no | path-aware branch or PR runs |
+| Advisory | standalone `frontend-lint`, `backend-pyright`, `coverage-evidence` | no | path-aware branch or PR runs |
 | Informational | `changes`, `pr-template-completeness`, `docs-consistency` | no | workflow or policy conditions |
 | Weekly | slow media, lifecycle, deep `api_stream`, audits, PostgreSQL confidence | no | Sunday 03:00 UTC or manual dispatch |
 | Local | `just test-fast`, `just ci-local`, focused `just` recipes | no | contributor initiated |
@@ -164,6 +164,12 @@ dependencies.
     - runs on `push` for all branches except `main`
     - owns ordinary fast branch feedback so push runs do not emit competing
       `main-gate` contexts
+  - `Coverage Evidence`
+    - runs for relevant pull requests and post-merge `main` pushes
+    - retains path-normalized reports for seven days only after artifact
+      preparation succeeds; failed coverage commands may still retain safe
+      partial evidence
+    - never participates in `feature-gate` or `main-gate`
 - aggregate gates
   - `feature-gate`
   - `main-gate`
@@ -243,6 +249,7 @@ checks.
 | integration smoke | `main-gate -> integration-smoke` | yes | protected `main` PR smoke path |
 | CI consistency checks | `main-gate -> main-pr-consistency`; `docs-consistency` stays non-`main` | yes | `main-pr-consistency` is the protected `main` policy owner; `docs-consistency` remains the non-`main` early-feedback lane |
 | PR-template completeness | standalone `pr-template-completeness` job | no | intentionally informational process policy, not part of `main-gate` |
+| coverage evidence | standalone `coverage-evidence` job | no | advisory fast-suite reports; upload requires successful artifact preparation |
 | standalone frontend lint | `frontend-lint` stays advisory for renderer plus Electron; protected `main` PRs block only on renderer lint through `contract-checks` | yes, renderer only through `contract-checks` | no separate top-level protected frontend-lint status is currently intended |
 
 ## Frontend Validation Split For `main` PRs
