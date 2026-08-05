@@ -118,6 +118,62 @@ For AI-assisted tools, use this doc as the execution owner:
   dependencies, or skip/forced-on CI behavior
 - prefer cross-links over repeating the same CI policy detail here
 
+### Advisory Coverage Evidence
+
+Coverage is a diagnostic map for deciding where behavior-level tests may be
+missing; it is not product-confidence evidence by itself. The first baseline
+will measure the in-process fast Python suite and the full frontend Vitest
+suite. Slow media, runtime E2E, soak, external streams, and live PostgreSQL
+remain outside that measurement.
+
+The Python coverage recipe must use `-m "not e2e and not slow"` and explicitly
+set `ESM_ALERT_STORE_BACKEND=file`, `ESM_SESSION_STORE_BACKEND=file`,
+`POSTGRES_ALERT_STORE_REAL_SMOKE=0`, `POSTGRES_SESSION_STORE_REAL_SMOKE=0`,
+and `API_STREAM_REAL_SMOKE=0`. This prevents a contributor shell from
+accidentally adding a live database or provider call to the baseline. Synthetic
+or mocked `api_stream` tests remain in scope because they do not contact an
+external provider.
+
+`pytest-cov` belongs to the Python `test` extra and must be loaded explicitly
+with `-p pytest_cov` because routine pytest commands disable plugin autoload.
+`@vitest/coverage-v8` belongs to frontend development dependencies and stays
+within the installed Vitest `4.1.x` family. Neither tool is a runtime
+dependency.
+
+- **line coverage**: executed source lines divided by measurable source lines.
+- **branch coverage**: executed control-flow branches divided by measurable
+  branches.
+- **baseline**: a recorded coverage snapshot for one reviewed revision and its
+  declared test command.
+- **trend**: a comparison between compatible baselines; it is an advisory
+  signal, not a target.
+- **uncovered**: code not executed by the selected measurement; it is a review
+  lead, not proof that a test must be added.
+- **advisory**: reported for review without a percentage gate, `fail-under`,
+  or merge-blocking status.
+
+Behavior-oriented detector, rule, runtime, and real-media tests remain the
+primary evidence. Coverage does not measure detector accuracy, false-positive
+rates, deployment readiness, external-tool behavior, or live persistence
+correctness.
+
+### Coverage Measurement Boundaries
+
+The first advisory baseline records line and branch coverage for these
+production surfaces:
+
+| Surface | Included source | Excluded |
+| --- | --- | --- |
+| Python backend | Every tracked `src/**/*.py` file, grouped by detector, API, session/persistence, stream/playback, MCP, and shared-runtime subsystems | `tests/`, build output, generated artifacts, and coverage output |
+| Renderer | Runtime `.ts` and `.tsx` files under `frontend/src/` | test files, `*.testSupport.*`, `frontend/src/testing/`, declarations, generated catalogs, `node_modules`, build output, and coverage output |
+| Electron | Runtime `frontend/electron/**/*.mjs` files | Electron test files, `node_modules`, build output, and coverage output |
+
+`frontend/public/detectors.json` is generated catalog output and is never a
+coverage subject. Python seam helpers remain included when they live under
+`src`; difficult or lightly tested source is not excluded merely to improve
+the baseline. The measurement tools must enable branch collection for all
+three surfaces.
+
 ## Routine Validation
 
 Choose the smallest honest lane first.
