@@ -252,6 +252,13 @@ checks.
 | coverage evidence | standalone `coverage-evidence` job | no | advisory fast-suite reports; upload requires successful artifact preparation |
 | standalone frontend lint | `frontend-lint` stays advisory for renderer plus Electron; protected `main` PRs block only on renderer lint through `contract-checks` | yes, renderer only through `contract-checks` | no separate top-level protected frontend-lint status is currently intended |
 
+Coverage evidence has no percentage gate or `fail-under` setting. The local
+backend recipe and frontend `test:coverage` script define the measurement
+boundaries mirrored by the standalone workflow. It uploads only normalized
+JSON, XML, summary JSON, and LCOV paths for seven days, without a `main-gate`
+dependency. Focused workflow tests protect this policy, not changing coverage
+percentages.
+
 ## Frontend Validation Split For `main` PRs
 
 Use this as the concise lane contract for frontend confidence:

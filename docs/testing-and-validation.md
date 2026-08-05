@@ -153,6 +153,20 @@ optional local inspection. Renderer and Electron files remain separate paths
 in the report; it has no threshold and does not replace bridge or Electron
 behavior tests.
 
+When changing coverage recipes, source boundaries, or the advisory workflow,
+run the focused policy checks before either coverage command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  .venv/bin/pytest -p no:cacheprovider -q \
+  tests/test_ci_workflow.py \
+  tests/test_normalize_coverage_report_paths.py
+```
+
+These checks protect recipe availability, measurement boundaries, reviewed
+artifact paths, advisory status, and the absence of percentage thresholds.
+They do not assert naturally changing coverage values.
+
 The dated subsystem baseline and its interpretation live in
 [coverage-evidence.md](./coverage-evidence.md).
 
