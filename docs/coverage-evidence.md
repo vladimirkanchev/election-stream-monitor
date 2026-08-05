@@ -39,3 +39,23 @@ Compare future snapshots only when the commands, source boundaries, and tool
 families are compatible. Review substantial drops or newly unexecuted critical
 paths, then add tests only for a meaningful missing behavior. Do not use this
 table as a product-quality, detector-accuracy, or deployment-readiness score.
+
+## Critical Review Backlog
+
+This is a behavior backlog derived from the baseline, not a coverage target.
+It lists only meaningful missing behavior.
+
+| Priority | Surface | Smallest useful next test |
+| --- | --- | --- |
+| High | `session_io.read_api_stream_seen_chunk_keys()` | In `tests/test_session_io.py`, prove a mixed de-dup log skips blank, malformed, and non-object entries while retaining later valid keys. |
+| High | HTTP/HLS loader bootstrap and iterator lifecycle | Extend the nearest `test_stream_loader_http_hls_core_*.py` owner with one fake-transport `connect -> one slice -> close` contract; do not add a live-provider test. |
+| Medium | `localMediaResponses.mjs` failure responses | Extend `localMediaResponses.test.mjs` with missing-local-file `404` and remote-fetch `502` response assertions. |
+| Medium | `usePlaybackSource` source changes | Extend `usePlaybackSource.test.tsx` with a deferred stale resolution that cannot overwrite a newer source or error state. |
+
+No new authentication or rate-limit work is indicated: both modules are fully
+executed in this baseline and retain dedicated boundary-policy tests. The
+remaining PostgreSQL row-shape fallbacks are acceptable defensive code until a
+new driver requires them. Electron `main.mjs` is a subprocess measurement
+limitation; keep its extracted-helper tests and use Electron smoke confidence
+for composition changes. Legacy playlist utilities and the demo bridge remain
+low-value targets until they become active product paths.
