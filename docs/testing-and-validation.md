@@ -118,6 +118,92 @@ For AI-assisted tools, use this doc as the execution owner:
   dependencies, or skip/forced-on CI behavior
 - prefer cross-links over repeating the same CI policy detail here
 
+### Advisory Coverage Evidence
+
+Coverage is a diagnostic map for deciding where behavior-level tests may be
+missing; it is not product-confidence evidence by itself. The Python baseline
+measures the in-process fast suite; the frontend baseline measures the full
+Vitest suite. Slow media, runtime E2E, soak, external streams, and live
+PostgreSQL remain outside those measurements.
+
+The Python coverage recipe must use `-m "not e2e and not slow"` and explicitly
+set `ESM_ALERT_STORE_BACKEND=file`, `ESM_SESSION_STORE_BACKEND=file`,
+`POSTGRES_ALERT_STORE_REAL_SMOKE=0`, `POSTGRES_SESSION_STORE_REAL_SMOKE=0`,
+and `API_STREAM_REAL_SMOKE=0`. This prevents a contributor shell from
+accidentally adding a live database or provider call to the baseline. Synthetic
+or mocked `api_stream` tests remain in scope because they do not contact an
+external provider.
+
+`pytest-cov` belongs to the Python `test` extra and must be loaded explicitly
+with `-p pytest_cov` because routine pytest commands disable plugin autoload.
+`@vitest/coverage-v8` belongs to frontend development dependencies and stays
+within the installed Vitest `4.1.x` family. Neither tool is a runtime
+dependency.
+
+Run `just coverage-backend` for the advisory Python baseline. It records a
+terminal missing-lines report plus `coverage/backend/coverage.json` and
+`coverage/backend/coverage.xml`, with no threshold. It traces only the pytest
+process; detached workers and external subprocesses are not measured by this
+first baseline.
+
+Run `npm --prefix frontend run test:coverage` for the advisory frontend
+baseline. It runs the full existing Vitest suite with V8 coverage and writes a
+terminal report, `frontend/coverage/coverage-summary.json`, and LCOV for
+optional local inspection. Renderer and Electron files remain separate paths
+in the report; it has no threshold and does not replace bridge or Electron
+behavior tests.
+
+When changing coverage recipes, source boundaries, or the advisory workflow,
+run the focused policy checks before either coverage command:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+  .venv/bin/pytest -p no:cacheprovider -q \
+  tests/test_ci_workflow.py \
+  tests/test_normalize_coverage_report_paths.py
+```
+
+These checks protect recipe availability, measurement boundaries, reviewed
+artifact paths, advisory status, and the absence of percentage thresholds.
+They do not assert naturally changing coverage values.
+
+The dated subsystem baseline and its interpretation live in
+[coverage-evidence.md](./coverage-evidence.md).
+
+- **line coverage**: executed source lines divided by measurable source lines.
+- **branch coverage**: executed control-flow branches divided by measurable
+  branches.
+- **baseline**: a recorded coverage snapshot for one reviewed revision and its
+  declared test command.
+- **trend**: a comparison between compatible baselines; it is an advisory
+  signal, not a target.
+- **uncovered**: code not executed by the selected measurement; it is a review
+  lead, not proof that a test must be added.
+- **advisory**: reported for review without a percentage gate, `fail-under`,
+  or merge-blocking status.
+
+Behavior-oriented detector, rule, runtime, and real-media tests remain the
+primary evidence. Coverage does not measure detector accuracy, false-positive
+rates, deployment readiness, external-tool behavior, or live persistence
+correctness.
+
+### Coverage Measurement Boundaries
+
+The first advisory baseline records line and branch coverage for these
+production surfaces:
+
+| Surface | Included source | Excluded |
+| --- | --- | --- |
+| Python backend | Every tracked `src/**/*.py` file, grouped by detector, API, session/persistence, stream/playback, MCP, and shared-runtime subsystems | `tests/`, build output, generated artifacts, and coverage output |
+| Renderer | Runtime `.ts` and `.tsx` files under `frontend/src/` | test files, `*.testSupport.*`, `frontend/src/testing/`, declarations, generated catalogs, `node_modules`, build output, and coverage output |
+| Electron | Runtime `frontend/electron/**/*.mjs` files | Electron test files, `node_modules`, build output, and coverage output |
+
+`frontend/public/detectors.json` is generated catalog output and is never a
+coverage subject. Python seam helpers remain included when they live under
+`src`; difficult or lightly tested source is not excluded merely to improve
+the baseline. The measurement tools must enable branch collection for all
+three surfaces.
+
 ## Routine Validation
 
 Choose the smallest honest lane first.

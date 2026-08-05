@@ -1,0 +1,155 @@
+name: Coverage Evidence
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "detector_lab/**"
+      - "tests/**"
+      - "frontend/**"
+      - "justfile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/coverage-evidence.yml"
+      - ".github/scripts/normalize_coverage_report_paths.py"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "detector_lab/**"
+      - "tests/**"
+      - "frontend/**"
+      - "justfile"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/coverage-evidence.yml"
+      - ".github/scripts/normalize_coverage_report_paths.py"
+
+concurrency:
+  group: coverage-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage-evidence:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python coverage dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e .[test,detectorlab]
+
+      - name: Install frontend coverage dependencies
+        working-directory: frontend
+        run: bash ../scripts/install_frontend_dependencies.sh
+
+      - name: Run backend coverage
+        id: backend_coverage
+        continue-on-error: true
+        env:
+          API_STREAM_REAL_SMOKE: "0"
+          COVERAGE_FILE: coverage/backend/.coverage
+          ESM_ALERT_STORE_BACKEND: file
+          ESM_SESSION_STORE_BACKEND: file
+          POSTGRES_ALERT_STORE_REAL_SMOKE: "0"
+          POSTGRES_SESSION_STORE_REAL_SMOKE: "0"
+        run: |
+          mkdir -p coverage/backend
+          PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
+            .venv/bin/pytest -p no:cacheprovider -q -p pytest_cov \
+            -m "not e2e and not slow" --cov=src --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=json:coverage/backend/coverage.json \
+            --cov-report=xml:coverage/backend/coverage.xml
+
+      - name: Run frontend coverage
+        id: frontend_coverage
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run test:coverage
+
+      - name: Normalize coverage artifact paths
+        id: coverage_reports
+        if: always()
+        continue-on-error: true
+        env:
+          BACKEND_RESULT: ${{ steps.backend_coverage.outcome }}
+          FRONTEND_RESULT: ${{ steps.frontend_coverage.outcome }}
+        run: |
+          python .github/scripts/normalize_coverage_report_paths.py \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --backend-xml coverage/backend/coverage.xml \
+            --frontend-json frontend/coverage/coverage-summary.json \
+            --frontend-lcov frontend/coverage/lcov.info \
+            --allow-missing
+
+          if [ "$BACKEND_RESULT" = "success" ]; then
+            test -f coverage/backend/coverage.json
+            test -f coverage/backend/coverage.xml
+          fi
+          if [ "$FRONTEND_RESULT" = "success" ]; then
+            test -f frontend/coverage/coverage-summary.json
+            test -f frontend/coverage/lcov.info
+          fi
+
+      - name: Summarize advisory coverage
+        if: always()
+        env:
+          BACKEND_RESULT: ${{ steps.backend_coverage.outcome }}
+          FRONTEND_RESULT: ${{ steps.frontend_coverage.outcome }}
+          REPORT_RESULT: ${{ steps.coverage_reports.outcome }}
+        run: |
+          {
+            echo "## Advisory coverage evidence"
+            echo
+            echo "| Surface | Result | Uploaded reports |"
+            echo "| --- | --- | --- |"
+            echo "| Backend fast synthetic | ${BACKEND_RESULT} | coverage/backend/coverage.json, coverage/backend/coverage.xml |"
+            echo "| Frontend and Electron | ${FRONTEND_RESULT} | frontend/coverage/coverage-summary.json, frontend/coverage/lcov.info |"
+            echo "| Artifact preparation | ${REPORT_RESULT} | path normalization and expected-report checks |"
+            echo
+            if [ "$BACKEND_RESULT" != "success" ] || [ "$FRONTEND_RESULT" != "success" ] || [ "$REPORT_RESULT" != "success" ]; then
+              echo "> A failed coverage command can leave partial reports. Treat uploaded artifacts as diagnostic evidence, not a complete baseline."
+            else
+              echo "> Both coverage commands and artifact checks completed successfully. No percentage threshold is enforced."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload advisory coverage reports
+        if: always() && steps.coverage_reports.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-evidence-${{ github.run_id }}
+          path: |
+            coverage/backend/coverage.json
+            coverage/backend/coverage.xml
+            frontend/coverage/coverage-summary.json
+            frontend/coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Mark incomplete advisory coverage
+        if: always() && (steps.backend_coverage.outcome != 'success' || steps.frontend_coverage.outcome != 'success' || steps.coverage_reports.outcome != 'success')
+        run: |
+          echo "::warning::Advisory coverage completed with an incomplete surface."
+          exit 1

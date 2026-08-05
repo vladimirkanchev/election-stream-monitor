@@ -1,8 +1,8 @@
-"""Regression coverage for CI workflow and static-analysis policy.
+"""Regression coverage for CI workflow, static analysis, and coverage policy.
 
 The tests keep the workflow reader, detector-lane admission, protected PR
-requirements, static-analysis ownership, and bounded weekly-media diagnostics
-aligned with their owners.
+requirements, static-analysis ownership, advisory coverage evidence, and
+bounded weekly-media diagnostics aligned with their owners.
 """
 
 from __future__ import annotations
@@ -32,11 +32,15 @@ BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
 WEEKLY_VALIDATION_WORKFLOW_PATH = (
     SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
 )
+COVERAGE_EVIDENCE_WORKFLOW_PATH = (
+    SCRIPTS_DIR.parent / "workflows" / "coverage-evidence.yml"
+)
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
 FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
+FRONTEND_VITE_CONFIG_PATH = Path("frontend/vite.config.ts")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
 JUSTFILE_PATH = Path("justfile")
@@ -226,6 +230,11 @@ def _weekly_slow_media_artifact_uploads() -> tuple[dict[str, Any], ...]:
     )
 
 
+def _coverage_evidence_steps() -> tuple[dict[str, Any], ...]:
+    """Return the standalone advisory coverage-job steps."""
+    return _workflow_job_steps(COVERAGE_EVIDENCE_WORKFLOW_PATH, "coverage-evidence")
+
+
 def _artifact_paths(upload_step: dict[str, Any]) -> frozenset[str]:
     """Return the normalized path allowlist from one artifact upload step."""
     options = upload_step.get("with")
@@ -384,6 +393,31 @@ def _path_filter_paths(workflow_path: Path, filter_name: str) -> frozenset[str]:
 def _just_recipe_test_targets(recipe_name: str) -> frozenset[str]:
     """Return direct test-file targets through the registration guard reader."""
     return check_split_suite_registration.recipe_test_paths(recipe_name)
+
+
+def _just_recipe_body(recipe_name: str) -> str:
+    """Return one recipe body without coupling assertions to nearby recipes."""
+    lines = JUSTFILE_PATH.read_text().splitlines()
+    recipe_start = lines.index(f"{recipe_name}:") + 1
+    recipe_lines: list[str] = []
+
+    for line in lines[recipe_start:]:
+        if line and not line[0].isspace():
+            break
+        recipe_lines.append(line)
+
+    return "\n".join(recipe_lines)
+
+
+def _typescript_string_array(source: str, setting_name: str) -> frozenset[str]:
+    """Read one simple quoted-string array from checked-in TypeScript config."""
+    match = re.search(
+        rf"{setting_name}\s*:\s*\[(?P<items>.*?)\]",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None
+    return frozenset(re.findall(r'"([^"]+)"', match.group("items")))
 
 
 def test_focused_detector_recipes_keep_canonical_targets() -> None:
@@ -662,6 +696,139 @@ def test_static_analysis_policy_keeps_protected_and_advisory_owners() -> None:
         assert workflow.job("backend-ruff").step("Run backend Ruff lint").command == (
             "ruff check src scripts tests"
         )
+
+
+def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:
+    """Coverage reporting must remain outside protected PR gate ownership."""
+    workflow = ci_workflow.load_workflow(COVERAGE_EVIDENCE_WORKFLOW_PATH)
+    coverage_job = workflow.job("coverage-evidence")
+    document = _workflow_document(COVERAGE_EVIDENCE_WORKFLOW_PATH)
+
+    assert coverage_job.dependencies == ()
+    assert coverage_job.continue_on_error is True
+    triggers = document.get("on", document.get(True))
+    assert isinstance(triggers, dict)
+    assert set(triggers) == {"pull_request", "push"}
+    push_trigger = triggers["push"]
+    assert isinstance(push_trigger, dict)
+    assert push_trigger.get("branches") == ["main"]
+    assert isinstance(push_trigger.get("paths"), list)
+
+    coverage_steps = coverage_job.steps_by_name()
+    backend_step = coverage_steps["Run backend coverage"]
+    frontend_step = coverage_steps["Run frontend coverage"]
+    assert backend_step.continue_on_error is True
+    assert backend_step.command is not None
+    assert "-p pytest_cov" in backend_step.command
+    assert '-m "not e2e and not slow"' in backend_step.command
+    assert "--cov-report=json:coverage/backend/coverage.json" in backend_step.command
+    assert "--cov-report=xml:coverage/backend/coverage.xml" in backend_step.command
+    assert frontend_step.continue_on_error is True
+    assert frontend_step.command == "npm run test:coverage"
+    assert "reportOnFailure: true" in FRONTEND_VITE_CONFIG_PATH.read_text()
+
+    protected_workflow = _live_workflow()
+    assert "coverage-evidence" not in protected_workflow.job(
+        "main-gate"
+    ).dependencies
+    assert "coverage-evidence" not in protected_workflow.job(
+        "feature-gate"
+    ).dependencies
+
+
+def test_coverage_entrypoints_keep_reviewed_source_boundaries() -> None:
+    """Coverage entrypoints must retain their distinct backend/frontend scopes."""
+    backend_recipe = _just_recipe_body("coverage-backend")
+    frontend_package = json.loads(FRONTEND_PACKAGE_PATH.read_text())
+    vite_config = FRONTEND_VITE_CONFIG_PATH.read_text()
+
+    assert "--cov=src" in backend_recipe
+    assert "--cov-branch" in backend_recipe
+    assert frontend_package["scripts"]["test:coverage"] == "vitest run --coverage"
+    assert _typescript_string_array(vite_config, "include") == {
+        "src/**/*.{ts,tsx}",
+        "electron/**/*.mjs",
+    }
+    assert {
+        "node_modules/**",
+        "coverage/**",
+        "dist/**",
+    } <= _typescript_string_array(vite_config, "exclude")
+
+
+def test_coverage_policy_has_no_percentage_threshold() -> None:
+    """Coverage remains evidence only, without a hidden pass/fail threshold."""
+    coverage_workflow = ci_workflow.load_workflow(COVERAGE_EVIDENCE_WORKFLOW_PATH)
+    coverage_steps = coverage_workflow.job("coverage-evidence").steps_by_name()
+    frontend_package = json.loads(FRONTEND_PACKAGE_PATH.read_text())
+    vite_config = FRONTEND_VITE_CONFIG_PATH.read_text()
+
+    configured_coverage = "\n".join(
+        (
+            _just_recipe_body("coverage-backend"),
+            coverage_steps["Run backend coverage"].command or "",
+            coverage_steps["Run frontend coverage"].command or "",
+            frontend_package["scripts"]["test:coverage"],
+        )
+    )
+    assert "--cov-fail-under" not in configured_coverage
+    assert "fail-under" not in configured_coverage
+    assert not re.search(r"\bthresholds?\s*:", vite_config)
+
+
+def test_coverage_evidence_uploads_only_relative_reviewed_reports() -> None:
+    """Coverage artifacts upload only after bounded path preparation succeeds."""
+    steps = _coverage_evidence_steps()
+    names = [str(step.get("name")) for step in steps]
+    normalize_index = names.index("Normalize coverage artifact paths")
+    summary_index = names.index("Summarize advisory coverage")
+    upload_index = names.index("Upload advisory coverage reports")
+    incomplete_index = names.index("Mark incomplete advisory coverage")
+
+    normalize_step = steps[normalize_index]
+    assert normalize_step.get("if") == "always()"
+    assert normalize_step.get("continue-on-error") is True
+    normalize_command = str(normalize_step.get("run"))
+    assert "normalize_coverage_report_paths.py" in normalize_command
+    assert "--repository-root \"$GITHUB_WORKSPACE\"" in normalize_command
+    assert "--allow-missing" in normalize_command
+    for report_path in (
+        "coverage/backend/coverage.json",
+        "coverage/backend/coverage.xml",
+        "frontend/coverage/coverage-summary.json",
+        "frontend/coverage/lcov.info",
+    ):
+        assert f"test -f {report_path}" in normalize_command
+
+    summary_step = steps[summary_index]
+    assert summary_step.get("if") == "always()"
+    summary_command = str(summary_step.get("run"))
+    assert "$GITHUB_STEP_SUMMARY" in summary_command
+    assert "Artifact preparation" in summary_command
+    assert "partial reports" in summary_command
+
+    upload_step = steps[upload_index]
+    assert (
+        upload_step.get("if")
+        == "always() && steps.coverage_reports.outcome == 'success'"
+    )
+    options = upload_step.get("with")
+    assert isinstance(options, dict)
+    assert options.get("retention-days") == 7
+    assert options.get("if-no-files-found") == "warn"
+    assert _artifact_paths(upload_step) == {
+        "coverage/backend/coverage.json",
+        "coverage/backend/coverage.xml",
+        "frontend/coverage/coverage-summary.json",
+        "frontend/coverage/lcov.info",
+    }
+
+    incomplete_step = steps[incomplete_index]
+    incomplete_condition = str(incomplete_step.get("if", ""))
+    assert incomplete_condition.startswith("always()")
+    assert "steps.coverage_reports.outcome != 'success'" in incomplete_condition
+    assert "exit 1" in str(incomplete_step.get("run"))
+    assert normalize_index < summary_index < upload_index < incomplete_index
 
 
 def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:

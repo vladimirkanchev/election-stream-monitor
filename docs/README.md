@@ -72,6 +72,8 @@ Use these first depending on what you are doing:
     - `tests/test_detector_lab_practical_motion.py`
 - checking validation and CI expectations
   - [testing-and-validation.md](./testing-and-validation.md)
+  - [coverage-evidence.md](./coverage-evidence.md) for dated advisory
+    subsystem snapshots and comparison rules
   - [ci-maintainer-guide.md](./ci-maintainer-guide.md)
   - [fixture-environment-policy.md](./fixture-environment-policy.md)
   - use the fixture/environment policy when deciding whether a path belongs in
