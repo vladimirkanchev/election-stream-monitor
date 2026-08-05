@@ -1,8 +1,8 @@
-"""Regression coverage for CI workflow and static-analysis policy.
+"""Regression coverage for CI workflow, static analysis, and coverage policy.
 
 The tests keep the workflow reader, detector-lane admission, protected PR
-requirements, static-analysis ownership, and bounded weekly-media diagnostics
-aligned with their owners.
+requirements, static-analysis ownership, advisory coverage evidence, and
+bounded weekly-media diagnostics aligned with their owners.
 """
 
 from __future__ import annotations
@@ -395,6 +395,31 @@ def _just_recipe_test_targets(recipe_name: str) -> frozenset[str]:
     return check_split_suite_registration.recipe_test_paths(recipe_name)
 
 
+def _just_recipe_body(recipe_name: str) -> str:
+    """Return one recipe body without coupling assertions to nearby recipes."""
+    lines = JUSTFILE_PATH.read_text().splitlines()
+    recipe_start = lines.index(f"{recipe_name}:") + 1
+    recipe_lines: list[str] = []
+
+    for line in lines[recipe_start:]:
+        if line and not line[0].isspace():
+            break
+        recipe_lines.append(line)
+
+    return "\n".join(recipe_lines)
+
+
+def _typescript_string_array(source: str, setting_name: str) -> frozenset[str]:
+    """Read one simple quoted-string array from checked-in TypeScript config."""
+    match = re.search(
+        rf"{setting_name}\s*:\s*\[(?P<items>.*?)\]",
+        source,
+        re.DOTALL,
+    )
+    assert match is not None
+    return frozenset(re.findall(r'"([^"]+)"', match.group("items")))
+
+
 def test_focused_detector_recipes_keep_canonical_targets() -> None:
     """Focused detector recipes must retain their reviewed ownership sets."""
     expected_targets_by_recipe = {
@@ -709,6 +734,46 @@ def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:
     assert "coverage-evidence" not in protected_workflow.job(
         "feature-gate"
     ).dependencies
+
+
+def test_coverage_entrypoints_keep_reviewed_source_boundaries() -> None:
+    """Coverage entrypoints must retain their distinct backend/frontend scopes."""
+    backend_recipe = _just_recipe_body("coverage-backend")
+    frontend_package = json.loads(FRONTEND_PACKAGE_PATH.read_text())
+    vite_config = FRONTEND_VITE_CONFIG_PATH.read_text()
+
+    assert "--cov=src" in backend_recipe
+    assert "--cov-branch" in backend_recipe
+    assert frontend_package["scripts"]["test:coverage"] == "vitest run --coverage"
+    assert _typescript_string_array(vite_config, "include") == {
+        "src/**/*.{ts,tsx}",
+        "electron/**/*.mjs",
+    }
+    assert {
+        "node_modules/**",
+        "coverage/**",
+        "dist/**",
+    } <= _typescript_string_array(vite_config, "exclude")
+
+
+def test_coverage_policy_has_no_percentage_threshold() -> None:
+    """Coverage remains evidence only, without a hidden pass/fail threshold."""
+    coverage_workflow = ci_workflow.load_workflow(COVERAGE_EVIDENCE_WORKFLOW_PATH)
+    coverage_steps = coverage_workflow.job("coverage-evidence").steps_by_name()
+    frontend_package = json.loads(FRONTEND_PACKAGE_PATH.read_text())
+    vite_config = FRONTEND_VITE_CONFIG_PATH.read_text()
+
+    configured_coverage = "\n".join(
+        (
+            _just_recipe_body("coverage-backend"),
+            coverage_steps["Run backend coverage"].command or "",
+            coverage_steps["Run frontend coverage"].command or "",
+            frontend_package["scripts"]["test:coverage"],
+        )
+    )
+    assert "--cov-fail-under" not in configured_coverage
+    assert "fail-under" not in configured_coverage
+    assert not re.search(r"\bthresholds?\s*:", vite_config)
 
 
 def test_coverage_evidence_uploads_only_relative_reviewed_reports() -> None:
