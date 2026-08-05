@@ -26,6 +26,7 @@ venv_mypy := ".venv/bin/mypy"
 venv_pyright := ".venv/bin/pyright"
 pytest_base_flags := "-p no:cacheprovider -q"
 pytest_env_prefix := "PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
+backend_coverage_env_prefix := "ESM_ALERT_STORE_BACKEND=file ESM_SESSION_STORE_BACKEND=file POSTGRES_ALERT_STORE_REAL_SMOKE=0 POSTGRES_SESSION_STORE_REAL_SMOKE=0 API_STREAM_REAL_SMOKE=0 COVERAGE_FILE=coverage/backend/.coverage"
 live_session_postgres_env_prefix := "ESM_SESSION_STORE_BACKEND=postgres ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1 POSTGRES_SESSION_STORE_REAL_SMOKE=1"
 backend_typecheck_target_file := ".github/backend_typecheck_targets.txt"
 backend_fast_synthetic_selector := "-m 'not e2e and not slow'"
@@ -238,6 +239,13 @@ _backend-tests-fast:
     {{venv_python}} -c "import api.app, api.routers.sessions, session_service, session_cli, session_alert_report"
     {{venv_python}} -m py_compile src/session_alert_report.py scripts/session_alert_demo_report.py
     {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} {{backend_fast_synthetic_selector}}
+
+# Advisory in-process coverage for the broad fast backend suite. This keeps
+# slow, E2E, live PostgreSQL, and real external-stream confidence out of the
+# baseline and does not add a percentage gate.
+coverage-backend:
+    mkdir -p coverage/backend
+    {{backend_coverage_env_prefix}} {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} -p pytest_cov {{backend_fast_synthetic_selector}} --cov=src --cov-branch --cov-report=term-missing --cov-report=json:coverage/backend/coverage.json --cov-report=xml:coverage/backend/coverage.xml
 
 # Local fast-CI reproduction lane.
 # This intentionally mirrors the everyday branch-feedback checks, not the
