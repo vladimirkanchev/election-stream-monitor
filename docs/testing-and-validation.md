@@ -121,10 +121,10 @@ For AI-assisted tools, use this doc as the execution owner:
 ### Advisory Coverage Evidence
 
 Coverage is a diagnostic map for deciding where behavior-level tests may be
-missing; it is not product-confidence evidence by itself. The first baseline
-will measure the in-process fast Python suite and the full frontend Vitest
-suite. Slow media, runtime E2E, soak, external streams, and live PostgreSQL
-remain outside that measurement.
+missing; it is not product-confidence evidence by itself. The Python baseline
+measures the in-process fast suite; the frontend baseline measures the full
+Vitest suite. Slow media, runtime E2E, soak, external streams, and live
+PostgreSQL remain outside those measurements.
 
 The Python coverage recipe must use `-m "not e2e and not slow"` and explicitly
 set `ESM_ALERT_STORE_BACKEND=file`, `ESM_SESSION_STORE_BACKEND=file`,
@@ -139,6 +139,22 @@ with `-p pytest_cov` because routine pytest commands disable plugin autoload.
 `@vitest/coverage-v8` belongs to frontend development dependencies and stays
 within the installed Vitest `4.1.x` family. Neither tool is a runtime
 dependency.
+
+Run `just coverage-backend` for the advisory Python baseline. It records a
+terminal missing-lines report plus `coverage/backend/coverage.json` and
+`coverage/backend/coverage.xml`, with no threshold. It traces only the pytest
+process; detached workers and external subprocesses are not measured by this
+first baseline.
+
+Run `npm --prefix frontend run test:coverage` for the advisory frontend
+baseline. It runs the full existing Vitest suite with V8 coverage and writes a
+terminal report, `frontend/coverage/coverage-summary.json`, and LCOV for
+optional local inspection. Renderer and Electron files remain separate paths
+in the report; it has no threshold and does not replace bridge or Electron
+behavior tests.
+
+The dated subsystem baseline and its interpretation live in
+[coverage-evidence.md](./coverage-evidence.md).
 
 - **line coverage**: executed source lines divided by measurable source lines.
 - **branch coverage**: executed control-flow branches divided by measurable
