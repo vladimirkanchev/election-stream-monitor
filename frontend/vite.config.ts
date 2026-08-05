@@ -19,6 +19,7 @@ export default defineConfig({
       ],
       include: ["src/**/*.{ts,tsx}", "electron/**/*.mjs"],
       provider: "v8",
+      reportOnFailure: true,
       reporter: ["text", "json-summary", "lcov"],
       reportsDirectory: "coverage",
     },

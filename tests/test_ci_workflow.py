@@ -32,11 +32,15 @@ BRANCH_CI_WORKFLOW_PATH = SCRIPTS_DIR.parent / "workflows" / "branch-ci.yml"
 WEEKLY_VALIDATION_WORKFLOW_PATH = (
     SCRIPTS_DIR.parent / "workflows" / "weekly-validation.yml"
 )
+COVERAGE_EVIDENCE_WORKFLOW_PATH = (
+    SCRIPTS_DIR.parent / "workflows" / "coverage-evidence.yml"
+)
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
 FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
+FRONTEND_VITE_CONFIG_PATH = Path("frontend/vite.config.ts")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
 JUSTFILE_PATH = Path("justfile")
@@ -224,6 +228,11 @@ def _weekly_slow_media_artifact_uploads() -> tuple[dict[str, Any], ...]:
         for step in _weekly_slow_media_steps()
         if step.get("uses") == "actions/upload-artifact@v4"
     )
+
+
+def _coverage_evidence_steps() -> tuple[dict[str, Any], ...]:
+    """Return the standalone advisory coverage-job steps."""
+    return _workflow_job_steps(COVERAGE_EVIDENCE_WORKFLOW_PATH, "coverage-evidence")
 
 
 def _artifact_paths(upload_step: dict[str, Any]) -> frozenset[str]:
@@ -662,6 +671,99 @@ def test_static_analysis_policy_keeps_protected_and_advisory_owners() -> None:
         assert workflow.job("backend-ruff").step("Run backend Ruff lint").command == (
             "ruff check src scripts tests"
         )
+
+
+def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:
+    """Coverage reporting must remain outside protected PR gate ownership."""
+    workflow = ci_workflow.load_workflow(COVERAGE_EVIDENCE_WORKFLOW_PATH)
+    coverage_job = workflow.job("coverage-evidence")
+    document = _workflow_document(COVERAGE_EVIDENCE_WORKFLOW_PATH)
+
+    assert coverage_job.dependencies == ()
+    assert coverage_job.continue_on_error is True
+    triggers = document.get("on", document.get(True))
+    assert isinstance(triggers, dict)
+    assert set(triggers) == {"pull_request", "push"}
+    push_trigger = triggers["push"]
+    assert isinstance(push_trigger, dict)
+    assert push_trigger.get("branches") == ["main"]
+    assert isinstance(push_trigger.get("paths"), list)
+
+    coverage_steps = coverage_job.steps_by_name()
+    backend_step = coverage_steps["Run backend coverage"]
+    frontend_step = coverage_steps["Run frontend coverage"]
+    assert backend_step.continue_on_error is True
+    assert backend_step.command is not None
+    assert "-p pytest_cov" in backend_step.command
+    assert '-m "not e2e and not slow"' in backend_step.command
+    assert "--cov-report=json:coverage/backend/coverage.json" in backend_step.command
+    assert "--cov-report=xml:coverage/backend/coverage.xml" in backend_step.command
+    assert frontend_step.continue_on_error is True
+    assert frontend_step.command == "npm run test:coverage"
+    assert "reportOnFailure: true" in FRONTEND_VITE_CONFIG_PATH.read_text()
+
+    protected_workflow = _live_workflow()
+    assert "coverage-evidence" not in protected_workflow.job(
+        "main-gate"
+    ).dependencies
+    assert "coverage-evidence" not in protected_workflow.job(
+        "feature-gate"
+    ).dependencies
+
+
+def test_coverage_evidence_uploads_only_relative_reviewed_reports() -> None:
+    """Coverage artifacts upload only after bounded path preparation succeeds."""
+    steps = _coverage_evidence_steps()
+    names = [str(step.get("name")) for step in steps]
+    normalize_index = names.index("Normalize coverage artifact paths")
+    summary_index = names.index("Summarize advisory coverage")
+    upload_index = names.index("Upload advisory coverage reports")
+    incomplete_index = names.index("Mark incomplete advisory coverage")
+
+    normalize_step = steps[normalize_index]
+    assert normalize_step.get("if") == "always()"
+    assert normalize_step.get("continue-on-error") is True
+    normalize_command = str(normalize_step.get("run"))
+    assert "normalize_coverage_report_paths.py" in normalize_command
+    assert "--repository-root \"$GITHUB_WORKSPACE\"" in normalize_command
+    assert "--allow-missing" in normalize_command
+    for report_path in (
+        "coverage/backend/coverage.json",
+        "coverage/backend/coverage.xml",
+        "frontend/coverage/coverage-summary.json",
+        "frontend/coverage/lcov.info",
+    ):
+        assert f"test -f {report_path}" in normalize_command
+
+    summary_step = steps[summary_index]
+    assert summary_step.get("if") == "always()"
+    summary_command = str(summary_step.get("run"))
+    assert "$GITHUB_STEP_SUMMARY" in summary_command
+    assert "Artifact preparation" in summary_command
+    assert "partial reports" in summary_command
+
+    upload_step = steps[upload_index]
+    assert (
+        upload_step.get("if")
+        == "always() && steps.coverage_reports.outcome == 'success'"
+    )
+    options = upload_step.get("with")
+    assert isinstance(options, dict)
+    assert options.get("retention-days") == 7
+    assert options.get("if-no-files-found") == "warn"
+    assert _artifact_paths(upload_step) == {
+        "coverage/backend/coverage.json",
+        "coverage/backend/coverage.xml",
+        "frontend/coverage/coverage-summary.json",
+        "frontend/coverage/lcov.info",
+    }
+
+    incomplete_step = steps[incomplete_index]
+    incomplete_condition = str(incomplete_step.get("if", ""))
+    assert incomplete_condition.startswith("always()")
+    assert "steps.coverage_reports.outcome != 'success'" in incomplete_condition
+    assert "exit 1" in str(incomplete_step.get("run"))
+    assert normalize_index < summary_index < upload_index < incomplete_index
 
 
 def test_weekly_alert_postgres_jobs_keep_their_explicit_live_environment() -> None:
