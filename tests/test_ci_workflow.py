@@ -35,6 +35,17 @@ WEEKLY_VALIDATION_WORKFLOW_PATH = (
 COVERAGE_EVIDENCE_WORKFLOW_PATH = (
     SCRIPTS_DIR.parent / "workflows" / "coverage-evidence.yml"
 )
+WORKFLOW_PATHS = (
+    CI_WORKFLOW_PATH,
+    BRANCH_CI_WORKFLOW_PATH,
+    COVERAGE_EVIDENCE_WORKFLOW_PATH,
+    WEEKLY_VALIDATION_WORKFLOW_PATH,
+)
+# Job-level token scopes are exceptions to the workflow read-only default. Keep
+# this empty until a reviewed job needs a narrowly scoped write permission.
+WORKFLOW_PERMISSION_EXCEPTIONS: dict[str, dict[str, dict[str, str]]] = {
+    workflow_path.name: {} for workflow_path in WORKFLOW_PATHS
+}
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
@@ -119,6 +130,22 @@ def _workflow_jobs(workflow_path: Path) -> dict[str, dict[str, Any]]:
         isinstance(name, str) and isinstance(job, dict) for name, job in jobs.items()
     )
     return jobs
+
+
+@pytest.mark.parametrize("workflow_path", WORKFLOW_PATHS)
+def test_workflow_permissions_default_to_read_only(
+    workflow_path: Path,
+) -> None:
+    """Workflows stay read-only unless a reviewed job needs a narrower scope."""
+    workflow = _workflow_document(workflow_path)
+    assert workflow.get("permissions") == {"contents": "read"}
+
+    job_permissions = {
+        job_name: permissions
+        for job_name, job in _workflow_jobs(workflow_path).items()
+        if (permissions := job.get("permissions")) is not None
+    }
+    assert job_permissions == WORKFLOW_PERMISSION_EXCEPTIONS[workflow_path.name]
 
 
 def _workflow_job_steps(
@@ -786,7 +813,6 @@ def test_supply_chain_audit_retains_pinned_advisory_scanner_ownership(
     assert workflow_job["if"] == "needs.changes.outputs.workflow == 'true'"
     assert workflow_job["continue-on-error"] is True
     assert workflow_job["timeout-minutes"] == 10
-    assert workflow_job["permissions"] == {"contents": "read"}
     assert workflow_steps[0]["with"]["fetch-depth"] == 0
     for step_name in (
         "Scan committed repository history",

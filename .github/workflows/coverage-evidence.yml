@@ -26,6 +26,9 @@ on:
       - ".github/workflows/coverage-evidence.yml"
       - ".github/scripts/normalize_coverage_report_paths.py"
 
+permissions:
+  contents: read
+
 concurrency:
   group: coverage-evidence-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true

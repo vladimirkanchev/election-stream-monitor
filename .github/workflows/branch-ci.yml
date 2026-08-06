@@ -5,6 +5,9 @@ on:
     branches-ignore:
       - main
 
+permissions:
+  contents: read
+
 env:
   # Ordinary branch feedback stays on the default synthetic path. Real
   # Postgres confidence belongs to the weekly workflow, which overrides these
@@ -350,8 +353,6 @@ jobs:
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 10
-    permissions:
-      contents: read
     needs:
       - changes
 
