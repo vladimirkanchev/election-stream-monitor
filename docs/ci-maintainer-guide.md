@@ -128,10 +128,10 @@ pip-audit -r <temporary-file>
 ```
 
 The temporary export is an audit input only and must not be committed as a
-second dependency owner. Until this sequence replaces the current bare
-`pip-audit` weekly command and its findings are reviewed, Python dependency
-auditing remains weekly and non-merge-blocking. `pip-audit` does not provide
-the same high/critical exit threshold as `npm audit`, so do not imply one.
+second dependency owner. The weekly Python audit uses this sequence and
+remains non-merge-blocking while its findings are reviewed. `pip-audit` does
+not provide the same high/critical exit threshold as `npm audit`, so do not
+imply one.
 
 Frontend dependency evidence comes from `frontend/package-lock.json` through:
 

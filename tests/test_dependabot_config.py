@@ -47,6 +47,14 @@ def _updates_by_ecosystem(
     }
 
 
+def _single_group(update: dict[str, object]) -> dict[str, object]:
+    """Return the one reviewed group without depending on its YAML key or order."""
+    groups = update["groups"]
+    assert isinstance(groups, dict)
+    assert len(groups) == 1
+    return next(iter(groups.values()))
+
+
 def _optional_dependency_names() -> set[str]:
     """Return normalized optional package names from project metadata."""
     with PYPROJECT_PATH.open("rb") as pyproject_file:
@@ -89,9 +97,7 @@ def test_dependabot_groups_only_non_major_version_updates() -> None:
 def test_dependabot_python_group_stays_limited_to_engineering_packages() -> None:
     """Prevent broad Python grouping from hiding runtime dependency changes."""
     updates = _updates_by_ecosystem(_dependabot_config())
-    groups = updates[("uv", "/")]["groups"]
-    assert isinstance(groups, dict)
-    python_group = next(iter(groups.values()))
+    python_group = _single_group(updates[("uv", "/")])
 
     patterns = {str(pattern).lower() for pattern in python_group["patterns"]}
     assert patterns == PYTHON_ENGINEERING_PACKAGES
@@ -101,9 +107,7 @@ def test_dependabot_python_group_stays_limited_to_engineering_packages() -> None
 def test_dependabot_frontend_group_stays_development_only() -> None:
     """Keep production frontend dependency changes separately diagnosable."""
     updates = _updates_by_ecosystem(_dependabot_config())
-    groups = updates[("npm", "/frontend")]["groups"]
-    assert isinstance(groups, dict)
-    frontend_group = next(iter(groups.values()))
+    frontend_group = _single_group(updates[("npm", "/frontend")])
 
     assert frontend_group["dependency-type"] == "development"
     assert frontend_group["patterns"] == ["*"]
