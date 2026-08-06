@@ -799,6 +799,38 @@ def test_gitleaks_audit_uses_a_pinned_redacted_advisory_scan() -> None:
     )
 
 
+def test_actionlint_audit_uses_a_pinned_advisory_workflow_scan() -> None:
+    """Workflow validation must use the reviewed Actionlint release."""
+    manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
+    actionlint = manifest["tools"]["actionlint"]
+    weekly_job = _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH)["actionlint-audit"]
+    weekly_steps = _workflow_job_steps(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "actionlint-audit"
+    )
+    justfile = JUSTFILE_PATH.read_text()
+
+    assert actionlint["version"] == "1.7.12"
+    assert actionlint["url"].endswith("actionlint_1.7.12_linux_amd64.tar.gz")
+    assert actionlint["archive_member"] == "actionlint"
+    assert len(actionlint["sha256"]) == 64
+    assert "install-actionlint" in justfile
+    assert "audit-actionlint" in justfile
+    assert weekly_job["continue-on-error"] is True
+    assert weekly_job["permissions"] == {"contents": "read"}
+    assert any(
+        step.get("run")
+        == 'python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"'
+        for step in weekly_steps
+    )
+    assert any(
+        step.get("run") == "$RUNNER_TEMP/esm-security-tools/actionlint"
+        for step in weekly_steps
+    )
+    assert not any(
+        step.get("uses") == "actions/upload-artifact@v4" for step in weekly_steps
+    )
+
+
 def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:
     """Coverage reporting must remain outside protected PR gate ownership."""
     workflow = ci_workflow.load_workflow(COVERAGE_EVIDENCE_WORKFLOW_PATH)

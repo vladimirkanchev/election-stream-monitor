@@ -156,6 +156,13 @@ install-gitleaks:
 audit-gitleaks:
     {{security_tool_bin_dir}}/gitleaks git --redact --no-banner --exit-code 1
 
+# Validate checked-in GitHub Actions workflows with the reviewed Actionlint binary.
+install-actionlint:
+    python3 scripts/install_security_tool.py actionlint --bin-dir {{security_tool_bin_dir}}
+
+audit-actionlint:
+    {{security_tool_bin_dir}}/actionlint
+
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:
     echo "== branch =="

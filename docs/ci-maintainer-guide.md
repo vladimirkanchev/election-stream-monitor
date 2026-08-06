@@ -69,7 +69,7 @@ once a scanner is implemented.
 | Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly `python-security-audit` exports the locked production graph before scanning. | Weekly; outside protected PR gates while findings are reviewed. |
 | Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
 | Committed secrets | Gitleaks | Weekly `gitleaks-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
-| GitHub Actions workflow correctness | Actionlint | Not implemented. | Required after a reviewed baseline. |
+| GitHub Actions workflow correctness | Actionlint | Weekly `actionlint-audit` validates checked-in workflows with a checksum-verified binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
 | Repository shell correctness | ShellCheck | Not implemented. | Required after a reviewed baseline. |
 | Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
 
@@ -85,6 +85,8 @@ Pinned host-scanner releases and Linux x64 archive checksums live in
 executable from a verified archive into ignored local tooling storage; it never
 commits binaries or evaluates downloaded shell. The initial manifest also owns
 the later Actionlint and ShellCheck releases so their installation cannot drift.
+Actionlint emits terminal diagnostics only; its future ShellCheck integration is
+deferred until ShellCheck has its own reviewed baseline.
 
 ### Dependency Audit Inputs And Failure Policy
 
