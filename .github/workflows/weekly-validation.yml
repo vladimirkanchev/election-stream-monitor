@@ -303,11 +303,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install checksum-verified Actionlint
-        run: python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"
+      - name: Install checksum-verified workflow tools
+        run: |
+          python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"
+          python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"
+
+      - name: Validate repository shell scripts
+        run: |
+          "$RUNNER_TEMP/esm-security-tools/shellcheck" $(git ls-files -- 'scripts/*.sh')
 
       - name: Validate GitHub Actions workflows
-        run: "$RUNNER_TEMP/esm-security-tools/actionlint"
+        run: PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"
 
   dependency-audit:
     runs-on: ubuntu-24.04

@@ -70,7 +70,7 @@ once a scanner is implemented.
 | Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
 | Committed secrets | Gitleaks | Weekly `gitleaks-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
 | GitHub Actions workflow correctness | Actionlint | Weekly `actionlint-audit` validates checked-in workflows with a checksum-verified binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
-| Repository shell correctness | ShellCheck | Not implemented. | Required after a reviewed baseline. |
+| Repository shell correctness | ShellCheck | `just audit-shell` scans tracked `scripts/*.sh`; weekly `actionlint-audit` also exposes ShellCheck to workflow `run:` blocks. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
 | Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
 
 Ruff owns ordinary Python correctness and style rules; it is not a security
@@ -85,8 +85,9 @@ Pinned host-scanner releases and Linux x64 archive checksums live in
 executable from a verified archive into ignored local tooling storage; it never
 commits binaries or evaluates downloaded shell. The initial manifest also owns
 the later Actionlint and ShellCheck releases so their installation cannot drift.
-Actionlint emits terminal diagnostics only; its future ShellCheck integration is
-deferred until ShellCheck has its own reviewed baseline.
+Actionlint emits terminal diagnostics only. ShellCheck derives shell-script
+dialects from each script's shebang; workflow `run:` blocks use GitHub's Ubuntu
+Bash default through Actionlint.
 
 ### Dependency Audit Inputs And Failure Policy
 

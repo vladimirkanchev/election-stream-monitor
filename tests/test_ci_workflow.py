@@ -819,16 +819,42 @@ def test_actionlint_audit_uses_a_pinned_advisory_workflow_scan() -> None:
     assert weekly_job["permissions"] == {"contents": "read"}
     assert any(
         step.get("run")
-        == 'python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"'
+        == 'python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
+        'python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
         for step in weekly_steps
     )
     assert any(
-        step.get("run") == "$RUNNER_TEMP/esm-security-tools/actionlint"
+        step.get("run")
+        == 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"'
+        for step in weekly_steps
+    )
+    assert any(
+        step.get("run")
+        == '"$RUNNER_TEMP/esm-security-tools/shellcheck" $(git ls-files -- \'scripts/*.sh\')\n'
         for step in weekly_steps
     )
     assert not any(
         step.get("uses") == "actions/upload-artifact@v4" for step in weekly_steps
     )
+
+
+def test_shellcheck_audit_uses_pinned_advisory_script_and_workflow_checks() -> None:
+    """Shell checks must preserve shell dialect and workflow ownership."""
+    manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
+    shellcheck = manifest["tools"]["shellcheck"]
+    justfile = JUSTFILE_PATH.read_text()
+
+    assert shellcheck["version"] == "0.11.0"
+    assert shellcheck["archive_member"] == "shellcheck-v0.11.0/shellcheck"
+    assert "install-shellcheck" in justfile
+    assert "audit-shell" in justfile
+    assert "shellcheck $(git ls-files -- 'scripts/*.sh')" in justfile
+    assert (
+        "PATH=\"{{security_tool_bin_dir}}:$PATH\" {{security_tool_bin_dir}}/actionlint"
+        in justfile
+    )
+    assert not list(Path("scripts").glob(".shellcheckrc"))
+    assert not list(Path(".github").glob(".shellcheckrc"))
 
 
 def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:

@@ -280,6 +280,12 @@ Recommended local command order for most day-to-day work:
 - `just audit-actionlint`
   - validates checked-in GitHub Actions workflows; run `just install-actionlint`
     first
+- `just install-shellcheck`
+  - downloads the manifest-pinned Linux x64 release, verifies its SHA-256, and
+    installs it under ignored `.tools/security/bin/`
+- `just audit-shell`
+  - checks tracked `scripts/*.sh` files and workflow `run:` blocks; run
+    `just install-actionlint` and `just install-shellcheck` first
 - `just ci-contract-check`
   - use when changing `.github/workflows/ci.yml`, the workflow-contract
     helpers, or their focused regression tests

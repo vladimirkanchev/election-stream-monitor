@@ -163,6 +163,14 @@ install-actionlint:
 audit-actionlint:
     {{security_tool_bin_dir}}/actionlint
 
+# Check tracked shell scripts and let Actionlint validate workflow run blocks.
+install-shellcheck:
+    python3 scripts/install_security_tool.py shellcheck --bin-dir {{security_tool_bin_dir}}
+
+audit-shell:
+    {{security_tool_bin_dir}}/shellcheck $(git ls-files -- 'scripts/*.sh')
+    PATH="{{security_tool_bin_dir}}:$PATH" {{security_tool_bin_dir}}/actionlint
+
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:
     echo "== branch =="
