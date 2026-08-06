@@ -55,6 +55,31 @@ Weekly failures fail the weekly workflow but do not block an ordinary PR
 merge. Local lanes produce no GitHub status and do not reproduce the complete
 protected workflow.
 
+## Security Scanner Ownership
+
+This table owns security-analysis responsibility and rollout state. It does
+not make a scanner a required `main` check until its baseline is reviewed and
+the protected gate explicitly depends on it. Use
+[`testing-and-validation.md`](./testing-and-validation.md) for local commands
+once a scanner is implemented.
+
+| Concern | Owner | Current state | Intended initial enforcement |
+| --- | --- | --- | --- |
+| Python security patterns | Bandit | Weekly `security-audit` job scans `src`. | Weekly; promote only after a clean reviewed baseline. |
+| Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly job exists, but does not yet supply the project dependency graph. | Advisory after the lockfile-aware command is implemented. |
+| Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
+| Committed secrets | Gitleaks | Not implemented. | Required after a reviewed baseline. |
+| GitHub Actions workflow correctness | Actionlint | Not implemented. | Required after a reviewed baseline. |
+| Repository shell correctness | ShellCheck | Not implemented. | Required after a reviewed baseline. |
+| Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
+
+Ruff owns ordinary Python correctness and style rules; it is not a security
+scanner. Bandit checks Python security patterns, while CodeQL is reserved for
+later cross-file data-flow analysis. Do not add Semgrep beside CodeQL without a
+specific gap neither tool already covers. Host-tool and model-artifact scanners
+remain outside this policy until the project accepts external serialized
+models.
+
 ## Detector Validation CI Baseline
 
 This table is the CI ownership snapshot for detector-validation lanes. It is
