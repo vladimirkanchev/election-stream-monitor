@@ -264,6 +264,30 @@ jobs:
         working-directory: frontend
         run: npm audit --audit-level=high
 
+  gitleaks-audit:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install checksum-verified Gitleaks
+        run: python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"
+
+      - name: Scan committed repository history
+        run: |
+          "$RUNNER_TEMP/esm-security-tools/gitleaks" git --redact --no-banner --exit-code 1
+
   dependency-audit:
     runs-on: ubuntu-24.04
 

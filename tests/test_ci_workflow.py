@@ -42,6 +42,8 @@ FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
 FRONTEND_VITE_CONFIG_PATH = Path("frontend/vite.config.ts")
 PYTHON_AUDIT_SCRIPT_PATH = Path("scripts/audit_python_dependencies.sh")
+SECURITY_TOOL_MANIFEST_PATH = Path(".github/security_tools.json")
+SECURITY_TOOL_INSTALLER_PATH = Path("scripts/install_security_tool.py")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
 JUSTFILE_PATH = Path("justfile")
@@ -758,6 +760,42 @@ def test_security_audits_keep_locked_inputs_and_stay_outside_protected_gates() -
     )
     assert {"security-audit", "python-security-audit", "npm-security-audit"} <= set(
         weekly_jobs
+    )
+
+
+def test_gitleaks_audit_uses_a_pinned_redacted_advisory_scan() -> None:
+    """Secret scanning must inspect history without retaining raw findings."""
+    manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
+    gitleaks = manifest["tools"]["gitleaks"]
+    installer = SECURITY_TOOL_INSTALLER_PATH.read_text()
+    weekly_job = _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH)["gitleaks-audit"]
+    weekly_steps = _workflow_job_steps(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "gitleaks-audit"
+    )
+
+    assert gitleaks["version"] == "8.28.0"
+    assert gitleaks["url"].endswith("gitleaks_8.28.0_linux_x64.tar.gz")
+    assert len(gitleaks["sha256"]) == 64
+    assert "Checksum verification failed" in installer
+    assert "curl | sh" not in installer
+    assert "install-gitleaks" in JUSTFILE_PATH.read_text()
+    assert "audit-gitleaks" in JUSTFILE_PATH.read_text()
+    assert weekly_job["continue-on-error"] is True
+    assert weekly_job["permissions"] == {"contents": "read"}
+    assert weekly_steps[0]["with"]["fetch-depth"] == 0
+    assert any(
+        step.get("run")
+        == 'python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"'
+        for step in weekly_steps
+    )
+    assert any(
+        isinstance(step.get("run"), str)
+        and step["run"].strip()
+        == '"$RUNNER_TEMP/esm-security-tools/gitleaks" git --redact --no-banner --exit-code 1'
+        for step in weekly_steps
+    )
+    assert not any(
+        step.get("uses") == "actions/upload-artifact@v4" for step in weekly_steps
     )
 
 

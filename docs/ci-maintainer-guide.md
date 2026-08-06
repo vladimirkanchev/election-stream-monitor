@@ -68,7 +68,7 @@ once a scanner is implemented.
 | Python security patterns | Bandit | Weekly `security-audit` job scans `src` from the locked `security` extra. | Weekly; promote only after a clean reviewed baseline. |
 | Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly `python-security-audit` exports the locked production graph before scanning. | Weekly; outside protected PR gates while findings are reviewed. |
 | Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
-| Committed secrets | Gitleaks | Not implemented. | Required after a reviewed baseline. |
+| Committed secrets | Gitleaks | Weekly `gitleaks-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
 | GitHub Actions workflow correctness | Actionlint | Not implemented. | Required after a reviewed baseline. |
 | Repository shell correctness | ShellCheck | Not implemented. | Required after a reviewed baseline. |
 | Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
@@ -79,6 +79,12 @@ later cross-file data-flow analysis. Do not add Semgrep beside CodeQL without a
 specific gap neither tool already covers. Host-tool and model-artifact scanners
 remain outside this policy until the project accepts external serialized
 models.
+
+Pinned host-scanner releases and Linux x64 archive checksums live in
+`.github/security_tools.json`. The generic installer copies only the reviewed
+executable from a verified archive into ignored local tooling storage; it never
+commits binaries or evaluates downloaded shell. The initial manifest also owns
+the later Actionlint and ShellCheck releases so their installation cannot drift.
 
 ### Dependency Audit Inputs And Failure Policy
 

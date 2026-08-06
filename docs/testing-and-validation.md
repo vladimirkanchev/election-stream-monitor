@@ -268,6 +268,12 @@ Recommended local command order for most day-to-day work:
 - `just audit-frontend`
   - audits `frontend/package-lock.json`, including development tooling, and exits nonzero for high or critical findings
   - requires registry access and never runs `npm audit fix`
+- `just install-gitleaks`
+  - downloads the manifest-pinned Linux x64 release, verifies its SHA-256, and
+    installs it under ignored `.tools/security/bin/`
+- `just audit-gitleaks`
+  - scans committed Git history with redacted Gitleaks findings; run
+    `just install-gitleaks` first
 - `just ci-contract-check`
   - use when changing `.github/workflows/ci.yml`, the workflow-contract
     helpers, or their focused regression tests

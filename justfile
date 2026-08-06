@@ -26,6 +26,7 @@ venv_mypy := ".venv/bin/mypy"
 venv_pyright := ".venv/bin/pyright"
 venv_bandit := ".venv/bin/bandit"
 venv_pip_audit := ".venv/bin/pip-audit"
+security_tool_bin_dir := ".tools/security/bin"
 pytest_base_flags := "-p no:cacheprovider -q"
 pytest_env_prefix := "PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
 backend_coverage_env_prefix := "ESM_ALERT_STORE_BACKEND=file ESM_SESSION_STORE_BACKEND=file POSTGRES_ALERT_STORE_REAL_SMOKE=0 POSTGRES_SESSION_STORE_REAL_SMOKE=0 API_STREAM_REAL_SMOKE=0 COVERAGE_FILE=coverage/backend/.coverage"
@@ -147,6 +148,13 @@ audit-python:
 
 audit-frontend:
     npm --prefix frontend audit --audit-level=high
+
+# Check committed repository history with the reviewed pinned Gitleaks binary.
+install-gitleaks:
+    python3 scripts/install_security_tool.py gitleaks --bin-dir {{security_tool_bin_dir}}
+
+audit-gitleaks:
+    {{security_tool_bin_dir}}/gitleaks git --redact --no-banner --exit-code 1
 
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:
