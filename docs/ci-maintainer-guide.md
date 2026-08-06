@@ -80,6 +80,34 @@ specific gap neither tool already covers. Host-tool and model-artifact scanners
 remain outside this policy until the project accepts external serialized
 models.
 
+### Dependency Audit Inputs And Failure Policy
+
+Python dependency evidence must come from the locked production graph, not the
+runner environment. The intended command sequence is:
+
+```bash
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements.txt \
+  --output-file <temporary-file>
+pip-audit -r <temporary-file>
+```
+
+The temporary export is an audit input only and must not be committed as a
+second dependency owner. Until this sequence replaces the current bare
+`pip-audit` weekly command and its findings are reviewed, Python dependency
+auditing remains weekly and non-merge-blocking. `pip-audit` does not provide
+the same high/critical exit threshold as `npm audit`, so do not imply one.
+
+Frontend dependency evidence comes from `frontend/package-lock.json` through:
+
+```bash
+npm --prefix frontend audit --audit-level=high
+```
+
+This command fails for high or critical findings. Bandit scans `src`. None of
+these commands may use `--fix` or `npm audit fix`; dependency changes require
+their own reviewed update.
+
 ## Detector Validation CI Baseline
 
 This table is the CI ownership snapshot for detector-validation lanes. It is
