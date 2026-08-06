@@ -80,6 +80,18 @@ ROUTINE_WORKFLOW_TIMEOUTS = {
     },
     "coverage-evidence.yml": {"coverage-evidence": 20},
 }
+WEEKLY_WORKFLOW_TIMEOUTS = {
+    "slow-e2e": 45,
+    "api-stream-deep": 30,
+    "lifecycle-deep": 30,
+    "security-audit": 20,
+    "python-security-audit": 20,
+    "npm-security-audit": 20,
+    "dependency-audit": 20,
+    "packaging-smoke": 20,
+    "postgres-alert-backend-confidence": 30,
+    "postgres-alert-runtime-operator-confidence": 30,
+}
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
@@ -197,6 +209,15 @@ def test_routine_workflow_jobs_have_reviewed_timeouts(workflow_path: Path) -> No
         for job_name, job in _workflow_jobs(workflow_path).items()
     }
     assert timeouts == ROUTINE_WORKFLOW_TIMEOUTS[workflow_path.name]
+
+
+def test_weekly_workflow_jobs_have_reviewed_timeouts() -> None:
+    """Weekly media and environment-sensitive jobs retain generous ceilings."""
+    timeouts = {
+        job_name: job.get("timeout-minutes")
+        for job_name, job in _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH).items()
+    }
+    assert timeouts == WEEKLY_WORKFLOW_TIMEOUTS
 
 
 def _workflow_job_steps(
