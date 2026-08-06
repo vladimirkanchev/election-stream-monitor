@@ -24,6 +24,8 @@ venv_pytest := ".venv/bin/pytest"
 venv_ruff := ".venv/bin/ruff"
 venv_mypy := ".venv/bin/mypy"
 venv_pyright := ".venv/bin/pyright"
+venv_bandit := ".venv/bin/bandit"
+venv_pip_audit := ".venv/bin/pip-audit"
 pytest_base_flags := "-p no:cacheprovider -q"
 pytest_env_prefix := "PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1"
 backend_coverage_env_prefix := "ESM_ALERT_STORE_BACKEND=file ESM_SESSION_STORE_BACKEND=file POSTGRES_ALERT_STORE_REAL_SMOKE=0 POSTGRES_SESSION_STORE_REAL_SMOKE=0 API_STREAM_REAL_SMOKE=0 COVERAGE_FILE=coverage/backend/.coverage"
@@ -134,6 +136,17 @@ fixture-check:
 # Lightweight dependency metadata drift lane for local maintainer checks.
 dependency-check:
     python3 .github/scripts/check_dependency_drift.py
+
+# Focused local security evidence. These inspect declared sources without
+# changing dependency versions or applying automatic fixes.
+audit-bandit:
+    {{venv_bandit}} -r src -x tests,frontend
+
+audit-python:
+    PIP_AUDIT={{venv_pip_audit}} sh scripts/audit_python_dependencies.sh
+
+audit-frontend:
+    npm --prefix frontend audit --audit-level=high
 
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:
