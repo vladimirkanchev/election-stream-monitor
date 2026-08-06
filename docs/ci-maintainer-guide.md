@@ -55,6 +55,30 @@ Weekly failures fail the weekly workflow but do not block an ordinary PR
 merge. Local lanes produce no GitHub status and do not reproduce the complete
 protected workflow.
 
+## Workflow Permission And Timeout Policy
+
+All four workflows default to `permissions: contents: read`. A job may add a
+different scope only through a reviewed, job-specific exception. The current
+exception set is empty; artifact upload, checkout, and test execution do not
+require repository write access.
+
+Timeouts are generous safety ceilings, not performance targets. The parsed
+workflow contract tests keep each job assigned to one of these workload
+classes:
+
+| Workload | Ceiling |
+| --- | ---: |
+| Aggregate gates | 5 minutes |
+| Change detection, policy, lint, typing, docs, and supply-chain checks | 10 minutes |
+| Routine tests, builds, integration smoke, and coverage | 20 minutes |
+| Weekly API/lifecycle depth and PostgreSQL confidence | 30 minutes |
+| Weekly slow real-media validation | 45 minutes |
+
+The ceiling applies to the job itself; an aggregate gate does not include the
+runtime of its dependencies. Runner speed, dependency downloads, PostgreSQL
+startup, and media decoding vary, so naturally changing duration measurements
+remain informational evidence rather than hard gates.
+
 ## Security Scanner Ownership
 
 This table owns security-analysis responsibility and rollout state. It does
