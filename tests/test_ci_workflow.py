@@ -41,6 +41,7 @@ NVMRC_PATH = Path(".nvmrc")
 FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
 FRONTEND_VITE_CONFIG_PATH = Path("frontend/vite.config.ts")
+PYTHON_AUDIT_SCRIPT_PATH = Path("scripts/audit_python_dependencies.sh")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
 JUSTFILE_PATH = Path("justfile")
@@ -696,6 +697,68 @@ def test_static_analysis_policy_keeps_protected_and_advisory_owners() -> None:
         assert workflow.job("backend-ruff").step("Run backend Ruff lint").command == (
             "ruff check src scripts tests"
         )
+
+
+def test_security_audits_keep_locked_inputs_and_stay_outside_protected_gates() -> None:
+    """Weekly audits must inspect declared inputs without applying fixes."""
+    justfile = JUSTFILE_PATH.read_text()
+    audit_script = PYTHON_AUDIT_SCRIPT_PATH.read_text()
+    weekly_commands = _workflow_commands(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    weekly_jobs = _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH)
+
+    assert "{{venv_bandit}} -r src -x tests,frontend" in _just_recipe_body(
+        "audit-bandit"
+    )
+    assert "scripts/audit_python_dependencies.sh" in _just_recipe_body("audit-python")
+    assert "npm --prefix frontend audit --audit-level=high" in _just_recipe_body(
+        "audit-frontend"
+    )
+    assert "uv export --frozen --no-dev --no-emit-project" in audit_script
+    assert "--format requirements.txt" in audit_script
+    assert '"$PIP_AUDIT" -r "$audit_input"' in audit_script
+    assert "trap 'rm -f" in audit_script
+
+    assert "uv sync --locked --extra security" in _workflow_job_commands(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "security-audit"
+    )
+    assert ".venv/bin/bandit -r src -x tests,frontend" in _workflow_job_commands(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "security-audit"
+    )
+    assert "uv sync --locked --extra security" in _workflow_job_commands(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "python-security-audit"
+    )
+    assert (
+        "PIP_AUDIT=.venv/bin/pip-audit sh scripts/audit_python_dependencies.sh"
+        in _workflow_job_commands(
+            WEEKLY_VALIDATION_WORKFLOW_PATH, "python-security-audit"
+        )
+    )
+    npm_steps = _workflow_job_steps(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "npm-security-audit"
+    )
+    assert any(
+        step.get("working-directory") == "frontend"
+        and step.get("run") == "npm audit --audit-level=high"
+        for step in npm_steps
+    )
+    assert not any(
+        re.fullmatch(r"(?:\.venv/bin/)?pip-audit(?:\s+.*)?", command.strip())
+        for command in weekly_commands
+    )
+    audit_command_sources = "\n".join((justfile, audit_script, *weekly_commands))
+    assert "--fix" not in audit_command_sources
+    assert "npm audit fix" not in audit_command_sources
+
+    protected_dependencies = {
+        *_live_workflow().job("feature-gate").dependencies,
+        *_live_workflow().job("main-gate").dependencies,
+    }
+    assert {"security-audit", "python-security-audit", "npm-security-audit"}.isdisjoint(
+        protected_dependencies
+    )
+    assert {"security-audit", "python-security-audit", "npm-security-audit"} <= set(
+        weekly_jobs
+    )
 
 
 def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:

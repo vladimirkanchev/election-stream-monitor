@@ -260,6 +260,14 @@ Recommended local command order for most day-to-day work:
   - use when the change touches fixture paths, docs, shared metadata, or environment assumptions
 - `just dependency-check`
   - use when `pyproject.toml` or `uv.lock` changed and you want a cheap drift check
+- `just audit-bandit`
+  - scans `src` for Python security patterns; it does not change code or dependencies
+- `just audit-python`
+  - exports the locked production dependency graph to a temporary file, then runs `pip-audit`
+  - requires registry access and exits nonzero for reported vulnerabilities; it never applies fixes
+- `just audit-frontend`
+  - audits `frontend/package-lock.json`, including development tooling, and exits nonzero for high or critical findings
+  - requires registry access and never runs `npm audit fix`
 - `just ci-contract-check`
   - use when changing `.github/workflows/ci.yml`, the workflow-contract
     helpers, or their focused regression tests

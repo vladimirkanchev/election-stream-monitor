@@ -208,13 +208,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install security lint dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[lint]
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked security dependencies
+        run: uv sync --locked --extra security
 
       - name: Run Bandit
-        run: bandit -r src -x tests,frontend
+        run: .venv/bin/bandit -r src -x tests,frontend
 
   python-security-audit:
     runs-on: ubuntu-24.04
@@ -230,13 +231,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install audit tool
-        run: |
-          python -m pip install --upgrade pip
-          pip install pip-audit
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked security dependencies
+        run: uv sync --locked --extra security
 
       - name: Run pip-audit
-        run: pip-audit
+        run: PIP_AUDIT=.venv/bin/pip-audit sh scripts/audit_python_dependencies.sh
 
   npm-security-audit:
     runs-on: ubuntu-24.04

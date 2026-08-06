@@ -65,8 +65,8 @@ once a scanner is implemented.
 
 | Concern | Owner | Current state | Intended initial enforcement |
 | --- | --- | --- | --- |
-| Python security patterns | Bandit | Weekly `security-audit` job scans `src`. | Weekly; promote only after a clean reviewed baseline. |
-| Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly job exists, but does not yet supply the project dependency graph. | Advisory after the lockfile-aware command is implemented. |
+| Python security patterns | Bandit | Weekly `security-audit` job scans `src` from the locked `security` extra. | Weekly; promote only after a clean reviewed baseline. |
+| Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly `python-security-audit` exports the locked production graph before scanning. | Weekly; outside protected PR gates while findings are reviewed. |
 | Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
 | Committed secrets | Gitleaks | Not implemented. | Required after a reviewed baseline. |
 | GitHub Actions workflow correctness | Actionlint | Not implemented. | Required after a reviewed baseline. |
