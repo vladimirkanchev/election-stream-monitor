@@ -143,6 +143,20 @@ This command fails for high or critical findings. Bandit scans `src`. None of
 these commands may use `--fix` or `npm audit fix`; dependency changes require
 their own reviewed update.
 
+### Dependency Update Proposals
+
+`.github/dependabot.yml` owns conservative weekly update proposals for `uv`,
+frontend `npm`, and GitHub Actions. Dependabot proposes changes but never
+merges them automatically. Each ecosystem permits at most three ordinary
+version-update PRs at a time.
+
+Minor and patch engineering-tool updates may be grouped. Major updates remain
+separate for focused review. Security updates require normal project review
+and CI; they are not covered by the ordinary three-PR version-update limit.
+Any accepted Python update must preserve `pyproject.toml` and `uv.lock`
+ownership, and any accepted frontend update must preserve
+`frontend/package.json` and `frontend/package-lock.json` ownership.
+
 ## Detector Validation CI Baseline
 
 This table is the CI ownership snapshot for detector-validation lanes. It is
