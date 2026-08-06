@@ -75,6 +75,16 @@ DETECTOR_BACKEND_PATHS = frozenset(
 DETECTOR_WORKFLOW_CONFIGURATION_PATHS = frozenset(
     {"justfile", ".github/ci_test_targets.json"}
 )
+SUPPLY_CHAIN_ACTIVATION_PATHS = frozenset(
+    {
+        ".github/workflows/**",
+        ".github/scripts/**",
+        ".github/security_tools.json",
+        "scripts/install_security_tool.py",
+        "scripts/**/*.sh",
+        "justfile",
+    }
+)
 WEEKLY_ONLY_TARGET_GROUPS = (
     "weekly_slow_media",
     "weekly_api_stream_deep",
@@ -763,79 +773,74 @@ def test_security_audits_keep_locked_inputs_and_stay_outside_protected_gates() -
     )
 
 
-def test_gitleaks_audit_uses_a_pinned_redacted_advisory_scan() -> None:
-    """Secret scanning must inspect history without retaining raw findings."""
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_supply_chain_audit_retains_pinned_advisory_scanner_ownership(
+    workflow_path: Path,
+) -> None:
+    """Relevant changes must run all reviewed advisory scanners safely."""
     manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
-    gitleaks = manifest["tools"]["gitleaks"]
     installer = SECURITY_TOOL_INSTALLER_PATH.read_text()
-    weekly_job = _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH)["gitleaks-audit"]
-    weekly_steps = _workflow_job_steps(
-        WEEKLY_VALIDATION_WORKFLOW_PATH, "gitleaks-audit"
-    )
+    workflow_job = _workflow_jobs(workflow_path)["ci-supply-chain-audit"]
+    workflow_steps = _workflow_job_steps(workflow_path, "ci-supply-chain-audit")
+    justfile = JUSTFILE_PATH.read_text()
 
-    assert gitleaks["version"] == "8.28.0"
-    assert gitleaks["url"].endswith("gitleaks_8.28.0_linux_x64.tar.gz")
-    assert len(gitleaks["sha256"]) == 64
+    assert {name: tool["version"] for name, tool in manifest["tools"].items()} == {
+        "gitleaks": "8.28.0",
+        "actionlint": "1.7.12",
+        "shellcheck": "0.11.0",
+    }
+    assert all(len(tool["sha256"]) == 64 for tool in manifest["tools"].values())
     assert "Checksum verification failed" in installer
     assert "curl | sh" not in installer
-    assert "install-gitleaks" in JUSTFILE_PATH.read_text()
-    assert "audit-gitleaks" in JUSTFILE_PATH.read_text()
-    assert weekly_job["continue-on-error"] is True
-    assert weekly_job["permissions"] == {"contents": "read"}
-    assert weekly_steps[0]["with"]["fetch-depth"] == 0
+    assert "audit-ci-supply-chain" in justfile
+    assert all(
+        recipe in justfile
+        for recipe in ("audit-gitleaks", "audit-actionlint", "audit-shell")
+    )
+    assert workflow_job["if"] == "needs.changes.outputs.workflow == 'true'"
+    assert workflow_job["continue-on-error"] is True
+    assert workflow_job["timeout-minutes"] == 10
+    assert workflow_job["permissions"] == {"contents": "read"}
+    assert workflow_steps[0]["with"]["fetch-depth"] == 0
     assert any(
         step.get("run")
-        == 'python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"'
-        for step in weekly_steps
+        == 'python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
+        'python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
+        'python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
+        for step in workflow_steps
     )
     assert any(
         isinstance(step.get("run"), str)
         and step["run"].strip()
         == '"$RUNNER_TEMP/esm-security-tools/gitleaks" git --redact --no-banner --exit-code 1'
-        for step in weekly_steps
-    )
-    assert not any(
-        step.get("uses") == "actions/upload-artifact@v4" for step in weekly_steps
-    )
-
-
-def test_actionlint_audit_uses_a_pinned_advisory_workflow_scan() -> None:
-    """Workflow validation must use the reviewed Actionlint release."""
-    manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
-    actionlint = manifest["tools"]["actionlint"]
-    weekly_job = _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH)["actionlint-audit"]
-    weekly_steps = _workflow_job_steps(
-        WEEKLY_VALIDATION_WORKFLOW_PATH, "actionlint-audit"
-    )
-    justfile = JUSTFILE_PATH.read_text()
-
-    assert actionlint["version"] == "1.7.12"
-    assert actionlint["url"].endswith("actionlint_1.7.12_linux_amd64.tar.gz")
-    assert actionlint["archive_member"] == "actionlint"
-    assert len(actionlint["sha256"]) == 64
-    assert "install-actionlint" in justfile
-    assert "audit-actionlint" in justfile
-    assert weekly_job["continue-on-error"] is True
-    assert weekly_job["permissions"] == {"contents": "read"}
-    assert any(
-        step.get("run")
-        == 'python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
-        'python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
-        for step in weekly_steps
+        and step.get("continue-on-error") is True
+        for step in workflow_steps
     )
     assert any(
         step.get("run")
-        == 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"'
-        for step in weekly_steps
+        == 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"\n'
+        and step.get("continue-on-error") is True
+        for step in workflow_steps
     )
     assert any(
         step.get("run")
         == '"$RUNNER_TEMP/esm-security-tools/shellcheck" $(git ls-files -- \'scripts/*.sh\')\n'
-        for step in weekly_steps
+        and step.get("continue-on-error") is True
+        for step in workflow_steps
     )
     assert not any(
-        step.get("uses") == "actions/upload-artifact@v4" for step in weekly_steps
+        step.get("uses") == "actions/upload-artifact@v4" for step in workflow_steps
     )
+    summary_step = next(
+        step
+        for step in workflow_steps
+        if step.get("name") == "Summarize advisory scanner outcomes"
+    )
+    assert summary_step["if"] == "always()"
+    assert "raw" not in str(summary_step["run"]).lower()
 
 
 def test_shellcheck_audit_uses_pinned_advisory_script_and_workflow_checks() -> None:
@@ -853,8 +858,26 @@ def test_shellcheck_audit_uses_pinned_advisory_script_and_workflow_checks() -> N
         "PATH=\"{{security_tool_bin_dir}}:$PATH\" {{security_tool_bin_dir}}/actionlint"
         in justfile
     )
-    assert not list(Path("scripts").glob(".shellcheckrc"))
-    assert not list(Path(".github").glob(".shellcheckrc"))
+    assert not any(
+        path.exists()
+        for path in (
+            Path(".shellcheckrc"),
+            Path(".gitleaks.toml"),
+            Path(".github/actionlint.yaml"),
+            Path(".github/actionlint.yml"),
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_supply_chain_paths_activate_the_advisory_audit(workflow_path: Path) -> None:
+    """Scanner configuration and checked shell code must wake its CI owner."""
+    assert SUPPLY_CHAIN_ACTIVATION_PATHS <= _path_filter_paths(
+        workflow_path, "workflow"
+    )
 
 
 def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:

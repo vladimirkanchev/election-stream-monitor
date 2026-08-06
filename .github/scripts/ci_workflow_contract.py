@@ -19,7 +19,6 @@ from dataclasses import dataclass
 
 from ci_workflow import Workflow, WorkflowJob, WorkflowStep
 
-
 MAIN_GATE_REQUIRED_JOBS = frozenset(
     {
         "feature-gate",
@@ -42,6 +41,7 @@ ADVISORY_JOBS = frozenset(
     {
         "frontend-lint",
         "backend-pyright",
+        "ci-supply-chain-audit",
     }
 )
 REQUIRED_FRONTEND_COMMANDS_BY_JOB = {

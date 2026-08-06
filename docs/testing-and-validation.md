@@ -286,6 +286,9 @@ Recommended local command order for most day-to-day work:
 - `just audit-shell`
   - checks tracked `scripts/*.sh` files and workflow `run:` blocks; run
     `just install-actionlint` and `just install-shellcheck` first
+- `just audit-ci-supply-chain`
+  - runs Gitleaks, Actionlint, and ShellCheck after their pinned tools are
+    installed; it is the local counterpart of the advisory CI job
 - `just ci-contract-check`
   - use when changing `.github/workflows/ci.yml`, the workflow-contract
     helpers, or their focused regression tests

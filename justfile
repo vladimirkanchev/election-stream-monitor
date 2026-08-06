@@ -171,6 +171,12 @@ audit-shell:
     {{security_tool_bin_dir}}/shellcheck $(git ls-files -- 'scripts/*.sh')
     PATH="{{security_tool_bin_dir}}:$PATH" {{security_tool_bin_dir}}/actionlint
 
+# Run the focused local supply-chain checks after installing their pinned tools.
+audit-ci-supply-chain:
+    just audit-gitleaks
+    just audit-actionlint
+    just audit-shell
+
 # Non-destructive branch hygiene and review-readiness check.
 branch-cleanup:
     echo "== branch =="

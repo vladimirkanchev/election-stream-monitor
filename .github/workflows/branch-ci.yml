@@ -60,6 +60,9 @@ jobs:
             workflow:
               - '.github/workflows/**'
               - '.github/scripts/**'
+              - '.github/security_tools.json'
+              - 'scripts/install_security_tool.py'
+              - 'scripts/**/*.sh'
               - 'justfile'
               - '.github/ci_test_targets.json'
               - 'frontend/package.json'
@@ -341,6 +344,73 @@ jobs:
       - name: Skip backend pyright
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true'
         run: echo "No backend or contract changes detected; skipping backend pyright."
+
+  ci-supply-chain-audit:
+    if: needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install checksum-verified scanner tools
+        run: |
+          python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"
+          python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"
+          python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"
+
+      - name: Scan committed repository history
+        id: gitleaks
+        continue-on-error: true
+        run: |
+          "$RUNNER_TEMP/esm-security-tools/gitleaks" git --redact --no-banner --exit-code 1
+
+      - name: Validate GitHub Actions workflows
+        id: actionlint
+        continue-on-error: true
+        run: |
+          PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"
+
+      - name: Validate repository shell scripts
+        id: shellcheck
+        continue-on-error: true
+        run: |
+          "$RUNNER_TEMP/esm-security-tools/shellcheck" $(git ls-files -- 'scripts/*.sh')
+
+      - name: Summarize advisory scanner outcomes
+        if: always()
+        env:
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
+          SHELLCHECK_OUTCOME: ${{ steps.shellcheck.outcome }}
+        run: |
+          set -eu
+          failed=0
+          for scanner in gitleaks actionlint shellcheck
+          do
+            outcome=$(printenv "${scanner^^}_OUTCOME")
+            if [ "$outcome" != "success" ]; then
+              echo "::warning::Advisory ${scanner} check finished as ${outcome}."
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more advisory supply-chain checks failed."
+            exit 1
+          fi
 
   feature-gate:
     runs-on: ubuntu-24.04

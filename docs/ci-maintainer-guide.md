@@ -68,9 +68,9 @@ once a scanner is implemented.
 | Python security patterns | Bandit | Weekly `security-audit` job scans `src` from the locked `security` extra. | Weekly; promote only after a clean reviewed baseline. |
 | Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly `python-security-audit` exports the locked production graph before scanning. | Weekly; outside protected PR gates while findings are reviewed. |
 | Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
-| Committed secrets | Gitleaks | Weekly `gitleaks-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
-| GitHub Actions workflow correctness | Actionlint | Weekly `actionlint-audit` validates checked-in workflows with a checksum-verified binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
-| Repository shell correctness | ShellCheck | `just audit-shell` scans tracked `scripts/*.sh`; weekly `actionlint-audit` also exposes ShellCheck to workflow `run:` blocks. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
+| Committed secrets | Gitleaks | Path-activated `ci-supply-chain-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
+| GitHub Actions workflow correctness | Actionlint | Path-activated `ci-supply-chain-audit` validates checked-in workflows with a checksum-verified binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
+| Repository shell correctness | ShellCheck | `just audit-shell` scans tracked `scripts/*.sh`; `ci-supply-chain-audit` also exposes ShellCheck to workflow `run:` blocks. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
 | Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
 
 Ruff owns ordinary Python correctness and style rules; it is not a security
@@ -87,7 +87,12 @@ commits binaries or evaluates downloaded shell. The initial manifest also owns
 the later Actionlint and ShellCheck releases so their installation cannot drift.
 Actionlint emits terminal diagnostics only. ShellCheck derives shell-script
 dialects from each script's shebang; workflow `run:` blocks use GitHub's Ubuntu
-Bash default through Actionlint.
+Bash default through Actionlint. The aggregate job has a ten-minute timeout,
+`contents: read` permission, no artifacts, and a generic outcome summary; it
+never uploads raw secret findings. Each scanner may be promoted only after its
+own clean, deterministic baseline. It runs only when workflows, workflow
+helpers, scanner ownership, tracked shell scripts, or the aggregate recipe
+change.
 
 ### Dependency Audit Inputs And Failure Policy
 
