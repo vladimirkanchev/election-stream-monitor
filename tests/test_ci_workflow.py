@@ -46,6 +46,40 @@ WORKFLOW_PATHS = (
 WORKFLOW_PERMISSION_EXCEPTIONS: dict[str, dict[str, dict[str, str]]] = {
     workflow_path.name: {} for workflow_path in WORKFLOW_PATHS
 }
+ROUTINE_WORKFLOW_TIMEOUTS = {
+    "ci.yml": {
+        "changes": 10,
+        "main-pr-consistency": 10,
+        "pr-template-completeness": 10,
+        "frontend-checkpoint": 20,
+        "backend-tests": 20,
+        "backend-ruff": 10,
+        "frontend-typecheck": 10,
+        "frontend-lint": 10,
+        "contract-checks": 10,
+        "backend-typecheck": 10,
+        "backend-pyright": 10,
+        "ci-supply-chain-audit": 10,
+        "feature-gate": 5,
+        "main-gate": 5,
+        "test-and-build": 20,
+        "docs-consistency": 10,
+        "integration-smoke": 20,
+    },
+    "branch-ci.yml": {
+        "changes": 10,
+        "frontend-checkpoint": 20,
+        "backend-tests": 20,
+        "backend-ruff": 10,
+        "frontend-typecheck": 10,
+        "frontend-lint": 10,
+        "backend-typecheck": 10,
+        "backend-pyright": 10,
+        "ci-supply-chain-audit": 10,
+        "feature-gate": 5,
+    },
+    "coverage-evidence.yml": {"coverage-evidence": 20},
+}
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
@@ -146,6 +180,23 @@ def test_workflow_permissions_default_to_read_only(
         if (permissions := job.get("permissions")) is not None
     }
     assert job_permissions == WORKFLOW_PERMISSION_EXCEPTIONS[workflow_path.name]
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (
+        CI_WORKFLOW_PATH,
+        BRANCH_CI_WORKFLOW_PATH,
+        COVERAGE_EVIDENCE_WORKFLOW_PATH,
+    ),
+)
+def test_routine_workflow_jobs_have_reviewed_timeouts(workflow_path: Path) -> None:
+    """Routine and advisory jobs retain their reviewed runtime ceilings."""
+    timeouts = {
+        job_name: job.get("timeout-minutes")
+        for job_name, job in _workflow_jobs(workflow_path).items()
+    }
+    assert timeouts == ROUTINE_WORKFLOW_TIMEOUTS[workflow_path.name]
 
 
 def _workflow_job_steps(

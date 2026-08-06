@@ -23,6 +23,7 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
@@ -91,6 +92,7 @@ jobs:
 
   frontend-checkpoint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - changes
 
@@ -134,6 +136,7 @@ jobs:
 
   backend-tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - changes
 
@@ -192,6 +195,7 @@ jobs:
 
   backend-ruff:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -222,6 +226,7 @@ jobs:
 
   frontend-typecheck:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -254,6 +259,7 @@ jobs:
 
   frontend-lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     continue-on-error: true
     needs:
       - changes
@@ -287,6 +293,7 @@ jobs:
 
   backend-typecheck:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -317,6 +324,7 @@ jobs:
 
   backend-pyright:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     continue-on-error: true
     needs:
       - changes
@@ -415,6 +423,7 @@ jobs:
 
   feature-gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     if: always()
     needs:
       - frontend-checkpoint
