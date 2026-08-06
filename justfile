@@ -156,20 +156,19 @@ install-gitleaks:
 audit-gitleaks:
     {{security_tool_bin_dir}}/gitleaks git --redact --no-banner --exit-code 1
 
-# Validate checked-in GitHub Actions workflows with the reviewed Actionlint binary.
+# Validate workflows and their shell blocks with pinned Actionlint and ShellCheck.
 install-actionlint:
     python3 scripts/install_security_tool.py actionlint --bin-dir {{security_tool_bin_dir}}
 
 audit-actionlint:
-    {{security_tool_bin_dir}}/actionlint
+    PATH="{{security_tool_bin_dir}}:$PATH" {{security_tool_bin_dir}}/actionlint
 
-# Check tracked shell scripts and let Actionlint validate workflow run blocks.
+# Check tracked repository shell scripts with the reviewed ShellCheck binary.
 install-shellcheck:
     python3 scripts/install_security_tool.py shellcheck --bin-dir {{security_tool_bin_dir}}
 
 audit-shell:
     {{security_tool_bin_dir}}/shellcheck $(git ls-files -- 'scripts/*.sh')
-    PATH="{{security_tool_bin_dir}}:$PATH" {{security_tool_bin_dir}}/actionlint
 
 # Run the focused local supply-chain checks after installing their pinned tools.
 audit-ci-supply-chain:

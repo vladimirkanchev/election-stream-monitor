@@ -1,8 +1,8 @@
-"""Regression coverage for CI workflow, static analysis, and coverage policy.
+"""Regression coverage for CI, static-analysis, coverage, and security policy.
 
 The tests keep the workflow reader, detector-lane admission, protected PR
-requirements, static-analysis ownership, advisory coverage evidence, and
-bounded weekly-media diagnostics aligned with their owners.
+requirements, static-analysis ownership, advisory reporting, supply-chain
+checks, and bounded weekly-media diagnostics aligned with their owners.
 """
 
 from __future__ import annotations
@@ -42,8 +42,6 @@ FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
 FRONTEND_VITE_CONFIG_PATH = Path("frontend/vite.config.ts")
 PYTHON_AUDIT_SCRIPT_PATH = Path("scripts/audit_python_dependencies.sh")
-SECURITY_TOOL_MANIFEST_PATH = Path(".github/security_tools.json")
-SECURITY_TOOL_INSTALLER_PATH = Path("scripts/install_security_tool.py")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
 JUSTFILE_PATH = Path("justfile")
@@ -780,84 +778,68 @@ def test_security_audits_keep_locked_inputs_and_stay_outside_protected_gates() -
 def test_supply_chain_audit_retains_pinned_advisory_scanner_ownership(
     workflow_path: Path,
 ) -> None:
-    """Relevant changes must run all reviewed advisory scanners safely."""
-    manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
-    installer = SECURITY_TOOL_INSTALLER_PATH.read_text()
+    """The supply-chain job must stay bounded, advisory, and artifact-free."""
     workflow_job = _workflow_jobs(workflow_path)["ci-supply-chain-audit"]
     workflow_steps = _workflow_job_steps(workflow_path, "ci-supply-chain-audit")
-    justfile = JUSTFILE_PATH.read_text()
+    steps_by_name = {step.get("name"): step for step in workflow_steps}
 
-    assert {name: tool["version"] for name, tool in manifest["tools"].items()} == {
-        "gitleaks": "8.28.0",
-        "actionlint": "1.7.12",
-        "shellcheck": "0.11.0",
-    }
-    assert all(len(tool["sha256"]) == 64 for tool in manifest["tools"].values())
-    assert "Checksum verification failed" in installer
-    assert "curl | sh" not in installer
-    assert "audit-ci-supply-chain" in justfile
-    assert all(
-        recipe in justfile
-        for recipe in ("audit-gitleaks", "audit-actionlint", "audit-shell")
-    )
     assert workflow_job["if"] == "needs.changes.outputs.workflow == 'true'"
     assert workflow_job["continue-on-error"] is True
     assert workflow_job["timeout-minutes"] == 10
     assert workflow_job["permissions"] == {"contents": "read"}
     assert workflow_steps[0]["with"]["fetch-depth"] == 0
-    assert any(
-        step.get("run")
-        == 'python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
-        'python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
-        'python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"\n'
-        for step in workflow_steps
-    )
-    assert any(
-        isinstance(step.get("run"), str)
-        and step["run"].strip()
-        == '"$RUNNER_TEMP/esm-security-tools/gitleaks" git --redact --no-banner --exit-code 1'
-        and step.get("continue-on-error") is True
-        for step in workflow_steps
-    )
-    assert any(
-        step.get("run")
-        == 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"\n'
-        and step.get("continue-on-error") is True
-        for step in workflow_steps
-    )
-    assert any(
-        step.get("run")
-        == '"$RUNNER_TEMP/esm-security-tools/shellcheck" $(git ls-files -- \'scripts/*.sh\')\n'
-        and step.get("continue-on-error") is True
-        for step in workflow_steps
-    )
+    for step_name in (
+        "Scan committed repository history",
+        "Validate GitHub Actions workflows",
+        "Validate repository shell scripts",
+    ):
+        assert steps_by_name[step_name]["continue-on-error"] is True
     assert not any(
         step.get("uses") == "actions/upload-artifact@v4" for step in workflow_steps
     )
-    summary_step = next(
-        step
-        for step in workflow_steps
-        if step.get("name") == "Summarize advisory scanner outcomes"
-    )
+    summary_step = steps_by_name["Summarize advisory scanner outcomes"]
     assert summary_step["if"] == "always()"
     assert "raw" not in str(summary_step["run"]).lower()
 
 
-def test_shellcheck_audit_uses_pinned_advisory_script_and_workflow_checks() -> None:
-    """Shell checks must preserve shell dialect and workflow ownership."""
-    manifest = json.loads(SECURITY_TOOL_MANIFEST_PATH.read_text())
-    shellcheck = manifest["tools"]["shellcheck"]
-    justfile = JUSTFILE_PATH.read_text()
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_supply_chain_audit_runs_each_reviewed_scanner(workflow_path: Path) -> None:
+    """The advisory job must install and execute each scanner safely."""
+    commands = "\n".join(
+        _workflow_job_commands(workflow_path, "ci-supply-chain-audit")
+    )
 
-    assert shellcheck["version"] == "0.11.0"
-    assert shellcheck["archive_member"] == "shellcheck-v0.11.0/shellcheck"
-    assert "install-shellcheck" in justfile
-    assert "audit-shell" in justfile
-    assert "shellcheck $(git ls-files -- 'scripts/*.sh')" in justfile
+    for tool in ("gitleaks", "actionlint", "shellcheck"):
+        assert f"install_security_tool.py {tool}" in commands
+    assert "gitleaks\" git --redact --no-banner --exit-code 1" in commands
+    assert 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH"' in commands
+    assert "esm-security-tools/actionlint" in commands
+    assert "shellcheck\" $(git ls-files -- 'scripts/*.sh')" in commands
+
+
+def test_local_supply_chain_recipes_keep_focused_scanner_ownership() -> None:
+    """Local commands must run each reviewed scanner once without suppressions."""
+    actionlint_recipe = _just_recipe_body("audit-actionlint")
+    shellcheck_recipe = _just_recipe_body("audit-shell")
+    aggregate_recipe = _just_recipe_body("audit-ci-supply-chain")
+
+    assert "gitleaks git --redact --no-banner --exit-code 1" in _just_recipe_body(
+        "audit-gitleaks"
+    )
     assert (
         "PATH=\"{{security_tool_bin_dir}}:$PATH\" {{security_tool_bin_dir}}/actionlint"
-        in justfile
+        in actionlint_recipe
     )
+    assert "shellcheck $(git ls-files -- 'scripts/*.sh')" in shellcheck_recipe
+    assert "actionlint" not in shellcheck_recipe
+    assert {
+        "just audit-gitleaks",
+        "just audit-actionlint",
+        "just audit-shell",
+    } <= {line.strip() for line in aggregate_recipe.splitlines()}
     assert not any(
         path.exists()
         for path in (

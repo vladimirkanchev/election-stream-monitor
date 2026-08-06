@@ -268,24 +268,17 @@ Recommended local command order for most day-to-day work:
 - `just audit-frontend`
   - audits `frontend/package-lock.json`, including development tooling, and exits nonzero for high or critical findings
   - requires registry access and never runs `npm audit fix`
-- `just install-gitleaks`
-  - downloads the manifest-pinned Linux x64 release, verifies its SHA-256, and
-    installs it under ignored `.tools/security/bin/`
+- `just install-gitleaks`, `just install-actionlint`, and `just install-shellcheck`
+  - download a manifest-pinned Linux x64 release, verify its SHA-256, and
+    install it under ignored `.tools/security/bin/`
 - `just audit-gitleaks`
   - scans committed Git history with redacted Gitleaks findings; run
     `just install-gitleaks` first
-- `just install-actionlint`
-  - downloads the manifest-pinned Linux x64 release, verifies its SHA-256, and
-    installs it under ignored `.tools/security/bin/`
 - `just audit-actionlint`
-  - validates checked-in GitHub Actions workflows; run `just install-actionlint`
-    first
-- `just install-shellcheck`
-  - downloads the manifest-pinned Linux x64 release, verifies its SHA-256, and
-    installs it under ignored `.tools/security/bin/`
+  - validates checked-in GitHub Actions workflows and their shell blocks; run
+    `just install-actionlint` and `just install-shellcheck` first for the full check
 - `just audit-shell`
-  - checks tracked `scripts/*.sh` files and workflow `run:` blocks; run
-    `just install-actionlint` and `just install-shellcheck` first
+  - checks tracked `scripts/*.sh` files; run `just install-shellcheck` first
 - `just audit-ci-supply-chain`
   - runs Gitleaks, Actionlint, and ShellCheck after their pinned tools are
     installed; it is the local counterpart of the advisory CI job

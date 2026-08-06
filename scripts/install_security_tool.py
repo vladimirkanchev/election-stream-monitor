@@ -29,13 +29,17 @@ def _load_tool(tool_name: str, manifest_path: Path) -> dict[str, str]:
     """Load and validate one tool record from the checked-in manifest."""
     try:
         manifest = json.loads(manifest_path.read_text())
-        tools = manifest["tools"]
-        tool = tools[tool_name]
-    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError) as exc:
         raise ToolInstallError(
-            f"Could not load tool '{tool_name}' from {manifest_path}."
+            f"Could not load security-tool manifest {manifest_path}."
         ) from exc
 
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise ToolInstallError("Security-tool manifest must use schema version 1.")
+    tools = manifest.get("tools")
+    if not isinstance(tools, dict) or tool_name not in tools:
+        raise ToolInstallError(f"Tool '{tool_name}' is not declared in {manifest_path}.")
+    tool = tools[tool_name]
     if not isinstance(tool, dict) or set(tool) != REQUIRED_TOOL_FIELDS:
         raise ToolInstallError(f"Tool '{tool_name}' has an invalid manifest record.")
     if not all(isinstance(value, str) and value for value in tool.values()):
@@ -48,7 +52,7 @@ def _load_tool(tool_name: str, manifest_path: Path) -> dict[str, str]:
 
 
 def _require_linux_x64(tool_name: str, tool: dict[str, str]) -> None:
-    """Keep the initial verified-download contract explicit and portable later."""
+    """Reject platforms without a reviewed manifest record."""
     machine = platform.machine().lower()
     if (
         tool["platform"] != "linux-x64"
@@ -130,7 +134,7 @@ def install_tool(
 
 
 def main() -> int:
-    """Install one declared security tool into an ignored local directory."""
+    """Install one declared security tool into the requested binary directory."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tool", choices=("gitleaks", "actionlint", "shellcheck"))
     parser.add_argument("--bin-dir", type=Path, default=DEFAULT_BIN_DIR)

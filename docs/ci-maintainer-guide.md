@@ -69,30 +69,27 @@ once a scanner is implemented.
 | Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly `python-security-audit` exports the locked production graph before scanning. | Weekly; outside protected PR gates while findings are reviewed. |
 | Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
 | Committed secrets | Gitleaks | Path-activated `ci-supply-chain-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
-| GitHub Actions workflow correctness | Actionlint | Path-activated `ci-supply-chain-audit` validates checked-in workflows with a checksum-verified binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
-| Repository shell correctness | ShellCheck | `just audit-shell` scans tracked `scripts/*.sh`; `ci-supply-chain-audit` also exposes ShellCheck to workflow `run:` blocks. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
+| GitHub Actions workflow correctness | Actionlint | Path-activated `ci-supply-chain-audit` validates checked-in workflows and delegates their shell blocks to the pinned ShellCheck binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
+| Repository shell correctness | ShellCheck | `just audit-shell` and `ci-supply-chain-audit` scan tracked `scripts/*.sh`; Actionlint covers workflow `run:` blocks. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
 | Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
 
 Ruff owns ordinary Python correctness and style rules; it is not a security
 scanner. Bandit checks Python security patterns, while CodeQL is reserved for
 later cross-file data-flow analysis. Do not add Semgrep beside CodeQL without a
-specific gap neither tool already covers. Host-tool and model-artifact scanners
-remain outside this policy until the project accepts external serialized
-models.
+specific gap that neither tool already covers. Host-tool and model-artifact
+scanners remain outside this policy until the project accepts external
+serialized models.
 
-Pinned host-scanner releases and Linux x64 archive checksums live in
-`.github/security_tools.json`. The generic installer copies only the reviewed
-executable from a verified archive into ignored local tooling storage; it never
-commits binaries or evaluates downloaded shell. The initial manifest also owns
-the later Actionlint and ShellCheck releases so their installation cannot drift.
-Actionlint emits terminal diagnostics only. ShellCheck derives shell-script
-dialects from each script's shebang; workflow `run:` blocks use GitHub's Ubuntu
-Bash default through Actionlint. The aggregate job has a ten-minute timeout,
-`contents: read` permission, no artifacts, and a generic outcome summary; it
-never uploads raw secret findings. Each scanner may be promoted only after its
-own clean, deterministic baseline. It runs only when workflows, workflow
-helpers, scanner ownership, tracked shell scripts, or the aggregate recipe
-change.
+`.github/security_tools.json` is the machine-readable owner of each pinned
+Linux x64 release, archive member, and SHA-256. The installer verifies the
+archive before copying the named executable into ignored local tooling storage;
+it neither commits binaries nor evaluates downloaded shell.
+
+The path-activated aggregate job has `contents: read`, a ten-minute timeout,
+no artifacts, and only a generic outcome summary. Gitleaks uses redacted
+terminal output. Actionlint validates workflow shell blocks with the pinned
+ShellCheck binary; ShellCheck derives script dialect from each shebang. Promote
+each scanner only after its own clean, deterministic baseline.
 
 ### Dependency Audit Inputs And Failure Policy
 

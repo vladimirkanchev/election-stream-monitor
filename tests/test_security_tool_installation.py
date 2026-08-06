@@ -60,6 +60,20 @@ def _manifest(path: Path, archive: bytes) -> None:
     )
 
 
+def _stub_linux_download(
+    monkeypatch: pytest.MonkeyPatch,
+    archive: bytes,
+) -> None:
+    """Provide one deterministic supported platform and archive download."""
+    monkeypatch.setattr(installer.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(installer.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(
+        installer.request,
+        "urlopen",
+        lambda *_args, **_kwargs: _Response(archive),
+    )
+
+
 def test_manifest_pins_each_reviewed_security_tool() -> None:
     """Keep all planned host tools on explicit Linux x64 checksum records."""
     manifest = json.loads(MANIFEST_PATH.read_text())
@@ -82,13 +96,7 @@ def test_install_tool_verifies_archive_before_exposing_binary(
     archive = _archive("gitleaks", b"#!/bin/sh\nexit 0\n")
     manifest_path = tmp_path / "tools.json"
     _manifest(manifest_path, archive)
-    monkeypatch.setattr(installer.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(installer.platform, "machine", lambda: "x86_64")
-    monkeypatch.setattr(
-        installer.request,
-        "urlopen",
-        lambda *_args, **_kwargs: _Response(archive),
-    )
+    _stub_linux_download(monkeypatch, archive)
 
     destination = installer.install_tool(
         "gitleaks",
@@ -111,13 +119,7 @@ def test_install_tool_rejects_a_checksum_mismatch(
     manifest = json.loads(manifest_path.read_text())
     manifest["tools"]["gitleaks"]["sha256"] = "0" * 64
     manifest_path.write_text(json.dumps(manifest))
-    monkeypatch.setattr(installer.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(installer.platform, "machine", lambda: "x86_64")
-    monkeypatch.setattr(
-        installer.request,
-        "urlopen",
-        lambda *_args, **_kwargs: _Response(archive),
-    )
+    _stub_linux_download(monkeypatch, archive)
 
     with pytest.raises(
         installer.ToolInstallError, match="Checksum verification failed"
@@ -129,3 +131,12 @@ def test_install_tool_rejects_a_checksum_mismatch(
         )
 
     assert not (tmp_path / "bin" / "gitleaks").exists()
+
+
+def test_install_tool_rejects_an_unknown_manifest_schema(tmp_path: Path) -> None:
+    """An unsupported manifest cannot be interpreted as the current contract."""
+    manifest_path = tmp_path / "tools.json"
+    manifest_path.write_text(json.dumps({"schema_version": 2, "tools": {}}))
+
+    with pytest.raises(installer.ToolInstallError, match="schema version 1"):
+        installer.install_tool("gitleaks", manifest_path=manifest_path)
