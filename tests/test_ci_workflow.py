@@ -1,8 +1,9 @@
 """Regression coverage for CI, static-analysis, coverage, and security policy.
 
 The tests keep the workflow reader, detector-lane admission, protected PR
-requirements, static-analysis ownership, advisory reporting, supply-chain
-checks, and bounded weekly-media diagnostics aligned with their owners.
+requirements, static-analysis ownership, advisory reporting, least-privilege
+workflow defaults, supply-chain checks, and bounded weekly-media diagnostics
+aligned with their owners.
 """
 
 from __future__ import annotations
@@ -46,7 +47,7 @@ WORKFLOW_PATHS = (
 WORKFLOW_PERMISSION_EXCEPTIONS: dict[str, dict[str, dict[str, str]]] = {
     workflow_path.name: {} for workflow_path in WORKFLOW_PATHS
 }
-ROUTINE_WORKFLOW_TIMEOUTS = {
+WORKFLOW_TIMEOUTS = {
     "ci.yml": {
         "changes": 10,
         "main-pr-consistency": 10,
@@ -79,18 +80,18 @@ ROUTINE_WORKFLOW_TIMEOUTS = {
         "feature-gate": 5,
     },
     "coverage-evidence.yml": {"coverage-evidence": 20},
-}
-WEEKLY_WORKFLOW_TIMEOUTS = {
-    "slow-e2e": 45,
-    "api-stream-deep": 30,
-    "lifecycle-deep": 30,
-    "security-audit": 20,
-    "python-security-audit": 20,
-    "npm-security-audit": 20,
-    "dependency-audit": 20,
-    "packaging-smoke": 20,
-    "postgres-alert-backend-confidence": 30,
-    "postgres-alert-runtime-operator-confidence": 30,
+    "weekly-validation.yml": {
+        "slow-e2e": 45,
+        "api-stream-deep": 30,
+        "lifecycle-deep": 30,
+        "security-audit": 20,
+        "python-security-audit": 20,
+        "npm-security-audit": 20,
+        "dependency-audit": 20,
+        "packaging-smoke": 20,
+        "postgres-alert-backend-confidence": 30,
+        "postgres-alert-runtime-operator-confidence": 30,
+    },
 }
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
@@ -176,48 +177,6 @@ def _workflow_jobs(workflow_path: Path) -> dict[str, dict[str, Any]]:
         isinstance(name, str) and isinstance(job, dict) for name, job in jobs.items()
     )
     return jobs
-
-
-@pytest.mark.parametrize("workflow_path", WORKFLOW_PATHS)
-def test_workflow_permissions_default_to_read_only(
-    workflow_path: Path,
-) -> None:
-    """Workflows stay read-only unless a reviewed job needs a narrower scope."""
-    workflow = _workflow_document(workflow_path)
-    assert workflow.get("permissions") == {"contents": "read"}
-
-    job_permissions = {
-        job_name: permissions
-        for job_name, job in _workflow_jobs(workflow_path).items()
-        if (permissions := job.get("permissions")) is not None
-    }
-    assert job_permissions == WORKFLOW_PERMISSION_EXCEPTIONS[workflow_path.name]
-
-
-@pytest.mark.parametrize(
-    "workflow_path",
-    (
-        CI_WORKFLOW_PATH,
-        BRANCH_CI_WORKFLOW_PATH,
-        COVERAGE_EVIDENCE_WORKFLOW_PATH,
-    ),
-)
-def test_routine_workflow_jobs_have_reviewed_timeouts(workflow_path: Path) -> None:
-    """Routine and advisory jobs retain their reviewed runtime ceilings."""
-    timeouts = {
-        job_name: job.get("timeout-minutes")
-        for job_name, job in _workflow_jobs(workflow_path).items()
-    }
-    assert timeouts == ROUTINE_WORKFLOW_TIMEOUTS[workflow_path.name]
-
-
-def test_weekly_workflow_jobs_have_reviewed_timeouts() -> None:
-    """Weekly media and environment-sensitive jobs retain generous ceilings."""
-    timeouts = {
-        job_name: job.get("timeout-minutes")
-        for job_name, job in _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH).items()
-    }
-    assert timeouts == WEEKLY_WORKFLOW_TIMEOUTS
 
 
 def _workflow_job_steps(
@@ -447,6 +406,32 @@ def _failure_codes(workflow: Any) -> set[str]:
 def _assert_failure_code(workflow: Any, expected_code: str) -> None:
     """Assert that one mutated workflow produces the expected failure code."""
     assert expected_code in _failure_codes(workflow)
+
+
+@pytest.mark.parametrize("workflow_path", WORKFLOW_PATHS)
+def test_workflow_permissions_default_to_read_only(
+    workflow_path: Path,
+) -> None:
+    """Workflows stay read-only unless a reviewed job needs a narrower scope."""
+    workflow = _workflow_document(workflow_path)
+    assert workflow.get("permissions") == {"contents": "read"}
+
+    job_permissions = {
+        job_name: permissions
+        for job_name, job in _workflow_jobs(workflow_path).items()
+        if (permissions := job.get("permissions")) is not None
+    }
+    assert job_permissions == WORKFLOW_PERMISSION_EXCEPTIONS[workflow_path.name]
+
+
+@pytest.mark.parametrize("workflow_path", WORKFLOW_PATHS)
+def test_workflow_jobs_have_reviewed_timeouts(workflow_path: Path) -> None:
+    """Every workflow job retains its reviewed workload-aware runtime ceiling."""
+    timeouts = {
+        job_name: job.get("timeout-minutes")
+        for job_name, job in _workflow_jobs(workflow_path).items()
+    }
+    assert timeouts == WORKFLOW_TIMEOUTS[workflow_path.name]
 
 
 def test_reader_loads_current_ci_job_structure() -> None:

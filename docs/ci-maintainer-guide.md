@@ -109,11 +109,11 @@ Linux x64 release, archive member, and SHA-256. The installer verifies the
 archive before copying the named executable into ignored local tooling storage;
 it neither commits binaries nor evaluates downloaded shell.
 
-The path-activated aggregate job has `contents: read`, a ten-minute timeout,
-no artifacts, and only a generic outcome summary. Gitleaks uses redacted
-terminal output. Actionlint validates workflow shell blocks with the pinned
-ShellCheck binary; ShellCheck derives script dialect from each shebang. Promote
-each scanner only after its own clean, deterministic baseline.
+The path-activated aggregate job is advisory, artifact-free, and emits only a
+generic outcome summary. Gitleaks uses redacted terminal output. Actionlint
+validates workflow shell blocks with the pinned ShellCheck binary; ShellCheck
+derives script dialect from each shebang. Promote each scanner only after its
+own clean, deterministic baseline.
 
 ### Dependency Audit Inputs And Failure Policy
 
