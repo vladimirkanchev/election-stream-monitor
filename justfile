@@ -168,10 +168,13 @@ install-shellcheck:
     python3 scripts/install_security_tool.py shellcheck --bin-dir {{security_tool_bin_dir}}
 
 audit-shell:
-    {{security_tool_bin_dir}}/shellcheck $(git ls-files -- 'scripts/*.sh')
+    git ls-files -z -- 'scripts/*.sh' | xargs -0 {{security_tool_bin_dir}}/shellcheck
 
 # Run the focused local supply-chain checks after installing their pinned tools.
 audit-ci-supply-chain:
+    just install-gitleaks
+    just install-shellcheck
+    just install-actionlint
     just audit-gitleaks
     just audit-actionlint
     just audit-shell

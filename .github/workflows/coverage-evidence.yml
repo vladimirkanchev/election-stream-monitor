@@ -61,7 +61,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -e .[test,detectorlab]
+          .venv/bin/pip install -e '.[test,detectorlab]'
 
       - name: Install frontend coverage dependencies
         working-directory: frontend

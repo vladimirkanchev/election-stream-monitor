@@ -83,8 +83,11 @@ jobs:
           mkdir -p ci-artifacts
           set -o pipefail
           set +e
+          mapfile -t weekly_slow_media_targets < <(
+            .venv/bin/python .github/scripts/read_ci_test_targets.py weekly_slow_media
+          )
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "slow" \
-            $(.venv/bin/python .github/scripts/read_ci_test_targets.py weekly_slow_media --separator space) \
+            "${weekly_slow_media_targets[@]}" \
             -q --junitxml=ci-artifacts/weekly-media-results.junit.xml 2>&1 | tee ci-artifacts/slow-e2e.log
           pytest_status=${PIPESTATUS[0]}
           set -e
@@ -127,7 +130,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,detectorlab]
+          pip install -e '.[test,detectorlab]'
 
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
@@ -136,8 +139,11 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
+          mapfile -t weekly_api_stream_targets < <(
+            python3 .github/scripts/read_ci_test_targets.py weekly_api_stream_deep
+          )
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
-            $(python3 .github/scripts/read_ci_test_targets.py weekly_api_stream_deep --separator space) \
+            "${weekly_api_stream_targets[@]}" \
             -q 2>&1 | tee ci-artifacts/api-stream-deep.log
 
       - name: Upload api_stream deep validation log
@@ -166,7 +172,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,detectorlab]
+          pip install -e '.[test,detectorlab]'
 
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
@@ -175,8 +181,11 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
+          mapfile -t weekly_lifecycle_targets < <(
+            python3 .github/scripts/read_ci_test_targets.py weekly_lifecycle
+          )
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
-            $(python3 .github/scripts/read_ci_test_targets.py weekly_lifecycle --separator space) \
+            "${weekly_lifecycle_targets[@]}" \
             -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
 
       - name: Upload lifecycle deep validation log
@@ -291,7 +300,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
 
       - name: Check dependency consistency
         run: python -m pip check
@@ -350,7 +359,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
           pip install "psycopg[binary]"
 
       - name: Install PostgreSQL client
@@ -413,7 +422,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
           pip install "psycopg[binary]"
 
       - name: Install PostgreSQL client

@@ -900,7 +900,8 @@ def test_supply_chain_audit_runs_each_reviewed_scanner(workflow_path: Path) -> N
     assert "gitleaks\" git --redact --no-banner --exit-code 1" in commands
     assert 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH"' in commands
     assert "esm-security-tools/actionlint" in commands
-    assert "shellcheck\" $(git ls-files -- 'scripts/*.sh')" in commands
+    assert "mapfile -t shell_scripts" in commands
+    assert 'shellcheck" "${shell_scripts[@]}"' in commands
 
 
 def test_local_supply_chain_recipes_keep_focused_scanner_ownership() -> None:
@@ -916,9 +917,12 @@ def test_local_supply_chain_recipes_keep_focused_scanner_ownership() -> None:
         "PATH=\"{{security_tool_bin_dir}}:$PATH\" {{security_tool_bin_dir}}/actionlint"
         in actionlint_recipe
     )
-    assert "shellcheck $(git ls-files -- 'scripts/*.sh')" in shellcheck_recipe
+    assert "git ls-files -z -- 'scripts/*.sh' | xargs -0" in shellcheck_recipe
     assert "actionlint" not in shellcheck_recipe
     assert {
+        "just install-gitleaks",
+        "just install-shellcheck",
+        "just install-actionlint",
         "just audit-gitleaks",
         "just audit-actionlint",
         "just audit-shell",
