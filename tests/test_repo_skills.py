@@ -7,6 +7,7 @@ output-shape snapshots without live model calls.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -276,6 +277,18 @@ def test_explicit_skill_just_recipes_exist() -> None:
     assert not missing_recipes, "Missing just recipes:\n" + "\n".join(missing_recipes)
 
 
+def test_repo_skill_recipe_stays_available_and_deterministic() -> None:
+    """Keep the harness entrypoint separate from product validation lanes."""
+    justfile_text = JUSTFILE_PATH.read_text(encoding="utf-8")
+
+    assert "test-repo-skills" in list_just_recipes(JUSTFILE_PATH)
+    recipe_body = _just_recipe_body(justfile_text, "test-repo-skills")
+    assert "{{pytest_env_prefix}}" in recipe_body
+    assert "{{venv_pytest}}" in recipe_body
+    assert "{{pytest_base_flags}}" in recipe_body
+    assert "tests/test_repo_skills.py" in recipe_body
+
+
 def test_retired_skill_directories_stay_absent() -> None:
     """Keep merged skills out of both active and deferred discovery roots."""
     for retired_skill in RETIRED_SKILL_SURVIVORS:
@@ -347,3 +360,14 @@ def _markdown_section(text: str, heading: str) -> str:
     if next_section_start < 0:
         return text[section_start:]
     return text[section_start:next_section_start]
+
+
+def _just_recipe_body(text: str, recipe_name: str) -> str:
+    """Return one recipe body without depending on neighboring recipe order."""
+    match = re.search(
+        rf"^{re.escape(recipe_name)}:\n((?:[ \t]+.*(?:\n|$))*)",
+        text,
+        flags=re.MULTILINE,
+    )
+    assert match is not None, f"Missing recipe: {recipe_name}"
+    return match.group(1)

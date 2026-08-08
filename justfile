@@ -104,6 +104,10 @@ ci-contract-check:
       tests/test_ci_workflow.py \
       tests/test_ci_test_target_scripts.py
 
+# Focused deterministic repo-local skill harness lane.
+test-repo-skills:
+    {{pytest_env_prefix}} {{venv_pytest}} {{pytest_base_flags}} tests/test_repo_skills.py
+
 # Focused deterministic FastAPI/MCP security regression lane.
 # This stays synthetic and is safe for routine backend validation: it does not
 # start a server, open sockets, or require PostgreSQL.

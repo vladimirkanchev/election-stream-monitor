@@ -1411,16 +1411,19 @@ This writes the compact production-fixture detector export:
 Focused repo-local skill validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_repo_skills.py
+just test-repo-skills
 ```
 
 This skill-focused test slice is intentionally no-key and deterministic.
+It is a harness lane, not product-runtime confidence, so it stays outside
+`test-fast` and `ci-local`.
 It currently covers:
 
 - skill inventory, frontmatter, and section structure
 - readable ordering plus explicit hand-off boundaries
 - nearby-skill overlap and explicit deferral coverage
 - merged persistence and incident-analysis modes
+- explicit repository-path and `just` recipe references
 - representative repo scenarios plus fixed output-shape snapshots
 - lightweight regressions for real repo incidents
 
