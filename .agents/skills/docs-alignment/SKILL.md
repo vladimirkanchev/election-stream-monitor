@@ -1,6 +1,6 @@
 ---
 name: docs-alignment
-description: Use when the user wants repo-aware help keeping project docs or code docs aligned with the current Election Stream Monitor code, tests, and CI shape. Best for checking documentation drift, proposing concise updates, and removing low-value repetition without turning the task into endless docs polishing.
+description: Use for Election Stream Monitor docs or docstring alignment with current code, tests, and CI. Excludes pre-edit drift audits, incident diagnosis, and test planning.
 ---
 
 # Docs Alignment

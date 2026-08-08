@@ -1,6 +1,6 @@
 ---
 name: ci-failure-triage
-description: Use when the user wants fast, repo-aware help understanding a failing CI check in Election Stream Monitor. Best for classifying whether a failure is a code bug, stale test, environment issue, or CI/policy drift, then suggesting the smallest useful local reproduction command.
+description: "Use for a failing Election Stream Monitor CI check: classify its owner and failure class, then choose the smallest local reproduction. Excludes general incident analysis."
 ---
 
 # Ci Failure Triage

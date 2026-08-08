@@ -1,6 +1,6 @@
 ---
 name: task-planning-evaluation
-description: Use when the user wants repo-aware prioritization, sequencing, task sizing, or proportional closure for Election Stream Monitor work. Best for rating next work by importance, urgency, scope, and complexity without deciding branch/PR shape or specific tests.
+description: Use for Election Stream Monitor task priority, sequencing, sizing, and proportional closure. Excludes branch or PR shape, detailed test design, and implementation.
 ---
 
 # Task Planning Evaluation

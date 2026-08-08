@@ -1,6 +1,6 @@
 ---
 name: test-strategy-review
-description: Use when the user wants repo-aware help deciding what Election Stream Monitor tests to add, trim, or run first. Best for judging coverage value and selecting the cheapest honest validation lane without expanding into generic test-suite generation.
+description: Use for Election Stream Monitor test value and the cheapest honest validation lane. Excludes branch or PR shape, CI-failure diagnosis, and specialist seam review.
 ---
 
 # Test Strategy Review

@@ -1,6 +1,6 @@
 ---
 name: branch-pr-readiness
-description: "Use when the user wants repo-aware help shaping an Election Stream Monitor branch or pull request: branch scope, commit grouping, PR shape, drift, and merge readiness. Do not use for generic change summaries, roadmap priority, or choosing tests."
+description: "Use for Election Stream Monitor branch scope, commit grouping, PR shape, drift, and merge readiness. Excludes generic summaries, roadmap priority, and test selection."
 ---
 
 # Branch Pr Readiness

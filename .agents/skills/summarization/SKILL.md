@@ -1,6 +1,6 @@
 ---
 name: summarization
-description: Use when the user wants a concise, repo-aware summary of completed Election Stream Monitor work, current behavior, or a subsystem. Best for explaining what changed, why it matters, and behavior impact without deciding PR shape, root cause, roadmap priority, or test strategy.
+description: Use for concise Election Stream Monitor repository, subsystem, or completed-change summaries. Excludes PR shaping, incident diagnosis, planning, and test strategy.
 ---
 
 # Summarization
