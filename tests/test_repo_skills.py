@@ -7,6 +7,7 @@ output-shape snapshots without live model calls.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,20 @@ DOCS_INDEX_PATH = Path(__file__).resolve().parent.parent / "docs" / "README.md"
 def test_expected_skill_directories_exist() -> None:
     actual_skill_names = set(load_all_skills())
     assert actual_skill_names == EXPECTED_SKILLS
+
+
+def test_discovery_expectations_cover_each_active_skill_once() -> None:
+    """Keep each active skill assigned to one explicit discovery seam."""
+    assert set(DISCOVERY_DESCRIPTION_EXPECTATIONS) == EXPECTED_SKILLS
+
+    primary_phrases = [
+        primary_phrase
+        for primary_phrase, _excluded_phrases in DISCOVERY_DESCRIPTION_EXPECTATIONS.values()
+    ]
+    duplicate_phrases = [
+        phrase for phrase, count in Counter(primary_phrases).items() if count > 1
+    ]
+    assert not duplicate_phrases, f"Duplicate primary seam phrases: {duplicate_phrases}"
 
 
 @pytest.mark.parametrize("skill_name", sorted(EXPECTED_SKILLS))

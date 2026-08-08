@@ -14,11 +14,12 @@ SKILL_SECTION_ORDER = (
     "## Skill boundaries",
     "## Avoid",
 )
+REQUIRED_SKILL_FRONTMATTER_KEYS = frozenset({"name", "description"})
 
 
 @dataclass(frozen=True)
 class SkillDocument:
-    """Parsed markdown skill with minimal frontmatter support."""
+    """Parsed markdown skill with the required discovery metadata."""
 
     path: Path
     name: str
@@ -134,7 +135,7 @@ def assert_all_snippets_absent(text: str, snippets: Sequence[str]) -> None:
 
 
 def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """Parse the minimal YAML frontmatter used by these skill files."""
+    """Parse the strict frontmatter contract used by active skill files."""
     lines = text.splitlines()
     if len(lines) < 4 or lines[0].strip() != "---":
         raise ValueError("Missing YAML frontmatter start")
@@ -152,12 +153,21 @@ def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:
         key, separator, value = line.partition(":")
         if not separator:
             raise ValueError(f"Invalid frontmatter line: {line}")
-        frontmatter[key.strip()] = value.strip()
+        normalized_key = key.strip()
+        if normalized_key in frontmatter:
+            raise ValueError(f"Duplicate frontmatter key: {normalized_key}")
+        frontmatter[normalized_key] = value.strip()
 
-    missing_keys = {"name", "description"} - frontmatter.keys()
-    if missing_keys:
-        missing = ", ".join(sorted(missing_keys))
-        raise ValueError(f"Missing frontmatter keys: {missing}")
+    actual_keys = frozenset(frontmatter)
+    if actual_keys != REQUIRED_SKILL_FRONTMATTER_KEYS:
+        missing = REQUIRED_SKILL_FRONTMATTER_KEYS - actual_keys
+        unexpected = actual_keys - REQUIRED_SKILL_FRONTMATTER_KEYS
+        details = []
+        if missing:
+            details.append(f"missing: {', '.join(sorted(missing))}")
+        if unexpected:
+            details.append(f"unexpected: {', '.join(sorted(unexpected))}")
+        raise ValueError(f"Invalid frontmatter keys ({'; '.join(details)})")
 
     body = "\n".join(lines[closing_index + 1:])
     return frontmatter, body
