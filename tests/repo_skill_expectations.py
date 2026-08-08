@@ -34,6 +34,13 @@ EXPECTED_SKILL_ORDER = (
 
 EXPECTED_SKILLS = set(EXPECTED_SKILL_ORDER)
 
+ARCHIVED_SKILL_REACTIVATION_SNIPPETS = (
+    "./.agents/archived-skills/",
+    "`architecture-diagram-review` for concrete architecture-diagram work",
+    "`postgres-migration-rollout-review` before PostgreSQL migration or cloud",
+    "`security-surface-review` before broad trust review or public exposure",
+)
+
 COMMON_SECTIONS = (
     "## Default approach",
     "## Output shape",

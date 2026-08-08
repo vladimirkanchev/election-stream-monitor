@@ -510,9 +510,14 @@ work. Treat these as lightweight workflow helpers for the current project
 stage: text-first, narrow in scope, and easy to evolve without a separate
 automation framework.
 
-Deferred specialists live under `./.agents/archived-skills/`. Reactivate them
-only for a concrete architecture diagram, PostgreSQL migration or cloud
-persistence rollout, or broad trust review before public exposure.
+Deferred specialists live under `./.agents/archived-skills/` and stay outside
+ordinary discovery. Reactivate them explicitly only when their future gate is
+reached:
+
+- `architecture-diagram-review` for concrete architecture-diagram work
+- `postgres-migration-rollout-review` before PostgreSQL migration or cloud
+  persistence rollout
+- `security-surface-review` before broad trust review or public exposure
 
 Keep workflow ownership split:
 

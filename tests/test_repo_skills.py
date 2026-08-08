@@ -13,6 +13,7 @@ import pytest
 
 from tests.repo_skill_expectations import (
     AMBIGUOUS_BOUNDARY_EXPECTATIONS,
+    ARCHIVED_SKILL_REACTIVATION_SNIPPETS,
     BOUNDARY_SNIPPETS_BY_SKILL,
     COMMON_SECTIONS,
     EXPECTED_SKILLS,
@@ -43,6 +44,7 @@ from tests.skill_test_support import (
 )
 
 AGENTS_PATH = Path(__file__).resolve().parent.parent / "AGENTS.md"
+DOCS_INDEX_PATH = Path(__file__).resolve().parent.parent / "docs" / "README.md"
 
 
 def test_expected_skill_directories_exist() -> None:
@@ -175,4 +177,11 @@ def test_agents_md_risky_change_routing_stays_aligned() -> None:
     )
 
     for snippet in RISKY_CHANGE_ROUTING_REQUIRED_SNIPPETS:
+        assert snippet in text
+
+
+def test_archived_specialists_stay_explicit_and_discoverable() -> None:
+    text = DOCS_INDEX_PATH.read_text(encoding="utf-8")
+
+    for snippet in ARCHIVED_SKILL_REACTIVATION_SNIPPETS:
         assert snippet in text
