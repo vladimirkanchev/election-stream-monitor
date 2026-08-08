@@ -63,6 +63,26 @@ size boundaries without asserting complete description strings or using live
 model calls. Archived specialists remain outside the active inventory and are
 covered by explicit reactivation documentation.
 
+## Final Closure Evidence
+
+Measured against `origin/main` (`cc5faeaf`) and branch `HEAD` (`b707935`) on
+2026-08-08:
+
+- Active skills: `23 -> 18`; archived specialists: `0 -> 3`.
+- Active `SKILL.md` lines: `1,688 -> 1,457` (`13.7%` lower).
+- Discovery descriptions: `5,099 -> 2,909` characters (`42.9%` lower;
+  average `283.3 -> 161.6`).
+- Retained owners: `persistence-backend-review` owns alert parity;
+  `incident-analysis` owns timeline and hypothesis modes; detector, fixture,
+  real-media, testing, CI, and branch-review skills remain distinct.
+- Deterministic validation on 2026-08-08: `just test-repo-skills` passed with
+  `210` tests; all 18 active and 3 archived skills passed structural
+  validation; `just docs-check` and `git diff --check` passed.
+- The six-case manual routing exercise was a contaminated dry run, not a
+  formal fresh-session baseline.
+- `docs-drift-check` and `readme-alignment-review` consolidation remains
+  deferred to the separate documentation-routing branch.
+
 ## Historical Retired Skill Record
 
 This is the only human-facing inventory section that retains identifiers for
