@@ -18,6 +18,38 @@ they are implemented.
 - Commands list only explicit focused `just` recipes named by the skill;
   `none` means it does not prescribe one.
 
+## Discovery Description Baseline
+
+This table records current active-skill discovery metadata before wording is
+shortened. Character counts exclude YAML quotation marks. All 18 descriptions
+currently exceed the 120--180 character editorial target; the guard range for
+the next edit is 100--200 characters. Frequency remains inferred, not measured.
+
+| Skill | Characters | Frequency | Primary seam | Nearest competing route | Invocation |
+| --- | ---: | --- | --- | --- | --- |
+| `branch-pr-readiness` | 245 | High | branch scope and merge readiness | task planning | automatic |
+| `ci-failure-triage` | 275 | High | CI-failure classification and reproduction | incident analysis | automatic |
+| `dependency-change-review` | 273 | Medium | dependency-file branch fit | branch readiness | automatic |
+| `detector-rule-review` | 261 | High | production detector and rule boundaries | test strategy | automatic |
+| `docs-alignment` | 303 | High | implementation-oriented documentation alignment | docs drift | automatic |
+| `docs-drift-check` | 273 | Medium | pre-edit documentation drift audit | docs alignment | automatic |
+| `fastapi-mcp-security-review` | 329 | Medium | branch-scoped FastAPI and MCP hardening | broad security review | automatic |
+| `fixture-environment-safety` | 272 | High | test fixture and tool portability | real-media validation | automatic |
+| `frontend-bridge-review` | 264 | Medium | renderer, Electron, and backend seam | manual validation | automatic |
+| `incident-analysis` | 286 | Medium | incident reconstruction or cause hypothesis | CI triage | automatic |
+| `manual-validation-planner` | 252 | Medium | operator-facing local smoke plan | test strategy | automatic |
+| `persistence-backend-review` | 341 | Medium | session and alert persistence parity | security review | automatic |
+| `readme-alignment-review` | 248 | Medium | root README section fit | docs alignment | automatic |
+| `real-media-validation-review` | 330 | High | media-confidence lane selection | fixture safety | automatic |
+| `release-version-readiness` | 368 | Medium | version-change semantics | branch readiness | automatic |
+| `summarization` | 275 | Medium | concise repository or change summary | incident analysis | automatic |
+| `task-planning-evaluation` | 257 | High | prioritization and sequencing | branch readiness | automatic |
+| `test-strategy-review` | 247 | High | coverage value and validation lane | detector or media review | automatic |
+
+The active descriptions total 5,099 characters, averaging 283.3 characters.
+Archived architecture, PostgreSQL-rollout, and broad-security specialists are
+explicit-only and retain their existing source unchanged.
+
 ## Initial Skill Inventory
 
 This is the pre-consolidation inventory. Its line counts and descriptions are
