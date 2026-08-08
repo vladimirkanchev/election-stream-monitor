@@ -20,6 +20,8 @@ from tests.repo_skill_expectations import (
     EXPECTED_SKILLS,
     EXPLICIT_HANDOFF_EXPECTATIONS,
     MERGED_SKILL_MODE_MARKERS,
+    PLANNING_CLOSURE_PROFILE_EXPECTATIONS,
+    PLANNING_CLOSURE_SPECIALISTS,
     REAL_INCIDENT_REGRESSIONS,
     RISKY_CHANGE_ROUTING_ORDER,
     RISKY_CHANGE_ROUTING_REQUIRED_SNIPPETS,
@@ -87,6 +89,30 @@ def test_discovery_descriptions_keep_size_and_routing_boundaries(
     assert primary_phrase in description
     for excluded_phrase in excluded_phrases:
         assert excluded_phrase in description
+
+
+@pytest.mark.parametrize(
+    ("profile", "required_concepts"),
+    PLANNING_CLOSURE_PROFILE_EXPECTATIONS.items(),
+)
+def test_planning_closure_profiles_keep_their_required_concepts(
+    profile: str,
+    required_concepts: tuple[str, ...],
+) -> None:
+    """Keep proportional closure without fixing the planner's full wording."""
+    skill = load_skill("task-planning-evaluation")
+
+    assert profile
+    assert assert_contains_in_order(skill.body, required_concepts)
+
+
+def test_planning_closure_delegates_to_specialist_owners() -> None:
+    """Keep validation, docs, and branch decisions outside planning itself."""
+    skill = load_skill("task-planning-evaluation")
+
+    for specialist in PLANNING_CLOSURE_SPECIALISTS:
+        assert specialist in skill.body
+    assert "stay with their specialist owners" in skill.body
 
 
 @pytest.mark.parametrize(

@@ -116,6 +116,37 @@ DISCOVERY_DESCRIPTION_EXPECTATIONS = {
     ),
 }
 
+PLANNING_CLOSURE_PROFILE_EXPECTATIONS = {
+    "small": (
+        "small and obvious",
+        "one focused check",
+        "inspect the diff",
+        "refactoring and docs",
+        "alignment apply only when they are genuinely needed",
+        "brief reason when",
+        "skipping a closure phase",
+    ),
+    "standard": (
+        "standard: implement",
+        "validate the focused seam",
+        "refactor touched code",
+        "align changed behavior",
+        "review branch shape",
+        "cheapest honest final validation",
+    ),
+    "high-risk": (
+        "high-risk: record a baseline",
+        "staged validation",
+        "before the standard",
+    ),
+}
+
+PLANNING_CLOSURE_SPECIALISTS = (
+    "`test-strategy-review`",
+    "`docs-alignment`",
+    "`branch-pr-readiness`",
+)
+
 COMMON_SECTIONS = (
     "## Default approach",
     "## Output shape",
