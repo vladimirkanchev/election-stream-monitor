@@ -75,8 +75,9 @@ Keep the review practical and migration-focused.
 - Use Alert-parity mode when the question is limited to shared alert reads,
   filters, summaries, incidents, or adapter behavior across backends.
 - Use `ci-failure-triage` first for a failing CI lane.
-- Use `security-surface-review` first for route exposure, auth, rate limits,
-  MCP access, or share-mode risk.
+- Use `fastapi-mcp-security-review` first for route exposure, auth, rate
+  limits, MCP access, or share-mode risk. Reactivate the archived
+  `security-surface-review` only for broader public-exposure trust review.
 - Use `test-strategy-review` first to choose tests to add or trim.
 - Use `branch-pr-readiness` first for branch cleanup or merge shape.
 

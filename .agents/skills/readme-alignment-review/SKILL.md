@@ -65,7 +65,8 @@ Keep the answer short unless the user asks for a broader pass.
 
 - Use this when the main question is root-README fit, wording, or current-stage accuracy.
 - If the main problem is repo-wide docs drift, use `docs-drift-check` first.
-- If the main question is diagram correctness or runtime-boundary clarity, use `architecture-diagram-review` first.
+- For concrete diagram correctness or runtime-boundary clarity, reactivate the
+  archived `architecture-diagram-review`.
 - If the user already knows the README needs edits and wants the wording pass, this skill can lead directly into `docs-alignment`.
 - If the main question is branch scope or whether the README change belongs in the branch, use `branch-pr-readiness` first.
 

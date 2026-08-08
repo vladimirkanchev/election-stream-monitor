@@ -12,7 +12,6 @@ from pathlib import Path
 from tests.skill_test_support import ScenarioExpectation, SnapshotExpectation
 
 EXPECTED_SKILL_ORDER = (
-    "architecture-diagram-review",
     "branch-pr-readiness",
     "ci-failure-triage",
     "dependency-change-review",
@@ -25,11 +24,9 @@ EXPECTED_SKILL_ORDER = (
     "incident-analysis",
     "manual-validation-planner",
     "persistence-backend-review",
-    "postgres-migration-rollout-review",
     "readme-alignment-review",
     "real-media-validation-review",
     "release-version-readiness",
-    "security-surface-review",
     "summarization",
     "task-planning-evaluation",
     "test-strategy-review",
@@ -65,16 +62,6 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="postgres-migration-rollout-review",
-        required_snippets=(
-            "Rollout surface",
-            "Current rollout state",
-            "schema ownership",
-            "backfill",
-            "rollback",
-        ),
-    ),
-    ScenarioExpectation(
         skill_name="fastapi-mcp-security-review",
         required_snippets=(
             "Checklist gaps",
@@ -83,15 +70,6 @@ SCENARIO_EXPECTATIONS = [
             "MCP tool exposure",
             "dependency exposure",
             "Best validation lane",
-        ),
-    ),
-    ScenarioExpectation(
-        skill_name="security-surface-review",
-        required_snippets=(
-            "Security surface",
-            "broad security-sensitive surfaces",
-            "local-first advanced-prototype stage",
-            "MCP `stdio` local tooling",
         ),
     ),
     ScenarioExpectation(
@@ -224,19 +202,6 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="architecture-diagram-review",
-        required_snippets=(
-            "Diagram rating",
-            "Visual quality",
-            "Flow arrow review",
-            "Boundary review",
-            "Arrow-origin check",
-            "Arrow-end check",
-            "Stage honesty",
-            "local-first advanced-prototype stage",
-        ),
-    ),
-    ScenarioExpectation(
         skill_name="readme-alignment-review",
         required_snippets=(
             "README fit",
@@ -310,12 +275,8 @@ REAL_INCIDENT_REGRESSIONS = [
     ("persistence-backend-review", "an alerts-router auth change touched store parity or only access policy"),
     ("persistence-backend-review", "a session-store branch may have changed file versus PostgreSQL snapshot semantics"),
     ("persistence-backend-review", "a detached worker may no longer inherit the same store backend as the parent"),
-    ("postgres-migration-rollout-review", "a session migration branch passes parity tests but still has no clear rollback story"),
-    ("postgres-migration-rollout-review", "an alert-store rollout needs a plain answer about whether backfill is required"),
     ("fastapi-mcp-security-review", "a FastAPI route branch may have widened `share` mode beyond the intended boundary"),
     ("fastapi-mcp-security-review", "an MCP tool update may have drifted outside the read-only local tooling model"),
-    ("security-surface-review", "a FastAPI route change may have drifted outside the intended auth or rate-limit boundary"),
-    ("security-surface-review", "an `api_stream` trust policy change needs review for boundary clarity rather than full platform redesign"),
     ("branch-pr-readiness", "a harness branch needs to know whether 2 or 3 commits is the cleanest shape"),
     ("branch-pr-readiness", "a mixed worktree needs to be split into one runtime PR and one detector-lab PR"),
     ("branch-pr-readiness", "a PR is almost merge-ready but CI would fail if `Validation Run`, `Fixture / Environment Impact`, or `Docs Impact` are still missing"),
@@ -350,8 +311,6 @@ REAL_INCIDENT_REGRESSIONS = [
     ("docs-alignment", "CI lane ownership changed and the maintainer docs still describe the old shape"),
     ("docs-drift-check", "a README section is shorter than the maintainer docs and we need to know whether that is real drift"),
     ("docs-drift-check", "a FastAPI auth doc may now describe the wrong protected boundary after route changes"),
-    ("architecture-diagram-review", "a worker arrow may look like a data relationship instead of execution flow"),
-    ("architecture-diagram-review", "a README architecture diagram may now blur Electron, FastAPI, and detached-worker ownership"),
     ("readme-alignment-review", "a root README workflow section feels too heavy and may need to shrink and point to deeper docs"),
     ("readme-alignment-review", "the root README may now overstate project maturity after a runtime boundary refactor"),
     ("branch-pr-readiness", "a branch started as real-media hardening but now also carries detector-lab and CI work"),
@@ -451,18 +410,6 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
             "Smallest useful rewrite",
         ),
     ),
-    (
-        "architecture-diagram-review",
-        "diagram review versus README wording review",
-        (
-            "Flow arrow review",
-            "Boundary review",
-        ),
-        (
-            "README fit",
-            "Smallest useful rewrite",
-        ),
-    ),
 ]
 AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     "docs-drift-check",
@@ -477,20 +424,6 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     ),
     "docs-alignment",
     "docs editing versus docs drift audit",
-)
-AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
-    "readme-alignment-review",
-    "README wording review versus diagram review",
-    (
-        "README fit",
-        "Heavy-section warning",
-    ),
-    (
-        "Flow arrow review",
-        "Boundary review",
-    ),
-    "architecture-diagram-review",
-    "diagram review versus README wording review",
 )
 AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     "ci-failure-triage",
@@ -513,7 +446,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         "persistence-backend-review",
         [
             "Use `ci-failure-triage` first",
-            "Use `security-surface-review` first",
+            "Use `fastapi-mcp-security-review` first",
             "Use `test-strategy-review` first",
             "Use `branch-pr-readiness` first",
         ],
@@ -521,18 +454,10 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "fastapi-mcp-security-review",
         [
-            "use `security-surface-review` first",
+            "reactivate the archived",
             "use `ci-failure-triage` first",
             "use `docs-alignment` first",
             "use `branch-pr-readiness` first",
-        ],
-    ),
-    (
-        "security-surface-review",
-        [
-            "use `ci-failure-triage` first",
-            "use `task-planning-evaluation` first",
-            "use `docs-alignment` first",
         ],
     ),
     (
@@ -558,15 +483,6 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         [
             "use `branch-pr-readiness` first",
             "use `ci-failure-triage` first",
-        ],
-    ),
-    (
-        "postgres-migration-rollout-review",
-        [
-            "use `persistence-backend-review` first",
-            "use `release-version-readiness` first",
-            "use `test-strategy-review` first",
-            "use `branch-pr-readiness` first",
         ],
     ),
     (
@@ -670,7 +586,7 @@ EXPLICIT_HANDOFF_EXPECTATIONS = [
     ),
     (
         "persistence-backend-review",
-        "Use `security-surface-review` first",
+        "Use `fastapi-mcp-security-review` first",
     ),
     (
         "ci-failure-triage",
@@ -719,14 +635,6 @@ MERGED_SKILL_MODE_MARKERS = [
             "What must be true first",
         ),
     ),
-    (
-        "postgres-migration-rollout-review",
-        (
-            "Rollout surface",
-            "Current rollout state",
-            "Best next rollout check",
-        ),
-    ),
 ]
 
 SNAPSHOT_EXPECTATIONS = [
@@ -750,17 +658,6 @@ SNAPSHOT_EXPECTATIONS = [
             "Shared contract risk:",
             "Current confidence:",
             "Best next check:",
-        ),
-    ),
-    SnapshotExpectation(
-        skill_name="postgres-migration-rollout-review",
-        snapshot_name="postgres_migration_rollout_review_sessions.md",
-        required_order=(
-            "Rollout surface:",
-            "Current rollout state:",
-            "Main rollout risks:",
-            "Missing rollout evidence:",
-            "Best next rollout check:",
         ),
     ),
     SnapshotExpectation(
@@ -795,17 +692,6 @@ SNAPSHOT_EXPECTATIONS = [
             "Why not smaller:",
             "Why not larger:",
             "What must be true first:",
-        ),
-    ),
-    SnapshotExpectation(
-        skill_name="security-surface-review",
-        snapshot_name="security_surface_review_share_mode.md",
-        required_order=(
-            "Security surface:",
-            "Current protection:",
-            "Main risk:",
-            "Best next hardening step:",
-            "What is intentionally out of scope:",
         ),
     ),
     SnapshotExpectation(
@@ -969,22 +855,6 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="architecture-diagram-review",
-        snapshot_name="architecture_diagram_review_runtime_flow.md",
-        required_order=(
-            "Diagram rating:",
-            "Visual quality:",
-            "What matches well:",
-            "Flow arrow review:",
-            "Boundary review:",
-            "Arrow-origin check:",
-            "Arrow-end check:",
-            "Stage honesty:",
-            "Biggest mismatch:",
-            "Smallest useful fixes:",
-        ),
-    ),
-    SnapshotExpectation(
         skill_name="readme-alignment-review",
         snapshot_name="readme_alignment_review_root_section.md",
         required_order=(
@@ -1077,10 +947,8 @@ RISKY_CHANGE_ROUTING_ORDER = [
     "## Risky Change Routing",
     "session or alert persistence, runtime backend selection, or PostgreSQL migration",
     "`persistence-backend-review`",
-    "`postgres-migration-rollout-review`",
     "FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries",
     "`fastapi-mcp-security-review`",
-    "`security-surface-review`",
     "real-media, long-running stream, or environment-sensitive validation work",
     "`fixture-environment-safety`",
     "`manual-validation-planner`",

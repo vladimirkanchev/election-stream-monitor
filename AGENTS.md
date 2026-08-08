@@ -30,14 +30,13 @@ Before changing one of these areas, read the owning docs first and use the
 nearest repo-local skill when the task is review, drift, or validation-shape
 heavy.
 
-- session or alert persistence, runtime backend selection, or PostgreSQL migration
+- session or alert persistence or runtime backend selection
   - docs:
     [`docs/contracts.md`](./docs/contracts.md),
     [`docs/session-model.md`](./docs/session-model.md),
     [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
   - skills:
     `persistence-backend-review`,
-    `postgres-migration-rollout-review`,
     `test-strategy-review`,
     `branch-pr-readiness`
 - FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries
@@ -46,7 +45,6 @@ heavy.
     [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
   - skills:
     `fastapi-mcp-security-review` for branch-scoped hardening review,
-    `security-surface-review` for broader trust-boundary review,
     `ci-failure-triage`,
     `branch-pr-readiness`
 - real-media, long-running stream, or environment-sensitive validation work

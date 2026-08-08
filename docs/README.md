@@ -225,15 +225,12 @@ For the current persistence rollout state, use:
     fit, stage honesty, or README trimming
   - use `./.agents/skills/docs-drift-check/` for pre-edit docs drift audits
     and owner routing
-  - use `./.agents/skills/architecture-diagram-review/` for diagram flow,
-    boundaries, visual quality, and current-stage honesty
-  - these three stay intentionally separate, and the repo skill tests protect
-    that split with paired boundary checks
+  - README fit and docs-drift helpers stay intentionally separate, and the
+    repo skill tests protect that split with paired boundary checks
   - before heavier PostgreSQL persistence or FastAPI/MCP security branches,
     start with the nearest review checklist skill instead of writing a broad
     new plan from scratch:
     `persistence-backend-review`,
-    `postgres-migration-rollout-review`,
     `fastapi-mcp-security-review`,
     `test-strategy-review`,
     `branch-pr-readiness`
@@ -513,6 +510,10 @@ work. Treat these as lightweight workflow helpers for the current project
 stage: text-first, narrow in scope, and easy to evolve without a separate
 automation framework.
 
+Deferred specialists live under `./.agents/archived-skills/`. Reactivate them
+only for a concrete architecture diagram, PostgreSQL migration or cloud
+persistence rollout, or broad trust review before public exposure.
+
 Keep workflow ownership split:
 
 - [branch-purpose-template.md](./branch-purpose-template.md)
@@ -535,7 +536,6 @@ Use the skill set by question type:
   - `./.agents/skills/task-planning-evaluation/`
 - decide version or rollout meaning
   - `./.agents/skills/release-version-readiness/`
-  - `./.agents/skills/postgres-migration-rollout-review/`
 - choose validation or test work
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
@@ -547,7 +547,6 @@ Use the skill set by question type:
   - `./.agents/skills/persistence-backend-review/`
   - `./.agents/skills/fastapi-mcp-security-review/`
   - `./.agents/skills/real-media-validation-review/`
-  - `./.agents/skills/security-surface-review/`
   - `./.agents/skills/docs-alignment/`
 
 Most common starting points:
@@ -563,7 +562,6 @@ Most common starting points:
     and name the manual step plainly
 - session or alert persistence drift
   - `./.agents/skills/persistence-backend-review/`
-  - `./.agents/skills/postgres-migration-rollout-review/`
 - dependency metadata drift
   - `./.agents/skills/dependency-change-review/`
 - detector/rule changes
@@ -572,7 +570,6 @@ Most common starting points:
   - `./.agents/skills/frontend-bridge-review/`
 - FastAPI or MCP security-sensitive changes
   - `./.agents/skills/fastapi-mcp-security-review/` for branch-scoped hardening review
-  - `./.agents/skills/security-surface-review/` for broader trust-boundary review
 - docs or docstring drift
   - `./.agents/skills/docs-alignment/`
 - API, CLI, persisted-data, or bridge contract drift

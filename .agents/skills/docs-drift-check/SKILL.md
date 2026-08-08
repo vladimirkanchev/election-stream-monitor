@@ -73,7 +73,8 @@ Keep the answer diagnostic and concise.
 - Use this when the main question is whether docs are truly drifting and what owns the fix.
 - If the user already knows the docs need updates and wants the edit pass, use `docs-alignment` next.
 - If the main question is root README fit or readability, use `readme-alignment-review` first.
-- If the main question is diagram honesty or visual architecture drift, use `architecture-diagram-review` first.
+- For concrete diagram honesty or visual architecture drift, reactivate the
+  archived `architecture-diagram-review`.
 - If the main question is branch scope or whether the docs change belongs in the branch, use `branch-pr-readiness` first.
 
 ## Good fit examples
