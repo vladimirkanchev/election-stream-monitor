@@ -527,6 +527,9 @@ Keep workflow ownership split:
   - validation lanes, CI depth, and honest manual-only validation notes
 - [merge-readiness-checklist.md](./merge-readiness-checklist.md)
   - final branch-ready pass and seam-evidence check
+- [`../.agents/skills/INVENTORY.md`](../.agents/skills/INVENTORY.md)
+  - active and archived skill ownership, consolidation evidence, and deferred
+    routing work
 - repo-local skill files under `./.agents/skills/`
   - question-specific prompts only
 
