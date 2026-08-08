@@ -21,6 +21,20 @@ Use proportional planning:
   [docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md);
 - broad or shared-boundary: stage the work and name validation lanes.
 
+For work beyond a small, obvious change, select a closure profile without
+repeating a long checklist in the answer:
+
+- standard: implement, validate the focused seam, refactor touched code and
+  tests, align changed behavior or ownership docs, review branch shape when it
+  matters, then run the cheapest honest final validation;
+- high-risk: record a baseline and use staged validation before the standard
+  closure.
+
+For small work, inspect the diff after the focused check; refactoring and docs
+alignment apply only when they are genuinely needed. State a brief reason when
+skipping a closure phase. Planning coordinates the sequence: validation,
+documentation, and branch review stay with their specialist owners.
+
 Do not inflate a valuable but non-urgent task. Prefer a clear next phase over a
 long roadmap. Before recommending new tests, ask whether an existing focused
 test or docs check already closes the actual risk.
