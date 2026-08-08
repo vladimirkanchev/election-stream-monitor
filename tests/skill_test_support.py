@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 SKILLS_ROOT = Path(__file__).resolve().parent.parent / ".agents" / "skills"
+ARCHIVED_SKILLS_ROOT = SKILLS_ROOT.parent / "archived-skills"
+REPOSITORY_ROOT = SKILLS_ROOT.parent.parent
 SNAPSHOTS_ROOT = Path(__file__).resolve().parent / "fixtures" / "skill_output_snapshots"
 SKILL_SECTION_ORDER = (
     "## Default approach",
@@ -15,6 +18,29 @@ SKILL_SECTION_ORDER = (
     "## Avoid",
 )
 REQUIRED_SKILL_FRONTMATTER_KEYS = frozenset({"name", "description"})
+REPOSITORY_PATH_PREFIXES = (
+    ".agents/",
+    ".github/",
+    "detector_lab/",
+    "docs/",
+    "frontend/",
+    "scripts/",
+    "src/",
+    "tests/",
+)
+REPOSITORY_ROOT_FILES = frozenset(
+    {
+        "AGENTS.md",
+        "README.md",
+        "justfile",
+        "pyproject.toml",
+        "uv.lock",
+    }
+)
+MARKDOWN_LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)\s]+)\)")
+INLINE_CODE_PATTERN = re.compile(r"`([^`]+)`")
+JUST_RECIPE_PATTERN = re.compile(r"\bjust\s+([a-z][a-z0-9-]*)\b")
+JUST_RECIPE_DEFINITION_PATTERN = re.compile(r"^([a-z][a-z0-9-]*):", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -52,6 +78,11 @@ class SnapshotExpectation:
 def load_skill(skill_name: str) -> SkillDocument:
     """Load one repo-local skill by folder name."""
     skill_path = SKILLS_ROOT / skill_name / "SKILL.md"
+    return load_skill_file(skill_path)
+
+
+def load_skill_file(skill_path: Path) -> SkillDocument:
+    """Load one active or archived skill from its explicit file path."""
     text = skill_path.read_text(encoding="utf-8")
     frontmatter, body = _split_frontmatter(text)
     return SkillDocument(
@@ -77,6 +108,47 @@ def list_skill_files() -> list[Path]:
         path.relative_to(SKILLS_ROOT)
         for path in SKILLS_ROOT.rglob("SKILL.md")
     )
+
+
+def list_archived_skill_files() -> list[Path]:
+    """Return archived skill files as absolute paths for explicit validation."""
+    return sorted(ARCHIVED_SKILLS_ROOT.rglob("SKILL.md"))
+
+
+def extract_repository_references(text: str) -> set[str]:
+    """Return explicit repository paths from Markdown links and inline code."""
+    references = {
+        target.split("#", maxsplit=1)[0]
+        for target in MARKDOWN_LINK_PATTERN.findall(text)
+        if _is_repository_link_target(target)
+    }
+    references.update(
+        candidate
+        for candidate in INLINE_CODE_PATTERN.findall(text)
+        if _is_repository_path_candidate(candidate)
+    )
+    return references
+
+
+def resolve_repository_reference(skill_path: Path, reference: str) -> Path:
+    """Resolve one explicit repository reference from the owning skill file."""
+    base_path = skill_path.parent if reference.startswith(("./", "../")) else REPOSITORY_ROOT
+    return (base_path / reference).resolve()
+
+
+def extract_just_recipes(text: str) -> set[str]:
+    """Return explicit `just <recipe>` commands from inline code examples."""
+    return {
+        recipe
+        for code_span in INLINE_CODE_PATTERN.findall(text)
+        for recipe in JUST_RECIPE_PATTERN.findall(code_span)
+    }
+
+
+def list_just_recipes(justfile_path: Path) -> set[str]:
+    """Return recipe names declared by the repository justfile."""
+    text = justfile_path.read_text(encoding="utf-8")
+    return set(JUST_RECIPE_DEFINITION_PATTERN.findall(text))
 
 
 def extract_headings(body: str) -> list[str]:
@@ -132,6 +204,18 @@ def assert_all_snippets_absent(text: str, snippets: Sequence[str]) -> None:
     """Assert that each excluded snippet is absent from the given text."""
     for snippet in snippets:
         assert snippet not in text
+
+
+def _is_repository_link_target(target: str) -> bool:
+    """Return whether a Markdown destination is an internal repository path."""
+    return bool(target) and not target.startswith(("#", "http://", "https://", "mailto:"))
+
+
+def _is_repository_path_candidate(candidate: str) -> bool:
+    """Return whether one inline-code span is an unambiguous repository path."""
+    return candidate in REPOSITORY_ROOT_FILES or candidate.startswith(
+        REPOSITORY_PATH_PREFIXES
+    )
 
 
 def _split_frontmatter(text: str) -> tuple[dict[str, str], str]:

@@ -31,6 +31,7 @@ from tests.repo_skill_expectations import (
     expected_skill_files,
 )
 from tests.skill_test_support import (
+    REPOSITORY_ROOT,
     SKILL_SECTION_ORDER,
     SKILLS_ROOT,
     ScenarioExpectation,
@@ -40,15 +41,22 @@ from tests.skill_test_support import (
     assert_contains_in_order,
     extract_colon_headings,
     extract_headings,
+    extract_just_recipes,
+    extract_repository_references,
+    list_archived_skill_files,
+    list_just_recipes,
     list_skill_files,
     load_all_skills,
     load_skill,
+    load_skill_file,
     load_snapshot,
+    resolve_repository_reference,
     snapshot_heading_matches_skill_text,
 )
 
 AGENTS_PATH = Path(__file__).resolve().parent.parent / "AGENTS.md"
 DOCS_INDEX_PATH = Path(__file__).resolve().parent.parent / "docs" / "README.md"
+JUSTFILE_PATH = REPOSITORY_ROOT / "justfile"
 
 
 def test_expected_skill_directories_exist() -> None:
@@ -223,6 +231,44 @@ def test_snapshot_outputs_match_skill_intent(
 
 def test_skill_root_stays_small_and_repo_local() -> None:
     assert list_skill_files() == expected_skill_files(SKILLS_ROOT)
+
+
+def test_explicit_skill_repository_references_resolve() -> None:
+    """Keep active and archived skill links routed to tracked repository files."""
+    unresolved_references = []
+    skill_paths = [
+        *(SKILLS_ROOT / relative_path for relative_path in list_skill_files()),
+        *list_archived_skill_files(),
+    ]
+
+    for skill_path in skill_paths:
+        skill = load_skill_file(skill_path)
+        for reference in extract_repository_references(skill.text):
+            resolved_path = resolve_repository_reference(skill.path, reference)
+            if not resolved_path.is_relative_to(REPOSITORY_ROOT) or not resolved_path.exists():
+                unresolved_references.append(f"{skill.path}: {reference}")
+
+    assert not unresolved_references, "Unresolved skill references:\n" + "\n".join(
+        unresolved_references
+    )
+
+
+def test_explicit_skill_just_recipes_exist() -> None:
+    """Keep skill validation commands aligned with the local recipe owner."""
+    available_recipes = list_just_recipes(JUSTFILE_PATH)
+    missing_recipes = []
+    skill_paths = [
+        *(SKILLS_ROOT / relative_path for relative_path in list_skill_files()),
+        *list_archived_skill_files(),
+    ]
+
+    for skill_path in skill_paths:
+        skill = load_skill_file(skill_path)
+        for recipe in extract_just_recipes(skill.text):
+            if recipe not in available_recipes:
+                missing_recipes.append(f"{skill.path}: just {recipe}")
+
+    assert not missing_recipes, "Missing just recipes:\n" + "\n".join(missing_recipes)
 
 
 def test_agents_md_risky_change_routing_stays_aligned() -> None:
