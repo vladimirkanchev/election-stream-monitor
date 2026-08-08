@@ -1,6 +1,6 @@
 ---
 name: release-version-readiness
-description: Use when the user wants repo-aware help deciding whether an Election Stream Monitor branch or merge should change the project version, and if so whether the change looks like a patch, minor, or larger milestone step. Best for judging version bump semantics against actual code, tests, docs, and rollout state without turning the question into broad release management.
+description: Use for Election Stream Monitor version-change semantics and release readiness. Excludes PR merge readiness, dependency ownership, and deployment planning.
 ---
 
 # Release Version Readiness

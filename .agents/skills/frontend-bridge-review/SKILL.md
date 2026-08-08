@@ -1,6 +1,6 @@
 ---
 name: frontend-bridge-review
-description: Use when the user wants a repo-aware review of renderer, Electron bridge, session-polling, playback, or UI-runtime changes in Election Stream Monitor. Best for checking ownership, readability, drift, and missing focused confidence across the frontend/runtime seam.
+description: Use for Election Stream Monitor renderer, Electron bridge, and UI-runtime seam review. Excludes manual smoke planning and general test selection.
 ---
 
 # Frontend Bridge Review

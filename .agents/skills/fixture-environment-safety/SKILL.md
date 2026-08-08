@@ -1,6 +1,6 @@
 ---
 name: fixture-environment-safety
-description: Use when the user wants repo-aware help checking whether tests in Election Stream Monitor rely on local-only assets, sockets, missing tools, or other non-CI-safe assumptions. Best for catching environment-coupled confidence before it turns into flaky local or CI failures.
+description: Use for Election Stream Monitor test fixture, host-tool, socket, and local-asset portability. Excludes detector confidence and real-media assertion review.
 ---
 
 # Fixture Environment Safety

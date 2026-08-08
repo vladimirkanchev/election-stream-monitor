@@ -1,6 +1,6 @@
 ---
 name: persistence-backend-review
-description: Use when the user wants a repo-aware review of session or alert persistence behavior in Election Stream Monitor. Best for checking file-backed versus PostgreSQL-backed defaults, runtime store selection, alert read-model parity, parity tests, docs alignment, and migration drift without turning the task into broad database architecture work.
+description: Use for Election Stream Monitor session and alert persistence parity, backend selection, and migration drift review. Excludes access-policy hardening and broad database design.
 ---
 
 # Persistence Backend Review

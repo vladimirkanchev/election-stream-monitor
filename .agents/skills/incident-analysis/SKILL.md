@@ -1,6 +1,6 @@
 ---
 name: incident-analysis
-description: Use when the user needs a repo-aware investigation of a bug, CI failure, runtime incident, or confusing frontend/backend state in Election Stream Monitor. Reconstruct the event order when it is unclear, or assess one evidence-backed likely cause when sufficient evidence already exists.
+description: Use for Election Stream Monitor timeline reconstruction when order is unclear or evidence-backed root-cause hypotheses. Excludes first-pass CI triage and generic summaries.
 ---
 
 # Incident Analysis

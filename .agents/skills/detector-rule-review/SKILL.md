@@ -1,6 +1,6 @@
 ---
 name: detector-rule-review
-description: Use when the user wants a repo-aware review of detector, alert-rule, or nearby processor changes in Election Stream Monitor. Best for checking readability, coupling, boundary drift, and missing confidence around the production runtime versus detector_lab split.
+description: Use for Election Stream Monitor production detector, alert-rule, and nearby processor boundary review. Excludes broad test selection and real-media lane choice.
 ---
 
 # Detector Rule Review

@@ -1,6 +1,6 @@
 ---
 name: fastapi-mcp-security-review
-description: Use when the user wants a repo-aware review of FastAPI or MCP security hardening work in Election Stream Monitor. Best for branch-scoped checks of auth, share mode, MCP tool boundaries, rate limits, secrets, local-versus-remote trust, and dependency exposure without expanding into a broad surface map or a full security program.
+description: Use for branch-scoped Election Stream Monitor FastAPI/MCP security for share mode, auth, tool exposure, and dependency exposure. Excludes broad trust review and deployment design.
 ---
 
 # Fastapi Mcp Security Review

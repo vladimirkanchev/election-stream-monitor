@@ -1,6 +1,6 @@
 ---
 name: manual-validation-planner
-description: Use when the user wants a concise, repo-aware local smoke plan for what to click or run before merge in Election Stream Monitor. Best for Electron, FastAPI, playback, alerts, and other operator-facing seams that still benefit from a small manual check.
+description: Use for concise Election Stream Monitor operator-facing local smoke plans. Excludes automated test selection, CI triage, and frontend seam review.
 ---
 
 # Manual Validation Planner
