@@ -1,6 +1,6 @@
 ---
 name: docs-drift-check
-description: Use when the user wants a concise repo-aware audit of whether Election Stream Monitor docs are actually drifting from current code, tests, contracts, or workflow. Best for classifying drift, naming the owning doc, and deciding the smallest correct follow-up before editing.
+description: Use for Election Stream Monitor documentation drift audits across code, tests, contracts, or workflows. Excludes direct doc editing, README fit, and test planning.
 ---
 
 # Docs Drift Check

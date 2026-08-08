@@ -1,6 +1,6 @@
 ---
 name: readme-alignment-review
-description: Use when the user wants repo-aware review or polish for one root README section in Election Stream Monitor. Best for checking current-project accuracy, root-README fit, readability, and whether a section should stay, shrink, or move to deeper docs.
+description: Use for Election Stream Monitor root README fit, stage honesty, and section placement. Excludes repo-wide docs drift, direct editing, and test planning.
 ---
 
 # Readme Alignment Review
