@@ -22,6 +22,7 @@ from tests.repo_skill_expectations import (
     EXPECTED_SKILLS,
     EXPLICIT_HANDOFF_EXPECTATIONS,
     HISTORICAL_RETIRED_SKILLS_HEADING,
+    MANUAL_PROMPT_EVALUATION_PRIMARY_SKILLS,
     MERGED_SKILL_MODE_MARKERS,
     PLANNING_CLOSURE_PROFILE_EXPECTATIONS,
     PLANNING_CLOSURE_SPECIALISTS,
@@ -35,6 +36,7 @@ from tests.repo_skill_expectations import (
 )
 from tests.skill_test_support import (
     ARCHIVED_SKILLS_ROOT,
+    MANUAL_PROMPT_EVALUATIONS_PATH,
     REPOSITORY_ROOT,
     SKILL_SECTION_ORDER,
     SKILLS_ROOT,
@@ -51,6 +53,7 @@ from tests.skill_test_support import (
     list_just_recipes,
     list_skill_files,
     load_all_skills,
+    load_manual_prompt_evaluation_cases,
     load_skill,
     load_skill_file,
     load_snapshot,
@@ -82,6 +85,26 @@ def test_discovery_expectations_cover_each_active_skill_once() -> None:
         phrase for phrase, count in Counter(primary_phrases).items() if count > 1
     ]
     assert not duplicate_phrases, f"Duplicate primary seam phrases: {duplicate_phrases}"
+
+
+def test_manual_prompt_evaluation_catalog_keeps_routing_coverage() -> None:
+    """Keep the manual routing sample representative without testing a model."""
+    cases = load_manual_prompt_evaluation_cases()
+    case_ids = [case.case_id for case in cases]
+    primary_skills = {case.primary_skill for case in cases}
+
+    assert MANUAL_PROMPT_EVALUATIONS_PATH.exists()
+    assert 5 <= len(cases) <= 8
+    assert len(case_ids) == len(set(case_ids))
+    assert primary_skills == MANUAL_PROMPT_EVALUATION_PRIMARY_SKILLS
+    assert primary_skills <= EXPECTED_SKILLS
+
+    for case in cases:
+        assert case.case_id
+        assert case.prompt
+        assert case.required_properties
+        assert case.avoided_behavior
+        assert case.primary_skill not in case.prompt
 
 
 @pytest.mark.parametrize("skill_name", sorted(EXPECTED_SKILLS))

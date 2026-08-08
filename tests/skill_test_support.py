@@ -11,6 +11,9 @@ SKILLS_ROOT = Path(__file__).resolve().parent.parent / ".agents" / "skills"
 ARCHIVED_SKILLS_ROOT = SKILLS_ROOT.parent / "archived-skills"
 REPOSITORY_ROOT = SKILLS_ROOT.parent.parent
 SNAPSHOTS_ROOT = Path(__file__).resolve().parent / "fixtures" / "skill_output_snapshots"
+MANUAL_PROMPT_EVALUATIONS_PATH = (
+    REPOSITORY_ROOT / ".agents" / "evaluations" / "manual-prompt-evaluation.md"
+)
 SKILL_SECTION_ORDER = (
     "## Default approach",
     "## Output shape",
@@ -75,6 +78,17 @@ class SnapshotExpectation:
     required_order: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ManualPromptEvaluationCase:
+    """One manually executed prompt with its routing expectation."""
+
+    case_id: str
+    prompt: str
+    primary_skill: str
+    required_properties: str
+    avoided_behavior: str
+
+
 def load_skill(skill_name: str) -> SkillDocument:
     """Load one repo-local skill by folder name."""
     skill_path = SKILLS_ROOT / skill_name / "SKILL.md"
@@ -100,6 +114,51 @@ def load_all_skills() -> dict[str, SkillDocument]:
         for skill_dir in sorted(SKILLS_ROOT.iterdir())
         if skill_dir.is_dir()
     }
+
+
+def load_manual_prompt_evaluation_cases(
+    path: Path = MANUAL_PROMPT_EVALUATIONS_PATH,
+) -> list[ManualPromptEvaluationCase]:
+    """Load labelled cases without treating the catalog as a model-output fixture."""
+    text = path.read_text(encoding="utf-8")
+    sections = re.split(r"^## ", text, flags=re.MULTILINE)[1:]
+    cases = []
+
+    for section in sections:
+        _title, _, body = section.partition("\n")
+        fields = {
+            match.group("label"): match.group("value").strip()
+            for match in re.finditer(
+                r"^- (?P<label>Case ID|User prompt|Expected primary skill|"
+                r"Required response properties|Avoid): (?P<value>.+)$",
+                body,
+                flags=re.MULTILINE,
+            )
+        }
+        required_labels = {
+            "Case ID",
+            "User prompt",
+            "Expected primary skill",
+            "Required response properties",
+            "Avoid",
+        }
+        missing_labels = required_labels - fields.keys()
+        if missing_labels:
+            raise ValueError(
+                f"Manual prompt evaluation case is missing fields: {sorted(missing_labels)}"
+            )
+
+        cases.append(
+            ManualPromptEvaluationCase(
+                case_id=fields["Case ID"].strip("`"),
+                prompt=fields["User prompt"].strip('"'),
+                primary_skill=fields["Expected primary skill"].strip("`"),
+                required_properties=fields["Required response properties"],
+                avoided_behavior=fields["Avoid"],
+            )
+        )
+
+    return cases
 
 
 def list_skill_files() -> list[Path]:

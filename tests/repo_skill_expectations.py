@@ -34,6 +34,17 @@ EXPECTED_SKILL_ORDER = (
 
 EXPECTED_SKILLS = set(EXPECTED_SKILL_ORDER)
 
+MANUAL_PROMPT_EVALUATION_PRIMARY_SKILLS = frozenset(
+    {
+        "task-planning-evaluation",
+        "ci-failure-triage",
+        "detector-rule-review",
+        "persistence-backend-review",
+        "docs-alignment",
+        "branch-pr-readiness",
+    }
+)
+
 RETIRED_SKILL_SURVIVORS = {
     "alert-backend-parity-review": "persistence-backend-review",
     "incident-timeline": "incident-analysis",
