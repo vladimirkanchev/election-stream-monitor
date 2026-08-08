@@ -46,9 +46,22 @@ the next edit is 100--200 characters. Frequency remains inferred, not measured.
 | `task-planning-evaluation` | 257 | High | prioritization and sequencing | branch readiness | automatic |
 | `test-strategy-review` | 247 | High | coverage value and validation lane | detector or media review | automatic |
 
-The active descriptions total 5,099 characters, averaging 283.3 characters.
-Archived architecture, PostgreSQL-rollout, and broad-security specialists are
-explicit-only and retain their existing source unchanged.
+The pre-edit active descriptions total 5,099 characters, averaging 283.3
+characters. Archived architecture, PostgreSQL-rollout, and broad-security
+specialists are explicit-only and retain their existing source unchanged.
+
+## Final Discovery Description Baseline
+
+The active descriptions now total 2,909 characters, averaging 161.6. The
+shortening reduced discovery metadata by 2,190 characters (42.9%) from the
+pre-edit baseline. All 18 descriptions are one line and fall within the
+120--180 editorial target; tests enforce the wider 100--200 safety range.
+
+`tests/repo_skill_expectations.py` owns required primary-seam phrases and
+important exclusions. `tests/test_repo_skills.py` checks those meanings and
+size boundaries without asserting complete description strings or using live
+model calls. Archived specialists remain outside the active inventory and are
+covered by explicit reactivation documentation.
 
 ## Initial Skill Inventory
 
