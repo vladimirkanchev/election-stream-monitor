@@ -87,7 +87,7 @@ baseline evidence, not the current active discovery set.
 | `real-media-validation-review` | Real-media and stream confidence-lane review | 79 | High during detector work; high | real-media scenarios | `just test-real-media` |
 | `release-version-readiness` | Patch/minor milestone readiness and release truth | 85 | Medium; high | release scenarios | none |
 | `summarization` | Concise change, behavior, and next-action summaries | 94 | Medium; medium | summary scenarios and snapshots | none |
-| `task-planning-evaluation` | Task priority, scope, complexity, and execution sequencing | 104 | High; high | planning scenarios | none |
+| `task-planning-evaluation` | Task priority, sequencing, and proportional closure | 104 | High; high | planning scenarios | none |
 | `test-strategy-review` | Test value, ownership, and cheapest honest validation lane | 121 | High; high | test scenarios and handoffs | focused test lanes, `just docs-check`, `just ci-local` |
 
 ## Inventory Conclusions
