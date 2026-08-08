@@ -1,0 +1,73 @@
+version: 2
+
+updates:
+  # Keep routine Python tooling updates reviewable without grouping runtime
+  # packages or major-version changes.
+  - package-ecosystem: uv
+    directory: /
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 3
+    groups:
+      python-engineering-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - pytest
+          - pytest-cov
+          - httpx
+          - PyYAML
+          - black
+          - ruff
+          - bandit
+          - pip-audit
+          - mypy
+          - pyright
+          - pre-commit
+        update-types:
+          - minor
+          - patch
+
+  # Group only non-major frontend development tooling updates. Production
+  # dependencies remain separate for focused review.
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 3
+    groups:
+      frontend-development-minor-patch:
+        applies-to: version-updates
+        dependency-type: development
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # Action updates are infrastructure changes. Keep major updates separate
+  # while batching compatible minor and patch updates for normal review.
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: main
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 3
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

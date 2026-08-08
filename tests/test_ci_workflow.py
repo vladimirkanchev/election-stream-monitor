@@ -1,8 +1,9 @@
-"""Regression coverage for CI workflow, static analysis, and coverage policy.
+"""Regression coverage for CI, static-analysis, coverage, and security policy.
 
 The tests keep the workflow reader, detector-lane admission, protected PR
-requirements, static-analysis ownership, advisory coverage evidence, and
-bounded weekly-media diagnostics aligned with their owners.
+requirements, static-analysis ownership, advisory reporting, least-privilege
+workflow defaults, supply-chain checks, and bounded weekly-media diagnostics
+aligned with their owners.
 """
 
 from __future__ import annotations
@@ -35,12 +36,70 @@ WEEKLY_VALIDATION_WORKFLOW_PATH = (
 COVERAGE_EVIDENCE_WORKFLOW_PATH = (
     SCRIPTS_DIR.parent / "workflows" / "coverage-evidence.yml"
 )
+WORKFLOW_PATHS = (
+    CI_WORKFLOW_PATH,
+    BRANCH_CI_WORKFLOW_PATH,
+    COVERAGE_EVIDENCE_WORKFLOW_PATH,
+    WEEKLY_VALIDATION_WORKFLOW_PATH,
+)
+# Job-level token scopes are exceptions to the workflow read-only default. Keep
+# this empty until a reviewed job needs a narrowly scoped write permission.
+WORKFLOW_PERMISSION_EXCEPTIONS: dict[str, dict[str, dict[str, str]]] = {
+    workflow_path.name: {} for workflow_path in WORKFLOW_PATHS
+}
+WORKFLOW_TIMEOUTS = {
+    "ci.yml": {
+        "changes": 10,
+        "main-pr-consistency": 10,
+        "pr-template-completeness": 10,
+        "frontend-checkpoint": 20,
+        "backend-tests": 20,
+        "backend-ruff": 10,
+        "frontend-typecheck": 10,
+        "frontend-lint": 10,
+        "contract-checks": 10,
+        "backend-typecheck": 10,
+        "backend-pyright": 10,
+        "ci-supply-chain-audit": 10,
+        "feature-gate": 5,
+        "main-gate": 5,
+        "test-and-build": 20,
+        "docs-consistency": 10,
+        "integration-smoke": 20,
+    },
+    "branch-ci.yml": {
+        "changes": 10,
+        "frontend-checkpoint": 20,
+        "backend-tests": 20,
+        "backend-ruff": 10,
+        "frontend-typecheck": 10,
+        "frontend-lint": 10,
+        "backend-typecheck": 10,
+        "backend-pyright": 10,
+        "ci-supply-chain-audit": 10,
+        "feature-gate": 5,
+    },
+    "coverage-evidence.yml": {"coverage-evidence": 20},
+    "weekly-validation.yml": {
+        "slow-e2e": 45,
+        "api-stream-deep": 30,
+        "lifecycle-deep": 30,
+        "security-audit": 20,
+        "python-security-audit": 20,
+        "npm-security-audit": 20,
+        "dependency-audit": 20,
+        "packaging-smoke": 20,
+        "postgres-alert-backend-confidence": 30,
+        "postgres-alert-runtime-operator-confidence": 30,
+    },
+}
 FRONTEND_INSTALLER_PATH = Path("scripts/install_frontend_dependencies.sh")
 PYTHON_VERSION_PATH = Path(".python-version")
 NVMRC_PATH = Path(".nvmrc")
 FRONTEND_PACKAGE_PATH = Path("frontend/package.json")
 FRONTEND_ESLINT_CONFIG_PATH = Path("frontend/eslint.config.js")
 FRONTEND_VITE_CONFIG_PATH = Path("frontend/vite.config.ts")
+PYTHON_AUDIT_SCRIPT_PATH = Path("scripts/audit_python_dependencies.sh")
 CI_TARGET_MANIFEST_PATH = Path(".github/ci_test_targets.json")
 BACKEND_TYPECHECK_TARGETS_PATH = Path(".github/backend_typecheck_targets.txt")
 JUSTFILE_PATH = Path("justfile")
@@ -71,6 +130,16 @@ DETECTOR_BACKEND_PATHS = frozenset(
 )
 DETECTOR_WORKFLOW_CONFIGURATION_PATHS = frozenset(
     {"justfile", ".github/ci_test_targets.json"}
+)
+SUPPLY_CHAIN_ACTIVATION_PATHS = frozenset(
+    {
+        ".github/workflows/**",
+        ".github/scripts/**",
+        ".github/security_tools.json",
+        "scripts/install_security_tool.py",
+        "scripts/**/*.sh",
+        "justfile",
+    }
 )
 WEEKLY_ONLY_TARGET_GROUPS = (
     "weekly_slow_media",
@@ -337,6 +406,32 @@ def _failure_codes(workflow: Any) -> set[str]:
 def _assert_failure_code(workflow: Any, expected_code: str) -> None:
     """Assert that one mutated workflow produces the expected failure code."""
     assert expected_code in _failure_codes(workflow)
+
+
+@pytest.mark.parametrize("workflow_path", WORKFLOW_PATHS)
+def test_workflow_permissions_default_to_read_only(
+    workflow_path: Path,
+) -> None:
+    """Workflows stay read-only unless a reviewed job needs a narrower scope."""
+    workflow = _workflow_document(workflow_path)
+    assert workflow.get("permissions") == {"contents": "read"}
+
+    job_permissions = {
+        job_name: permissions
+        for job_name, job in _workflow_jobs(workflow_path).items()
+        if (permissions := job.get("permissions")) is not None
+    }
+    assert job_permissions == WORKFLOW_PERMISSION_EXCEPTIONS[workflow_path.name]
+
+
+@pytest.mark.parametrize("workflow_path", WORKFLOW_PATHS)
+def test_workflow_jobs_have_reviewed_timeouts(workflow_path: Path) -> None:
+    """Every workflow job retains its reviewed workload-aware runtime ceiling."""
+    timeouts = {
+        job_name: job.get("timeout-minutes")
+        for job_name, job in _workflow_jobs(workflow_path).items()
+    }
+    assert timeouts == WORKFLOW_TIMEOUTS[workflow_path.name]
 
 
 def test_reader_loads_current_ci_job_structure() -> None:
@@ -696,6 +791,162 @@ def test_static_analysis_policy_keeps_protected_and_advisory_owners() -> None:
         assert workflow.job("backend-ruff").step("Run backend Ruff lint").command == (
             "ruff check src scripts tests"
         )
+
+
+def test_security_audits_keep_locked_inputs_and_stay_outside_protected_gates() -> None:
+    """Weekly audits must inspect declared inputs without applying fixes."""
+    justfile = JUSTFILE_PATH.read_text()
+    audit_script = PYTHON_AUDIT_SCRIPT_PATH.read_text()
+    weekly_commands = _workflow_commands(WEEKLY_VALIDATION_WORKFLOW_PATH)
+    weekly_jobs = _workflow_jobs(WEEKLY_VALIDATION_WORKFLOW_PATH)
+
+    assert "{{venv_bandit}} -r src -x tests,frontend" in _just_recipe_body(
+        "audit-bandit"
+    )
+    assert "scripts/audit_python_dependencies.sh" in _just_recipe_body("audit-python")
+    assert "npm --prefix frontend audit --audit-level=high" in _just_recipe_body(
+        "audit-frontend"
+    )
+    assert "uv export --frozen --no-dev --no-emit-project" in audit_script
+    assert "--format requirements.txt" in audit_script
+    assert '"$PIP_AUDIT" -r "$audit_input"' in audit_script
+    assert "trap 'rm -f" in audit_script
+
+    assert "uv sync --locked --extra security" in _workflow_job_commands(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "security-audit"
+    )
+    assert ".venv/bin/bandit -r src -x tests,frontend" in _workflow_job_commands(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "security-audit"
+    )
+    assert "uv sync --locked --extra security" in _workflow_job_commands(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "python-security-audit"
+    )
+    assert (
+        "PIP_AUDIT=.venv/bin/pip-audit sh scripts/audit_python_dependencies.sh"
+        in _workflow_job_commands(
+            WEEKLY_VALIDATION_WORKFLOW_PATH, "python-security-audit"
+        )
+    )
+    npm_steps = _workflow_job_steps(
+        WEEKLY_VALIDATION_WORKFLOW_PATH, "npm-security-audit"
+    )
+    assert any(
+        step.get("working-directory") == "frontend"
+        and step.get("run") == "npm audit --audit-level=high"
+        for step in npm_steps
+    )
+    assert not any(
+        re.fullmatch(r"(?:\.venv/bin/)?pip-audit(?:\s+.*)?", command.strip())
+        for command in weekly_commands
+    )
+    audit_command_sources = "\n".join((justfile, audit_script, *weekly_commands))
+    assert "--fix" not in audit_command_sources
+    assert "npm audit fix" not in audit_command_sources
+
+    protected_dependencies = {
+        *_live_workflow().job("feature-gate").dependencies,
+        *_live_workflow().job("main-gate").dependencies,
+    }
+    assert {"security-audit", "python-security-audit", "npm-security-audit"}.isdisjoint(
+        protected_dependencies
+    )
+    assert {"security-audit", "python-security-audit", "npm-security-audit"} <= set(
+        weekly_jobs
+    )
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_supply_chain_audit_retains_pinned_advisory_scanner_ownership(
+    workflow_path: Path,
+) -> None:
+    """The supply-chain job must stay bounded, advisory, and artifact-free."""
+    workflow_job = _workflow_jobs(workflow_path)["ci-supply-chain-audit"]
+    workflow_steps = _workflow_job_steps(workflow_path, "ci-supply-chain-audit")
+    steps_by_name = {step.get("name"): step for step in workflow_steps}
+
+    assert workflow_job["if"] == "needs.changes.outputs.workflow == 'true'"
+    assert workflow_job["continue-on-error"] is True
+    assert workflow_job["timeout-minutes"] == 10
+    assert workflow_steps[0]["with"]["fetch-depth"] == 0
+    for step_name in (
+        "Scan committed repository history",
+        "Validate GitHub Actions workflows",
+        "Validate repository shell scripts",
+    ):
+        assert steps_by_name[step_name]["continue-on-error"] is True
+    assert not any(
+        step.get("uses") == "actions/upload-artifact@v4" for step in workflow_steps
+    )
+    summary_step = steps_by_name["Summarize advisory scanner outcomes"]
+    assert summary_step["if"] == "always()"
+    assert "raw" not in str(summary_step["run"]).lower()
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_supply_chain_audit_runs_each_reviewed_scanner(workflow_path: Path) -> None:
+    """The advisory job must install and execute each scanner safely."""
+    commands = "\n".join(
+        _workflow_job_commands(workflow_path, "ci-supply-chain-audit")
+    )
+
+    for tool in ("gitleaks", "actionlint", "shellcheck"):
+        assert f"install_security_tool.py {tool}" in commands
+    assert "gitleaks\" git --redact --no-banner --exit-code 1" in commands
+    assert 'PATH="$RUNNER_TEMP/esm-security-tools:$PATH"' in commands
+    assert "esm-security-tools/actionlint" in commands
+    assert "mapfile -t shell_scripts" in commands
+    assert 'shellcheck" "${shell_scripts[@]}"' in commands
+
+
+def test_local_supply_chain_recipes_keep_focused_scanner_ownership() -> None:
+    """Local commands must run each reviewed scanner once without suppressions."""
+    actionlint_recipe = _just_recipe_body("audit-actionlint")
+    shellcheck_recipe = _just_recipe_body("audit-shell")
+    aggregate_recipe = _just_recipe_body("audit-ci-supply-chain")
+
+    assert "gitleaks git --redact --no-banner --exit-code 1" in _just_recipe_body(
+        "audit-gitleaks"
+    )
+    assert (
+        "PATH=\"{{security_tool_bin_dir}}:$PATH\" {{security_tool_bin_dir}}/actionlint"
+        in actionlint_recipe
+    )
+    assert "git ls-files -z -- 'scripts/*.sh' | xargs -0" in shellcheck_recipe
+    assert "actionlint" not in shellcheck_recipe
+    assert {
+        "just install-gitleaks",
+        "just install-shellcheck",
+        "just install-actionlint",
+        "just audit-gitleaks",
+        "just audit-actionlint",
+        "just audit-shell",
+    } <= {line.strip() for line in aggregate_recipe.splitlines()}
+    assert not any(
+        path.exists()
+        for path in (
+            Path(".shellcheckrc"),
+            Path(".gitleaks.toml"),
+            Path(".github/actionlint.yaml"),
+            Path(".github/actionlint.yml"),
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "workflow_path",
+    (CI_WORKFLOW_PATH, BRANCH_CI_WORKFLOW_PATH),
+)
+def test_supply_chain_paths_activate_the_advisory_audit(workflow_path: Path) -> None:
+    """Scanner configuration and checked shell code must wake its CI owner."""
+    assert SUPPLY_CHAIN_ACTIVATION_PATHS <= _path_filter_paths(
+        workflow_path, "workflow"
+    )
 
 
 def test_coverage_evidence_stays_advisory_and_non_blocking() -> None:

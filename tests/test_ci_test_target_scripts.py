@@ -91,9 +91,11 @@ CI_MAINTAINER_GUIDE_REGRESSION_TOKENS = (
     "advisory-job classification for standalone `frontend-lint` and",
     "`backend-pyright`",
 )
-FRONTEND_CONTRACT_WORKFLOW_COMMAND = (
-    "npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py "
-    "frontend_contract --separator space --strip-prefix frontend/)"
+FRONTEND_CONTRACT_WORKFLOW_TOKENS = (
+    "mapfile -t frontend_contract_targets",
+    "python3 ../.github/scripts/read_ci_test_targets.py frontend_contract",
+    "--strip-prefix frontend/",
+    'npm run test -- "${frontend_contract_targets[@]}"',
 )
 REGISTERED_SHARED_MANIFEST_SPLIT_SUITE = "tests/test_api_boundary_contracts.py"
 UNREGISTERED_GUARDED_SPLIT_SUITE = "tests/test_api_boundary_new_split.py"
@@ -383,10 +385,20 @@ def test_workflow_reader_groups_handle_multiline_shell_invocations(
     """Workflow reader discovery should handle multiline shell commands."""
     workflow_text = """
     run: |
+      mapfile -t backend_contract_targets < <(
+        python3 .github/scripts/read_ci_test_targets.py backend_contract
+      )
+      mapfile -t mcp_fastapi_parity_targets < <(
+        python .github/scripts/read_ci_test_targets.py mcp_fastapi_parity
+      )
       PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \\
-        $(python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space) \\
-        $(python .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
-    run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
+        "${backend_contract_targets[@]}" \\
+        "${mcp_fastapi_parity_targets[@]}"
+    run: |
+      mapfile -t frontend_contract_targets < <(
+        python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --strip-prefix frontend/
+      )
+      npm run test -- "${frontend_contract_targets[@]}"
     """
     workflow_path = tmp_path / "workflow-snippet.yml"
     workflow_path.write_text(workflow_text)
@@ -508,10 +520,10 @@ def test_frontend_bridge_policy_only_tests_stay_narrower_than_shared_lane() -> N
 
 
 def test_ci_workflow_frontend_contract_reader_command_stays_aligned() -> None:
-    """The live workflow should keep the current shared frontend reader command."""
+    """The live workflow should pass manifest targets without shell splitting."""
     workflow_text = _current_ci_workflow_text()
 
-    assert FRONTEND_CONTRACT_WORKFLOW_COMMAND in workflow_text
+    assert all(token in workflow_text for token in FRONTEND_CONTRACT_WORKFLOW_TOKENS)
 
 
 def test_ci_workflow_changes_filter_keeps_refined_high_signal_contract_scope() -> None:

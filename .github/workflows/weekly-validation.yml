@@ -5,9 +5,13 @@ on:
     - cron: "0 3 * * 0"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   slow-e2e:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -79,8 +83,11 @@ jobs:
           mkdir -p ci-artifacts
           set -o pipefail
           set +e
+          mapfile -t weekly_slow_media_targets < <(
+            .venv/bin/python .github/scripts/read_ci_test_targets.py weekly_slow_media
+          )
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -p no:cacheprovider -m "slow" \
-            $(.venv/bin/python .github/scripts/read_ci_test_targets.py weekly_slow_media --separator space) \
+            "${weekly_slow_media_targets[@]}" \
             -q --junitxml=ci-artifacts/weekly-media-results.junit.xml 2>&1 | tee ci-artifacts/slow-e2e.log
           pytest_status=${PIPESTATUS[0]}
           set -e
@@ -107,6 +114,7 @@ jobs:
 
   api-stream-deep:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -122,7 +130,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,detectorlab]
+          pip install -e '.[test,detectorlab]'
 
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
@@ -131,8 +139,11 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
+          mapfile -t weekly_api_stream_targets < <(
+            python3 .github/scripts/read_ci_test_targets.py weekly_api_stream_deep
+          )
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
-            $(python3 .github/scripts/read_ci_test_targets.py weekly_api_stream_deep --separator space) \
+            "${weekly_api_stream_targets[@]}" \
             -q 2>&1 | tee ci-artifacts/api-stream-deep.log
 
       - name: Upload api_stream deep validation log
@@ -145,6 +156,7 @@ jobs:
 
   lifecycle-deep:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Check out repository
@@ -160,7 +172,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,detectorlab]
+          pip install -e '.[test,detectorlab]'
 
       - name: Validate manifest-backed CI target groups
         run: python .github/scripts/validate_ci_test_targets.py
@@ -169,8 +181,11 @@ jobs:
         run: |
           mkdir -p ci-artifacts
           set -o pipefail
+          mapfile -t weekly_lifecycle_targets < <(
+            python3 .github/scripts/read_ci_test_targets.py weekly_lifecycle
+          )
           PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -p no:cacheprovider \
-            $(python3 .github/scripts/read_ci_test_targets.py weekly_lifecycle --separator space) \
+            "${weekly_lifecycle_targets[@]}" \
             -q 2>&1 | tee ci-artifacts/lifecycle-deep.log
 
       - name: Upload lifecycle deep validation log
@@ -196,6 +211,7 @@ jobs:
 
   security-audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -208,16 +224,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install security lint dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e .[lint]
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked security dependencies
+        run: uv sync --locked --extra security
 
       - name: Run Bandit
-        run: bandit -r src -x tests,frontend
+        run: .venv/bin/bandit -r src -x tests,frontend
 
   python-security-audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -230,16 +248,18 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install audit tool
-        run: |
-          python -m pip install --upgrade pip
-          pip install pip-audit
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked security dependencies
+        run: uv sync --locked --extra security
 
       - name: Run pip-audit
-        run: pip-audit
+        run: PIP_AUDIT=.venv/bin/pip-audit sh scripts/audit_python_dependencies.sh
 
   npm-security-audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -264,6 +284,7 @@ jobs:
 
   dependency-audit:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -279,13 +300,14 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
 
       - name: Check dependency consistency
         run: python -m pip check
 
   packaging-smoke:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -306,6 +328,7 @@ jobs:
 
   postgres-alert-backend-confidence:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -336,7 +359,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
           pip install "psycopg[binary]"
 
       - name: Install PostgreSQL client
@@ -368,6 +391,7 @@ jobs:
 
   postgres-alert-runtime-operator-confidence:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -398,7 +422,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
           pip install "psycopg[binary]"
 
       - name: Install PostgreSQL client

@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   # Protected PR CI stays on the default synthetic path. Real Postgres
   # confidence belongs to the weekly workflow, which overrides these values in
@@ -18,6 +21,7 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
@@ -72,6 +76,9 @@ jobs:
             workflow:
               - '.github/workflows/**'
               - '.github/scripts/**'
+              - '.github/security_tools.json'
+              - 'scripts/install_security_tool.py'
+              - 'scripts/**/*.sh'
               - 'justfile'
               - '.github/ci_test_targets.json'
               - 'frontend/package.json'
@@ -98,6 +105,7 @@ jobs:
   main-pr-consistency:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -154,6 +162,7 @@ jobs:
   pr-template-completeness:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -171,6 +180,7 @@ jobs:
 
   frontend-checkpoint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - changes
 
@@ -220,6 +230,7 @@ jobs:
 
   backend-tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - changes
 
@@ -249,7 +260,7 @@ jobs:
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test,detectorlab]
+          pip install -e '.[test,detectorlab]'
 
       - name: Run packaging smoke check
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -287,6 +298,7 @@ jobs:
 
   backend-ruff:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -305,7 +317,7 @@ jobs:
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[lint]
+          pip install -e '.[lint]'
 
       - name: Run backend Ruff lint
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -317,6 +329,7 @@ jobs:
 
   frontend-typecheck:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -353,6 +366,7 @@ jobs:
 
   frontend-lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     continue-on-error: true
     needs:
       - changes
@@ -386,6 +400,7 @@ jobs:
 
   contract-checks:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     if: github.event_name == 'pull_request' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || github.base_ref == 'main')
     needs:
       - changes
@@ -419,7 +434,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
 
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -437,6 +452,7 @@ jobs:
 
   backend-typecheck:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -455,7 +471,7 @@ jobs:
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[typecheck]
+          pip install -e '.[typecheck]'
 
       - name: Run backend typecheck
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -467,6 +483,7 @@ jobs:
 
   backend-pyright:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     continue-on-error: true
     needs:
       - changes
@@ -488,7 +505,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/pip install -e .[typecheck]
+          .venv/bin/pip install -e '.[typecheck]'
 
       - name: Run backend pyright
         if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.contract == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -498,8 +515,75 @@ jobs:
         if: needs.changes.outputs.backend != 'true' && needs.changes.outputs.contract != 'true' && !(github.event_name == 'pull_request' && github.base_ref == 'main')
         run: echo "No backend or contract changes detected; skipping backend pyright."
 
+  ci-supply-chain-audit:
+    if: needs.changes.outputs.workflow == 'true'
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 10
+    needs:
+      - changes
+
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install checksum-verified scanner tools
+        run: |
+          python scripts/install_security_tool.py gitleaks --bin-dir "$RUNNER_TEMP/esm-security-tools"
+          python scripts/install_security_tool.py actionlint --bin-dir "$RUNNER_TEMP/esm-security-tools"
+          python scripts/install_security_tool.py shellcheck --bin-dir "$RUNNER_TEMP/esm-security-tools"
+
+      - name: Scan committed repository history
+        id: gitleaks
+        continue-on-error: true
+        run: |
+          "$RUNNER_TEMP/esm-security-tools/gitleaks" git --redact --no-banner --exit-code 1
+
+      - name: Validate GitHub Actions workflows
+        id: actionlint
+        continue-on-error: true
+        run: |
+          PATH="$RUNNER_TEMP/esm-security-tools:$PATH" "$RUNNER_TEMP/esm-security-tools/actionlint"
+
+      - name: Validate repository shell scripts
+        id: shellcheck
+        continue-on-error: true
+        run: |
+          mapfile -t shell_scripts < <(git ls-files -- 'scripts/*.sh')
+          "$RUNNER_TEMP/esm-security-tools/shellcheck" "${shell_scripts[@]}"
+
+      - name: Summarize advisory scanner outcomes
+        if: always()
+        env:
+          GITLEAKS_OUTCOME: ${{ steps.gitleaks.outcome }}
+          ACTIONLINT_OUTCOME: ${{ steps.actionlint.outcome }}
+          SHELLCHECK_OUTCOME: ${{ steps.shellcheck.outcome }}
+        run: |
+          set -eu
+          failed=0
+          for scanner in gitleaks actionlint shellcheck
+          do
+            outcome=$(printenv "${scanner^^}_OUTCOME")
+            if [ "$outcome" != "success" ]; then
+              echo "::warning::Advisory ${scanner} check finished as ${outcome}."
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more advisory supply-chain checks failed."
+            exit 1
+          fi
+
   feature-gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     if: always()
     needs:
       - frontend-checkpoint
@@ -536,6 +620,7 @@ jobs:
 
   main-gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     if: always() && github.event_name == 'pull_request' && github.base_ref == 'main'
     needs:
       - feature-gate
@@ -572,6 +657,7 @@ jobs:
 
   test-and-build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - changes
       - frontend-checkpoint
@@ -606,7 +692,7 @@ jobs:
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
 
       - name: Install frontend dependencies
         if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contract == 'true' || needs.changes.outputs.backend == 'true' || (github.event_name == 'pull_request' && github.base_ref == 'main')
@@ -659,9 +745,15 @@ jobs:
       # maintained inline here.
       - name: Run contract_boundary backend contract checks via shared target reader
         run: |
+          mapfile -t backend_contract_targets < <(
+            python3 .github/scripts/read_ci_test_targets.py backend_contract
+          )
+          mapfile -t mcp_fastapi_parity_targets < <(
+            python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity
+          )
           PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q \
-            $(python3 .github/scripts/read_ci_test_targets.py backend_contract --separator space) \
-            $(python3 .github/scripts/read_ci_test_targets.py mcp_fastapi_parity --separator space)
+            "${backend_contract_targets[@]}" \
+            "${mcp_fastapi_parity_targets[@]}"
 
       # Frontend `contract_boundary` coverage follows the same shared-target
       # pattern. The shared lane owns the bridge/transport/ui-errors contract
@@ -669,7 +761,12 @@ jobs:
       # main-PR policy layer.
       - name: Run contract_boundary frontend contract checks via shared target reader
         working-directory: frontend
-        run: npm run test -- $(python3 ../.github/scripts/read_ci_test_targets.py frontend_contract --separator space --strip-prefix frontend/)
+        run: |
+          mapfile -t frontend_contract_targets < <(
+            python3 ../.github/scripts/read_ci_test_targets.py frontend_contract \
+              --strip-prefix frontend/
+          )
+          npm run test -- "${frontend_contract_targets[@]}"
 
       # Keep full frontend validation behind the same heavy-work trigger model
       # as dependency installation above: relevant `frontend` / `backend` /
@@ -688,6 +785,7 @@ jobs:
   docs-consistency:
     if: github.event_name == 'pull_request' && github.base_ref != 'main' && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.workflow == 'true' || needs.changes.outputs.contract == 'true')
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - changes
 
@@ -740,6 +838,7 @@ jobs:
   integration-smoke:
     if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     needs:
       - frontend-checkpoint
 
@@ -757,7 +856,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[test]
+          pip install -e '.[test]'
 
       # Keep only genuinely small one-off workflow lists inline. This smoke
       # path is intentionally narrow, does not represent reusable shared CI

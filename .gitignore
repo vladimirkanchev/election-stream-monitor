@@ -12,6 +12,7 @@ wheels/
 
 # Virtual environments
 .venv/
+.tools/security/
 
 # Frontend / Node build output
 node_modules/

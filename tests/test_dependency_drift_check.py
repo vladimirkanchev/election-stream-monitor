@@ -21,7 +21,8 @@ PROJECT_NAME = "election-stream-monitor"
 FOCUSED_EXTRA_TOOLS = {
     "detectorlab": frozenset({"numpy", "opencv-python-headless"}),
     "test": frozenset({"httpx", "pytest", "pyyaml"}),
-    "lint": frozenset({"bandit", "black", "ruff"}),
+    "lint": frozenset({"black", "ruff"}),
+    "security": frozenset({"bandit", "pip-audit"}),
     "typecheck": frozenset({"mypy", "pyright"}),
 }
 ENGINEERING_TOOLS = frozenset().union(*FOCUSED_EXTRA_TOOLS.values(), {"pre-commit"})
@@ -119,6 +120,8 @@ def test_focused_extras_retain_required_tools() -> None:
     for extra, required_tools in FOCUSED_EXTRA_TOOLS.items():
         assert required_tools <= _package_names(extras[extra])
 
+    assert "bandit" not in _package_names(extras["lint"])
+
 
 def test_dev_extra_composes_focused_extras() -> None:
     """Keep contributor setup from duplicating focused-extra version policy."""
@@ -126,7 +129,10 @@ def test_dev_extra_composes_focused_extras() -> None:
     dev_requirements = extras["dev"]
 
     assert _package_names(dev_requirements) == {PROJECT_NAME, "pre-commit"}
-    assert f"{PROJECT_NAME}[detectorlab,lint,test,typecheck]" in dev_requirements
+    assert (
+        f"{PROJECT_NAME}[detectorlab,lint,security,test,typecheck]"
+        in dev_requirements
+    )
 
 
 def test_repository_has_no_unmanaged_requirements_snapshot() -> None:

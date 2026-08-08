@@ -26,6 +26,9 @@ on:
       - ".github/workflows/coverage-evidence.yml"
       - ".github/scripts/normalize_coverage_report_paths.py"
 
+permissions:
+  contents: read
+
 concurrency:
   group: coverage-evidence-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -33,6 +36,7 @@ concurrency:
 jobs:
   coverage-evidence:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     continue-on-error: true
 
     steps:
@@ -57,7 +61,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -e .[test,detectorlab]
+          .venv/bin/pip install -e '.[test,detectorlab]'
 
       - name: Install frontend coverage dependencies
         working-directory: frontend

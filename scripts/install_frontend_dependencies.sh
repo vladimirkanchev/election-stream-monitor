@@ -2,16 +2,20 @@
 # Enforce .nvmrc/packageManager ownership, then retry one transient install failure.
 set -euo pipefail
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+readonly REPO_ROOT
 
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is required; select the version declared in .nvmrc." >&2
   exit 1
 fi
 
-readonly REQUIRED_NODE_MAJOR="$(tr -d '[:space:]' < "${REPO_ROOT}/.nvmrc")"
-readonly INSTALLED_NODE_VERSION="$(node --version)"
+REQUIRED_NODE_MAJOR="$(tr -d '[:space:]' < "${REPO_ROOT}/.nvmrc")"
+readonly REQUIRED_NODE_MAJOR
+INSTALLED_NODE_VERSION="$(node --version)"
+readonly INSTALLED_NODE_VERSION
 
 if [[ ! "${REQUIRED_NODE_MAJOR}" =~ ^[0-9]+$ ]]; then
   echo ".nvmrc must declare one Node.js major version." >&2
@@ -24,10 +28,11 @@ if [[ ! "${INSTALLED_NODE_VERSION}" =~ ^v${REQUIRED_NODE_MAJOR}\.[0-9]+\.[0-9]+$
   exit 1
 fi
 
-readonly REQUIRED_NPM_SPEC="$(
+REQUIRED_NPM_SPEC="$(
   node -e 'const packageJson = require(process.argv[1]); process.stdout.write(packageJson.packageManager ?? "");' \
     "${REPO_ROOT}/frontend/package.json"
 )"
+readonly REQUIRED_NPM_SPEC
 
 if [[ ! "${REQUIRED_NPM_SPEC}" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "frontend/package.json must declare an exact npm packageManager version." >&2

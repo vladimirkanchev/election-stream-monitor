@@ -55,6 +55,108 @@ Weekly failures fail the weekly workflow but do not block an ordinary PR
 merge. Local lanes produce no GitHub status and do not reproduce the complete
 protected workflow.
 
+## Workflow Permission And Timeout Policy
+
+All four workflows default to `permissions: contents: read`. A job may add a
+different scope only through a reviewed, job-specific exception. The current
+exception set is empty; artifact upload, checkout, and test execution do not
+require repository write access.
+
+Timeouts are generous safety ceilings, not performance targets. The parsed
+workflow contract tests keep each job assigned to one of these workload
+classes:
+
+| Workload | Ceiling |
+| --- | ---: |
+| Aggregate gates | 5 minutes |
+| Change detection, policy, lint, typing, docs, and supply-chain checks | 10 minutes |
+| Routine tests, builds, integration smoke, and coverage | 20 minutes |
+| Weekly API/lifecycle depth and PostgreSQL confidence | 30 minutes |
+| Weekly slow real-media validation | 45 minutes |
+
+The ceiling applies to the job itself; an aggregate gate does not include the
+runtime of its dependencies. Runner speed, dependency downloads, PostgreSQL
+startup, and media decoding vary, so naturally changing duration measurements
+remain informational evidence rather than hard gates.
+
+## Security Scanner Ownership
+
+This table owns security-analysis responsibility and rollout state. It does
+not make a scanner a required `main` check until its baseline is reviewed and
+the protected gate explicitly depends on it. Use
+[`testing-and-validation.md`](./testing-and-validation.md) for local commands
+once a scanner is implemented.
+
+| Concern | Owner | Current state | Intended initial enforcement |
+| --- | --- | --- | --- |
+| Python security patterns | Bandit | Weekly `security-audit` job scans `src` from the locked `security` extra. | Weekly; promote only after a clean reviewed baseline. |
+| Python dependency vulnerabilities | `pip-audit` over an exported `uv.lock` graph | Weekly `python-security-audit` exports the locked production graph before scanning. | Weekly; outside protected PR gates while findings are reviewed. |
+| Frontend dependency vulnerabilities | `npm audit` over `frontend/package-lock.json` | Weekly `npm-security-audit` job. | Advisory. |
+| Committed secrets | Gitleaks | Path-activated `ci-supply-chain-audit` scans committed Git history with a checksum-verified binary and redacted findings. | Advisory while the initial baseline is reviewed; promote separately when clean and deterministic. |
+| GitHub Actions workflow correctness | Actionlint | Path-activated `ci-supply-chain-audit` validates checked-in workflows and delegates their shell blocks to the pinned ShellCheck binary. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
+| Repository shell correctness | ShellCheck | `just audit-shell` and `ci-supply-chain-audit` scan tracked `scripts/*.sh`; Actionlint covers workflow `run:` blocks. | Advisory while its baseline is reviewed; promote separately when clean and deterministic. |
+| Cross-file Python and JavaScript/TypeScript SAST | CodeQL | Deferred. | Advisory follow-up. |
+
+Ruff owns ordinary Python correctness and style rules; it is not a security
+scanner. Bandit checks Python security patterns, while CodeQL is reserved for
+later cross-file data-flow analysis. Do not add Semgrep beside CodeQL without a
+specific gap that neither tool already covers. Host-tool and model-artifact
+scanners remain outside this policy until the project accepts external
+serialized models.
+
+`.github/security_tools.json` is the machine-readable owner of each pinned
+Linux x64 release, archive member, and SHA-256. The installer verifies the
+archive before copying the named executable into ignored local tooling storage;
+it neither commits binaries nor evaluates downloaded shell.
+
+The path-activated aggregate job is advisory, artifact-free, and emits only a
+generic outcome summary. Gitleaks uses redacted terminal output. Actionlint
+validates workflow shell blocks with the pinned ShellCheck binary; ShellCheck
+derives script dialect from each shebang. Promote each scanner only after its
+own clean, deterministic baseline.
+
+### Dependency Audit Inputs And Failure Policy
+
+Python dependency evidence must come from the locked production graph, not the
+runner environment. The intended command sequence is:
+
+```bash
+uv export --frozen --no-dev --no-emit-project \
+  --format requirements.txt \
+  --output-file <temporary-file>
+pip-audit -r <temporary-file>
+```
+
+The temporary export is an audit input only and must not be committed as a
+second dependency owner. The weekly Python audit uses this sequence and
+remains non-merge-blocking while its findings are reviewed. `pip-audit` does
+not provide the same high/critical exit threshold as `npm audit`, so do not
+imply one.
+
+Frontend dependency evidence comes from `frontend/package-lock.json` through:
+
+```bash
+npm --prefix frontend audit --audit-level=high
+```
+
+This command fails for high or critical findings. Bandit scans `src`. None of
+these commands may use `--fix` or `npm audit fix`; dependency changes require
+their own reviewed update.
+
+### Dependency Update Proposals
+
+`.github/dependabot.yml` owns conservative weekly update proposals for `uv`,
+frontend `npm`, and GitHub Actions. Dependabot proposes changes but never
+merges them automatically. Each ecosystem permits at most three ordinary
+version-update PRs at a time.
+
+Minor and patch engineering-tool updates may be grouped. Major updates remain
+separate for focused review. Security updates require normal project review
+and CI; they are not covered by the ordinary three-PR version-update limit.
+Any accepted Python update must preserve `pyproject.toml` and `uv.lock`
+ownership, and any accepted frontend update must preserve
+`frontend/package.json` and `frontend/package-lock.json` ownership.
+
 ## Detector Validation CI Baseline
 
 This table is the CI ownership snapshot for detector-validation lanes. It is
