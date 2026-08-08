@@ -63,6 +63,18 @@ size boundaries without asserting complete description strings or using live
 model calls. Archived specialists remain outside the active inventory and are
 covered by explicit reactivation documentation.
 
+## Historical Retired Skill Record
+
+This is the only human-facing inventory section that retains identifiers for
+skills removed through consolidation. They are historical migration evidence,
+not active or archived routing options.
+
+| Retired skill | Surviving owner |
+| --- | --- |
+| `alert-backend-parity-review` | `persistence-backend-review` |
+| `incident-timeline` | `incident-analysis` |
+| `root-cause-suggestion` | `incident-analysis` |
+
 ## Initial Skill Inventory
 
 This is the pre-consolidation inventory. Its line counts and descriptions are
@@ -70,7 +82,7 @@ baseline evidence, not the current active discovery set.
 
 | Skill | Current description and subsystem owner | Lines | Inferred frequency / future value | Targeted evidence | Commands |
 | --- | --- | ---: | --- | --- | --- |
-| `alert-backend-parity-review` | File/PostgreSQL alert parity and shared alert reads | 78 | Low now; high before PostgreSQL rollout | parity scenarios | none |
+| Former alert-parity review | File/PostgreSQL alert parity and shared alert reads | 78 | Low now; high before PostgreSQL rollout | parity scenarios | none |
 | `branch-pr-readiness` | Branch scope, commit shape, PR readiness, and safe cleanup | 167 | High; high | scenarios, snapshots, handoffs | `just branch-cleanup` |
 | `ci-failure-triage` | Classify CI failures and choose the smallest reproduction | 75 | High; high | incident scenarios | `just ci-local`, focused test lanes |
 | `dependency-change-review` | Decide whether dependency metadata belongs in a branch | 73 | Medium; high | dependency scenarios | none |
@@ -147,7 +159,7 @@ it does not mean delete its knowledge.
 
 | Skill | Proposed action | Primary owner | Overlap candidate | Frequency | Future value | Rationale |
 | --- | --- | --- | --- | --- | --- | --- |
-| `alert-backend-parity-review` | Merged | `persistence-backend-review` | generic persistence review | Low | High | Alert parity is now an explicit mode of persistence review, not a separate first-choice routing boundary. |
+| Former alert-parity review | Merged | `persistence-backend-review` | generic persistence review | Low | High | Alert parity is now an explicit mode of persistence review, not a separate first-choice routing boundary. |
 | `architecture-diagram-review` | Archived | `.agents/archived-skills/` | README and docs review | Low | Medium | Reactivate only for concrete architecture-diagram work. |
 | `branch-pr-readiness` | Narrowed | itself | release and summary work | High | High | Keeps branch scope, commits, PR shape, and merge readiness without repeated closure detail. |
 | `ci-failure-triage` | Keep | itself | incident analysis | High | High | CI failure classification and smallest reproduction remain a distinct operational outcome. |
@@ -172,9 +184,9 @@ it does not mean delete its knowledge.
 
 ### Approved Queue
 
-1. Completed: merged `alert-backend-parity-review` into
+1. Completed: merged the former alert-parity review into
    `persistence-backend-review`.
-2. Completed: merged `incident-timeline` and `root-cause-suggestion` into
+2. Completed: merged the former timeline and root-cause reviews into
    `incident-analysis`.
 3. Completed: archived `architecture-diagram-review`,
    `postgres-migration-rollout-review`, and `security-surface-review` with

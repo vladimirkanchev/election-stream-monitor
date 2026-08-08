@@ -34,6 +34,13 @@ EXPECTED_SKILL_ORDER = (
 
 EXPECTED_SKILLS = set(EXPECTED_SKILL_ORDER)
 
+RETIRED_SKILL_SURVIVORS = {
+    "alert-backend-parity-review": "persistence-backend-review",
+    "incident-timeline": "incident-analysis",
+    "root-cause-suggestion": "incident-analysis",
+}
+HISTORICAL_RETIRED_SKILLS_HEADING = "## Historical Retired Skill Record"
+
 ARCHIVED_SKILL_REACTIVATION_SNIPPETS = (
     "./.agents/archived-skills/",
     "`architecture-diagram-review` for concrete architecture-diagram work",

@@ -20,10 +20,12 @@ from tests.repo_skill_expectations import (
     DISCOVERY_DESCRIPTION_EXPECTATIONS,
     EXPECTED_SKILLS,
     EXPLICIT_HANDOFF_EXPECTATIONS,
+    HISTORICAL_RETIRED_SKILLS_HEADING,
     MERGED_SKILL_MODE_MARKERS,
     PLANNING_CLOSURE_PROFILE_EXPECTATIONS,
     PLANNING_CLOSURE_SPECIALISTS,
     REAL_INCIDENT_REGRESSIONS,
+    RETIRED_SKILL_SURVIVORS,
     RISKY_CHANGE_ROUTING_ORDER,
     RISKY_CHANGE_ROUTING_REQUIRED_SNIPPETS,
     SCENARIO_EXPECTATIONS,
@@ -31,6 +33,7 @@ from tests.repo_skill_expectations import (
     expected_skill_files,
 )
 from tests.skill_test_support import (
+    ARCHIVED_SKILLS_ROOT,
     REPOSITORY_ROOT,
     SKILL_SECTION_ORDER,
     SKILLS_ROOT,
@@ -57,6 +60,8 @@ from tests.skill_test_support import (
 AGENTS_PATH = Path(__file__).resolve().parent.parent / "AGENTS.md"
 DOCS_INDEX_PATH = Path(__file__).resolve().parent.parent / "docs" / "README.md"
 JUSTFILE_PATH = REPOSITORY_ROOT / "justfile"
+INVENTORY_PATH = SKILLS_ROOT / "INVENTORY.md"
+TEST_POLICY_PATH = Path(__file__).resolve().parent / "repo_skill_expectations.py"
 
 
 def test_expected_skill_directories_exist() -> None:
@@ -271,6 +276,50 @@ def test_explicit_skill_just_recipes_exist() -> None:
     assert not missing_recipes, "Missing just recipes:\n" + "\n".join(missing_recipes)
 
 
+def test_retired_skill_directories_stay_absent() -> None:
+    """Keep merged skills out of both active and deferred discovery roots."""
+    for retired_skill in RETIRED_SKILL_SURVIVORS:
+        assert not (SKILLS_ROOT / retired_skill).exists()
+        assert not (ARCHIVED_SKILLS_ROOT / retired_skill).exists()
+
+
+def test_retired_skill_names_remain_only_in_the_historical_inventory_record() -> None:
+    """Keep former routing names out of active guidance and test evidence."""
+    inventory_text = INVENTORY_PATH.read_text(encoding="utf-8")
+    historical_record = _markdown_section(
+        inventory_text,
+        HISTORICAL_RETIRED_SKILLS_HEADING,
+    )
+    inventory_without_historical_record = inventory_text.replace(historical_record, "")
+
+    for retired_skill, survivor in RETIRED_SKILL_SURVIVORS.items():
+        assert retired_skill in historical_record
+        assert survivor in historical_record
+        assert retired_skill not in inventory_without_historical_record
+
+    reference_paths = [
+        AGENTS_PATH,
+        DOCS_INDEX_PATH,
+        REPOSITORY_ROOT / "docs" / "testing-and-validation.md",
+        *(SKILLS_ROOT / relative_path for relative_path in list_skill_files()),
+        *list_archived_skill_files(),
+        *Path(__file__).resolve().parent.rglob("*.py"),
+        *(Path(__file__).resolve().parent / "fixtures" / "skill_output_snapshots").glob("*.md"),
+    ]
+    stale_references = []
+    for path in reference_paths:
+        if path == TEST_POLICY_PATH:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for retired_skill in RETIRED_SKILL_SURVIVORS:
+            if retired_skill in text:
+                stale_references.append(f"{path}: {retired_skill}")
+
+    assert not stale_references, "Retired skill references:\n" + "\n".join(
+        stale_references
+    )
+
+
 def test_agents_md_risky_change_routing_stays_aligned() -> None:
     text = AGENTS_PATH.read_text(encoding="utf-8")
 
@@ -288,3 +337,13 @@ def test_archived_specialists_stay_explicit_and_discoverable() -> None:
 
     for snippet in ARCHIVED_SKILL_REACTIVATION_SNIPPETS:
         assert snippet in text
+
+
+def _markdown_section(text: str, heading: str) -> str:
+    """Return one second-level Markdown section, including its heading."""
+    section_start = text.find(heading)
+    assert section_start >= 0, f"Missing section: {heading}"
+    next_section_start = text.find("\n## ", section_start + len(heading))
+    if next_section_start < 0:
+        return text[section_start:]
+    return text[section_start:next_section_start]
