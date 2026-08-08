@@ -82,7 +82,7 @@ Keep the split explicit:
 
 - Use this after the relevant code, tests, or workflow changes are understood.
 - If the main problem is a failing CI policy or docs check, use `ci-failure-triage` first.
-- If the behavior itself is still unclear, use `summarization` or `incident-timeline` first.
+- If the behavior itself is still unclear, use `summarization` or `incident-analysis` first.
 - If the next question is missing confidence rather than docs drift, use `test-strategy-review` next.
 - If the next question is broader task priority rather than documentation
   drift, use `task-planning-evaluation` first.

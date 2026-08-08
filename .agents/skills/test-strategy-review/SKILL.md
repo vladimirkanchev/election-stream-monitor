@@ -100,7 +100,7 @@ main mode first and keep the second short.
 ## Skill boundaries
 
 - Use this after the behavior or current test area is understood well enough to judge add, trim, or validate decisions.
-- If the user still does not understand what happened, use `summarization` or `incident-timeline` first.
+- If the user still does not understand what happened, use `summarization` or `incident-analysis` first.
 - If the real blocker is a failing CI job, use `ci-failure-triage` first.
 - If the branch itself is messy and the question is really merge/readiness workflow, use `branch-pr-readiness` first.
 

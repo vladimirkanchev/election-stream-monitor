@@ -3,8 +3,8 @@
 Baseline recorded 2026-08-08 for `chore/ai-harness-consolidation`.
 
 This is an internal harness inventory, not a user-facing project guide. It
-records the current skill set before consolidation; it does not approve a
-merge, archive, or removal decision.
+records the initial skill set and updates approved consolidation decisions as
+they are implemented.
 
 ## Evidence Method
 
@@ -33,14 +33,13 @@ merge, archive, or removal decision.
 | `fastapi-mcp-security-review` | Branch-scoped FastAPI/MCP hardening review | 93 | Medium; high before deployment | security scenarios | none |
 | `fixture-environment-safety` | Fixture, tool, socket, and local-asset CI safety | 66 | High during detector/media work; high | environment scenarios | none |
 | `frontend-bridge-review` | Renderer, preload, Electron, and backend seam review | 78 | Medium; high | frontend scenarios | `just test-frontend` |
-| `incident-timeline` | Ordered reconstruction of observed runtime or CI events | 69 | Low-medium; medium | incident scenarios | none |
+| `incident-analysis` | Mode-selected timeline reconstruction or cause hypothesis | 89 | Low-medium; medium | incident scenarios and snapshots | none |
 | `manual-validation-planner` | Small local operator smoke plans | 82 | Medium; high | manual-validation scenarios | none |
 | `persistence-backend-review` | Session/alert persistence defaults, parity, and runtime selection | 89 | Medium; high before cloud work | persistence scenarios | `just test-session-store`, `just test-session-runtime` |
 | `postgres-migration-rollout-review` | PostgreSQL migration, backfill, rollback, and smoke readiness | 85 | Low now; high before rollout | PostgreSQL scenarios | none |
 | `readme-alignment-review` | Root README fit, stage honesty, and section placement | 85 | Low-medium; medium | README scenarios and boundary pairs | none |
 | `real-media-validation-review` | Real-media and stream confidence-lane review | 79 | High during detector work; high | real-media scenarios | `just test-real-media` |
 | `release-version-readiness` | Patch/minor milestone readiness and release truth | 85 | Medium; high | release scenarios | none |
-| `root-cause-suggestion` | Evidence-backed likely cause and cheapest validation | 68 | Medium; medium | incident scenarios | none |
 | `security-surface-review` | Broad FastAPI, MCP, stream, and desktop trust-boundary review | 69 | Low-medium; high before public deployment | security scenarios | none |
 | `summarization` | Concise change, behavior, and next-action summaries | 94 | Medium; medium | summary scenarios and snapshots | none |
 | `task-planning-evaluation` | Task priority, scope, complexity, and execution sequencing | 104 | High; high | planning scenarios | none |
@@ -48,11 +47,11 @@ merge, archive, or removal decision.
 
 ## Inventory Conclusions
 
-- The harness has 23 skills and roughly 2,000 skill lines. The main cost is
+- The harness has 21 skills and roughly 1,900 skill lines. The main cost is
   overlapping routing and maintenance, not any single oversized skill.
-- The most likely consolidation candidates are documentation review,
-  incident-analysis, and persistence-parity families. Their final ownership
-  is intentionally deferred to the decision matrix.
+- Persistence parity and incident analysis now have one surviving owner each.
+  Documentation-review consolidation remains deferred to its separate routing
+  and documentation branch.
 - Detector, fixture, real-media, and test-strategy skills remain distinct for
   the upcoming detector-improvement work, but should receive a later
   terminology refresh rather than a new detector-tuning skill.
@@ -108,14 +107,13 @@ it does not mean delete its knowledge.
 | `fastapi-mcp-security-review` | Keep | itself | broad security review | Medium | High | Branch-scoped hardening remains distinct from pre-deployment surface mapping. |
 | `fixture-environment-safety` | Keep | itself | real-media validation | High | High | Owns fixture/tool/socket availability rather than detector confidence itself. |
 | `frontend-bridge-review` | Keep | itself | manual validation | Medium | High | Owns renderer/preload/main-process technical seam; manual validation is a different output. |
-| `incident-timeline` | Merge and rename | `incident-analysis` | root-cause suggestion | Medium | Medium | Timeline reconstruction and evidence-backed cause are sequential modes of one incident workflow. |
+| `incident-analysis` | Merged | itself | timeline and root-cause analysis | Medium | Medium | One mode-selecting workflow owns both reconstruction and evidence-backed cause analysis. |
 | `manual-validation-planner` | Keep | itself | test strategy and frontend review | Medium | High | Small operator smoke plans are not the same as automated-test selection. |
 | `persistence-backend-review` | Keep and expand | itself | alert-backend parity | Medium | High | Survives as the persistence family owner and gains alert-parity mode. |
 | `postgres-migration-rollout-review` | Archive | explicit rollout review | persistence review | Low | High | Preserve for migration work; reactivate before any live PostgreSQL rollout or cloud persistence change. |
 | `readme-alignment-review` | Merge, deferred | `docs-alignment` | documentation review | Low | Medium | Root-README fit can be a clearly bounded mode of the surviving docs skill; implement with the separate routing/docs branch. |
 | `real-media-validation-review` | Keep | itself | fixtures and test strategy | High | High | Owns confidence-lane choice for decoded/local/stream media, not fixture availability or broad test policy. |
 | `release-version-readiness` | Keep | itself | branch readiness | Medium | High | Version semantics remain separate from whether a branch is technically merge-ready. |
-| `root-cause-suggestion` | Merge and rename | `incident-analysis` | incident timeline | Medium | Medium | One disciplined incident skill can select timeline or hypothesis mode after reading evidence. |
 | `security-surface-review` | Archive | explicit security-surface review | FastAPI/MCP hardening | Low | High | Preserve for pre-cloud trust reviews; activate before public exposure rather than on routine local changes. |
 | `summarization` | Narrow | itself | branch readiness and incident analysis | Medium | Medium | Retain only concise repository/change summaries; specialized skills own PR and incident summaries. |
 | `task-planning-evaluation` | Narrow | itself | branch readiness and test strategy | High | High | Keep prioritization and sequencing; add the proportional closure phase without absorbing PR or test ownership. |
@@ -125,7 +123,7 @@ it does not mean delete its knowledge.
 
 1. Completed: merged `alert-backend-parity-review` into
    `persistence-backend-review`.
-2. Merge `incident-timeline` and `root-cause-suggestion` into renamed
+2. Completed: merged `incident-timeline` and `root-cause-suggestion` into
    `incident-analysis`.
 3. Move `architecture-diagram-review`, `postgres-migration-rollout-review`,
    and `security-surface-review` to an explicit archive with reactivation
@@ -146,7 +144,7 @@ The proposed actions satisfy the decision criteria:
 | Capability changing shape | Surviving owner or retention path | Evidence to migrate later |
 | --- | --- | --- |
 | Alert-backend parity | `persistence-backend-review` alert-parity mode | parity scenarios, boundary handoffs, `AGENTS.md` routing |
-| Incident reconstruction and cause analysis | renamed `incident-analysis` with timeline and hypothesis modes | both scenario sets, handoffs, and selected snapshots |
+| Incident reconstruction and cause analysis | `incident-analysis` with timeline and hypothesis modes | both scenario sets, handoffs, and selected snapshots |
 | Documentation audit and README fit | `docs-alignment`, deferred to the documentation-routing branch | docs scenarios, ambiguity pairs, `AGENTS.md`, and `docs/README.md` routing |
 | Architecture-diagram review | archived skill; reactivate for a concrete diagram revision | diagram scenarios and documentation routing |
 | PostgreSQL rollout review | archived skill; reactivate before migration, live rollout, or cloud persistence work | rollout scenarios and risky-change routing |
@@ -156,14 +154,12 @@ No capability is proposed for irreversible removal. Archive actions preserve
 their source and test evidence outside ordinary discovery until their named
 reactivation condition applies.
 
-### Immediate Implementation Boundary
+### Remaining Implementation Boundary
 
-The next implementation task may only:
+The remaining implementation work may only:
 
-1. merge alert parity into persistence review;
-2. create `incident-analysis` from timeline and root-cause modes;
-3. archive the three named future specialists; and
-4. narrow branch readiness, summarization, task planning, and test strategy.
+1. archive the three named future specialists; and
+2. narrow branch readiness, summarization, task planning, and test strategy.
 
 It must update affected deterministic expectations and harness references in
 the same change, then run the focused repo-skill tests. It must not consolidate

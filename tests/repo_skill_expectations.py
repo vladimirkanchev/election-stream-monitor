@@ -22,14 +22,13 @@ EXPECTED_SKILL_ORDER = (
     "fastapi-mcp-security-review",
     "fixture-environment-safety",
     "frontend-bridge-review",
-    "incident-timeline",
+    "incident-analysis",
     "manual-validation-planner",
     "persistence-backend-review",
     "postgres-migration-rollout-review",
     "readme-alignment-review",
     "real-media-validation-review",
     "release-version-readiness",
-    "root-cause-suggestion",
     "security-surface-review",
     "summarization",
     "task-planning-evaluation",
@@ -285,8 +284,9 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="incident-timeline",
+        skill_name="incident-analysis",
         required_snippets=(
+            "Timeline mode",
             "Observed facts",
             "Reconstructed sequence",
             "first session snapshot persisted",
@@ -295,8 +295,9 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="root-cause-suggestion",
+        skill_name="incident-analysis",
         required_snippets=(
+            "Hypothesis mode",
             "Most likely root cause",
             "GitHub policy/state",
             "Cheapest next validation",
@@ -357,10 +358,10 @@ REAL_INCIDENT_REGRESSIONS = [
     ("branch-pr-readiness", "two stacked PRs were merged remotely and it is unclear what can now be deleted"),
     ("ci-failure-triage", "`backend-tests` fails after detector or alert-rule changes"),
     ("ci-failure-triage", "`feature-gate` is red even though only one leaf check actually matters"),
-    ("incident-timeline", "session starts but UI falls back to idle"),
-    ("incident-timeline", "branch protection / CI merge incidents"),
-    ("root-cause-suggestion", "session start succeeded but first read 404s"),
-    ("root-cause-suggestion", "PR is green but merge remains blocked"),
+    ("incident-analysis", "session starts but UI falls back to idle"),
+    ("incident-analysis", "branch protection or CI merge state has conflicting signals"),
+    ("incident-analysis", "session start succeeded but the first read returned 404"),
+    ("incident-analysis", "PR is green but merge remains blocked"),
 ]
 
 
@@ -493,17 +494,18 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
 )
 AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     "ci-failure-triage",
-    "CI failure classification versus likely underlying cause",
+    "CI failure classification versus incident hypothesis",
     (
         "Most likely failure class",
         "Smallest local reproduction",
     ),
     (
+        "Hypothesis mode",
         "Most likely root cause",
         "Cheapest next validation",
     ),
-    "root-cause-suggestion",
-    "likely underlying cause versus CI failure classification",
+    "incident-analysis",
+    "incident hypothesis versus CI failure classification",
 )
 
 BOUNDARY_SNIPPETS_BY_SKILL = [
@@ -536,7 +538,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "branch-pr-readiness",
         [
-            "use `incident-timeline` first",
+            "use `incident-analysis` first",
             "use `ci-failure-triage` first",
             "use `test-strategy-review` first",
             "use `test-strategy-review` next",
@@ -546,7 +548,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "test-strategy-review",
         [
-            "use `summarization` or `incident-timeline` first",
+            "use `summarization` or `incident-analysis` first",
             "use `ci-failure-triage` first",
             "use `branch-pr-readiness` first",
         ],
@@ -595,7 +597,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         "docs-alignment",
         [
             "use `ci-failure-triage` first",
-            "use `summarization` or `incident-timeline` first",
+            "use `summarization` or `incident-analysis` first",
             "use `test-strategy-review` next",
         ],
     ),
@@ -604,7 +606,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         [
             "use `test-strategy-review` first",
             "use `branch-pr-readiness` first",
-            "use `incident-timeline` first",
+            "use `incident-analysis` first",
             "use `ci-failure-triage` first",
         ],
     ),
@@ -630,7 +632,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         "frontend-bridge-review",
         [
             "use `test-strategy-review` first",
-            "use `incident-timeline` first",
+            "use `incident-analysis` first",
             "use `manual-validation-planner` next",
             "use `ci-failure-triage` first",
             "use `detector-rule-review` first",
@@ -639,8 +641,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "ci-failure-triage",
         [
-            "use `incident-timeline` first",
-            "hand off to `root-cause-suggestion`",
+            "use `incident-analysis` next",
             "use `test-strategy-review` next",
         ],
     ),
@@ -649,23 +650,15 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         [
             "Use `branch-pr-readiness` first",
             "Use `docs-alignment` first",
-            "Use `incident-timeline`",
-            "Use `root-cause-suggestion`",
+            "Use `incident-analysis`",
             "Use `test-strategy-review`",
         ],
     ),
     (
-        "incident-timeline",
+        "incident-analysis",
         [
-            "Use this before `root-cause-suggestion`",
-            "Hand off to `root-cause-suggestion`",
-        ],
-    ),
-    (
-        "root-cause-suggestion",
-        [
-            "If event order is still unclear, use `incident-timeline` first.",
-            "If the user mainly wants ordered reconstruction, use `incident-timeline` instead.",
+            "Use `ci-failure-triage` first",
+            "Use `summarization` for a generic repository or change summary",
         ],
     ),
 ]
@@ -708,6 +701,14 @@ MERGED_SKILL_MODE_MARKERS = [
             "Gap",
             "Strong tests",
             "Best first command",
+        ),
+    ),
+    (
+        "incident-analysis",
+        (
+            "Timeline mode",
+            "Hypothesis mode",
+            "Cheapest next validation",
         ),
     ),
     (
@@ -1034,8 +1035,8 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="incident-timeline",
-        snapshot_name="incident_timeline_ui_idle.md",
+        skill_name="incident-analysis",
+        snapshot_name="incident_analysis_timeline_ui_idle.md",
         required_order=(
             "Observed facts:",
             "Reconstructed sequence:",
@@ -1060,8 +1061,8 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="root-cause-suggestion",
-        snapshot_name="root_cause_pr_blocked.md",
+        skill_name="incident-analysis",
+        snapshot_name="incident_analysis_root_cause_pr_blocked.md",
         required_order=(
             "Most likely root cause:",
             "Confidence:",

@@ -142,7 +142,7 @@ Do not expand into release process or project management unless the user asks.
 ## Skill boundaries
 
 - Use this after at least the branch name, purpose, or current git state is available.
-- If the branch history or event sequence is unclear, use `incident-timeline` first.
+- If the branch history or event sequence is unclear, use `incident-analysis` first.
 - If the real blocker is a failing CI check, use `ci-failure-triage` first.
 - If the question becomes which validation command to run next, use `test-strategy-review` first.
 - If the next question is missing confidence after a split, use `test-strategy-review` next.

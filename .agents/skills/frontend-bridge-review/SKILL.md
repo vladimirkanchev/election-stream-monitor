@@ -60,7 +60,7 @@ Keep the review risk-first and seam-aware.
 
 - Use this when the main need is a frontend/runtime seam review, not a generic UI opinion.
 - If the user mainly wants the smallest automated lane to run, use `test-strategy-review` first.
-- If the local behavior already failed and the sequence is unclear, use `incident-timeline` first.
+- If the local behavior already failed and the sequence is unclear, use `incident-analysis` first.
 - If the branch needs a small human smoke path before merge, use `manual-validation-planner` next.
 - If the main blocker is a failing CI lane, use `ci-failure-triage` first.
 - If the issue is really backend rule or detector logic, use `detector-rule-review` first.

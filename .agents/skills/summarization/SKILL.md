@@ -82,8 +82,8 @@ Keep it short. Prefer direct statements over long explanation.
 
 ## Skill boundaries
 
-- Use `incident-timeline` when the main need is ordered reconstruction.
-- Use `root-cause-suggestion` when the user wants the most likely explanation.
+- Use `incident-analysis` when the user needs ordered reconstruction or an
+  evidence-backed likely explanation.
 - Use `test-strategy-review` when the user mainly wants missing-confidence analysis.
 - Use `branch-pr-readiness` first when the main question is merge readiness, branch drift, or PR shape.
 - Use `docs-alignment` first when the main question is docs drift rather than summary.

@@ -528,8 +528,7 @@ Use the skill set by question type:
 
 - explain what happened
   - `./.agents/skills/summarization/`
-  - `./.agents/skills/incident-timeline/`
-  - `./.agents/skills/root-cause-suggestion/`
+  - `./.agents/skills/incident-analysis/`
 - shape a branch or next step
   - `./.agents/skills/branch-pr-readiness/`
   - `./.agents/skills/dependency-change-review/`

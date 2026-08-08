@@ -66,7 +66,7 @@ Keep it concrete and short.
 - Use this when the main need is a local human-run validation path.
 - If the user mainly needs the smallest automated lane to run, use `test-strategy-review` first.
 - If the branch shape or merge readiness is still unclear, use `branch-pr-readiness` first.
-- If the local behavior already failed and the event order is unclear, use `incident-timeline` first.
+- If the local behavior already failed and the event order is unclear, use `incident-analysis` first.
 - If the main blocker is a failing CI job, use `ci-failure-triage` first.
 
 ## Good fit examples
