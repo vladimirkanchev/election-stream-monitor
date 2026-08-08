@@ -1420,7 +1420,7 @@ It currently covers:
 - skill inventory, frontmatter, and section structure
 - readable ordering plus explicit hand-off boundaries
 - nearby-skill overlap and explicit deferral coverage
-- merged-skill regression markers for the newer multi-mode skills
+- merged persistence and incident-analysis modes
 - representative repo scenarios plus fixed output-shape snapshots
 - lightweight regressions for real repo incidents
 

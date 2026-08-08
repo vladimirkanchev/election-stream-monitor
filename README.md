@@ -384,7 +384,7 @@ That branch flow keeps three checks explicit:
 
 ## Repo-Local Codex Skills
 
-The repo includes a small set of repo-local Codex skills under
+The repo includes a focused set of repo-local Codex skills under
 [`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review.
 
 These are mainly for AI-assisted contributors and debugging workflows. They

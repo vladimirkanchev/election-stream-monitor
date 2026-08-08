@@ -47,8 +47,14 @@ baseline evidence, not the current active discovery set.
 
 ## Inventory Conclusions
 
-- The harness has 18 skills and about 1,460 skill lines. The main cost is
-  overlapping routing and maintenance, not any single oversized skill.
+- The final active inventory has 18 skills and 1,457 `SKILL.md` lines. The
+  main cost is overlapping routing and maintenance, not any single oversized
+  skill.
+- The preceding active baseline had 1,688 lines; the four high-traffic skills
+  now total 263 lines, down from 494, for a 231-line (13.7%) active reduction.
+- Three archived specialists retain 252 `SKILL.md` lines and their snapshots,
+  so the reduction removes routine discovery cost without deleting deferred
+  deployment knowledge.
 - Persistence parity and incident analysis now have one surviving owner each.
   Documentation-review consolidation remains deferred to its separate routing
   and documentation branch.
