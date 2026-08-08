@@ -16,6 +16,7 @@ from tests.repo_skill_expectations import (
     ARCHIVED_SKILL_REACTIVATION_SNIPPETS,
     BOUNDARY_SNIPPETS_BY_SKILL,
     COMMON_SECTIONS,
+    DISCOVERY_DESCRIPTION_EXPECTATIONS,
     EXPECTED_SKILLS,
     EXPLICIT_HANDOFF_EXPECTATIONS,
     MERGED_SKILL_MODE_MARKERS,
@@ -71,6 +72,21 @@ def test_each_skill_has_required_frontmatter_and_sections(skill_name: str) -> No
 def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
     skill = load_skill(skill_name)
     assert assert_contains_in_order(skill.body, SKILL_SECTION_ORDER)
+
+
+@pytest.mark.parametrize("skill_name", sorted(EXPECTED_SKILLS))
+def test_discovery_descriptions_keep_size_and_routing_boundaries(
+    skill_name: str,
+) -> None:
+    skill = load_skill(skill_name)
+    description = skill.description.strip().strip('"')
+    primary_phrase, excluded_phrases = DISCOVERY_DESCRIPTION_EXPECTATIONS[skill_name]
+
+    assert len(description.splitlines()) == 1
+    assert 100 <= len(description) <= 200
+    assert primary_phrase in description
+    for excluded_phrase in excluded_phrases:
+        assert excluded_phrase in description
 
 
 @pytest.mark.parametrize(

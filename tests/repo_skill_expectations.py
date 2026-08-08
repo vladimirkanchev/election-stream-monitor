@@ -41,6 +41,81 @@ ARCHIVED_SKILL_REACTIVATION_SNIPPETS = (
     "`security-surface-review` before broad trust review or public exposure",
 )
 
+DISCOVERY_DESCRIPTION_EXPECTATIONS = {
+    "branch-pr-readiness": (
+        "branch scope",
+        ("generic summaries", "test selection"),
+    ),
+    "ci-failure-triage": (
+        "CI check",
+        ("general incident analysis",),
+    ),
+    "dependency-change-review": (
+        "dependency metadata",
+        ("supply-chain review", "package-upgrade planning"),
+    ),
+    "detector-rule-review": (
+        "production detector",
+        ("broad test selection", "real-media lane choice"),
+    ),
+    "docs-alignment": (
+        "docs or docstring",
+        ("pre-edit drift audits", "test planning"),
+    ),
+    "docs-drift-check": (
+        "documentation drift audits",
+        ("direct doc editing", "README fit", "test planning"),
+    ),
+    "fastapi-mcp-security-review": (
+        "share mode",
+        ("broad trust review", "deployment design"),
+    ),
+    "fixture-environment-safety": (
+        "test fixture",
+        ("detector confidence", "real-media assertion review"),
+    ),
+    "frontend-bridge-review": (
+        "renderer",
+        ("manual smoke planning", "general test selection"),
+    ),
+    "incident-analysis": (
+        "timeline reconstruction",
+        ("first-pass CI triage", "generic summaries"),
+    ),
+    "manual-validation-planner": (
+        "local smoke plans",
+        ("automated test selection", "CI triage"),
+    ),
+    "persistence-backend-review": (
+        "persistence parity",
+        ("access-policy hardening", "broad database design"),
+    ),
+    "readme-alignment-review": (
+        "root README fit",
+        ("repo-wide docs drift", "test planning"),
+    ),
+    "real-media-validation-review": (
+        "real-media",
+        ("fixture portability", "broad automated test selection"),
+    ),
+    "release-version-readiness": (
+        "version-change semantics",
+        ("PR merge readiness", "dependency ownership"),
+    ),
+    "summarization": (
+        "concise",
+        ("PR shaping", "incident diagnosis", "test strategy"),
+    ),
+    "task-planning-evaluation": (
+        "task priority",
+        ("branch or PR shape", "detailed test design"),
+    ),
+    "test-strategy-review": (
+        "test value",
+        ("CI-failure diagnosis", "specialist seam review"),
+    ),
+}
+
 COMMON_SECTIONS = (
     "## Default approach",
     "## Output shape",
