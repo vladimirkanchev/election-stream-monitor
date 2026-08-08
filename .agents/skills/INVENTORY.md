@@ -18,7 +18,10 @@ they are implemented.
 - Commands list only explicit focused `just` recipes named by the skill;
   `none` means it does not prescribe one.
 
-## Current Skills
+## Initial Skill Inventory
+
+This is the pre-consolidation inventory. Its line counts and descriptions are
+baseline evidence, not the current active discovery set.
 
 | Skill | Current description and subsystem owner | Lines | Inferred frequency / future value | Targeted evidence | Commands |
 | --- | --- | ---: | --- | --- | --- |
@@ -44,7 +47,7 @@ they are implemented.
 
 ## Inventory Conclusions
 
-- The harness has 18 skills and roughly 1,700 skill lines. The main cost is
+- The harness has 18 skills and about 1,460 skill lines. The main cost is
   overlapping routing and maintenance, not any single oversized skill.
 - Persistence parity and incident analysis now have one surviving owner each.
   Documentation-review consolidation remains deferred to its separate routing
@@ -95,7 +98,7 @@ it does not mean delete its knowledge.
 | --- | --- | --- | --- | --- | --- | --- |
 | `alert-backend-parity-review` | Merged | `persistence-backend-review` | generic persistence review | Low | High | Alert parity is now an explicit mode of persistence review, not a separate first-choice routing boundary. |
 | `architecture-diagram-review` | Archived | `.agents/archived-skills/` | README and docs review | Low | Medium | Reactivate only for concrete architecture-diagram work. |
-| `branch-pr-readiness` | Narrow | itself | release and summary work | High | High | Keep its unique merge/commit scope; trim repeated closure and PR-template detail. |
+| `branch-pr-readiness` | Narrowed | itself | release and summary work | High | High | Keeps branch scope, commits, PR shape, and merge readiness without repeated closure detail. |
 | `ci-failure-triage` | Keep | itself | incident analysis | High | High | CI failure classification and smallest reproduction remain a distinct operational outcome. |
 | `dependency-change-review` | Keep | itself | branch readiness | Medium | High | Dependency ownership is a focused, recurring decision that branch review should hand off. |
 | `detector-rule-review` | Keep | itself | test strategy and real media | High | High | Owns production detector/rule boundaries; refresh terminology after consolidation. |
@@ -112,9 +115,9 @@ it does not mean delete its knowledge.
 | `real-media-validation-review` | Keep | itself | fixtures and test strategy | High | High | Owns confidence-lane choice for decoded/local/stream media, not fixture availability or broad test policy. |
 | `release-version-readiness` | Keep | itself | branch readiness | Medium | High | Version semantics remain separate from whether a branch is technically merge-ready. |
 | `security-surface-review` | Archived | `.agents/archived-skills/` | FastAPI/MCP hardening | Low | High | Reactivate before broad trust review or public exposure. |
-| `summarization` | Narrow | itself | branch readiness and incident analysis | Medium | Medium | Retain only concise repository/change summaries; specialized skills own PR and incident summaries. |
-| `task-planning-evaluation` | Narrow | itself | branch readiness and test strategy | High | High | Keep prioritization and sequencing; add the proportional closure phase without absorbing PR or test ownership. |
-| `test-strategy-review` | Narrow | itself | detector, fixture, and real-media reviews | High | High | Keep the lane chooser; remove repeated lane listings that other skills can reference. |
+| `summarization` | Narrowed | itself | branch readiness and incident analysis | Medium | Medium | Keeps concise repository/change summaries; specialized skills own PR and incident work. |
+| `task-planning-evaluation` | Narrowed | itself | branch readiness and test strategy | High | High | Keeps prioritization, sequencing, and proportional closure without absorbing PR or test ownership. |
+| `test-strategy-review` | Narrowed | itself | detector, fixture, and real-media reviews | High | High | Keeps coverage value and cheapest honest validation without repeating the command catalog. |
 
 ### Approved Queue
 
@@ -125,13 +128,13 @@ it does not mean delete its knowledge.
 3. Completed: archived `architecture-diagram-review`,
    `postgres-migration-rollout-review`, and `security-surface-review` with
    their reactivation criteria.
-4. Narrow the four high-traffic owners: branch/PR readiness, summarization,
-   task planning, and test strategy.
+4. Completed: narrowed branch/PR readiness, summarization, task planning, and
+   test strategy while retaining their output modes and handoffs.
 5. Defer the `docs-drift-check` and `readme-alignment-review` mergers until
    the separate user/agent documentation-routing branch. They should not be
    changed as incidental work in this harness branch.
 
-This queue leaves 16 ordinary-discovery skills, three archived specialist
+The current harness has 18 ordinary-discovery skills, three archived specialist
 skills, and two documentation-skill decisions intentionally deferred.
 
 ## Decision Validation and Frozen Boundaries
@@ -151,16 +154,12 @@ No capability is proposed for irreversible removal. Archive actions preserve
 their source and test evidence outside ordinary discovery until their named
 reactivation condition applies.
 
-### Remaining Implementation Boundary
+### Completed Implementation Boundary
 
-The remaining implementation work may only:
-
-1. narrow branch readiness, summarization, task planning, and test strategy.
-
-It must update affected deterministic expectations and harness references in
-the same change, then run the focused repo-skill tests. It must not consolidate
-general project documentation or implement the deferred documentation-skill
-mergers.
+The active-skill consolidation is complete. It retained explicit boundaries and
+deterministic coverage while reducing ordinary discovery to the current focused
+owners. It did not consolidate general project documentation or implement the
+deferred documentation-skill mergers.
 
 ### Deferred Boundaries
 

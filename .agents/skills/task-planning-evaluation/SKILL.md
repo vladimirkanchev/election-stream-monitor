@@ -1,69 +1,31 @@
 ---
 name: task-planning-evaluation
-description: Use when the user wants repo-aware help prioritizing work in Election Stream Monitor. Best for rating tasks by importance, urgency, scope, and complexity, then suggesting phased plans, next steps, and practical sequencing.
+description: Use when the user wants repo-aware prioritization, sequencing, task sizing, or proportional closure for Election Stream Monitor work. Best for rating next work by importance, urgency, scope, and complexity without deciding branch/PR shape or specific tests.
 ---
 
 # Task Planning Evaluation
 
-Use this skill when the main need is: "what should we do next, how big is it, and what sequence makes sense for this repo?"
-
-This repo commonly needs planning help across:
-
-- detector and alert-rule roadmap choices
-- workflow, harness, and AI-skill improvements
-- CI, testing, and docs hardening
-- runtime versus `detector_lab` prioritization
-- interview-friendly project framing and next-step planning
+Own prioritization, sequencing, and proportional closure. Rate work against the
+current local-first pilot stage, not an imagined production platform.
 
 ## Default approach
 
-Rate the task before recommending the plan.
+Start from current project stage, expected outcome, risk, affected seam, and
+the cheapest credible closure. Separate product/runtime work from supporting
+CI, harness, documentation, and detector-lab work.
 
-Work from:
+Use proportional planning:
 
-1. current project stage
-2. task goal and expected value
-3. risks or blockers
-4. impact on runtime, workflow, or maintainability
-5. best next phase or sequence
+- small and obvious: perform it directly with one focused check;
+- medium: use the checklist in
+  [docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md);
+- broad or shared-boundary: stage the work and name validation lanes.
 
-Scale the planning depth to the task so simple work stays cheap and risky work
-gets enough structure:
-
-- simple, obvious, low-risk tasks
-  - do the work directly and report the result
-- medium tasks
-  - use the short checklist from
-    [docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md)
-    before execution
-- broad or shared-boundary tasks
-  - give the fuller staged plan with validation lanes
-
-For refactors and architecture cleanup, reuse the execution pattern from
-[docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md)
-instead of carrying a second copy here.
-
-For medium tasks, the human-readable checklist also lives in
-[docs/branch-purpose-template.md](../../../docs/branch-purpose-template.md).
-Use it to force a lightweight test decision:
-
-- which existing test or docs-check already proves the change?
-- if none, is one focused test worth adding?
-
-Use these rating categories:
-
-- `importance`
-  - how much the task helps the project succeed
-- `urgency`
-  - how soon the task should be done
-- `scope`
-  - how broad the likely change surface is
-- `complexity`
-  - how hard the task is to implement or validate well
+Do not inflate a valuable but non-urgent task. Prefer a clear next phase over a
+long roadmap. Before recommending new tests, ask whether an existing focused
+test or docs check already closes the actual risk.
 
 ## Output shape
-
-Use this order:
 
 1. `Task`
 2. `Importance`
@@ -74,33 +36,18 @@ Use this order:
 7. `Recommended phase`
 8. `Best next step`
 
-## Project-specific rules
-
-- Rate tasks against the current local-first advanced-prototype stage, not an imagined later platform.
-- Distinguish core runtime/product work from workflow, harness, CI, docs, and detector-lab support work.
-- Prefer phased plans that keep branch scope readable and validation practical.
-- Do not over-structure simple tasks. If the change is small and obvious, say so.
-- If a task is valuable but not urgent, say so instead of inflating it.
-- When relevant, call out whether the task is especially good for interview storytelling, operator value, or maintainability.
-- Favor concrete next steps over abstract roadmap language.
+Use 1–10 ratings and say what assumption would change the recommendation.
 
 ## Skill boundaries
 
-- Use this when the user wants prioritization, sequencing, or roadmap thinking.
-- If the main question is branch shape or safe cleanup, use `branch-pr-readiness` first.
-- If the main question is missing confidence after a change, use `test-strategy-review` first.
-- If the main question is docs drift rather than task priority, use `docs-alignment` first.
-
-## Good fit examples
-
-- deciding whether to work on detectors, CI, harness, or docs next
-- rating optional harness additions for the current branch
-- building a 2-week versus 2-month project roadmap
-- framing project work into interview-friendly categories
+- Use `branch-pr-readiness` first for branch shape, commit grouping, or safe cleanup.
+- Use `test-strategy-review` first for missing confidence or a validation choice.
+- Use `docs-alignment` first for documentation drift.
+- Use `summarization` first when current behavior or completed work is unclear.
 
 ## Avoid
 
-- rating everything as urgent
-- proposing large future-platform work as if it were the next obvious step
-- giving roadmap advice without considering the current repo stage
-- replacing concrete next steps with generic product-management language
+- rating every task urgent
+- proposing cloud-scale work as the immediate next step
+- replacing a practical phase with generic roadmap language
+- absorbing PR structure, detailed test design, or implementation execution
