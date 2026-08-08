@@ -1419,11 +1419,14 @@ It is a harness lane, not product-runtime confidence, so it stays outside
 `test-fast` and `ci-local`.
 It currently covers:
 
-- skill inventory, frontmatter, and section structure
-- readable ordering plus explicit hand-off boundaries
-- nearby-skill overlap and explicit deferral coverage
+- skill inventory, exact frontmatter, section structure, and the 100--200
+  character discovery budget
+- one configured primary seam per active skill, with curated exclusions for
+  realistic competing routes
+- readable ordering plus explicit hand-off and archived-skill boundaries
 - merged persistence and incident-analysis modes
 - explicit repository-path and `just` recipe references
+- retired-skill directory absence and stale-reference prevention
 - representative repo scenarios plus fixed output-shape snapshots
 - lightweight regressions for real repo incidents
 
