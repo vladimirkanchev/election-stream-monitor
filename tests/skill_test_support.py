@@ -174,6 +174,12 @@ def list_archived_skill_files() -> list[Path]:
     return sorted(ARCHIVED_SKILLS_ROOT.rglob("SKILL.md"))
 
 
+def list_validated_skill_files() -> list[Path]:
+    """Return every active and archived skill file checked by the harness."""
+    active_files = (SKILLS_ROOT / relative_path for relative_path in list_skill_files())
+    return sorted([*active_files, *list_archived_skill_files()])
+
+
 def extract_repository_references(text: str) -> set[str]:
     """Return explicit repository paths from Markdown links and inline code."""
     references = {
@@ -233,7 +239,7 @@ def extract_colon_headings(text: str) -> list[str]:
     ]
 
 
-def assert_contains_in_order(text: str, snippets: Sequence[str]) -> bool:
+def contains_in_order(text: str, snippets: Sequence[str]) -> bool:
     """Return whether all snippets appear in the given order."""
     start_index = 0
     for snippet in snippets:
@@ -255,14 +261,14 @@ def snapshot_heading_matches_skill_text(skill_text: str, heading: str) -> bool:
 
 def assert_all_snippets_present(text: str, snippets: Sequence[str]) -> None:
     """Assert that each expected snippet appears in the given text."""
-    for snippet in snippets:
-        assert snippet in text
+    missing = [snippet for snippet in snippets if snippet not in text]
+    assert not missing, f"Missing snippets: {missing}"
 
 
 def assert_all_snippets_absent(text: str, snippets: Sequence[str]) -> None:
     """Assert that each excluded snippet is absent from the given text."""
-    for snippet in snippets:
-        assert snippet not in text
+    unexpected = [snippet for snippet in snippets if snippet in text]
+    assert not unexpected, f"Unexpected snippets: {unexpected}"
 
 
 def _is_repository_link_target(target: str) -> bool:

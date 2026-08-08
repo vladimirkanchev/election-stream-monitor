@@ -44,14 +44,14 @@ from tests.skill_test_support import (
     SnapshotExpectation,
     assert_all_snippets_absent,
     assert_all_snippets_present,
-    assert_contains_in_order,
+    contains_in_order,
     extract_colon_headings,
     extract_headings,
     extract_just_recipes,
     extract_repository_references,
-    list_archived_skill_files,
     list_just_recipes,
     list_skill_files,
+    list_validated_skill_files,
     load_all_skills,
     load_manual_prompt_evaluation_cases,
     load_skill,
@@ -125,7 +125,7 @@ def test_each_skill_has_required_frontmatter_and_sections(skill_name: str) -> No
 @pytest.mark.parametrize("skill_name", sorted(EXPECTED_SKILLS))
 def test_skill_sections_stay_in_readable_order(skill_name: str) -> None:
     skill = load_skill(skill_name)
-    assert assert_contains_in_order(skill.body, SKILL_SECTION_ORDER)
+    assert contains_in_order(skill.body, SKILL_SECTION_ORDER)
 
 
 @pytest.mark.parametrize("skill_name", sorted(EXPECTED_SKILLS))
@@ -155,7 +155,7 @@ def test_planning_closure_profiles_keep_their_required_concepts(
     skill = load_skill("task-planning-evaluation")
 
     assert profile
-    assert assert_contains_in_order(skill.body, required_concepts)
+    assert contains_in_order(skill.body, required_concepts)
 
 
 def test_planning_closure_delegates_to_specialist_owners() -> None:
@@ -244,7 +244,7 @@ def test_snapshot_expected_outputs_stay_stable(
     snapshot_text = load_snapshot(expectation.snapshot_name)
 
     assert snapshot_text
-    assert assert_contains_in_order(snapshot_text, list(expectation.required_order))
+    assert contains_in_order(snapshot_text, expectation.required_order)
 
 
 @pytest.mark.parametrize("expectation", SNAPSHOT_EXPECTATIONS)
@@ -265,12 +265,7 @@ def test_skill_root_stays_small_and_repo_local() -> None:
 def test_explicit_skill_repository_references_resolve() -> None:
     """Keep active and archived skill links routed to tracked repository files."""
     unresolved_references = []
-    skill_paths = [
-        *(SKILLS_ROOT / relative_path for relative_path in list_skill_files()),
-        *list_archived_skill_files(),
-    ]
-
-    for skill_path in skill_paths:
+    for skill_path in list_validated_skill_files():
         skill = load_skill_file(skill_path)
         for reference in extract_repository_references(skill.text):
             resolved_path = resolve_repository_reference(skill.path, reference)
@@ -286,12 +281,7 @@ def test_explicit_skill_just_recipes_exist() -> None:
     """Keep skill validation commands aligned with the local recipe owner."""
     available_recipes = list_just_recipes(JUSTFILE_PATH)
     missing_recipes = []
-    skill_paths = [
-        *(SKILLS_ROOT / relative_path for relative_path in list_skill_files()),
-        *list_archived_skill_files(),
-    ]
-
-    for skill_path in skill_paths:
+    for skill_path in list_validated_skill_files():
         skill = load_skill_file(skill_path)
         for recipe in extract_just_recipes(skill.text):
             if recipe not in available_recipes:
@@ -337,8 +327,7 @@ def test_retired_skill_names_remain_only_in_the_historical_inventory_record() ->
         AGENTS_PATH,
         DOCS_INDEX_PATH,
         REPOSITORY_ROOT / "docs" / "testing-and-validation.md",
-        *(SKILLS_ROOT / relative_path for relative_path in list_skill_files()),
-        *list_archived_skill_files(),
+        *list_validated_skill_files(),
         *Path(__file__).resolve().parent.rglob("*.py"),
         *(Path(__file__).resolve().parent / "fixtures" / "skill_output_snapshots").glob("*.md"),
     ]
@@ -359,7 +348,7 @@ def test_retired_skill_names_remain_only_in_the_historical_inventory_record() ->
 def test_agents_md_risky_change_routing_stays_aligned() -> None:
     text = AGENTS_PATH.read_text(encoding="utf-8")
 
-    assert_contains_in_order(
+    assert contains_in_order(
         text,
         RISKY_CHANGE_ROUTING_ORDER,
     )

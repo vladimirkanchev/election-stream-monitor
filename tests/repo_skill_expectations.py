@@ -1058,7 +1058,7 @@ SNAPSHOT_EXPECTATIONS = [
 
 RISKY_CHANGE_ROUTING_ORDER = [
     "## Risky Change Routing",
-    "session or alert persistence, runtime backend selection, or PostgreSQL migration",
+    "session or alert persistence or runtime backend selection",
     "`persistence-backend-review`",
     "FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries",
     "`fastapi-mcp-security-review`",
