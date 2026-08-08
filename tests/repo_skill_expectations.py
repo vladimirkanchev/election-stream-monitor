@@ -12,7 +12,6 @@ from pathlib import Path
 from tests.skill_test_support import ScenarioExpectation, SnapshotExpectation
 
 EXPECTED_SKILL_ORDER = (
-    "alert-backend-parity-review",
     "architecture-diagram-review",
     "branch-pr-readiness",
     "ci-failure-triage",
@@ -47,15 +46,6 @@ COMMON_SECTIONS = (
 
 SCENARIO_EXPECTATIONS = [
     ScenarioExpectation(
-        skill_name="alert-backend-parity-review",
-        required_snippets=(
-            "Parity surface",
-            "file-backed versus PostgreSQL-backed",
-            "Main parity risk",
-            "security-surface-review",
-        ),
-    ),
-    ScenarioExpectation(
         skill_name="persistence-backend-review",
         required_snippets=(
             "Persistence surface",
@@ -63,6 +53,16 @@ SCENARIO_EXPECTATIONS = [
             "metadata, latest progress, ordered results, cancel intent",
             "detached-worker backend agreement",
             "just test-session-store",
+        ),
+    ),
+    ScenarioExpectation(
+        skill_name="persistence-backend-review",
+        required_snippets=(
+            "Alert-parity mode",
+            "raw alert reads",
+            "incident grouping",
+            "FastAPI/MCP",
+            "share-mode",
         ),
     ),
     ScenarioExpectation(
@@ -305,8 +305,8 @@ SCENARIO_EXPECTATIONS = [
 ]
 
 REAL_INCIDENT_REGRESSIONS = [
-    ("alert-backend-parity-review", "a session-alert store refactor may have changed file versus PostgreSQL grouped-incident behavior"),
-    ("alert-backend-parity-review", "an alerts-router auth change needs review for whether it touched store parity or only access policy"),
+    ("persistence-backend-review", "a session-alert store refactor changed file/PostgreSQL grouped-incident behavior"),
+    ("persistence-backend-review", "an alerts-router auth change touched store parity or only access policy"),
     ("persistence-backend-review", "a session-store branch may have changed file versus PostgreSQL snapshot semantics"),
     ("persistence-backend-review", "a detached worker may no longer inherit the same store backend as the parent"),
     ("postgres-migration-rollout-review", "a session migration branch passes parity tests but still has no clear rollback story"),
@@ -508,12 +508,12 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
 
 BOUNDARY_SNIPPETS_BY_SKILL = [
     (
-        "alert-backend-parity-review",
+        "persistence-backend-review",
         [
-            "use `ci-failure-triage` first",
-            "use `security-surface-review` first",
-            "use `test-strategy-review` first",
-            "use `branch-pr-readiness` first",
+            "Use `ci-failure-triage` first",
+            "Use `security-surface-review` first",
+            "Use `test-strategy-review` first",
+            "Use `branch-pr-readiness` first",
         ],
     ),
     (
@@ -676,8 +676,8 @@ EXPLICIT_HANDOFF_EXPECTATIONS = [
         "use `manual-validation-planner` next",
     ),
     (
-        "alert-backend-parity-review",
-        "use `security-surface-review` first",
+        "persistence-backend-review",
+        "Use `security-surface-review` first",
     ),
     (
         "ci-failure-triage",
@@ -730,12 +730,12 @@ MERGED_SKILL_MODE_MARKERS = [
 
 SNAPSHOT_EXPECTATIONS = [
     SnapshotExpectation(
-        skill_name="alert-backend-parity-review",
-        snapshot_name="alert_backend_parity_review_store.md",
+        skill_name="persistence-backend-review",
+        snapshot_name="persistence_backend_review_alert_parity.md",
         required_order=(
-            "Parity surface:",
-            "What should stay the same:",
-            "Main parity risk:",
+            "Persistence surface:",
+            "Default versus opt-in behavior:",
+            "Shared contract risk:",
             "Current confidence:",
             "Best next check:",
         ),
@@ -1077,7 +1077,6 @@ RISKY_CHANGE_ROUTING_ORDER = [
     "session or alert persistence, runtime backend selection, or PostgreSQL migration",
     "`persistence-backend-review`",
     "`postgres-migration-rollout-review`",
-    "`alert-backend-parity-review`",
     "FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries",
     "`fastapi-mcp-security-review`",
     "`security-surface-review`",

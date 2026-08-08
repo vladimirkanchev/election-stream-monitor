@@ -546,7 +546,6 @@ Use the skill set by question type:
   - `./.agents/skills/detector-rule-review/`
   - `./.agents/skills/frontend-bridge-review/`
   - `./.agents/skills/persistence-backend-review/`
-  - `./.agents/skills/alert-backend-parity-review/`
   - `./.agents/skills/fastapi-mcp-security-review/`
   - `./.agents/skills/real-media-validation-review/`
   - `./.agents/skills/security-surface-review/`

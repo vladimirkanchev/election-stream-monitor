@@ -38,7 +38,6 @@ heavy.
   - skills:
     `persistence-backend-review`,
     `postgres-migration-rollout-review`,
-    `alert-backend-parity-review`,
     `test-strategy-review`,
     `branch-pr-readiness`
 - FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries

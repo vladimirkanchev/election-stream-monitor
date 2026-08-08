@@ -97,7 +97,7 @@ it does not mean delete its knowledge.
 
 | Skill | Proposed action | Primary owner | Overlap candidate | Frequency | Future value | Rationale |
 | --- | --- | --- | --- | --- | --- | --- |
-| `alert-backend-parity-review` | Merge | `persistence-backend-review` | generic persistence review | Low | High | Alert parity is a distinct persistence mode, not a separate first-choice routing boundary. |
+| `alert-backend-parity-review` | Merged | `persistence-backend-review` | generic persistence review | Low | High | Alert parity is now an explicit mode of persistence review, not a separate first-choice routing boundary. |
 | `architecture-diagram-review` | Archive | explicit diagram review | README and docs review | Low | Medium | Useful only when reviewing a concrete diagram; reactivate for architecture-diagram work. |
 | `branch-pr-readiness` | Narrow | itself | release and summary work | High | High | Keep its unique merge/commit scope; trim repeated closure and PR-template detail. |
 | `ci-failure-triage` | Keep | itself | incident analysis | High | High | CI failure classification and smallest reproduction remain a distinct operational outcome. |
@@ -123,7 +123,8 @@ it does not mean delete its knowledge.
 
 ### Approved Queue
 
-1. Merge `alert-backend-parity-review` into `persistence-backend-review`.
+1. Completed: merged `alert-backend-parity-review` into
+   `persistence-backend-review`.
 2. Merge `incident-timeline` and `root-cause-suggestion` into renamed
    `incident-analysis`.
 3. Move `architecture-diagram-review`, `postgres-migration-rollout-review`,
