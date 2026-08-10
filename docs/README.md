@@ -596,54 +596,34 @@ for the actual command and validation-lane expectations.
 
 ## Document Ownership
 
-Use each doc for one main question:
+Use this table to choose the first document. Grouped entries share one role and
+status only where that remains unambiguous; the linked document still owns its
+specific subject.
 
-- root [`README.md`](../README.md)
-  - project/runtime overview
-  - first stop for trying the repo or understanding the current product shape
-- [`docs/README.md`](./README.md)
-  - maintainer routing
-  - where to start for contributor, reviewer, and AI-agent workflows
-- [`testing-and-validation.md`](./testing-and-validation.md)
-  - validation lanes
-  - routine commands, CI scope, and deeper confidence paths
-  - lane policy, fixture-check usage, and cheap local guardrails
-- repo-local skill files under `./.agents/skills/`
-  - skill behavior only
-  - keep repo routing and broader workflow guidance in the maintainer docs, not inside each skill
-- when a note starts duplicating one of the sources above, shorten it and point back to the owner
-- for Markdown-heavy docs, prefer small edits that keep one owner per topic instead of copying the same guidance into several files
-- [architecture.md](./architecture.md)
-  - system responsibilities
-  - runtime boundaries
-  - where a change belongs
-- [contracts.md](./contracts.md)
-  - stable payloads and bridge contracts
-  - `api_stream` trust, failure, and playback contracts
-- [session-model.md](./session-model.md)
-  - persisted session files
-  - lifecycle meaning
-  - progress semantics
-- [data-models.md](./data-models.md)
-  - compact field guide for detector, alert, and session shapes
-- [frontend-architecture.md](./frontend-architecture.md)
-  - React/Electron split
-  - playback state
-  - frontend transport boundary
-- [fastapi-boundary.md](./fastapi-boundary.md)
-  - what a future FastAPI layer should own
-  - what should stay local/runtime-specific
-- [mcp-server.md](./mcp-server.md)
-  - local MCP startup and connection details
-  - current read-only/query-only MCP scope
-- [api-stream-local-validation.md](./api-stream-local-validation.md)
-  - repeatable local `api_stream` trial workflow
-  - expected status, logs, and cleanup
-- [reviewer-guide.md](./reviewer-guide.md)
-  - fastest review order
-  - best feedback targets for the current project stage
-- [release-versioning.md](./release-versioning.md)
-  - `0.x` release expectations
+| Document(s) | Primary role | Audience | Status |
+| --- | --- | --- | --- |
+| [`README.md`](../README.md) | Entry point | User, contributor | Active |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Execution guide | Contributor | Active |
+| [`AGENTS.md`](../AGENTS.md) | Entry point | AI agent, contributor | Active |
+| `docs/README.md` | Entry point and maintainer routing | Contributor, maintainer, AI agent | Stable |
+| [`architecture.md`](./architecture.md), [`architecture-decision-fastapi.md`](./architecture-decision-fastapi.md), [`frontend-architecture.md`](./frontend-architecture.md), [`fastapi-boundary.md`](./fastapi-boundary.md) | Architecture | Contributor, maintainer | Stable |
+| [`contracts.md`](./contracts.md), [`session-model.md`](./session-model.md), [`data-models.md`](./data-models.md) | Contract | Contributor, maintainer, AI agent | Stable |
+| [`testing-and-validation.md`](./testing-and-validation.md), [`api-stream-local-validation.md`](./api-stream-local-validation.md), [`git-hooks.md`](./git-hooks.md) | Execution guide | Contributor, maintainer, operator | Active |
+| [`adding-an-analyzer.md`](./adding-an-analyzer.md), [`adding-an-alert-rule.md`](./adding-an-alert-rule.md), [`detector-template.md`](./detector-template.md) | Execution guide | Contributor, AI agent | Active |
+| [`mcp-server.md`](./mcp-server.md), [`branch-purpose-template.md`](./branch-purpose-template.md), [`merge-readiness-checklist.md`](./merge-readiness-checklist.md), [`reviewer-guide.md`](./reviewer-guide.md) | Maintainer workflow | Contributor, maintainer, AI agent | Active |
+| [`ci-maintainer-guide.md`](./ci-maintainer-guide.md), [`fixture-environment-policy.md`](./fixture-environment-policy.md), [`development-environment-audit.md`](./development-environment-audit.md) | Maintainer policy | Maintainer, contributor, AI agent | Stable |
+| [`release-versioning.md`](./release-versioning.md) | Maintainer policy | Maintainer, contributor | Stable |
+| [`detector-validation-ownership.md`](./detector-validation-ownership.md), [`coverage-evidence.md`](./coverage-evidence.md), [`detector-lab-analysis.md`](./detector-lab-analysis.md), [`motion-coherence.md`](./motion-coherence.md) | Audit evidence | Maintainer, detector engineer, AI agent | Active; experimental notes remain non-contractual |
+| [`dependency-ownership-audit.md`](./dependency-ownership-audit.md), [`static-analysis-audit.md`](./static-analysis-audit.md), [`session-persistence-audit.md`](./session-persistence-audit.md) | Audit evidence | Maintainer, contributor | Active; used for named follow-up gates |
+| [`api-stream-operational-inventory.md`](./api-stream-operational-inventory.md) | Audit evidence | Maintainer, operator | Deferred |
+| [`api-stream-election-policy-task-list.md`](./api-stream-election-policy-task-list.md), [`stream-profile-product-brainstorm.md`](./stream-profile-product-brainstorm.md) | Planning note | Maintainer, product contributor | Deferred |
+
+Archived or deferred material remains discoverable here, but it is not current
+runtime or onboarding policy. When a secondary document repeats an owner, keep
+only a short audience-appropriate summary and link back to this map or the
+narrower owner. Repo-local skill behavior remains in `./.agents/skills/`; its
+inventory and consolidation evidence remain in
+[`../.agents/skills/INVENTORY.md`](../.agents/skills/INVENTORY.md).
 
 ## Extension Guides
 
