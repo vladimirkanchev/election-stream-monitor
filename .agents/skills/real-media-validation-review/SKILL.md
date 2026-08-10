@@ -1,6 +1,6 @@
 ---
 name: real-media-validation-review
-description: Use when the user wants a repo-aware review of real-media, stream, or file-validation work in Election Stream Monitor. Best for checking checked-in versus local-only assets, flaky stream behavior, confidence-lane choice, and whether real-media coverage still matches the branch purpose without expanding into a broad test rewrite.
+description: Use for Election Stream Monitor real-media, stream, or file confidence-lane review. Excludes fixture portability and broad automated test selection.
 ---
 
 # Real Media Validation Review

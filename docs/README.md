@@ -225,15 +225,12 @@ For the current persistence rollout state, use:
     fit, stage honesty, or README trimming
   - use `./.agents/skills/docs-drift-check/` for pre-edit docs drift audits
     and owner routing
-  - use `./.agents/skills/architecture-diagram-review/` for diagram flow,
-    boundaries, visual quality, and current-stage honesty
-  - these three stay intentionally separate, and the repo skill tests protect
-    that split with paired boundary checks
+  - README fit and docs-drift helpers stay intentionally separate, and the
+    repo skill tests protect that split with paired boundary checks
   - before heavier PostgreSQL persistence or FastAPI/MCP security branches,
     start with the nearest review checklist skill instead of writing a broad
     new plan from scratch:
     `persistence-backend-review`,
-    `postgres-migration-rollout-review`,
     `fastapi-mcp-security-review`,
     `test-strategy-review`,
     `branch-pr-readiness`
@@ -513,6 +510,15 @@ work. Treat these as lightweight workflow helpers for the current project
 stage: text-first, narrow in scope, and easy to evolve without a separate
 automation framework.
 
+Deferred specialists live under `./.agents/archived-skills/` and stay outside
+ordinary discovery. Reactivate them explicitly only when their future gate is
+reached:
+
+- `architecture-diagram-review` for concrete architecture-diagram work
+- `postgres-migration-rollout-review` before PostgreSQL migration or cloud
+  persistence rollout
+- `security-surface-review` before broad trust review or public exposure
+
 Keep workflow ownership split:
 
 - [branch-purpose-template.md](./branch-purpose-template.md)
@@ -521,6 +527,9 @@ Keep workflow ownership split:
   - validation lanes, CI depth, and honest manual-only validation notes
 - [merge-readiness-checklist.md](./merge-readiness-checklist.md)
   - final branch-ready pass and seam-evidence check
+- [`../.agents/skills/INVENTORY.md`](../.agents/skills/INVENTORY.md)
+  - active and archived skill ownership, consolidation evidence, and deferred
+    routing work
 - repo-local skill files under `./.agents/skills/`
   - question-specific prompts only
 
@@ -528,15 +537,13 @@ Use the skill set by question type:
 
 - explain what happened
   - `./.agents/skills/summarization/`
-  - `./.agents/skills/incident-timeline/`
-  - `./.agents/skills/root-cause-suggestion/`
+  - `./.agents/skills/incident-analysis/`
 - shape a branch or next step
   - `./.agents/skills/branch-pr-readiness/`
   - `./.agents/skills/dependency-change-review/`
   - `./.agents/skills/task-planning-evaluation/`
 - decide version or rollout meaning
   - `./.agents/skills/release-version-readiness/`
-  - `./.agents/skills/postgres-migration-rollout-review/`
 - choose validation or test work
   - `./.agents/skills/ci-failure-triage/`
   - `./.agents/skills/test-strategy-review/`
@@ -546,10 +553,8 @@ Use the skill set by question type:
   - `./.agents/skills/detector-rule-review/`
   - `./.agents/skills/frontend-bridge-review/`
   - `./.agents/skills/persistence-backend-review/`
-  - `./.agents/skills/alert-backend-parity-review/`
   - `./.agents/skills/fastapi-mcp-security-review/`
   - `./.agents/skills/real-media-validation-review/`
-  - `./.agents/skills/security-surface-review/`
   - `./.agents/skills/docs-alignment/`
 
 Most common starting points:
@@ -565,7 +570,6 @@ Most common starting points:
     and name the manual step plainly
 - session or alert persistence drift
   - `./.agents/skills/persistence-backend-review/`
-  - `./.agents/skills/postgres-migration-rollout-review/`
 - dependency metadata drift
   - `./.agents/skills/dependency-change-review/`
 - detector/rule changes
@@ -574,7 +578,6 @@ Most common starting points:
   - `./.agents/skills/frontend-bridge-review/`
 - FastAPI or MCP security-sensitive changes
   - `./.agents/skills/fastapi-mcp-security-review/` for branch-scoped hardening review
-  - `./.agents/skills/security-surface-review/` for broader trust-boundary review
 - docs or docstring drift
   - `./.agents/skills/docs-alignment/`
 - API, CLI, persisted-data, or bridge contract drift

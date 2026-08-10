@@ -1,6 +1,6 @@
 ---
 name: manual-validation-planner
-description: Use when the user wants a concise, repo-aware local smoke plan for what to click or run before merge in Election Stream Monitor. Best for Electron, FastAPI, playback, alerts, and other operator-facing seams that still benefit from a small manual check.
+description: Use for concise Election Stream Monitor operator-facing local smoke plans. Excludes automated test selection, CI triage, and frontend seam review.
 ---
 
 # Manual Validation Planner
@@ -66,7 +66,7 @@ Keep it concrete and short.
 - Use this when the main need is a local human-run validation path.
 - If the user mainly needs the smallest automated lane to run, use `test-strategy-review` first.
 - If the branch shape or merge readiness is still unclear, use `branch-pr-readiness` first.
-- If the local behavior already failed and the event order is unclear, use `incident-timeline` first.
+- If the local behavior already failed and the event order is unclear, use `incident-analysis` first.
 - If the main blocker is a failing CI job, use `ci-failure-triage` first.
 
 ## Good fit examples

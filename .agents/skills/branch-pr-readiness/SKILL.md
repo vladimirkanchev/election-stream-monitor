@@ -1,68 +1,42 @@
 ---
 name: branch-pr-readiness
-description: Use when the user wants repo-aware help keeping a branch or pull request readable and mergeable in Election Stream Monitor. Best for checking branch purpose drift, suggesting commit and PR shape, summarizing merge readiness, and recommending safe cleanup without drifting into vague project management.
+description: "Use for Election Stream Monitor branch scope, commit grouping, PR shape, drift, and merge readiness. Excludes generic summaries, roadmap priority, and test selection."
 ---
 
 # Branch Pr Readiness
 
-Use this skill when the main need is:
-
-- "is this branch still coherent, should it be split, and what can be safely merged or deleted?"
-- "how should this work be grouped into commits and PRs so the branch stays readable?"
-- "is this branch ready to merge, what still looks risky, and what should we clean up first?"
-
-Typical seams here are long-lived feature branches, stacked PRs, mixed code and
-docs changes, merged-vs-main confusion, and final pre-merge cleanup.
+Own branch scope, commits, PR shape, and merge readiness. Start once the
+branch name, purpose, or current Git state is known.
 
 ## Default approach
 
-Check branch state before proposing action. Work from:
+Inspect the branch purpose, changed themes, merge-base state, focused evidence,
+and open risks. Then decide whether the work is one coherent PR, needs a
+reviewable commit split, or belongs in a follow-up branch.
 
-1. branch purpose or current PR intent
-2. changed file groups or commit themes
-3. whether the work is still one coherent story
-4. merged-vs-main or stacked-branch state
-5. focused validation already run and any open risks
-6. safest cleanup or next review action
-
-When checking drift, explicitly ask:
-
-1. What changed outside the branch purpose?
-2. Should that work stay, become a separate commit, or move to a follow-up branch?
-3. Does the PR description explain why any adjacent work belongs here?
-
-Use this quick drift test before recommending keep versus split:
+Use this drift test:
 
 1. does the branch still have one primary user-visible or maintainer-visible outcome?
-2. do the code, tests, and docs still point at the same changed seam?
-3. does the validation story still fit one review unit?
-4. did dependency metadata, fixtures, or CI changes appear only because they support that same story?
+2. do code, tests, and owning docs support that outcome?
+3. does one validation story cover the changed seam?
+4. do dependency, fixture, or CI changes directly support it?
 
-When the answer starts becoming "two stories," prefer a split. Use this
-follow-up extraction hint when the branch is still useful but getting wider:
+When the answer becomes two stories, use this follow-up extraction hint:
 
-- keep work in the branch when it directly supports the stated purpose
-- split it into a separate commit when it belongs here but should review on its
-  own
-- move it to a follow-up branch when it is useful but no longer part of the
-  branch story
+- keep direct support work in the branch;
+- split independently reviewable work into its own commit;
+- move unrelated but useful work to a follow-up branch.
 
-Treat these as strong split signals:
-
-- a second validation lane is needed for a different seam
-- a second owning doc is updated for a different reason than the main branch purpose
-- unrelated dependency metadata or fixture changes appear
-- the PR description needs "also" more than once to justify the branch
-- one part could merge safely even if the other part were reverted
-
-When a follow-up branch is right, prefer a short name such as `docs/...`,
-`refactor/...`, or `fix/...`.
+Strong split signals are an independently mergeable change, a different
+validation seam, or an extra PR explanation that needs repeated “also”. Prefer
+non-destructive evidence such as `git status`, `git diff --stat`, and
+merged-vs-main checks.
 
 ## Output shape
 
-Choose one mode. Do not mix all three unless the user clearly needs that.
+Choose one mode.
 
-For branch drift and cleanup:
+For drift:
 
 1. `Branch purpose`
 2. `Drift assessment`
@@ -72,7 +46,7 @@ For branch drift and cleanup:
 6. `Safe cleanup actions`
 7. `Best next step`
 
-For commit and PR grouping:
+For commit grouping, use:
 
 1. `Branch story`
 2. `Recommended commit shape`
@@ -80,15 +54,9 @@ For commit and PR grouping:
 4. `What should stay out`
 5. `Best next step`
 
-For commit grouping, use this hint:
-
-1. one commit
-   - one narrow theme with one validation story
-2. two commits
-   - one reviewable split such as runtime/test or code/docs
-3. three commits
-   - only when the branch really has three distinct review themes such as
-     runtime, tests, and docs
+Use one commit for one validation story, two for a meaningful implementation
+and evidence split, and three only for three independently reviewable themes.
+Prefer one coherent PR when the branch still has one outcome.
 
 For merge readiness:
 
@@ -99,71 +67,22 @@ For merge readiness:
 5. `Cleanup before merge`
 6. `Recommended next step`
 
-For branch-end closure, confirm:
-
-1. focused validation was run
-2. the changed seam has explicit evidence:
-   - existing focused test
-   - updated nearby test
-   - new focused test
-   - or docs/workflow-only check when no runtime behavior changed
-3. the PR template is honestly filled before CI has to catch it:
-   - `Validation Run` lists actual commands
-   - `Why these lanes were enough` explains the chosen validation scope
-   - `Fixture / Environment Impact` is explicit
-   - `Docs Impact` is explicit
-   - `Dependency Drift` is explicit when dependency metadata changed
-4. docs impact and fixture/environment impact are explicit
-5. contract-sensitive work moved with the owning docs and nearby tests
-6. any `pyproject.toml` or `uv.lock` change belongs to the branch story or is
-   moved out
-7. branch purpose still matches the actual content
-8. unrelated drift is excluded before merge
-
-Keep the answer narrow: drift, commit shape, PR shape, readiness, and cleanup.
-Do not expand into release process or project management unless the user asks.
-
-## Project-specific rules
-
-- Prefer one coherent branch story and one coherent PR when the branch still tells one clear story.
-- Split into multiple PRs only when there are genuinely different change themes or dependency layers.
-- Group commits by logical slices such as harness, docs, tests, or cleanup when they are meaningfully reviewable on their own.
-- Distinguish branch content already in `main` from branch names that still linger locally or remotely.
-- When a child branch depends on a parent branch, say that plainly and recommend merge order or retargeting.
-- Treat focused passing validation as good evidence, but say plainly when full-suite or environment-specific confidence is still missing.
-- Call out unrelated dependency metadata, local-only assets, or notes that should stay out of the PR.
-- When docs or tests change only because the branch widened, say whether they should move with the matching code or leave in a follow-up branch.
-- Prefer keeping the code, tests, and owning docs together when they describe one seam; split when they describe different seams.
-- Prefer non-destructive checks first, such as `just branch-cleanup`, `git status`, `git diff --stat`, and merged-vs-main checks.
-- Keep this skill about branch/PR structure and merge readiness only, not broader release management.
-- Before saying a branch is merge-ready, make sure the PR text is complete enough to satisfy the repo's PR-template guard instead of leaving that for CI to discover later.
-- Prefer the smallest workflow decision that unblocks the user: split or keep, commit shape, PR shape, merge or wait.
+Before recommending merge, confirm focused evidence, explicit docs and
+fixture/environment impact, dependency-file fit, and an honestly complete PR
+template when one is required.
 
 ## Skill boundaries
 
-- Use this after at least the branch name, purpose, or current git state is available.
-- If the branch history or event sequence is unclear, use `incident-timeline` first.
-- If the real blocker is a failing CI check, use `ci-failure-triage` first.
-- If the question becomes which validation command to run next, use `test-strategy-review` first.
-- If the next question is missing confidence after a split, use `test-strategy-review` next.
-- If the main question is whether dependency-file changes belong, use `dependency-change-review` first.
-
-## Good fit examples
-
-- a branch started as real-media hardening but now also carries detector-lab and CI work
-- two stacked PRs were merged remotely and it is unclear what can now be deleted
-- a harness branch needs to know whether 2 or 3 commits is the cleanest shape
-- a mixed worktree needs to be split into one runtime PR and one detector-lab PR
-- a workflow branch has passing focused tests but unclear commit, docs, or cleanup readiness
-- a stacked PR sequence merged remotely and the final branch needs a clear merge-readiness summary
-- a PR is almost merge-ready but CI would fail if `Validation Run`, `Fixture / Environment Impact`, or `Docs Impact` are still missing
-- docs and tests changed only because the branch widened and now may need to move with different code
+- If history or event order is unclear, use `incident-analysis` first.
+- If a CI check is failing, use `ci-failure-triage` first.
+- If the question is which validation to run, use `test-strategy-review` first.
+- If confidence is missing after a split, use `test-strategy-review` next.
+- If dependency-file ownership is the main question, use `dependency-change-review` first.
+- Do not replace `summarization` with a PR-ready change summary or `task-planning-evaluation` with roadmap priority.
 
 ## Avoid
 
-- recommending destructive deletion before checking whether the branch has unique commits
-- forcing a PR split when the branch still has one coherent purpose
-- forcing tiny commits per file or recipe when logical grouping is stronger
-- confusing branch/PR structure with CI failure diagnosis
-- confusing merge readiness with broad production deployment readiness
-- replacing a concrete go or no-go summary with vague project-management language
+- forcing a split when the branch has one coherent purpose
+- proposing destructive cleanup before checking unique commits
+- treating merge readiness as release or deployment readiness
+- substituting vague project management for a concrete split, keep, merge, or wait decision

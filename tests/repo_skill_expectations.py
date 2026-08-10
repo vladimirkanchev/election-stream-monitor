@@ -12,8 +12,6 @@ from pathlib import Path
 from tests.skill_test_support import ScenarioExpectation, SnapshotExpectation
 
 EXPECTED_SKILL_ORDER = (
-    "alert-backend-parity-review",
-    "architecture-diagram-review",
     "branch-pr-readiness",
     "ci-failure-triage",
     "dependency-change-review",
@@ -23,21 +21,149 @@ EXPECTED_SKILL_ORDER = (
     "fastapi-mcp-security-review",
     "fixture-environment-safety",
     "frontend-bridge-review",
-    "incident-timeline",
+    "incident-analysis",
     "manual-validation-planner",
     "persistence-backend-review",
-    "postgres-migration-rollout-review",
     "readme-alignment-review",
     "real-media-validation-review",
     "release-version-readiness",
-    "root-cause-suggestion",
-    "security-surface-review",
     "summarization",
     "task-planning-evaluation",
     "test-strategy-review",
 )
 
 EXPECTED_SKILLS = set(EXPECTED_SKILL_ORDER)
+
+MANUAL_PROMPT_EVALUATION_PRIMARY_SKILLS = frozenset(
+    {
+        "task-planning-evaluation",
+        "ci-failure-triage",
+        "detector-rule-review",
+        "persistence-backend-review",
+        "docs-alignment",
+        "branch-pr-readiness",
+    }
+)
+
+RETIRED_SKILL_SURVIVORS = {
+    "alert-backend-parity-review": "persistence-backend-review",
+    "incident-timeline": "incident-analysis",
+    "root-cause-suggestion": "incident-analysis",
+}
+HISTORICAL_RETIRED_SKILLS_HEADING = "## Historical Retired Skill Record"
+
+ARCHIVED_SKILL_REACTIVATION_SNIPPETS = (
+    "./.agents/archived-skills/",
+    "`architecture-diagram-review` for concrete architecture-diagram work",
+    "`postgres-migration-rollout-review` before PostgreSQL migration or cloud",
+    "`security-surface-review` before broad trust review or public exposure",
+)
+
+DISCOVERY_DESCRIPTION_EXPECTATIONS = {
+    "branch-pr-readiness": (
+        "branch scope",
+        ("generic summaries", "test selection"),
+    ),
+    "ci-failure-triage": (
+        "CI check",
+        ("general incident analysis",),
+    ),
+    "dependency-change-review": (
+        "dependency metadata",
+        ("supply-chain review", "package-upgrade planning"),
+    ),
+    "detector-rule-review": (
+        "production detector",
+        ("broad test selection", "real-media lane choice"),
+    ),
+    "docs-alignment": (
+        "docs or docstring",
+        ("pre-edit drift audits", "test planning"),
+    ),
+    "docs-drift-check": (
+        "documentation drift audits",
+        ("direct doc editing", "README fit", "test planning"),
+    ),
+    "fastapi-mcp-security-review": (
+        "share mode",
+        ("broad trust review", "deployment design"),
+    ),
+    "fixture-environment-safety": (
+        "test fixture",
+        ("detector confidence", "real-media assertion review"),
+    ),
+    "frontend-bridge-review": (
+        "renderer",
+        ("manual smoke planning", "general test selection"),
+    ),
+    "incident-analysis": (
+        "timeline reconstruction",
+        ("first-pass CI triage", "generic summaries"),
+    ),
+    "manual-validation-planner": (
+        "local smoke plans",
+        ("automated test selection", "CI triage"),
+    ),
+    "persistence-backend-review": (
+        "persistence parity",
+        ("access-policy hardening", "broad database design"),
+    ),
+    "readme-alignment-review": (
+        "root README fit",
+        ("repo-wide docs drift", "test planning"),
+    ),
+    "real-media-validation-review": (
+        "real-media",
+        ("fixture portability", "broad automated test selection"),
+    ),
+    "release-version-readiness": (
+        "version-change semantics",
+        ("PR merge readiness", "dependency ownership"),
+    ),
+    "summarization": (
+        "concise",
+        ("PR shaping", "incident diagnosis", "test strategy"),
+    ),
+    "task-planning-evaluation": (
+        "task priority",
+        ("branch or PR shape", "detailed test design"),
+    ),
+    "test-strategy-review": (
+        "test value",
+        ("CI-failure diagnosis", "specialist seam review"),
+    ),
+}
+
+PLANNING_CLOSURE_PROFILE_EXPECTATIONS = {
+    "small": (
+        "small and obvious",
+        "one focused check",
+        "inspect the diff",
+        "refactoring and docs",
+        "alignment apply only when they are genuinely needed",
+        "brief reason when",
+        "skipping a closure phase",
+    ),
+    "standard": (
+        "standard: implement",
+        "validate the focused seam",
+        "refactor touched code",
+        "align changed behavior",
+        "review branch shape",
+        "cheapest honest final validation",
+    ),
+    "high-risk": (
+        "high-risk: record a baseline",
+        "staged validation",
+        "before the standard",
+    ),
+}
+
+PLANNING_CLOSURE_SPECIALISTS = (
+    "`test-strategy-review`",
+    "`docs-alignment`",
+    "`branch-pr-readiness`",
+)
 
 COMMON_SECTIONS = (
     "## Default approach",
@@ -46,15 +172,6 @@ COMMON_SECTIONS = (
 )
 
 SCENARIO_EXPECTATIONS = [
-    ScenarioExpectation(
-        skill_name="alert-backend-parity-review",
-        required_snippets=(
-            "Parity surface",
-            "file-backed versus PostgreSQL-backed",
-            "Main parity risk",
-            "security-surface-review",
-        ),
-    ),
     ScenarioExpectation(
         skill_name="persistence-backend-review",
         required_snippets=(
@@ -66,13 +183,13 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="postgres-migration-rollout-review",
+        skill_name="persistence-backend-review",
         required_snippets=(
-            "Rollout surface",
-            "Current rollout state",
-            "schema ownership",
-            "backfill",
-            "rollback",
+            "Alert-parity mode",
+            "raw alert reads",
+            "incident grouping",
+            "FastAPI/MCP",
+            "share-mode",
         ),
     ),
     ScenarioExpectation(
@@ -84,15 +201,6 @@ SCENARIO_EXPECTATIONS = [
             "MCP tool exposure",
             "dependency exposure",
             "Best validation lane",
-        ),
-    ),
-    ScenarioExpectation(
-        skill_name="security-surface-review",
-        required_snippets=(
-            "Security surface",
-            "broad security-sensitive surfaces",
-            "local-first advanced-prototype stage",
-            "MCP `stdio` local tooling",
         ),
     ),
     ScenarioExpectation(
@@ -196,7 +304,7 @@ SCENARIO_EXPECTATIONS = [
         required_snippets=(
             "Importance",
             "Recommended phase",
-            "current local-first advanced-prototype stage",
+            "current local-first pilot stage",
         ),
     ),
     ScenarioExpectation(
@@ -225,19 +333,6 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="architecture-diagram-review",
-        required_snippets=(
-            "Diagram rating",
-            "Visual quality",
-            "Flow arrow review",
-            "Boundary review",
-            "Arrow-origin check",
-            "Arrow-end check",
-            "Stage honesty",
-            "local-first advanced-prototype stage",
-        ),
-    ),
-    ScenarioExpectation(
         skill_name="readme-alignment-review",
         required_snippets=(
             "README fit",
@@ -255,15 +350,9 @@ SCENARIO_EXPECTATIONS = [
             "Drift assessment",
             "Recommended PR shape",
             "Merged-vs-main state",
-            "branch-end closure",
-            "`Validation Run` lists actual commands",
-            "`Fixture / Environment Impact` is explicit",
-            "`Docs Impact` is explicit",
-            "`Dependency Drift` is explicit when dependency metadata changed",
-            "contract-sensitive work moved with the owning docs and nearby tests",
-            "move to a follow-up branch",
-            "Treat these as strong split signals",
-            "the PR description needs \"also\" more than once to justify the branch",
+            "follow-up branch",
+            "focused evidence",
+            "one coherent PR",
         ),
     ),
     ScenarioExpectation(
@@ -285,8 +374,9 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="incident-timeline",
+        skill_name="incident-analysis",
         required_snippets=(
+            "Timeline mode",
             "Observed facts",
             "Reconstructed sequence",
             "first session snapshot persisted",
@@ -295,8 +385,9 @@ SCENARIO_EXPECTATIONS = [
         ),
     ),
     ScenarioExpectation(
-        skill_name="root-cause-suggestion",
+        skill_name="incident-analysis",
         required_snippets=(
+            "Hypothesis mode",
             "Most likely root cause",
             "GitHub policy/state",
             "Cheapest next validation",
@@ -305,28 +396,14 @@ SCENARIO_EXPECTATIONS = [
 ]
 
 REAL_INCIDENT_REGRESSIONS = [
-    ("alert-backend-parity-review", "a session-alert store refactor may have changed file versus PostgreSQL grouped-incident behavior"),
-    ("alert-backend-parity-review", "an alerts-router auth change needs review for whether it touched store parity or only access policy"),
+    ("persistence-backend-review", "a session-alert store refactor changed file/PostgreSQL grouped-incident behavior"),
+    ("persistence-backend-review", "an alerts-router auth change touched store parity or only access policy"),
     ("persistence-backend-review", "a session-store branch may have changed file versus PostgreSQL snapshot semantics"),
     ("persistence-backend-review", "a detached worker may no longer inherit the same store backend as the parent"),
-    ("postgres-migration-rollout-review", "a session migration branch passes parity tests but still has no clear rollback story"),
-    ("postgres-migration-rollout-review", "an alert-store rollout needs a plain answer about whether backfill is required"),
     ("fastapi-mcp-security-review", "a FastAPI route branch may have widened `share` mode beyond the intended boundary"),
     ("fastapi-mcp-security-review", "an MCP tool update may have drifted outside the read-only local tooling model"),
-    ("security-surface-review", "a FastAPI route change may have drifted outside the intended auth or rate-limit boundary"),
-    ("security-surface-review", "an `api_stream` trust policy change needs review for boundary clarity rather than full platform redesign"),
-    ("branch-pr-readiness", "a harness branch needs to know whether 2 or 3 commits is the cleanest shape"),
-    ("branch-pr-readiness", "a mixed worktree needs to be split into one runtime PR and one detector-lab PR"),
-    ("branch-pr-readiness", "a PR is almost merge-ready but CI would fail if `Validation Run`, `Fixture / Environment Impact`, or `Docs Impact` are still missing"),
-    ("test-strategy-review", "detector-lab tests feel over-specific and need a trim pass"),
-    ("test-strategy-review", "a test file has many small threshold cases that may be better merged into parameterized coverage"),
     ("dependency-change-review", "`pyproject.toml` and `uv.lock` changed during harness work and it is unclear whether they belong"),
     ("dependency-change-review", "a code-only branch picked up dependency-file noise after local installs"),
-    ("summarization", "a detector-lab refactor needs a short explanation of the new family split and whether behavior changed"),
-    ("summarization", "a harness branch needs a PR-ready summary that includes docs and tests but avoids a file-by-file dump"),
-    ("branch-pr-readiness", "a workflow branch has passing focused tests but unclear commit, docs, or cleanup readiness"),
-    ("branch-pr-readiness", "a stacked PR sequence merged remotely and the final branch needs a clear merge-readiness summary"),
-    ("branch-pr-readiness", "docs and tests changed only because the branch widened and now may need to move with different code"),
     ("docs-alignment", "`practical_alerts.py` docstrings no longer match the newer evaluation-context shape"),
     ("docs-alignment", "a production runtime module docstring still sounds dict-shaped after typed-row refactors"),
     ("fixture-environment-safety", "a detector-lab test unexpectedly depends on local baseline clips that are not committed"),
@@ -341,26 +418,18 @@ REAL_INCIDENT_REGRESSIONS = [
     ("release-version-readiness", "real-media confidence improvements may justify `0.5.3` but not `0.6.0`"),
     ("detector-rule-review", "a blur-rule refactor needs review for behavior risk and test gaps"),
     ("detector-rule-review", "`detector_lab` motion-blur work may be drifting toward production responsibilities"),
-    ("test-strategy-review", "a blur-rule tweak needs `test-alert-rules` rather than the whole suite"),
-    ("test-strategy-review", "an HLS loader change should use `test-hls` before `ci-local`"),
-    ("task-planning-evaluation", "deciding whether to work on detectors, CI, harness, or docs next"),
-    ("task-planning-evaluation", "building a 2-week versus 2-month project roadmap"),
     ("docs-alignment", "the harness commands changed and the README plus testing guide no longer match"),
     ("docs-alignment", "CI lane ownership changed and the maintainer docs still describe the old shape"),
     ("docs-drift-check", "a README section is shorter than the maintainer docs and we need to know whether that is real drift"),
     ("docs-drift-check", "a FastAPI auth doc may now describe the wrong protected boundary after route changes"),
-    ("architecture-diagram-review", "a worker arrow may look like a data relationship instead of execution flow"),
-    ("architecture-diagram-review", "a README architecture diagram may now blur Electron, FastAPI, and detached-worker ownership"),
     ("readme-alignment-review", "a root README workflow section feels too heavy and may need to shrink and point to deeper docs"),
     ("readme-alignment-review", "the root README may now overstate project maturity after a runtime boundary refactor"),
-    ("branch-pr-readiness", "a branch started as real-media hardening but now also carries detector-lab and CI work"),
-    ("branch-pr-readiness", "two stacked PRs were merged remotely and it is unclear what can now be deleted"),
     ("ci-failure-triage", "`backend-tests` fails after detector or alert-rule changes"),
     ("ci-failure-triage", "`feature-gate` is red even though only one leaf check actually matters"),
-    ("incident-timeline", "session starts but UI falls back to idle"),
-    ("incident-timeline", "branch protection / CI merge incidents"),
-    ("root-cause-suggestion", "session start succeeded but first read 404s"),
-    ("root-cause-suggestion", "PR is green but merge remains blocked"),
+    ("incident-analysis", "session starts but UI falls back to idle"),
+    ("incident-analysis", "branch protection or CI merge state has conflicting signals"),
+    ("incident-analysis", "session start succeeded but the first read returned 404"),
+    ("incident-analysis", "PR is green but merge remains blocked"),
 ]
 
 
@@ -450,18 +519,6 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS = [
             "Smallest useful rewrite",
         ),
     ),
-    (
-        "architecture-diagram-review",
-        "diagram review versus README wording review",
-        (
-            "Flow arrow review",
-            "Boundary review",
-        ),
-        (
-            "README fit",
-            "Smallest useful rewrite",
-        ),
-    ),
 ]
 AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     "docs-drift-check",
@@ -478,65 +535,45 @@ AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     "docs editing versus docs drift audit",
 )
 AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
-    "readme-alignment-review",
-    "README wording review versus diagram review",
-    (
-        "README fit",
-        "Heavy-section warning",
-    ),
-    (
-        "Flow arrow review",
-        "Boundary review",
-    ),
-    "architecture-diagram-review",
-    "diagram review versus README wording review",
-)
-AMBIGUOUS_BOUNDARY_EXPECTATIONS += _bidirectional_boundary_cases(
     "ci-failure-triage",
-    "CI failure classification versus likely underlying cause",
+    "CI failure classification versus incident hypothesis",
     (
         "Most likely failure class",
         "Smallest local reproduction",
     ),
     (
+        "Hypothesis mode",
         "Most likely root cause",
         "Cheapest next validation",
     ),
-    "root-cause-suggestion",
-    "likely underlying cause versus CI failure classification",
+    "incident-analysis",
+    "incident hypothesis versus CI failure classification",
 )
 
 BOUNDARY_SNIPPETS_BY_SKILL = [
     (
-        "alert-backend-parity-review",
+        "persistence-backend-review",
         [
-            "use `ci-failure-triage` first",
-            "use `security-surface-review` first",
-            "use `test-strategy-review` first",
-            "use `branch-pr-readiness` first",
+            "Use `ci-failure-triage` first",
+            "Use `fastapi-mcp-security-review` first",
+            "Use `test-strategy-review` first",
+            "Use `branch-pr-readiness` first",
         ],
     ),
     (
         "fastapi-mcp-security-review",
         [
-            "use `security-surface-review` first",
+            "reactivate the archived",
             "use `ci-failure-triage` first",
             "use `docs-alignment` first",
             "use `branch-pr-readiness` first",
         ],
     ),
     (
-        "security-surface-review",
-        [
-            "use `ci-failure-triage` first",
-            "use `task-planning-evaluation` first",
-            "use `docs-alignment` first",
-        ],
-    ),
-    (
         "branch-pr-readiness",
         [
-            "use `incident-timeline` first",
+            "Own branch scope, commits, PR shape, and merge readiness.",
+            "use `incident-analysis` first",
             "use `ci-failure-triage` first",
             "use `test-strategy-review` first",
             "use `test-strategy-review` next",
@@ -546,9 +583,10 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "test-strategy-review",
         [
-            "use `summarization` or `incident-timeline` first",
-            "use `ci-failure-triage` first",
-            "use `branch-pr-readiness` first",
+            "Own coverage value and the cheapest honest validation.",
+            "Use `summarization` or `incident-analysis` first",
+            "Use `ci-failure-triage` first",
+            "Use `branch-pr-readiness` first",
         ],
     ),
     (
@@ -556,15 +594,6 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         [
             "use `branch-pr-readiness` first",
             "use `ci-failure-triage` first",
-        ],
-    ),
-    (
-        "postgres-migration-rollout-review",
-        [
-            "use `persistence-backend-review` first",
-            "use `release-version-readiness` first",
-            "use `test-strategy-review` first",
-            "use `branch-pr-readiness` first",
         ],
     ),
     (
@@ -586,16 +615,17 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "task-planning-evaluation",
         [
-            "use `branch-pr-readiness` first",
-            "use `test-strategy-review` first",
-            "use `docs-alignment` first",
+            "Own prioritization, sequencing, and proportional closure.",
+            "Use `branch-pr-readiness` first",
+            "Use `test-strategy-review` first",
+            "Use `docs-alignment` first",
         ],
     ),
     (
         "docs-alignment",
         [
             "use `ci-failure-triage` first",
-            "use `summarization` or `incident-timeline` first",
+            "use `summarization` or `incident-analysis` first",
             "use `test-strategy-review` next",
         ],
     ),
@@ -604,7 +634,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         [
             "use `test-strategy-review` first",
             "use `branch-pr-readiness` first",
-            "use `incident-timeline` first",
+            "use `incident-analysis` first",
             "use `ci-failure-triage` first",
         ],
     ),
@@ -630,7 +660,7 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
         "frontend-bridge-review",
         [
             "use `test-strategy-review` first",
-            "use `incident-timeline` first",
+            "use `incident-analysis` first",
             "use `manual-validation-planner` next",
             "use `ci-failure-triage` first",
             "use `detector-rule-review` first",
@@ -639,33 +669,25 @@ BOUNDARY_SNIPPETS_BY_SKILL = [
     (
         "ci-failure-triage",
         [
-            "use `incident-timeline` first",
-            "hand off to `root-cause-suggestion`",
+            "use `incident-analysis` next",
             "use `test-strategy-review` next",
         ],
     ),
     (
         "summarization",
         [
+            "Own concise repository and completed-change summaries.",
             "Use `branch-pr-readiness` first",
             "Use `docs-alignment` first",
-            "Use `incident-timeline`",
-            "Use `root-cause-suggestion`",
+            "Use `incident-analysis`",
             "Use `test-strategy-review`",
         ],
     ),
     (
-        "incident-timeline",
+        "incident-analysis",
         [
-            "Use this before `root-cause-suggestion`",
-            "Hand off to `root-cause-suggestion`",
-        ],
-    ),
-    (
-        "root-cause-suggestion",
-        [
-            "If event order is still unclear, use `incident-timeline` first.",
-            "If the user mainly wants ordered reconstruction, use `incident-timeline` instead.",
+            "Use `ci-failure-triage` first",
+            "Use `summarization` for a generic repository or change summary",
         ],
     ),
 ]
@@ -676,8 +698,8 @@ EXPLICIT_HANDOFF_EXPECTATIONS = [
         "use `manual-validation-planner` next",
     ),
     (
-        "alert-backend-parity-review",
-        "use `security-surface-review` first",
+        "persistence-backend-review",
+        "Use `fastapi-mcp-security-review` first",
     ),
     (
         "ci-failure-triage",
@@ -711,6 +733,14 @@ MERGED_SKILL_MODE_MARKERS = [
         ),
     ),
     (
+        "incident-analysis",
+        (
+            "Timeline mode",
+            "Hypothesis mode",
+            "Cheapest next validation",
+        ),
+    ),
+    (
         "release-version-readiness",
         (
             "Current base version",
@@ -718,24 +748,16 @@ MERGED_SKILL_MODE_MARKERS = [
             "What must be true first",
         ),
     ),
-    (
-        "postgres-migration-rollout-review",
-        (
-            "Rollout surface",
-            "Current rollout state",
-            "Best next rollout check",
-        ),
-    ),
 ]
 
 SNAPSHOT_EXPECTATIONS = [
     SnapshotExpectation(
-        skill_name="alert-backend-parity-review",
-        snapshot_name="alert_backend_parity_review_store.md",
+        skill_name="persistence-backend-review",
+        snapshot_name="persistence_backend_review_alert_parity.md",
         required_order=(
-            "Parity surface:",
-            "What should stay the same:",
-            "Main parity risk:",
+            "Persistence surface:",
+            "Default versus opt-in behavior:",
+            "Shared contract risk:",
             "Current confidence:",
             "Best next check:",
         ),
@@ -749,17 +771,6 @@ SNAPSHOT_EXPECTATIONS = [
             "Shared contract risk:",
             "Current confidence:",
             "Best next check:",
-        ),
-    ),
-    SnapshotExpectation(
-        skill_name="postgres-migration-rollout-review",
-        snapshot_name="postgres_migration_rollout_review_sessions.md",
-        required_order=(
-            "Rollout surface:",
-            "Current rollout state:",
-            "Main rollout risks:",
-            "Missing rollout evidence:",
-            "Best next rollout check:",
         ),
     ),
     SnapshotExpectation(
@@ -794,17 +805,6 @@ SNAPSHOT_EXPECTATIONS = [
             "Why not smaller:",
             "Why not larger:",
             "What must be true first:",
-        ),
-    ),
-    SnapshotExpectation(
-        skill_name="security-surface-review",
-        snapshot_name="security_surface_review_share_mode.md",
-        required_order=(
-            "Security surface:",
-            "Current protection:",
-            "Main risk:",
-            "Best next hardening step:",
-            "What is intentionally out of scope:",
         ),
     ),
     SnapshotExpectation(
@@ -968,22 +968,6 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="architecture-diagram-review",
-        snapshot_name="architecture_diagram_review_runtime_flow.md",
-        required_order=(
-            "Diagram rating:",
-            "Visual quality:",
-            "What matches well:",
-            "Flow arrow review:",
-            "Boundary review:",
-            "Arrow-origin check:",
-            "Arrow-end check:",
-            "Stage honesty:",
-            "Biggest mismatch:",
-            "Smallest useful fixes:",
-        ),
-    ),
-    SnapshotExpectation(
         skill_name="readme-alignment-review",
         snapshot_name="readme_alignment_review_root_section.md",
         required_order=(
@@ -1034,8 +1018,8 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="incident-timeline",
-        snapshot_name="incident_timeline_ui_idle.md",
+        skill_name="incident-analysis",
+        snapshot_name="incident_analysis_timeline_ui_idle.md",
         required_order=(
             "Observed facts:",
             "Reconstructed sequence:",
@@ -1060,8 +1044,8 @@ SNAPSHOT_EXPECTATIONS = [
         ),
     ),
     SnapshotExpectation(
-        skill_name="root-cause-suggestion",
-        snapshot_name="root_cause_pr_blocked.md",
+        skill_name="incident-analysis",
+        snapshot_name="incident_analysis_root_cause_pr_blocked.md",
         required_order=(
             "Most likely root cause:",
             "Confidence:",
@@ -1074,13 +1058,10 @@ SNAPSHOT_EXPECTATIONS = [
 
 RISKY_CHANGE_ROUTING_ORDER = [
     "## Risky Change Routing",
-    "session or alert persistence, runtime backend selection, or PostgreSQL migration",
+    "session or alert persistence or runtime backend selection",
     "`persistence-backend-review`",
-    "`postgres-migration-rollout-review`",
-    "`alert-backend-parity-review`",
     "FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries",
     "`fastapi-mcp-security-review`",
-    "`security-surface-review`",
     "real-media, long-running stream, or environment-sensitive validation work",
     "`fixture-environment-safety`",
     "`manual-validation-planner`",

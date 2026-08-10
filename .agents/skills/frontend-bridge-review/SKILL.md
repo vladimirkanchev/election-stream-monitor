@@ -1,6 +1,6 @@
 ---
 name: frontend-bridge-review
-description: Use when the user wants a repo-aware review of renderer, Electron bridge, session-polling, playback, or UI-runtime changes in Election Stream Monitor. Best for checking ownership, readability, drift, and missing focused confidence across the frontend/runtime seam.
+description: Use for Election Stream Monitor renderer, Electron bridge, and UI-runtime seam review. Excludes manual smoke planning and general test selection.
 ---
 
 # Frontend Bridge Review
@@ -60,7 +60,7 @@ Keep the review risk-first and seam-aware.
 
 - Use this when the main need is a frontend/runtime seam review, not a generic UI opinion.
 - If the user mainly wants the smallest automated lane to run, use `test-strategy-review` first.
-- If the local behavior already failed and the sequence is unclear, use `incident-timeline` first.
+- If the local behavior already failed and the sequence is unclear, use `incident-analysis` first.
 - If the branch needs a small human smoke path before merge, use `manual-validation-planner` next.
 - If the main blocker is a failing CI lane, use `ci-failure-triage` first.
 - If the issue is really backend rule or detector logic, use `detector-rule-review` first.

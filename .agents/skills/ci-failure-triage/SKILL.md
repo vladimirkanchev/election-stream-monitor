@@ -1,6 +1,6 @@
 ---
 name: ci-failure-triage
-description: Use when the user wants fast, repo-aware help understanding a failing CI check in Election Stream Monitor. Best for classifying whether a failure is a code bug, stale test, environment issue, or CI/policy drift, then suggesting the smallest useful local reproduction command.
+description: "Use for a failing Election Stream Monitor CI check: classify its owner and failure class, then choose the smallest local reproduction. Excludes general incident analysis."
 ---
 
 # Ci Failure Triage
@@ -58,8 +58,8 @@ Use this order:
 ## Skill boundaries
 
 - Use this after at least one failing check name or error snippet is available.
-- If the main need is ordered reconstruction across logs and files, use `incident-timeline` first.
-- If enough evidence already supports one specific technical cause, hand off to `root-cause-suggestion`.
+- If the CI failure still needs sequence reconstruction or an evidence-backed
+  cause, use `incident-analysis` next.
 - If the code change is understood and the remaining question is missing confidence, use `test-strategy-review` next.
 
 ## Good fit examples

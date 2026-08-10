@@ -1411,18 +1411,30 @@ This writes the compact production-fixture detector export:
 Focused repo-local skill validation:
 
 ```bash
-.venv/bin/pytest -q tests/test_repo_skills.py
+just test-repo-skills
 ```
 
 This skill-focused test slice is intentionally no-key and deterministic.
+It is a harness lane, not product-runtime confidence, so it stays outside
+`test-fast` and `ci-local`.
 It currently covers:
 
-- skill inventory, frontmatter, and section structure
-- readable ordering plus explicit hand-off boundaries
-- nearby-skill overlap and explicit deferral coverage
-- merged-skill regression markers for the newer multi-mode skills
+- skill inventory, exact frontmatter, section structure, and the 100--200
+  character discovery budget
+- one configured primary seam per active skill, with curated exclusions for
+  realistic competing routes
+- readable ordering plus explicit hand-off and archived-skill boundaries
+- merged persistence and incident-analysis modes
+- explicit repository-path and `just` recipe references
+- retired-skill directory absence and stale-reference prevention
 - representative repo scenarios plus fixed output-shape snapshots
 - lightweight regressions for real repo incidents
+
+The manual prompt catalog at
+[`../.agents/evaluations/manual-prompt-evaluation.md`](../.agents/evaluations/manual-prompt-evaluation.md)
+samples routing quality after material skill changes. Run each case in a fresh
+conversation and keep results outside the repository; it is not a CI test or a
+claim about live-model reliability.
 
 Use [docs/README.md](./README.md#repo-local-codex-skills) for the skill routing
 map. This document owns the test command and validation-lane meaning, not the
@@ -2182,24 +2194,6 @@ Focused alert-query pyright slice:
 Use this when the change stays inside the shared alert persistence and
 alert-query slice and you want the narrowest pyright signal that still matches
 the branch's current typing focus.
-
-### Repo-Local Skill Tests
-
-The repo-local Codex skills under `./.agents/skills/` are validated with the
-focused deterministic slice shown above, not with live model calls.
-
-Harness ownership:
-
-- `tests/test_repo_skills.py`
-  - inventory, boundary, scenario, and snapshot assertions
-- `tests/repo_skill_expectations.py`
-  - inventory, routing, scenario, and snapshot expectation tables
-- `tests/skill_test_support.py`
-  - parsing and shared assertion helpers
-- `tests/fixtures/skill_output_snapshots/`
-  - stable example output shapes for selected prompts
-
-This keeps the harness cheap to validate and honest about what it proves.
 
 ### Frontend
 

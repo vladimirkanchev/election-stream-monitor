@@ -1,6 +1,6 @@
 ---
 name: persistence-backend-review
-description: Use when the user wants a repo-aware review of session or alert persistence behavior in Election Stream Monitor. Best for checking file-backed versus PostgreSQL-backed defaults, runtime store selection, parity tests, docs alignment, and migration drift without turning the task into broad database architecture work.
+description: Use for Election Stream Monitor session and alert persistence parity, backend selection, and migration drift review. Excludes access-policy hardening and broad database design.
 ---
 
 # Persistence Backend Review
@@ -31,8 +31,14 @@ Work from:
 For sessions, check metadata, latest progress, ordered results, cancel intent,
 snapshot shape, missing-session reads, and detached-worker backend agreement.
 
-For alerts, check raw alert reads, summaries, incident grouping, store
-bootstrap, adapter behavior, and FastAPI/MCP read-model consistency.
+For alerts, use **Alert-parity mode**:
+
+- raw alert reads, summaries, and incident grouping
+- store bootstrap and adapter behavior
+- FastAPI/MCP read-model consistency
+
+Keep alert-store parity separate from route auth, rate-limit, or share-mode
+policy: those controls can change without changing the shared alert contract.
 
 ## Output shape
 
@@ -66,20 +72,22 @@ Keep the review practical and migration-focused.
 
 - Use this when the main question is persistence behavior, backend selection,
   parity confidence, or migration drift.
-- If the question is only alert read-model parity, use
-  `alert-backend-parity-review` first.
-- If the question is route exposure, auth, rate limits, MCP access, or
-  share-mode risk, use `security-surface-review` first.
-- If the main question is which tests to add or trim, use
-  `test-strategy-review` first.
-- If the main question is branch cleanup or merge shape, use
-  `branch-pr-readiness` first.
+- Use Alert-parity mode when the question is limited to shared alert reads,
+  filters, summaries, incidents, or adapter behavior across backends.
+- Use `ci-failure-triage` first for a failing CI lane.
+- Use `fastapi-mcp-security-review` first for route exposure, auth, rate
+  limits, MCP access, or share-mode risk. Reactivate the archived
+  `security-surface-review` only for broader public-exposure trust review.
+- Use `test-strategy-review` first to choose tests to add or trim.
+- Use `branch-pr-readiness` first for branch cleanup or merge shape.
 
 ## Good fit examples
 
 - a session-store branch may have changed file versus PostgreSQL snapshot semantics
 - a detached worker may no longer inherit the same store backend as the parent
 - an alert-store migration needs a small parity check before broader route work
+- an alerts-router auth change touched store parity or only access policy
+- a session-alert store refactor changed file/PostgreSQL grouped-incident behavior
 - docs now imply PostgreSQL stores artifacts that still remain file-backed
 
 ## Avoid

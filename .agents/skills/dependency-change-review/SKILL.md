@@ -1,6 +1,6 @@
 ---
 name: dependency-change-review
-description: Use when the user wants repo-aware help judging whether local dependency metadata changes in Election Stream Monitor actually belong in the current branch. Best for classifying changes in files such as pyproject.toml and uv.lock as intentional, incidental, or branch drift.
+description: Use for Election Stream Monitor dependency metadata classification as intentional, incidental, or branch drift. Excludes supply-chain review and package-upgrade planning.
 ---
 
 # Dependency Change Review

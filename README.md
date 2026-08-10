@@ -384,7 +384,7 @@ That branch flow keeps three checks explicit:
 
 ## Repo-Local Codex Skills
 
-The repo includes a small set of repo-local Codex skills under
+The repo includes a focused set of repo-local Codex skills under
 [`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review.
 
 These are mainly for AI-assisted contributors and debugging workflows. They
@@ -407,17 +407,14 @@ The most common workflow helpers are:
 These skills help with local planning, validation, docs alignment, and review,
 but they do not replace the project's tests or CI lanes.
 
-Three newer review helpers keep nearby docs work separate on purpose:
+Two newer review helpers keep nearby docs work separate on purpose:
 
 - `readme-alignment-review`
   - root README section fit, stage honesty, and trimming
 - `docs-drift-check`
   - pre-edit audit of whether docs are really drifting and which file owns the fix
-- `architecture-diagram-review`
-  - diagram flow clarity, boundaries, visual quality, and stage honesty
-
-Their deterministic skill tests also protect those boundaries so README fit,
-docs drift, and diagram review do not collapse into one generic docs mode.
+Their deterministic skill tests protect those boundaries so README fit and
+docs drift do not collapse into one generic docs mode.
 
 The repo also includes narrower helpers for incident explanation, CI failure
 triage, manual validation planning, fixture/environment review, and

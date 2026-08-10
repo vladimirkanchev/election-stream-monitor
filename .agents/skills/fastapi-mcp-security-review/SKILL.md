@@ -1,6 +1,6 @@
 ---
 name: fastapi-mcp-security-review
-description: Use when the user wants a repo-aware review of FastAPI or MCP security hardening work in Election Stream Monitor. Best for branch-scoped checks of auth, share mode, MCP tool boundaries, rate limits, secrets, local-versus-remote trust, and dependency exposure without expanding into a broad surface map or a full security program.
+description: Use for branch-scoped Election Stream Monitor FastAPI/MCP security for share mode, auth, tool exposure, and dependency exposure. Excludes broad trust review and deployment design.
 ---
 
 # Fastapi Mcp Security Review
@@ -74,7 +74,8 @@ Keep the review concrete and branch-scoped.
 
 - Use this when the main question is FastAPI/MCP branch hardening, security
   review, or branch-scoped security checklist coverage.
-- If the user wants a broader code or architecture security read, use `security-surface-review` first.
+- For a broader trust review before public exposure, reactivate the archived
+  `security-surface-review`.
 - If the main issue is a failing security or dependency CI job, use `ci-failure-triage` first.
 - If the question is primarily docs wording drift, use `docs-alignment` first.
 - If the question is branch scope or merge shape, use `branch-pr-readiness` first.

@@ -13,6 +13,10 @@ Improve __________________ without changing __________________.
 Execution pattern:
 Protect behavior first, change one boundary at a time, update tests with the change, run the smallest honest validation lane, align docs and harness only if ownership changed.
 
+Use `task-planning-evaluation` to choose the proportional closure profile; the
+skill owns the detailed procedure, while this template remains the concise
+branch handoff.
+
 In scope:
 - 
 - 

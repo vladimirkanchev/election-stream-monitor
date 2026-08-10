@@ -1,6 +1,6 @@
 ---
 name: docs-alignment
-description: Use when the user wants repo-aware help keeping project docs or code docs aligned with the current Election Stream Monitor code, tests, and CI shape. Best for checking documentation drift, proposing concise updates, and removing low-value repetition without turning the task into endless docs polishing.
+description: Use for Election Stream Monitor docs or docstring alignment with current code, tests, and CI. Excludes pre-edit drift audits, incident diagnosis, and test planning.
 ---
 
 # Docs Alignment
@@ -82,7 +82,7 @@ Keep the split explicit:
 
 - Use this after the relevant code, tests, or workflow changes are understood.
 - If the main problem is a failing CI policy or docs check, use `ci-failure-triage` first.
-- If the behavior itself is still unclear, use `summarization` or `incident-timeline` first.
+- If the behavior itself is still unclear, use `summarization` or `incident-analysis` first.
 - If the next question is missing confidence rather than docs drift, use `test-strategy-review` next.
 - If the next question is broader task priority rather than documentation
   drift, use `task-planning-evaluation` first.

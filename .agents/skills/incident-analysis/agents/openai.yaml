@@ -1,0 +1,4 @@
+interface:
+  display_name: "Incident Analysis"
+  short_description: "Reconstruct incidents or test one evidence-backed cause."
+  default_prompt: "Analyze this Election Stream Monitor incident. Choose a timeline or root-cause mode, cite the evidence, and give the cheapest validation step."
