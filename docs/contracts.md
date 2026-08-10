@@ -1247,242 +1247,31 @@ choose the appropriate lane.
 
 ### Session Alert Query Surfaces
 
-The backend now exposes a read-only, session-scoped alert query surface through
-both FastAPI and MCP adapters over the same shared service seam.
+Four distinct, read-only alert views share one session-scoped filter and
+validation seam:
 
-Ownership split:
+- raw alerts: `GET /sessions/{session_id}/alerts`
+- raw alert summary: `GET /sessions/{session_id}/alerts/summary`
+- grouped incident timeline: `GET /sessions/{session_id}/alerts/timeline`
+- grouped incident summary:
+  `GET /sessions/{session_id}/alerts/incident-summary`
 
-- `src/session_alerts.py`
-  - read, filter, and summarize persisted alert events
-- `src/api/routers/alerts.py`
-  - HTTP binding and API error mapping
-- `src/esm_mcp/`
-  - MCP tool registration and MCP-facing error mapping
+FastAPI binds and protects the HTTP routes; local stdio MCP tools expose
+equivalent read meaning without joining the HTTP trust boundary. The MCP tool
+inventory, transport rules, and safe error policy live in
+[mcp-server.md](./mcp-server.md#current-tool-inventory).
 
-Current HTTP routes:
+All views accept a `session_id` and optional `detector_id`, `severity`,
+`start_time_utc`, and `end_time_utc`. Boundary whitespace is trimmed; blank
+values fail validation. IDs are limited to 128 characters and timestamps to 64.
+Time bounds are inclusive, and invalid or inverted bounds fail before a read.
 
-- `GET /sessions/{session_id}/alerts`
-- `GET /sessions/{session_id}/alerts/summary`
+Raw-alert lists and grouped timelines additionally accept `limit` and
+`offset`: the default limit is 100, the maximum is 250, and paging preserves
+the existing order. A shared 5,000-row storage-work ceiling fails rather than
+returning a partial page or summary.
 
-The complete MCP tool inventory, transport policy, result bounds, and MCP
-error contract are maintained in [mcp-server.md](./mcp-server.md#current-tool-inventory).
-
-Shared filter inputs:
-
-- `session_id`
-- optional `detector_id`
-- optional `severity`
-- optional `start_time_utc`
-- optional `end_time_utc`
-
-At the FastAPI and MCP boundaries, outer whitespace is trimmed and blank
-values are rejected. Session and detector IDs are limited to 128 characters;
-timestamp filters are limited to 64 characters.
-
-Raw alert lists and grouped timelines also accept `limit` and `offset` on both
-FastAPI and MCP. `limit` defaults to 100 and is capped at 250; `offset`
-defaults to 0. Paging preserves the existing alert or grouped-entry order.
-Each shared alert or incident read has a 5,000-row storage-work ceiling and
-fails rather than returning a partial page or summary. The detailed local MCP
-error and transport policy is owned by [mcp-server.md](./mcp-server.md).
-Session snapshot reads keep their complete payload meaning and fail with a
-structured `422` if the serialized HTTP response would exceed 2 MiB; they are
-not silently truncated.
-
-Current shared-service validation expectations:
-
-- missing sessions raise the shared not-found contract before filtering or
-  summarization continues
-- invalid `start_time_utc` or `end_time_utc` values raise field-specific
-  validation errors
-- unknown detector/severity filters degrade safely to empty query results
-- time bounds are inclusive when provided
-
-Current split test ownership:
-
-- `tests/test_alert_query_service_read.py`
-  - persisted alert-log reads, corrupt/unreadable input tolerance, and
-    missing/orphaned session handling
-- `tests/test_alert_query_service_filter.py`
-  - raw filtered-row behavior, time-range validation, ordering, and safe empty
-    results for unknown filters
-- `tests/test_alert_query_service_summary.py`
-  - numeric aggregation, timestamp-bound behavior, empty-summary behavior, and
-    summary-specific validation
-- `tests/test_mcp_server_alerts_behavior.py`
-  - raw MCP no-alert behavior, filtered-data behavior, and stable empty results
-    for known sessions whose filters match nothing
-  - keeps raw payload-shaping expectations separate from MCP-facing error translation
-- `tests/test_mcp_server_alerts_errors.py`
-  - raw MCP-facing error mapping over the shared raw alert query seam
-  - includes the expectation that raw MCP list and summary tools keep the same
-    malformed-timestamp error contract and hide unexpected storage diagnostics
-- `tests/mcp_fastapi_parity_test_support.py`
-  - tiny shared setup and meaning-assertion helpers for the split FastAPI/MCP
-    parity suites
-  - intentionally limited to protected-route setup, file-backed parity
-    fixture setup, and cross-surface meaning helpers
-- `tests/test_mcp_fastapi_boundary_split.py`
-  - FastAPI-versus-stdio MCP local-trust boundary behavior for the current
-    project stage
-  - keeps all four tools outside FastAPI auth/rate-limit state and verifies
-    they do not modify persisted session data
-- `tests/test_mcp_fastapi_parity_behavior.py`
-  - one shared-fixture parity expectation for normal reads: protected FastAPI
-    routes and local MCP tools should preserve equivalent raw alert totals and
-    grouped incident totals for unfiltered, filtered, empty-session,
-    unknown-filter no-match, and time-bounded reads
-- `tests/test_mcp_fastapi_parity_edges.py`
-  - one shared-fixture parity expectation for validation and ordering edges:
-    protected FastAPI routes and local MCP tools should preserve equivalent
-    invalid time-filter behavior, inverted-range behavior,
-    inclusive/open-ended time-bound behavior, and deterministic
-    same-timestamp grouped ordering
-- `.github/ci_test_targets.json`
-  - owner of the duplicated CI-critical explicit target groups for the current
-    CI/CD hardening work
-  - owner of the shared CI target groups consumed by workflows and by the
-    manifest-backed part of the main PR policy
-  - now also records the current path-owning CI consumers for the live
-    path-existence self-check:
-    workflow manifest groups, the one inline smoke path, policy manifest
-    groups, and the policy-only test paths
-  - the existence check boundary stays intentionally narrow:
-    it validates CI-owned test paths, not source-path ownership or docs rules
-- `.github/scripts/validate_ci_test_targets.py`
-  - structural and boundary validation for the manifest owner
-  - also protects the explicit path-existence inventory and scope boundary for
-    the CI-owned test-path guard
-- `.github/scripts/ci_target_manifest.py`
-  - shared manifest model and loading seam for the reader, validator, drift
-    check, and manifest-backed consistency policy
-  - also owns the shared manifest-group access seam used by the consistency
-    policy script
-- `.github/scripts/read_ci_test_targets.py`
-  - reader seam used by workflow shell consumers
-- `.github/scripts/check_ci_target_drift.py`
-  - final drift pass across workflow, policy, and doc consumers
-  - verifies that the main PR consistency policy consumes the same stable
-    manifest groups as the main workflow contract lane
-  - protects the ownership split: manifest owns shared target groups, policy
-    script owns narrower PR enforcement
-  - reads one explicit protected-lane alignment model from
-    `.github/scripts/ci_target_manifest.py`
-- `.github/scripts/check_ci_test_paths_exist.py`
-  - validates the current CI-owned test-path inventory from one place
-  - covers manifest-backed workflow groups, inline workflow test exceptions,
-    and policy-only test paths
-  - reuses the shared manifest-loading seam instead of parsing manifest data
-    ad hoc
-  - keeps the `integration-smoke` inline exception explicit instead of letting
-    it hide behind manifest-backed coverage
-  - validates policy-only and local-only gate expectations against
-    `check_main_pr_consistency.py`, which is their real owner
-  - checks that the manifest policy-only inventory still matches that owner
-  - now runs before broader drift and policy checks in the protected CI lanes
-  - that protected-lane order currently covers `main-pr-consistency`,
-    `test-and-build`, and `docs-consistency`
-  - in those lanes, broader policy or contract work now starts only after the
-    manifest, CI-owned path inventory, and drift alignment checks pass
-  - the same manifest now also records the guarded split-suite registration
-    surface for the live CI registration guard:
-    backend contract/session-service areas, `api_stream` and HLS boundary
-    suites, frontend bridge/hook contract suites, and local-only Electron
-    policy suites
-  - the registration rule stays narrow:
-    shared-group additions update the manifest,
-    policy-owned additions update `check_main_pr_consistency.py`,
-    and docs update only when ownership meaning changes
-  - the registration guard inspects changed files in protected PR
-    CI instead of doing full historical repo inference or broad repo-wide
-    policing
-  - the shared registration-check command is:
-    `.github/scripts/check_split_suite_registration.py <diff-range>`
-  - most guarded areas accept `shared_manifest` or `policy_owned`
-    registration, while the Electron local-only area requires
-    `local_only_policy`
-  - docs changes are required only when the ownership model changes, a new
-    guarded category appears, or the policy-boundary meaning changes
-  - when the guard fails:
-    update `.github/ci_test_targets.json` for shared manifest ownership or
-    `.github/scripts/check_main_pr_consistency.py` for policy ownership
-  - use `docs/testing-and-validation.md` for the full guarded-area patterns,
-    accepted registration surfaces, and the complete fix path
-  - the guard reuses the current owner seams instead of re-parsing raw files:
-    `shared_manifest_test_paths()` from
-    `.github/scripts/ci_target_manifest.py`,
-    plus `policy_owned_test_paths()` and
-    `local_only_policy_test_paths()` from
-    `.github/scripts/check_main_pr_consistency.py`
-  - protected PR lanes now run that registration guard after drift alignment
-    and before broader policy or contract work
-  - intentionally does not replace:
-    `validate_ci_test_targets.py` for manifest shape/scope or
-    `check_ci_target_drift.py` for manifest-consumer alignment
-- together, the three CI helper roles are:
-  - manifest shape and scope
-  - CI-owned test-path existence
-  - manifest-consumer drift
-- `tests/test_ci_test_target_scripts.py`
-  - keeps the CI-owned test-path inventory seam, the current success-path
-    existence guard, focused drift-check outcomes, and split-suite
-    registration outcomes covered from normal project tests
-- `.github/scripts/check_main_pr_consistency.py`
-  - reuses manifest-backed groups where practical, while keeping a smaller
-    policy-only layer for expectations that are narrower than the manifest
-  - owns the narrower main-PR policy logic:
-    gate activation rules, docs expectations, and policy-only test
-    expectations
-  - each gate now reads as:
-    label, changed paths, manifest groups, policy-only tests, and docs
-    expectations
-  - the policy stays intentionally narrower than the workflow lanes it
-    references, so it does not become a second target manifest
-  - backend policy reads `backend_contract` and `mcp_fastapi_parity`
-  - frontend bridge policy reads `frontend_contract`
-  - shared `frontend_contract` ownership now covers the bridge, transport, and
-    `uiErrors` contract suites, while the narrower hook monitoring/playback
-    expectations stay policy-only
-  - `tests/test_ci_test_target_scripts.py` regression-covers that split
-  - electron trust/playback policy stays local-only for now
-- shared CI ownership now centers on `.github/ci_test_targets.json`
-- `.github/scripts/check_ci_target_drift.py` keeps workflow, policy, and
-  CI-facing docs aligned through the shared manifest model
-- protected CI consistency lanes run manifest validation, CI-owned test-path
-  existence, drift checking, then manifest-backed main-PR policy validation
-- the contract-relevant lane and policy details above are intentionally brief;
-  use [ci-maintainer-guide.md](./ci-maintainer-guide.md) for the short CI
-  ownership handoff and [testing-and-validation.md](./testing-and-validation.md)
-  for the full CI lane, filter, split-suite, and validation model
-- `tests/test_mcp_server_incidents_behavior.py`
-  - grouped MCP no-alert behavior, filtered-data behavior, and stable empty
-    grouped results for known sessions whose filters match nothing
-  - keeps grouped output-shaping expectations separate from grouped MCP-facing
-    error translation
-- `tests/test_mcp_server_incidents_errors.py`
-  - grouped MCP-facing error mapping over the shared grouped incident seam
-  - includes the expectation that grouped timeline and grouped summary tools
-    keep the same invalid-range and malformed-timestamp error contracts while
-    hiding unexpected storage diagnostics
-
-Current MCP tool expectations:
-
-- the stdio MCP raw alert tools should expose the same empty and filtered-data
-  contracts as the FastAPI raw alert routes
-- for one shared persisted session fixture, the FastAPI and MCP alert-query
-  surfaces should preserve equivalent raw alert counts, summary totals,
-  grouped timeline entry counts, and grouped incident-summary totals even when
-  the transport wrappers differ
-- that parity expectation currently also applies to filtered queries, known
-  empty sessions, unknown-filter no-match queries, one shared time-bounded
-  query slice, invalid time-filter validation, inclusive/open-ended time
-  bounds, and deterministic same-timestamp grouped ordering
-- enabling FastAPI auth/rate limiting or preparing FastAPI `share` mode must
-  not pull stdio MCP tools into the HTTP trust boundary
-- unexpected MCP storage failures must not disclose backend diagnostics; use
-  the detailed tool error policy in [mcp-server.md](./mcp-server.md)
-
-Current alert query response shape:
+#### Raw alert query and summary
 
 ```json
 {
@@ -1503,91 +1292,37 @@ Current alert query response shape:
 }
 ```
 
-Current alert summary response shape:
-
 ```json
 {
   "session_id": "session-20260402-abc123",
   "total_alerts": 2,
-  "counts_by_detector": {
-    "video_blur": 2
-  },
-  "counts_by_severity": {
-    "warning": 2
-  },
+  "counts_by_detector": {"video_blur": 2},
+  "counts_by_severity": {"warning": 2},
   "first_alert_timestamp_utc": "2026-04-02 12:34:56",
   "last_alert_timestamp_utc": "2026-04-02 12:35:12"
 }
 ```
 
-Current query semantics:
-
-- missing durable session metadata means the session is treated as not found
-- missing alert rows for a known session means `[]`
-- malformed alert rows are ignored rather than failing the whole query
-- time filters use the existing persisted UTC timestamp format
-- `counts_by_detector` uses stable detector ids such as `video_blur` and
-  `video_metrics`, not human-facing alert titles
-- these raw and summary response shapes stay the same regardless of whether
-  the active alert backend is the default file store or the PostgreSQL store
-- alert storage may validate known-session state through
-  `SessionStore.session_exists(...)`, but it must not depend on the
-  file-backed session layout or PostgreSQL session schema
-- during migration, the alert backend and the session backend may differ; the
-  stable rule is that session existence still comes from the active
-  `SessionStore`, not from alert rows or storage-specific probing
+A missing session is not found; a known session without matching rows returns
+an empty list or zero-valued summary. Unknown detector or severity filters
+also produce empty results. Malformed persisted rows are ignored, while rows
+with unusable timestamps do not participate in time-filtered reads.
+`counts_by_detector` uses stable detector IDs, not display titles. File and
+PostgreSQL alert stores preserve the same read shape; session existence remains
+the active `SessionStore` concern.
 
 ### Compact Session Alert Report v1
 
-The compact session alert report is a normalized read model for manual checks,
-CLI output, and test assertions. It is derived from one persisted session
-snapshot and keeps the snapshot as the source of truth.
-
-Current report semantics:
-
-- `session_id` and `input_path` come from the session snapshot metadata
-- each report entry represents one raised alert row from the snapshot `alerts`
-  list
-- `segment` mirrors the alert `source_name`
-- `detector_id`, `title`, `window_index`, `timestamp_utc`, and `message`
-  preserve the same meaning they have in the raw alert-query contract
-- the report may be rendered as JSON or as a small human-readable table, but
-  the normalized field meanings stay the same
-- the compact report is a local tooling/read-model helper; it does not define a
-  new FastAPI or MCP transport contract
+The compact report is a local CLI/manual-check read model over one session
+snapshot, not another FastAPI or MCP contract. It retains `session_id`,
+`input_path`, and alert entries with `source_name` as `segment`, plus the
+raw alert's detector, title, window, timestamp, and message fields. It may be
+rendered as JSON or a table without changing those meanings.
 
 ### Session Alert Timeline and Incident Summary v1
 
-The incident-oriented alert surface is now live and stays structured first so
-both FastAPI and MCP clients can consume it without parsing prose.
-
-Recommended output split:
-
-- timeline responses stay pure structured JSON
-- incident summary responses stay structured JSON and may include one optional
-  short `narrative_summary` field
-
-This keeps the stable contract in the structured fields while still giving
-operators and agent workflows one convenient short explanation.
-
-Current HTTP routes:
-
-- `GET /sessions/{session_id}/alerts/timeline`
-- `GET /sessions/{session_id}/alerts/incident-summary`
-
-The grouped MCP tool inventory and transport policy are maintained in
-[mcp-server.md](./mcp-server.md#current-tool-inventory). This section owns the
-shared grouped response semantics used by both HTTP and MCP clients.
-
-Shared filter inputs:
-
-- `session_id`
-- optional `detector_id`
-- optional `severity`
-- optional `start_time_utc`
-- optional `end_time_utc`
-
-Current timeline response shape:
+The grouped views reuse raw filtering before deterministic incident grouping.
+They are intentionally distinct from the raw query and summary.
 
 ```json
 {
@@ -1607,78 +1342,40 @@ Current timeline response shape:
 }
 ```
 
-Timeline notes:
-
-- each entry is a grouped incident, not a raw alert row
-- grouping should remain deterministic and session-scoped
-- timeline ordering is chronological, with persisted row order acting as the
-  stable tie-break when distinct incidents share the same timestamp
-- grouped incidents should split whenever `detector_id`, `severity`, or
-  `title` changes, even if adjacent timestamps would otherwise merge
-- v1 grouping stays intentionally simple:
-  - ordered alerts with a fixed gap threshold
-  - matching `detector_id`, `severity`, and `title`
-  - no coarse time buckets as the primary rule
-  - no detector-specific or ML-style incident reconstruction yet
-- `start_time_utc` and `end_time_utc` describe the grouped incident window
-- `source_names` should preserve first-seen unique values inside one grouped
-  incident
-- `sample_message` is descriptive only and should not be treated as a stable
-  identifier
-- invalid timeline filter timestamps should fail before grouping begins
-- inverted timeline ranges should fail before grouping begins
-- unknown grouped timeline filters should degrade to an empty timeline rather
-  than inventing grouped incidents
-- grouped timeline filtering should reuse the raw alert-query filter semantics
-  before incident grouping begins
-- timeline grouping should remain stable when one or more persisted rows are
-  malformed or unusable for grouping
-- the grouped timeline MCP tool should expose the same empty and filtered-data
-  contracts as the FastAPI grouped timeline route
-
-Current incident summary response shape:
+Timeline entries are chronological grouped incidents, with persisted row order
+as the tie-breaker. An incident groups ordered alerts only when
+`detector_id`, `severity`, and `title` match within the fixed gap; a changed
+field starts a new incident. `source_names` retains first-seen unique values.
+Malformed or unusable timestamp rows cannot form a group.
 
 ```json
 {
   "session_id": "session-20260506-abc123",
   "total_alerts": 5,
   "total_incidents": 2,
-  "counts_by_detector": {
-    "video_metrics": 3,
-    "video_blur": 2
-  },
-  "counts_by_severity": {
-    "warning": 4,
-    "info": 1
-  },
-  "top_incident_categories": {
-    "Black screen detected": 1,
-    "Blur increased": 1
-  },
+  "counts_by_detector": {"video_metrics": 3, "video_blur": 2},
+  "counts_by_severity": {"warning": 4, "info": 1},
+  "top_incident_categories": {"Black screen detected": 1, "Blur increased": 1},
   "first_alert_timestamp_utc": "2026-05-06 10:00:00",
   "last_alert_timestamp_utc": "2026-05-06 10:02:10",
-  "narrative_summary": "Session session-20260506-abc123 had 2 grouped incidents across 5 alerts, mostly from video_metrics, led by black screen detected."
+  "narrative_summary": "Session ... had 2 grouped incidents across 5 alerts."
 }
 ```
 
-Incident summary notes:
+The structured summary fields are stable. `top_incident_categories` counts
+grouped incidents by title. `narrative_summary` is optional convenience text:
+clients must not rely on its wording. Grouped summaries retain raw alert totals
+when timestamp problems prevent grouping.
 
-- structured fields remain the source of truth
-- `top_incident_categories` counts grouped incidents by their stable `title`
-  field rather than introducing a second incident taxonomy
-- `narrative_summary` is a convenience field for operators and agents, not a
-  wording-stable primary contract
-- `narrative_summary` is optional convenience text for operators and agents
-- grouped incident summaries preserve raw alert totals even when some rows
-  cannot form incidents
-- when grouped detector/category counts tie, the convenience narrative should
-  still be deterministic even though clients must not depend on its wording
-- clients must not depend on exact wording of `narrative_summary`
-- this summary is incident-oriented and should stay distinct from the existing
-  raw alert-count summary surface
-- invalid summary filter timestamps should fail before grouping begins
-- inverted summary filter ranges should fail before grouping begins
-- unknown grouped-summary filters should degrade to the stable empty summary
+Focused service, FastAPI/MCP parity, and persistence tests protect these
+behaviors; choose their lane in [testing-and-validation.md](./testing-and-validation.md).
+The `backend_contract`, `mcp_fastapi_parity`, and `frontend_contract` CI groups
+are defined in [`.github/ci_test_targets.json`](../.github/ci_test_targets.json)
+and kept aligned by
+[`.github/scripts/check_ci_target_drift.py`](../.github/scripts/check_ci_target_drift.py)
+with [`.github/scripts/check_main_pr_consistency.py`](../.github/scripts/check_main_pr_consistency.py).
+Their enforcement policy belongs in [ci-maintainer-guide.md](./ci-maintainer-guide.md).
+
 
 ### `cancelSession`
 
