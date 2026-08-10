@@ -26,27 +26,30 @@ skill changes, read [the skill inventory](./.agents/skills/INVENTORY.md),
 Read the owning documents and use the nearest repo-local skill when the work
 is review, drift, or validation-shape heavy.
 
-- Persistence, alert storage, or runtime backend selection: read
-  [contracts.md](./docs/contracts.md), [session-model.md](./docs/session-model.md),
-  and [testing-and-validation.md](./docs/testing-and-validation.md). Use
+- session or alert persistence or runtime backend selection: read
+  [`docs/contracts.md`](./docs/contracts.md),
+  [`docs/session-model.md`](./docs/session-model.md), and
+  [`docs/testing-and-validation.md`](./docs/testing-and-validation.md). Use
   `persistence-backend-review` or `test-strategy-review`.
-- FastAPI or MCP auth, share mode, secrets, rate limits, or trust boundaries:
-  read [contracts.md](./docs/contracts.md),
+- FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries:
+  read [`docs/contracts.md`](./docs/contracts.md),
   [fastapi-boundary.md](./docs/fastapi-boundary.md), and
   [mcp-server.md](./docs/mcp-server.md). Use `fastapi-mcp-security-review`.
-- Real media, long-running streams, or environment-sensitive validation: read
+- real-media, long-running stream, or environment-sensitive validation work:
+  read
   [testing-and-validation.md](./docs/testing-and-validation.md) and
   [fixture-environment-policy.md](./docs/fixture-environment-policy.md). Use
   `fixture-environment-safety`, `test-strategy-review`, or
   `manual-validation-planner`.
-- Detector extension, detector-lab growth, or alert ownership: read
-  [adding-an-analyzer.md](./docs/adding-an-analyzer.md),
-  [adding-an-alert-rule.md](./docs/adding-an-alert-rule.md), and
+- detector extension, detector-lab growth, or analyzer/rule ownership changes:
+  read [`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md),
+  [`docs/adding-an-alert-rule.md`](./docs/adding-an-alert-rule.md), and
   [testing-and-validation.md](./docs/testing-and-validation.md). Use
   `detector-rule-review` or `test-strategy-review`.
 
-Use one primary skill for the main seam. Add another only when the branch or
-validation story genuinely crosses that boundary.
+In this routing section, prefer one primary skill for the main seam. Add
+another only when the branch or validation story genuinely crosses that
+boundary.
 
 ## Source Of Truth
 

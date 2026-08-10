@@ -135,6 +135,13 @@ conditions live in [`.agents/skills/INVENTORY.md`](../.agents/skills/INVENTORY.m
 Use [testing-and-validation.md](./testing-and-validation.md#repo-local-skill-tests)
 for the deterministic harness-validation lane.
 
+Future specialists are explicit-only under `./.agents/archived-skills/`:
+
+- `architecture-diagram-review` for concrete architecture-diagram work.
+- `postgres-migration-rollout-review` before PostgreSQL migration or cloud
+  persistence rollout.
+- `security-surface-review` before broad trust review or public exposure.
+
 ## Extension And Visual References
 
 Detector and rule extension guides:
