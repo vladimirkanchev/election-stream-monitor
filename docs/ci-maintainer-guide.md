@@ -157,33 +157,16 @@ Any accepted Python update must preserve `pyproject.toml` and `uv.lock`
 ownership, and any accepted frontend update must preserve
 `frontend/package.json` and `frontend/package-lock.json` ownership.
 
-## Detector Validation CI Baseline
+## Detector Validation CI Handoff
 
-This table is the CI ownership snapshot for detector-validation lanes. It is
-intentionally narrower than the detailed test and fixture inventory in
-[detector-validation-ownership.md](./detector-validation-ownership.md): use
-this table when changing a recipe, workflow target, marker, or failure
-artifact.
+[`testing-and-validation.md`](./testing-and-validation.md) owns local command
+selection and skip interpretation. [`detector-validation-ownership.md`](./detector-validation-ownership.md)
+owns detector, rule, processor, fixture, and real-media confidence boundaries.
 
-The focused rows below are snapshots, not performance gates. Most local
-measurements were captured on 2026-07-31; the `fast_synthetic` row was
-refreshed on 2026-08-01. The weekly row uses the checked-in snapshot recorded
-in the ownership guide because it is scheduled/manual depth.
-
-| Lane | Targets | Marker / expected skips | Current evidence | CI owner and failure evidence |
-| --- | --- | --- | --- | --- |
-| `just test-detectors` | `tests/test_detectors.py` | Unmarked; no expected skips. | 31 passed in 0.22s. | Local focused lane; also selected by `fast_synthetic`. |
-| `just test-alert-rules` | `tests/test_alert_rules.py`, `test_alert_rules_black.py`, `test_alert_rules_blur.py` | Unmarked; no expected skips. | 47 passed in 0.22s. | Local focused lane; also selected by `fast_synthetic`. |
-| `just test-processor` | `tests/test_processor_routing.py`, `test_processor_context_alerts.py`, `test_processor_failures.py` | Unmarked; no expected skips. | 19 passed in 0.57s. | Local focused lane; also selected by `fast_synthetic`. |
-| `just test-detector-lab` | The four synthetic detector-lab owners: runner, metrics, practical blur, practical motion. | Unmarked; no expected skips. | 81 passed in 0.76s. | Local focused lane; also selected by `fast_synthetic`. |
-| `just test-real-media` | `tests/test_detectors_integration.py`, `tests/test_detector_lab_real_media.py` | `slow`; no expected skips when checked-in fixtures and decoder tools are available. | 10 passed in 42.26s. | Local focused lane; both suites are included in `weekly_slow_media`. |
-| `fast_synthetic` | Broad `pytest -m "not e2e and not slow"` selector. | Excludes slow and E2E tests rather than skipping them; no detector-specific skip allowance. | 1,938 selected from 2,052 collected: 1,790 passed, 148 skipped, and 114 deselected in 8.89s. | Path-aware branch feedback and required `backend-tests` coverage on `main` PRs; failure-only `backend-tests.log`. |
-| `weekly_slow_media` | Checked-in session/media truth plus `test_detectors_integration.py` and `test_detector_lab_real_media.py`. | `slow`; optional representative assets are not targets. The recorded checked-in snapshot has zero skips. | 35 passed in 81.93s in the recorded weekly-equivalent snapshot. | Scheduled/manual weekly depth; failure-only preflight log, sanitized result index, detector-lab CSV, and bounded ground-truth diagnostics. |
-
-Do not create a detector-only required workflow from this table. Routine CI
-already exercises the fast synthetic detector surfaces, while the manifest
-keeps decoded media and session truth together in one deliberately deeper
-weekly lane.
+CI keeps routine synthetic detector coverage in the protected backend path and
+keeps decoded media and session truth together in scheduled/manual weekly
+validation. Do not create a detector-only required workflow: the fast path and
+deeper media path are intentionally separate confidence lanes.
 
 ### Weekly Media Failure Artifacts
 
@@ -211,31 +194,10 @@ The weekly log prints this sanitized index after test execution. Treat its
 duration, slowest-test list, and skip categories as informational baselines:
 they reveal drift but never fail a run because hosted-runner timing varies.
 
-For ordinary branch pushes and non-`main` pull requests, detector source,
-detector-lab source, tests (including checked-in fixture metadata), `justfile`,
-and `.github/ci_test_targets.json` all match the backend filter. The last two
-also match the workflow filter so CI policy checks run when lane selection
-changes. Protected `main` PRs still force the required backend work on.
-
-### Focused Detector Registration
-
-The baseline table above names the canonical focused and weekly targets.
-`justfile` owns the local recipes, while the manifest owns the shared weekly
-target. Added files and Git-detected rename destinations that split those
-reviewed detector owners must appear in `test-detectors`, `test-detector-lab`,
-or `test-real-media`; protected PR CI verifies this through the
-`focused_detector_recipe` registration surface.
-
-`tests/test_ci_workflow.py` protects this admission policy, routine exclusion
-of slow and external confidence, weekly target membership, and the bounded
-failure-artifact contract. Keep assertions behavioral: they should survive
-workflow formatting changes while rejecting a lost target or widened artifact
-bundle.
-
-Representative-media calibration, runtime E2E, soak, and unrelated detector
-tests remain outside this narrow guard. Do not add local focused recipes to the
-manifest only to satisfy registration; move a test only when its validation
-owner actually changes.
+`justfile` owns focused local recipes and the CI manifest owns shared weekly
+targets. A newly split detector suite must be registered only when its actual
+validation owner changes; protected CI rejects a lost reviewed target without
+forcing unrelated tests into a focused recipe.
 
 ## Important Distinctions
 
@@ -335,32 +297,6 @@ Why the workflow split exists:
 - `Branch CI` keeps ordinary branch push feedback without producing a second
   workflow/check context that can confuse merge readiness on the same commit
 
-## Coverage Map
-
-Use this table before changing `main-gate` dependencies or promoting advisory
-checks.
-
-| Target validation | Current workflow path | Protected now? | Notes |
-| --- | --- | --- | --- |
-| backend fast tests and packaging smoke | `main-gate -> feature-gate -> backend-tests` | yes | includes editable-install packaging check, import smoke, compile smoke, and fast backend tests |
-| Ruff | `main-gate -> feature-gate -> backend-ruff` | yes | already part of the aggregate fast protected backend lane |
-| backend mypy | `main-gate -> feature-gate -> backend-typecheck` | yes | current primary Python type gate |
-| frontend typecheck | `main-gate -> feature-gate -> frontend-typecheck` | yes | already protected through the fast aggregate gate |
-| full frontend tests and build | `main-gate -> test-and-build` | yes | protected shared lane now carries the full frontend suite and production build |
-| contract checks | `main-gate -> contract-checks` | yes | protected PR boundary lane |
-| integration smoke | `main-gate -> integration-smoke` | yes | protected `main` PR smoke path |
-| CI consistency checks | `main-gate -> main-pr-consistency`; `docs-consistency` stays non-`main` | yes | `main-pr-consistency` is the protected `main` policy owner; `docs-consistency` remains the non-`main` early-feedback lane |
-| PR-template completeness | standalone `pr-template-completeness` job | no | intentionally informational process policy, not part of `main-gate` |
-| coverage evidence | standalone `coverage-evidence` job | no | advisory fast-suite reports; upload requires successful artifact preparation |
-| standalone frontend lint | `frontend-lint` stays advisory for renderer plus Electron; protected `main` PRs block only on renderer lint through `contract-checks` | yes, renderer only through `contract-checks` | no separate top-level protected frontend-lint status is currently intended |
-
-Coverage evidence has no percentage gate or `fail-under` setting. The local
-backend recipe and frontend `test:coverage` script define the measurement
-boundaries mirrored by the standalone workflow. It uploads only normalized
-JSON, XML, summary JSON, and LCOV paths for seven days, without a `main-gate`
-dependency. Focused workflow tests protect this policy, not changing coverage
-percentages.
-
 ## Frontend Validation Split For `main` PRs
 
 Use this as the concise lane contract for frontend confidence:
@@ -375,20 +311,6 @@ Use this as the concise lane contract for frontend confidence:
   - keeps the cheaper policy and boundary checks first, then runs the full
     frontend test suite and frontend production build
 
-Current `test-and-build` order:
-
-1. manifest/path/drift guards
-2. backend `contract_boundary` suites
-3. frontend `contract_boundary` suites
-4. full frontend `npm run test`
-5. frontend `npm run build`
-
-Trigger model for the heavier frontend work:
-
-- ordinary PRs run it when `frontend`, `backend`, or `contract` paths changed
-- pull requests targeting `main` force it on through `github.base_ref ==
-  'main'`
-
 Protection rule:
 
 - `main-gate` must continue to require `test-and-build`
@@ -397,13 +319,9 @@ Protection rule:
 - GitHub branch protection should keep requiring `main-gate`, not a
   growing list of leaf frontend statuses
 
-Expected tradeoff:
-
-- slower protected `main` PR validation is intentional
-- earlier feature-branch feedback should still come from
-  `frontend-checkpoint`
-- if this lane becomes too slow later, optimize the internal test/build shape
-  first instead of removing protected frontend coverage from `main`
+Slower protected `main` PR validation is intentional. If this lane becomes too
+slow, optimize its internal test/build shape before removing protected frontend
+coverage.
 
 ## Frontend Lint Policy
 
@@ -506,41 +424,23 @@ informational rather than protected by `main-gate`.
 
 ## Current Owner Surfaces
 
-- canonical CI target manifest: `.github/ci_test_targets.json`
-- shared Python read-side helper: `.github/scripts/ci_target_manifest.py`
-- protected PR workflow: `.github/workflows/ci.yml`
-- weekly heavy workflow: `.github/workflows/weekly-validation.yml`
-- narrow workflow reader: `.github/scripts/ci_workflow.py`
-- protected workflow-contract validator:
-  `.github/scripts/ci_workflow_contract.py`
-- narrower protected-PR policy guard:
-  `.github/scripts/check_main_pr_consistency.py`
-- focused workflow-regression tests:
-  - `tests/test_ci_workflow.py`
-    - owns the protected `ci.yml` contract through one narrow workflow reader
-  - `tests/test_ci_test_target_scripts.py`
-    - owns manifest/helper/ownership drift checks around that workflow
+- `.github/workflows/ci.yml`: protected pull-request workflow
+- `.github/workflows/weekly-validation.yml`: scheduled/manual depth
+- `.github/ci_test_targets.json`: shared target groups, lane metadata, and
+  guarded split-suite registration
+- `.github/scripts/ci_workflow_contract.py` and
+  `.github/scripts/check_main_pr_consistency.py`: protected workflow and
+  `main`-policy boundaries
 
-Workflow regression coverage intentionally stays narrow. The protected
-invariants under test are:
+The regression tests protect the required dependency graph, forced-on `main`
+behavior, advisory classification, target membership, and artifact limits.
+`tests/test_ci_workflow.py` owns the protected `ci.yml` contract through one narrow workflow reader.
+`tests/test_ci_test_target_scripts.py` owns manifest/helper/ownership drift checks around that workflow.
+Together they protect exact `main-gate` direct dependencies, protected frontend `npm run test` and `npm run build` ownership, forced-on behavior for protected `main` PR jobs and work steps, and advisory-job classification for standalone `frontend-lint` and `backend-pyright`.
 
-- exact `main-gate` direct dependencies
-- protected frontend `npm run test` and `npm run build` ownership in
-  `test-and-build`
-- forced-on behavior for protected `main` PR jobs and work steps
-- advisory-job classification for standalone `frontend-lint` and
-  `backend-pyright`
-
-The weekly workflow now also owns the live PostgreSQL alert-confidence bundles
-through a disposable GitHub Actions `postgres:16` service container. It does
-not depend on a shared external database secret for the normal weekly path.
-
-Focused local validation for this workflow-contract surface:
-
-- `python3 .github/scripts/validate_ci_test_targets.py`
-- `python3 .github/scripts/check_ci_test_paths_exist.py`
-- `python3 .github/scripts/check_ci_target_drift.py`
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/test_ci_workflow.py tests/test_ci_test_target_scripts.py`
+Use [testing-and-validation.md](./testing-and-validation.md) for local
+workflow-contract commands. Weekly PostgreSQL confidence uses a disposable
+`postgres:16` service container, not a shared database secret.
 
 ## Canonical CI Target Manifests
 
@@ -583,23 +483,11 @@ packaging smoke are not lane owners.
 
 ## When Splitting Tests
 
-When a new split suite is added in a guarded CI area, update the owner surface
-that actually owns it:
-
-- shared manifest ownership:
-  - update `.github/ci_test_targets.json`
-- narrower protected-PR policy ownership:
-  - update `.github/scripts/check_main_pr_consistency.py`
-- docs:
-  - update docs only when the ownership model changes, a new guarded category
-    appears, or policy-boundary meaning changes
-
-Then verify the change with:
-
-- `python3 .github/scripts/validate_ci_test_targets.py`
-- `python3 .github/scripts/check_ci_test_paths_exist.py`
-- `python3 .github/scripts/check_ci_target_drift.py`
-- `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/pytest -q tests/test_ci_test_target_scripts.py`
+Update `.github/ci_test_targets.json` for shared target ownership and
+`.github/scripts/check_main_pr_consistency.py` only for protected-PR policy.
+Update documentation when the ownership model or a guarded category changes.
+Use [testing-and-validation.md](./testing-and-validation.md) for the matching
+local validation commands.
 
 ## What `main-pr-consistency` Guards
 
