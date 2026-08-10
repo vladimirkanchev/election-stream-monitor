@@ -26,8 +26,9 @@ workbench, use [detector_lab/README.md](../detector_lab/README.md).
 - backend: local FastAPI boundary plus shared Python session services and a
   detached session worker
 - frontend: React/Electron setup, playback, alert inspection
-- live support: direct `.m3u8` / `.mp4` `api_stream` inputs with backend
-  loading and Electron-side HLS playback proxying
+- live support: bounded HTTP/HLS `.m3u8` analysis with Electron-side HLS
+  playback proxying; direct remote `.mp4` remains a source-validation and
+  playback path, not a remote-analysis loader input
 
 ## Best use of this doc
 

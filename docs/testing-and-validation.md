@@ -1212,7 +1212,7 @@ The current backend packaging split is:
 
 Current backend import/run expectations:
 
-- `npm run dev`
+- `npm --prefix frontend run dev`
   - canonical desktop runtime path
 - `pip install -e .` or `pip install -e .[test]`
   - editable-install path for backend runtime and test work
@@ -1944,7 +1944,7 @@ These docs should describe the same normal runtime path:
 Common local build command:
 
 ```bash
-npm run build
+npm --prefix frontend run build
 ```
 
 ## Opt-In Manual Validation

@@ -11,8 +11,8 @@ It is an advanced, desktop-oriented prototype for local development, demos,
 and small monitoring runs, not a public Internet service or a finished
 monitoring platform.
 
-**Quick try:** run `npm run dev`, choose `video_files`, and select a local
-`.mp4`.
+**Quick try:** run `npm --prefix frontend run dev`, choose `video_files`, and
+select a local `.mp4`.
 
 For contributor workflow, use [CONTRIBUTING.md](./CONTRIBUTING.md). For
 maintainer and AI-agent routing, use [docs/README.md](./docs/README.md).
@@ -45,7 +45,9 @@ for that promotion path.
 
 - `video_segments` — local `.ts` segment folders, usually around an `index.m3u8` playlist
 - `video_files` — local `.mp4` files or folders
-- `api_stream` — direct remote `.m3u8` or `.mp4` URLs, not generic web pages
+- `api_stream` — direct remote `.m3u8` URLs for bounded HTTP/HLS analysis;
+  direct `.mp4` URLs are valid for source selection and playback, not remote
+  analysis
 
 ## Current Scope And Limits
 
@@ -157,7 +159,7 @@ deferred specialists, and deterministic harness evidence.
 From the repository root, start the normal desktop app:
 
 ```bash
-npm run dev
+npm --prefix frontend run dev
 ```
 
 Wait for the Electron window, select `video_files`, choose a local `.mp4`, and
@@ -274,7 +276,8 @@ ownership, and failure artifacts.
 
 Remote media fetching is intentionally limited:
 
-- `api_stream` only accepts direct `.m3u8` and `.mp4` URLs
+- source validation accepts direct `.m3u8` and `.mp4` URLs; the current remote
+  analysis loader supports HTTP/HLS playlists only
 - webpage-style player URLs are rejected early, including YouTube links and
   embedded player pages
 - local or private-network targets are blocked by default unless deliberately
