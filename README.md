@@ -2,195 +2,65 @@
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
-Election Stream Monitor is a local-first AI video monitoring system for
-election-related media sources.
+Election Stream Monitor is a local-first AI video-monitoring prototype for
+election-related media. It helps surface video-quality problems that can make
+real-time observation harder: a black picture, excessive blur, or a broken
+source.
 
-It watches polling-station streams, archived recordings, and segmented video
-feeds, then surfaces the quality problems that matter during monitoring.
+It is an advanced, desktop-oriented prototype for local development, demos,
+and small monitoring runs, not a public Internet service or a finished
+monitoring platform.
 
-Today it is an advanced desktop-first prototype with:
-
-- a React/Electron app and local FastAPI backend
-- three input modes: local video files, local segmented/HLS-style folders, and direct remote `api_stream` inputs
-- two built-in detectors: `Black Screen` and `Blur Check`
-- two built-in production alert rules built on top of those detectors
-- a small local MCP server with read-only alert-query tools
-- selectable session and alert backends:
-  file-backed by default, PostgreSQL opt-in
-- session persistence stays file-backed by default; PostgreSQL session storage
-  only turns on when you explicitly select and configure it
-- session PostgreSQL mode is forward-only for newly created sessions in that
-  mode; historical file-backed sessions are not automatically backfilled
-
-It works best today for local development, demos, and small desktop-backed
-monitoring runs.
-
-For session semantics and backend-mode details, use
-[`docs/session-model.md`](./docs/session-model.md) and
-[`docs/session-persistence-audit.md`](./docs/session-persistence-audit.md).
-
-**Quick try:** run `npm run dev`, choose `video_files`, and test with a local
+**Quick try:** run `npm run dev`, choose `video_files`, and select a local
 `.mp4`.
 
-The project is intentionally small. The current goal is a readable, useful,
-easy-to-extend desktop runtime rather than a heavier platform.
-
-For contributor and maintainer workflows, start with [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/README.md](./docs/README.md).
-
-## Why this project exists
-
-This project exists to support more transparent election observation in
-Bulgaria with a practical local-first workflow.
-
-If a stream goes black, blurry, broken, or becomes too low quality, that is
-not only a technical issue. It can make real-time observation harder and
-reduce public oversight when it matters most.
-
-Today the project is a desktop-first prototype for exploring that workflow in
-practice and extending it with new video detectors as monitoring needs become
-clearer.
-
-AI-assisted coding tools can help contributors describe the monitoring problem
-in plain language instead of starting from low-level video-processing code.
-
-## Where To Start
-
-Start here if you are:
-
-- trying the project locally
-  - start with [Running The Project](./README.md#running-the-project)
-- contributing or shaping a maintainer branch
-  - start with [CONTRIBUTING.md](./CONTRIBUTING.md)
-- learning the current product/runtime shape
-  - read [Current Capabilities](./README.md#current-capabilities)
-  - then [docs/architecture.md](./docs/architecture.md)
-- navigating the whole maintainer docs set
-  - use [docs/README.md](./docs/README.md)
-
-## Desktop Runtime Summary
-
-Most people will use the project through the Electron app. The desktop app
-talks to a local FastAPI backend that manages sessions, detector execution,
-playback-source handling, and alert/session reads.
-
-Today the runtime is local-first:
-
-- session metadata, latest progress, and results read through one shared session-store contract
-- the runtime default is still file-backed under `data/sessions/`
-- alerts use one shared backend: file-backed by default, PostgreSQL as an explicit opt-in backend
-- session PostgreSQL remains an explicit opt-in backend too, and it does not
-  include automatic historical backfill in the current rollout stage
-- the UI, alert routes, grouped incident routes, and MCP tools all read alerts
-  through that shared backend
-
-## Current Readiness
-
-This works best for:
-
-- local development
-- demos
-- desktop-backed monitoring use
-
-The repo now also has stronger CI guardrails and more focused regression
-coverage across alerts, API/data rules, and workflow targeting.
-
-Still not:
-
-- public Internet deployment; see the
-  [FastAPI deployment gates](./docs/fastapi-boundary.md#public-deployment-gates)
-- broad detector coverage for real election-stream failure modes
-
-Current FastAPI access, MCP trust, and persistence rollout policies belong to
-the [FastAPI boundary guide](./docs/fastapi-boundary.md),
-[MCP policy](./docs/mcp-server.md), and
-[persistence audit](./docs/session-persistence-audit.md).
-
-For local startup, use [Running The Project](./README.md#running-the-project).
-For live Postgres validation and weekly confidence runs, use
-[docs/testing-and-validation.md](./docs/testing-and-validation.md).
-
-## FastAPI Access Modes
-
-FastAPI supports `local` and `share` modes; binding, authentication, public
-routes, and rate-limit policy are owned by the
-[FastAPI boundary guide](./docs/fastapi-boundary.md#runtime-mode-and-network-exposure).
-
-For the exact startup commands and key examples, see
-[Running The Project](./README.md#running-the-project).
+For contributor workflow, use [CONTRIBUTING.md](./CONTRIBUTING.md). For
+maintainer and AI-agent routing, use [docs/README.md](./docs/README.md).
 
 ## Current Capabilities
 
-### Backend
+- React/Electron desktop app backed by a local FastAPI runtime.
+- Three input modes: local video files, local segmented/HLS-style folders, and
+  direct remote `api_stream` inputs.
+- Two production detectors: `Black Screen` and `Blur Check`, each with an
+  explicit default alert rule.
+- Session metadata, progress, detector results, and alerts persisted locally.
+  File-backed storage is the default; PostgreSQL is an explicit opt-in for
+  session and alert backends.
+- A local, read-only MCP server for alert queries.
 
-The backend checks inputs, runs sessions, executes detectors and rules, and
-writes the local session state the frontend reads.
-
-### Detection
-
-Detectors measure what is happening. Rules decide when that becomes an alert.
-Current built-ins:
-
-- `Black Screen`
-  - sampled from video files, segment streams, and `api_stream` sources
-  - the picture goes fully black or almost black for long enough to matter
-- `Blur Check`
-  - looks for frames that are too soft or out of focus
-  - detail disappears and the image stops looking sharp
-
-Today the production detector and alert surface is intentionally small:
-
-- production black-screen detection and its default alert rule
-- production blur detection and its default alert rule
-
-Production detector code lives in [`src/detectors/`](./src/detectors), with
-explicit runtime registration in
-[`src/detectors/registry.py`](./src/detectors/registry.py).
-
-Blur and motion-blur experiments beyond that live in
-[`detector_lab/`](./detector_lab/README.md) until they are promoted on
-purpose. For the production promotion rule, use
-[`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md).
-
-For the detector/rule architecture and the focused validation lanes, use
-[`docs/architecture.md`](./docs/architecture.md) and
-[`docs/testing-and-validation.md`](./docs/testing-and-validation.md).
-
-### Frontend
-
-In the UI you can:
-
-- choose a source mode, path, and detector set
-- use clear `Start Monitoring` and `End Monitoring` controls
-- playback for local files, local HLS-style folders, local `.mp4` files, and
-  remote HLS streams through the local Electron HLS proxy
-- a live alert feed showing issues as they are raised
-- simple session status feedback with a `Show debug info` section for more
-  backend detail
-
-The screenshot below shows the basic flow: setup on the left, playback in the
-center/right, and session state and alerts below.
+The UI selects a source and detector set, starts or ends monitoring, plays
+supported local or remote HLS media through Electron, and shows session state
+and alerts.
 
 ![Frontend screenshot](./docs/assets/Frontend.png)
 
-### Session Model
-
-This part keeps the session state stable enough for the UI to refresh:
-
-- a session is created when monitoring starts
-- progress and results persist through `SessionStore` with a file default
-- alerts use one shared alert backend: file by default, PostgreSQL when you opt in
-- session PostgreSQL applies only after explicit backend selection and does
-  not migrate older file-backed sessions automatically
-- the frontend polls session snapshots through Electron and the local FastAPI backend
-- sessions can complete, fail, or be cancelled cleanly
-
-The feature set is still narrow, but the extension points are explicit.
+Production detector registration is explicit in
+[`src/detectors/registry.py`](./src/detectors/registry.py). Experimental blur
+and motion work stays in [`detector_lab/`](./detector_lab/README.md) until it
+is deliberately promoted. See [adding an analyzer](./docs/adding-an-analyzer.md)
+for that promotion path.
 
 ## Input Modes
 
 - `video_segments` — local `.ts` segment folders, usually around an `index.m3u8` playlist
 - `video_files` — local `.mp4` files or folders
 - `api_stream` — direct remote `.m3u8` or `.mp4` URLs, not generic web pages
+
+## Current Scope And Limits
+
+The project is intentionally narrow: detector coverage currently focuses on
+black-screen and blur-related failures, and packaging remains
+developer-oriented. It is not ready for public Internet deployment.
+
+FastAPI `local` and temporary `share` access, authentication, rate limits, and
+deployment gates are owned by the [FastAPI boundary guide](./docs/fastapi-boundary.md).
+The MCP server remains a local `stdio`, read-only surface; see the
+[MCP policy](./docs/mcp-server.md). Persistence selection, forward-only
+PostgreSQL behavior, and rollout evidence are owned by the
+[persistence audit](./docs/session-persistence-audit.md). Focused and
+environment-sensitive validation lanes are described in
+[testing and validation](./docs/testing-and-validation.md).
 
 ## Architecture At A Glance
 
@@ -236,7 +106,7 @@ The diagram below shows the same flow in one picture.
 
 ## Installation
 
-Installation is still developer-oriented rather than one-click.
+Installation is developer-oriented rather than one-click.
 
 You will need:
 
@@ -247,7 +117,7 @@ You will need:
 - `uv` for the locked contributor and AI-agent setup flow
 - `just` for the repository setup and validation commands
 
-Recommended setup for contributors and AI agents:
+Set up the repository with:
 
 ```bash
 just setup
@@ -257,57 +127,17 @@ just setup
 the frontend lockfile, and runs the local environment check. It does not
 install host tools, PostgreSQL, Git LFS media, or representative local media.
 
-After setup, prefer the repo-local interpreter explicitly for test and script
-commands:
-
-```bash
-./.venv/bin/python -m pytest
-./.venv/bin/python your_script.py
-```
-
-Do not assume `python3`, `pip`, or `pytest` from `PATH` point at this repo's
-virtualenv. This is especially important for AI-assisted tools launched from a
-different project shell.
-
-For a direct locked setup without the frontend step, use the committed
-[`uv.lock`](./uv.lock):
-
-```bash
-uv sync --locked --extra dev
-```
-
-`pip install -e ...` remains supported for editable-install and packaging
-compatibility checks. It is useful when testing package installation itself,
-but does not provide the same lockfile-based environment as `uv sync`.
-
-For a smaller pip-managed backend test environment, install the `test` extra:
-
-```bash
-pip install -e .[test]
-```
-
-If you want the fuller contributor toolchain, including linting and type-check
-tools, install the `dev` extra:
-
-```bash
-pip install -e .[dev]
-```
-
-Frontend dependencies are installed under [`frontend/`](./frontend).
-
-PostgreSQL is optional and only needed for the opt-in alert backend or live
-Postgres validation.
-
-For normal local use, start the Electron app rather than the backend alone.
-
-The normal app startup path is Electron. Direct FastAPI startup is covered
-below in [Running The Project](./README.md#running-the-project).
-
-Quick check:
+If setup or a later toolchain change fails, run:
 
 ```bash
 just env-check
 ```
+
+Use repo-local Python tools or `just` recipes rather than assuming a global
+`python`, `pip`, or `pytest` targets this project. PostgreSQL and
+representative media remain optional. The [development-environment audit](./docs/development-environment-audit.md)
+owns version policy, alternative installation paths, and optional-capability
+details.
 
 ## Developer Harness
 
@@ -425,99 +255,25 @@ For the fuller skill map and maintainer-oriented ownership notes, use
 
 ## Running The Project
 
-1. Start the normal desktop app:
+From the repository root, start the normal desktop app:
 
 ```bash
 npm run dev
 ```
 
-2. For a quick first run:
+Wait for the Electron window, select `video_files`, choose a local `.mp4`, and
+select `Start Monitoring`. Repository examples are listed in
+[Example Inputs](#example-inputs).
 
-Run `npm run dev` from the repo root, wait for the Electron window to open,
-pick an input mode and choose a source, then hit `Start Monitoring`.
+Optional configuration is documented in [`.env.example`](./.env.example). The
+application does not load it automatically: source it explicitly or export
+only the variables needed for a command.
 
-Sample local inputs are listed in [Example Inputs](./README.md#example-inputs).
-
-3. Use these optional entry points when you need a narrower workflow:
-
-Backend only:
-
-```bash
-. .venv/bin/activate
-PYTHONPATH=src python -m api_server_cli local
-```
-
-`local` mode is the normal desktop and development path. Auth and rate
-limiting are off by default, and these examples use the default file-backed
-alert backend. Its `--host` value must remain loopback; use `share` for an
-intentional network-visible bind. See the
-[FastAPI boundary policy](./docs/fastapi-boundary.md#bind-policy-contract) for
-the exact IPv4, IPv6, wildcard, and hostname rules.
-
-Browser-only frontend for UI work:
-
-```bash
-npm --prefix frontend run dev:web
-```
-
-This does not replace the normal Electron desktop flow.
-
-Optional local configuration is documented in [`.env.example`](./.env.example).
-The application does not load that file automatically: source it explicitly or
-export only the variables needed for the command you run. It contains no usable
-API key or database URL.
-
-Temporary shared demo access:
-
-```bash
-. .venv/bin/activate
-PYTHONPATH=src python -m api_server_cli share
-```
-
-`share` mode requires an API key for operational routes and enables the current
-per-process route-family rate limits. If neither `--api-key` nor
-`ESM_API_AUTH_ALLOWED_KEYS` supplies a key, the CLI generates one and prints it
-once. It is for temporary local or demo sharing, not production deployment.
-
-Explicit shared-demo key:
-
-```bash
-. .venv/bin/activate
-ESM_API_AUTH_ALLOWED_KEYS=my-demo-key PYTHONPATH=src python -m api_server_cli share
-```
-
-For a temporary local demo, `--api-key` remains supported but can be visible to
-local process inspection. The full key-handling policy is in the
-[FastAPI boundary guide](./docs/fastapi-boundary.md#secret-handling-contract).
-
-If you want Electron to use a separately started `share` backend:
-
-```bash
-ELECTION_API_BASE_URL=http://127.0.0.1:8002 npm run dev
-```
-
-Local MCP server:
-
-```bash
-. .venv/bin/activate
-PYTHONPATH=src python -m esm_mcp
-```
-
-This runs the MCP server over local `stdio`. See
-[docs/mcp-server.md](./docs/mcp-server.md).
-
-Frontend build:
-
-```bash
-npm run build
-```
-
-If Electron startup behaves differently on your machine, start here:
-
-- [frontend/package.json](./frontend/package.json)
-- [frontend/electron/main.mjs](./frontend/electron/main.mjs)
-- [frontend/electron/fastApiStartupOrchestrator.mjs](./frontend/electron/fastApiStartupOrchestrator.mjs)
-- [docs/frontend-architecture.md](./docs/frontend-architecture.md)
+For backend-only, temporary share-mode, or local MCP workflows, use the
+[FastAPI boundary guide](./docs/fastapi-boundary.md) and
+[MCP server guide](./docs/mcp-server.md). For browser-only frontend work,
+builds, and packaging checks, start with [CONTRIBUTING.md](./CONTRIBUTING.md)
+or the [maintainer docs index](./docs/README.md).
 
 ## Environment Notes
 
