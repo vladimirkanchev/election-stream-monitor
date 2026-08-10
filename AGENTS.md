@@ -1,155 +1,102 @@
 # AGENTS.md
 
-This file is for people using AI-assisted tools for coding and development, as
-well as human contributors who need the shortest safe path into the repo.
+Use this file for the shortest safe route into AI-assisted changes. For product
+orientation, start with [README.md](./README.md); for human branch flow, use
+[CONTRIBUTING.md](./CONTRIBUTING.md); for maintainer document routing, use
+[docs/README.md](./docs/README.md).
 
 ## Read First
 
-Use these docs before making structural changes:
+Before structural changes, read:
 
-1. [`docs/README.md`](./docs/README.md)
-2. [`docs/architecture.md`](./docs/architecture.md)
-3. [`docs/contracts.md`](./docs/contracts.md)
-4. [`docs/session-model.md`](./docs/session-model.md)
+1. [docs/README.md](./docs/README.md)
+2. [docs/architecture.md](./docs/architecture.md)
+3. [docs/contracts.md](./docs/contracts.md)
+4. [docs/session-model.md](./docs/session-model.md)
 
-If you are adding detectors or rules, also read:
-
-- [`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md)
-- [`docs/adding-an-alert-rule.md`](./docs/adding-an-alert-rule.md)
-
-If you are changing repo-local Codex skills or their deterministic tests, also read:
-
-- [`docs/README.md`](./docs/README.md)
-- [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
-- `./.agents/skills/`
-- `tests/test_repo_skills.py`
+For detector or alert-rule work, also read
+[adding-an-analyzer.md](./docs/adding-an-analyzer.md) or
+[adding-an-alert-rule.md](./docs/adding-an-alert-rule.md). For repo-local
+skill changes, read [the skill inventory](./.agents/skills/INVENTORY.md),
+[testing-and-validation.md](./docs/testing-and-validation.md), and
+`tests/test_repo_skills.py`.
 
 ## Risky Change Routing
 
-Before changing one of these areas, read the owning docs first and use the
-nearest repo-local skill when the task is review, drift, or validation-shape
-heavy.
+Read the owning documents and use the nearest repo-local skill when the work
+is review, drift, or validation-shape heavy.
 
-- session or alert persistence or runtime backend selection
-  - docs:
-    [`docs/contracts.md`](./docs/contracts.md),
-    [`docs/session-model.md`](./docs/session-model.md),
-    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
-  - skills:
-    `persistence-backend-review`,
-    `test-strategy-review`,
-    `branch-pr-readiness`
-- FastAPI or MCP security, auth, `share` mode, secrets, rate limits, or trust boundaries
-  - docs:
-    [`docs/contracts.md`](./docs/contracts.md),
-    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
-  - skills:
-    `fastapi-mcp-security-review` for branch-scoped hardening review,
-    `ci-failure-triage`,
-    `branch-pr-readiness`
-- real-media, long-running stream, or environment-sensitive validation work
-  - docs:
-    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
-  - skills:
-    `test-strategy-review`,
-    `fixture-environment-safety`,
-    `manual-validation-planner`
-- detector extension, detector-lab growth, or analyzer/rule ownership changes
-  - docs:
-    [`docs/adding-an-analyzer.md`](./docs/adding-an-analyzer.md),
-    [`docs/adding-an-alert-rule.md`](./docs/adding-an-alert-rule.md),
-    [`docs/testing-and-validation.md`](./docs/testing-and-validation.md)
-  - skills:
-    `detector-rule-review`,
-    `test-strategy-review`,
-    `branch-pr-readiness`
+- Persistence, alert storage, or runtime backend selection: read
+  [contracts.md](./docs/contracts.md), [session-model.md](./docs/session-model.md),
+  and [testing-and-validation.md](./docs/testing-and-validation.md). Use
+  `persistence-backend-review` or `test-strategy-review`.
+- FastAPI or MCP auth, share mode, secrets, rate limits, or trust boundaries:
+  read [contracts.md](./docs/contracts.md),
+  [fastapi-boundary.md](./docs/fastapi-boundary.md), and
+  [mcp-server.md](./docs/mcp-server.md). Use `fastapi-mcp-security-review`.
+- Real media, long-running streams, or environment-sensitive validation: read
+  [testing-and-validation.md](./docs/testing-and-validation.md) and
+  [fixture-environment-policy.md](./docs/fixture-environment-policy.md). Use
+  `fixture-environment-safety`, `test-strategy-review`, or
+  `manual-validation-planner`.
+- Detector extension, detector-lab growth, or alert ownership: read
+  [adding-an-analyzer.md](./docs/adding-an-analyzer.md),
+  [adding-an-alert-rule.md](./docs/adding-an-alert-rule.md), and
+  [testing-and-validation.md](./docs/testing-and-validation.md). Use
+  `detector-rule-review` or `test-strategy-review`.
 
-When a task touches more than one area above, prefer one primary skill for the
-main seam and use the others only when the branch or validation story truly
-widens.
+Use one primary skill for the main seam. Add another only when the branch or
+validation story genuinely crosses that boundary.
 
-## Source Of Truth Order
+## Source Of Truth
 
-When docs and code disagree, use this order:
+When documentation and implementation disagree, prefer:
 
-1. code and tests
-2. contract/lifecycle docs
-3. architecture and reviewer docs
-4. README / roadmap notes
+1. Code and tests.
+2. Contract and lifecycle documents.
+3. Architecture and reviewer documents.
+4. README and roadmap notes.
 
-## What This Repo Is
+## Project Boundaries
 
-Election Stream Monitor is a local-first AI video monitoring system with:
+Election Stream Monitor is a local-first video-monitoring advanced prototype:
 
-- Python backend for validation, sessions, detectors, alert rules, and persistence
-- React/Electron frontend for setup, playback, and operator-facing diagnostics
-- explicit detector registration and explicit alert-rule mapping
+- Python owns validation, sessions, detectors, alert rules, and persistence.
+- React/Electron owns setup, playback, and operator-facing diagnostics.
+- Detector registration and alert-rule mapping are explicit.
+- It is not a dynamic plugin framework or service-oriented platform yet.
 
-It is not a dynamic plugin framework or service-oriented platform yet.
+Keep detector facts out of the session runner, alert creation in the rule
+layer, outputs flat and serializable, and mode support explicit. Prefer small
+helpers and explicit registration over framework-style abstractions. Do not
+add dynamic plugin discovery without an intentional architecture decision.
 
-## Change Map
+Supported source modes are `video_segments`, `video_files`, and `api_stream`.
+Do not expose a detector to every mode by default.
 
-If you are changing:
+## Change Placement
 
-- detector logic or metrics
-  - [`src/detectors.py`](./src/detectors.py)
-  - [`src/analyzer_registry.py`](./src/analyzer_registry.py)
-- alert behavior
-  - [`src/alert_rules.py`](./src/alert_rules.py)
-- session lifecycle or progress semantics
-  - [`src/session_runner.py`](./src/session_runner.py)
-  - [`src/session_io.py`](./src/session_io.py)
-  - [`docs/session-model.md`](./docs/session-model.md)
-- `api_stream` transport, trust policy, or HLS loading
-  - [`src/source_validation.py`](./src/source_validation.py)
-  - [`src/stream_loader.py`](./src/stream_loader.py)
-  - [`docs/contracts.md`](./docs/contracts.md)
-- renderer playback or local HLS proxy behavior
-  - [`frontend/electron/main.mjs`](./frontend/electron/main.mjs)
-  - [`frontend/electron/hlsProxy.mjs`](./frontend/electron/hlsProxy.mjs)
-  - [`frontend/src/components/VideoPlayerPanel.tsx`](./frontend/src/components/VideoPlayerPanel.tsx)
+- Detector facts, registration, or metric work: the `src/detectors/` package,
+  [adding-an-analyzer.md](./docs/adding-an-analyzer.md), and
+  [contracts.md](./docs/contracts.md).
+- Alert behavior: [adding-an-alert-rule.md](./docs/adding-an-alert-rule.md),
+  [contracts.md](./docs/contracts.md), and the rule layer.
+- Session lifecycle or persistence: [session-model.md](./docs/session-model.md),
+  [contracts.md](./docs/contracts.md), and [architecture.md](./docs/architecture.md).
+- `api_stream`, HLS loading, or source trust: [contracts.md](./docs/contracts.md)
+  and [fastapi-boundary.md](./docs/fastapi-boundary.md).
+- Renderer, Electron bridge, playback, or local HLS proxy: [frontend-architecture.md](./docs/frontend-architecture.md)
+  and [contracts.md](./docs/contracts.md).
 
-## Working Rules
+## Validation And Documentation
 
-- keep detector logic out of the session runner
-- keep alert creation in the rule layer, not in detectors
-- keep detector outputs flat and easy to serialize
-- keep mode support explicit and honest
-- prefer small helpers and explicit registration over framework-style abstraction
-- do not add dynamic plugin discovery unless the repo is intentionally moving to that model
+For meaningful behavior changes, cover the affected detector or rule, relevant
+registry/routing visibility, one processor or session path when lifecycle or
+persistence changes, and one frontend or bridge test when operator-visible
+behavior changes. [testing-and-validation.md](./docs/testing-and-validation.md)
+owns current commands and manual-validation boundaries.
 
-## Supported Modes
-
-Current modes:
-
-- `video_segments`
-- `video_files`
-- `api_stream`
-
-Do not expose a detector to every mode by default. Make the supported modes a
-deliberate choice.
-
-## Testing Expectations
-
-When you change behavior meaningfully, cover at least:
-
-- detector or rule behavior
-- routing/registry visibility if detector exposure changed
-- one processor/session path if lifecycle or persistence is affected
-- one frontend or bridge test if operator-visible behavior changed
-
-Use [`docs/testing-and-validation.md`](./docs/testing-and-validation.md) for
-the current routine commands and manual-validation split.
-
-## Documentation Update Rule
-
-If you change:
-
-- a payload shape
-- a lifecycle meaning
-- a trust boundary
-- a playback/monitoring responsibility split
-- or repo-local skill behavior or test expectations
-
-update the matching doc in the same change. Avoid copying the same guidance
-into multiple files; point to the owning doc instead.
+Update the nearest owning document when changing a payload shape, lifecycle
+meaning, trust boundary, playback/monitoring responsibility, or repo-local
+skill behavior. Link to that owner instead of copying the same guidance into
+multiple files.
