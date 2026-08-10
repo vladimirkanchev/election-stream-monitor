@@ -1,10 +1,14 @@
-# Static Analysis Baseline
+# Static Analysis Ownership
 
-This document owns the current static-analysis baseline and its follow-up
-gaps. It describes enforced behavior as of 2026-08-04; it does not select new
-rules or apply repository-wide formatting.
+Role: **readiness and ownership evidence**. Status: **active**.
 
-## Ownership And Baseline
+This record owns current static-analysis scope, enforcement, and named gaps.
+Use [testing-and-validation.md](./testing-and-validation.md) for local
+commands and [ci-maintainer-guide.md](./ci-maintainer-guide.md) for protected
+versus advisory CI policy. It does not select new rules or apply
+repository-wide formatting.
+
+## Current Ownership
 
 | Tool | Current target and command | CI status | Baseline |
 | --- | --- | --- | --- |
@@ -52,14 +56,12 @@ The measured baseline is 158 files requiring reformatting and 104 already
 formatted files. The baseline must be applied as one separately reviewable
 change before the formatter check becomes protected in CI.
 
-## First Ruff Rule Adoption
+## Current Ruff Rule Policy
 
-The initial `I`, `UP`, and `B` baseline contained 164 import-order findings,
-67 modernization findings, and 8 correctness findings. All are now clean
-without unsafe fixes or broad rule exclusions. The only suppressions are five
-line-level `B008` exceptions for FastAPI `Depends` or `Query` declarations;
-those framework defaults define request binding rather than performing normal
-function-default work.
+`I`, `UP`, and `B` are clean without unsafe fixes or broad rule exclusions.
+The only suppressions are five line-level `B008` exceptions for FastAPI
+`Depends` or `Query` declarations; those framework defaults define request
+binding rather than normal function-default behavior.
 
 Local aggregate commands are contributor quality signals, not GitHub
 protection declarations. `just typecheck` currently runs protected Mypy and

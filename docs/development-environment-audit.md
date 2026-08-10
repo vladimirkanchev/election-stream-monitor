@@ -1,7 +1,11 @@
-# Development Environment Audit
+# Development Environment Ownership
 
-This audit maps the current setup and diagnostic ownership. It distinguishes
-the recommended contributor path from supported packaging and host-tool paths.
+Role: **maintainer policy**. Status: **stable**.
+
+This record owns setup and environment-diagnostic policy. It distinguishes the
+recommended contributor path from supported packaging and host-tool paths. Use
+[testing-and-validation.md](./testing-and-validation.md) for runnable commands
+and [ci-maintainer-guide.md](./ci-maintainer-guide.md) for CI enforcement.
 
 ## Setup Ownership
 
@@ -16,26 +20,21 @@ the recommended contributor path from supported packaging and host-tool paths.
 | Local command harness | `justfile` | `just setup` and `just <recipe>` | Setup and daily validation entrypoints. |
 | CI tool versions | GitHub workflows | `setup-python`, `setup-node`, `setup-uv`, and weekly FFmpeg install | Validated reference environment, not a local installer. |
 
-## Frozen Recommended Setup Path
+## Recommended Setup Path
 
-`just setup` is the contributor and AI-agent setup command. It runs, in order:
+`just setup` is the recommended contributor and AI-agent setup command. Its
+current command sequence is owned by the
+[testing guide](./testing-and-validation.md); it prepares repository-managed
+Python and frontend dependencies, then runs `just env-check`.
 
-```bash
-uv sync --locked --extra dev
-cd frontend && bash ../scripts/install_frontend_dependencies.sh
-just env-check
-```
-
-This command prepares repository-managed Python and frontend dependencies,
-then reports whether the host environment matches the project contract. It
-does not install Python, Node, FFmpeg, Git LFS, PostgreSQL, representative
+It does not install Python, Node, FFmpeg, Git LFS, PostgreSQL, representative
 media, or other operating-system-level dependencies.
 
 The editable `pip` commands remain supported for their narrower packaging and
 focused-extra purposes. They are not the recommended general contributor
 setup because they do not use the committed lockfile resolution.
 
-## Frozen Capability Contract
+## Environment Check Contract
 
 `just env-check` owns deterministic local readiness diagnostics. It checks
 tracked version owners, required host tools, and repository `.venv` presence;
