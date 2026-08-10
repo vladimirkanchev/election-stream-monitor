@@ -280,7 +280,9 @@ Trust-policy notes:
 - service mode is stricter:
   - an explicit host allowlist is required
   - private and loopback hosts remain rejected by default
-  - only direct media manifests/files should be fetched remotely
+  - the current remote-analysis loader fetches direct HTTP/HLS playlists only
+  - direct `.mp4` URLs remain valid for source validation and playback, not
+    remote analysis loading
   - webpage extraction, credentialed URLs, and arbitrary remote browsing are
     outside the allowed service-mode fetch boundary
 
