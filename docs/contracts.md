@@ -935,10 +935,8 @@ Why this matters now:
 
 ## Playback Source Resolution v1
 
-Purpose:
-
-- define what the frontend can ask the bridge to resolve for playback
-- keep playback-source behavior explicit across local and future remote sources
+This contract resolves one already-validated source for renderer playback; it
+does not start monitoring or own live-loader retries.
 
 Request shape:
 
@@ -964,8 +962,8 @@ Response shape:
 Current behavior:
 
 - local files and playlists resolve to `local-media://...`
-- already-remote sources may later resolve to direct `https://...`
-- `currentItem` is optional context for playback resolution
+- `currentItem` is optional context
+- the backend returns an accepted remote `api_stream` URL unchanged
 
 ### API Stream playback behavior
 
@@ -978,588 +976,107 @@ remote URL directly:
 }
 ```
 
-This keeps playback transport simple while live monitoring is still
-file-backed-and-polled elsewhere.
-
-Important architectural rule:
-
-- playback resolution is intentionally separate from live monitoring ingestion
-- the player only needs a playable source URL
-- stream loading, reconnect behavior, and chunk iteration belong to the
-  backend loader seam
-
-Why this matters:
-
-- playback can stay simple while monitoring evolves
-- player issues do not need to share logic with loader retry/failure behavior
-- `api_stream` can feel like a new source mode, not a second architecture
+The Electron main process adapts that value for the renderer: direct remote
+media can remain remote, while remote HLS may use its opaque `local-media://`
+proxy when browser CORS behavior requires it. The renderer never selects a
+remote source or bypasses backend validation.
 
 ## API Stream Session Snapshot Semantics v1
 
-Purpose:
-
-- keep live-session reads compatible with the existing session snapshot model
-- avoid introducing a second frontend state model for remote monitoring
-
-Current snapshot semantics for `api_stream`:
+`api_stream` uses the ordinary session snapshot shape:
 
 - `session.mode` is `api_stream`
 - `session.input_path` keeps the validated remote URL
-- `progress.current_item` is the latest live slice/chunk identity
-- `progress.processed_count` is the number of slices processed so far
-- `progress.total_count` is the loader-provided bounded slice count in current
-  tests and deterministic seam flows
-- `alerts`, `results`, and `latest_result` keep the same meaning as local modes
+- `progress.current_item` identifies the latest accepted slice
+- `progress.processed_count`, alerts, results, and `latest_result` retain their
+  normal meaning
 
-Important current limitation:
-
-- the project does not implement an open-ended live session model yet
-- the current seam loaders and tests use bounded, deterministic slice sets so
-  the existing snapshot contract stays stable
-
-Open-ended live default for the upcoming real loader:
-
-- while a live session is still `running`, `progress.total_count` means the
-  latest known number of collected chunks so far
-- `progress.total_count` stays a non-null integer in the current snapshot
-  model
-- before the first chunk arrives, `progress.total_count` may be `0`
-- the frontend should treat `api_stream` progress as live activity, not as a
-  stable completion percentage, until the session reaches a terminal status
-- the current UI expectation is live wording such as "Live, N chunks
-  analyzed", with optional debug-only "N analyzed, M discovered" detail rather
-  than `N/M` batch-style progress
+The present HTTP/HLS runtime is bounded by its idle, refresh, and session
+limits. It is not an open-ended live-service contract. Lifecycle, terminal
+readability, and UI interpretation are owned by
+[session-model.md](./session-model.md#session-lifecycle).
 
 ## API Stream Loader Seam v1
 
-Purpose:
+The loader owns remote ingestion for one validated source:
 
-- define one backend component responsible for future live loading
-- keep stream connection and chunk iteration separate from session orchestration
+- connect, fetch, materialize, and yield normalized `AnalysisSlice` values
+- apply transport retry, replay protection, and temporary-file limits
+- release session-scoped resources on close
 
-Current seam responsibilities:
+It does not own session transitions, persistence policy, detector execution, or
+alert decisions. `session_runner` owns lifecycle and persistence; the
+processor and rule layer own detector and alert behavior.
 
-- connect to one validated live source
-- fetch and materialize chunk/segment work units
-- yield normalized `AnalysisSlice` values
-- close and release loader resources
+### Current source and trust contract
 
-Current non-responsibilities:
+`api_stream` builders accept direct `http` or `https` `.m3u8` and `.mp4` URLs
+for shared validation and playback. They reject blank URLs, embedded
+credentials, webpage paths, and local/private targets by default. An optional
+allowlist can narrow local mode; service mode requires an explicit allowlist.
+DNS-backed private-host checks are opt-in.
 
-- session status transitions
-- persistence
-- detector execution
-- alert rule evaluation
-
-Why this separation matters:
-
-- `session_runner` can stay focused on lifecycle and persistence
-- `processor` can stay focused on running detectors and collecting alerts
-- `alert_rules` can stay focused on policy, not transport behavior
-- tests can use deterministic fake loaders today
-- the first bounded HTTP/HLS loader now fits behind the same seam without
-  changing detector or session snapshot contracts
-- playback resolution can remain a simple remote-URL passthrough while the
-  loader grows more sophisticated
+The concrete remote-analysis loader currently implements HTTP/HLS media and
+master playlists. Accepting a direct remote `.mp4` for validation or playback
+does not promise HTTP/MP4 analysis loading; that would require a separately
+reviewed loader contract.
 
 ## API Stream HTTP/HLS Loader Contract v1
 
-Purpose:
+The current HTTP/HLS loader is an implemented, bounded contract:
 
-- define the exact return shape expected from the first real remote loader
-- keep future HTTP/HLS implementation work narrow, deterministic, and testable
+- it returns normalized `AnalysisSlice` values backed by session-scoped temp
+  media
+- media and master playlists are supported; a master playlist selects its first
+  listed variant without bandwidth, resolution, or codec heuristics
+- media playlists are polled; sliding windows, repeated segments, target
+  duration drift, and incomplete transient refreshes are handled explicitly
+- fetches, temp media, idle polls, refreshes, and overall session runtime have
+  configured bounds
+- cancellation is checked while waiting, backing off, reading, and materializing
 
-Current decided contract:
-
-- the loader returns normalized `AnalysisSlice` values only
-- every yielded slice is backed by one session-scoped temp media file on disk
-- the first real loader accepts:
-  - direct media playlist URLs
-  - master playlist URLs
-- the default polling cadence is `API_STREAM_POLL_INTERVAL_SEC`
-- repeated negative cancel checks inside the live HTTP/HLS hot path are
-  throttled by `API_STREAM_CANCEL_CHECK_SKIP_COUNT`, while reconnect/sleep
-  boundaries still force a fresh cancel read
-
-Current master-playlist policy:
-
-- if the validated source resolves to a master playlist, the first version of
-  the loader chooses the first listed variant
-- it does not yet apply bandwidth, resolution, or codec heuristics
-
-Why this matters:
-
-- the first implementation stays deterministic and easy to test
-- loader behavior becomes explicit before network code exists
-- later improvements can change one named policy instead of silently changing
-  runtime behavior
-
-Current implementation note:
-
-- the first concrete loader now supports bounded HTTP/HLS flows
-- it fetches the initial playlist, resolves master playlists to the first
-  listed variant, polls media playlists for new segments, downloads those
-  segments to temp files, and yields normalized analysis slices
-- master-playlist selection intentionally stays on the first listed variant
-  even if later variants advertise higher bandwidth or resolution
-  - this keeps first-run behavior deterministic on real feeds and avoids
-    hidden quality-selection heuristics in v1
-- open-ended live monitoring is still constrained by the current
-  slice-collection session runner
-- sliding playlist windows are allowed
-  - older segments may disappear from later playlist refreshes without causing
-    failures
-  - replayed surviving segments are skipped by de-duplication
-  - if the live window has advanced past some not-yet-seen segments, the
-    loader resumes from the next visible segment instead of trying to recreate
-    missing history
-- target-duration drift is tolerated
-  - the loader treats the configured poll interval as an upper bound
-  - if the playlist later advertises a shorter target duration, the next poll
-    uses that shorter cadence
-- every playlist and segment fetch is bounded by `API_STREAM_FETCH_TIMEOUT_SEC`
-  and `API_STREAM_MAX_FETCH_BYTES`
-- session-scoped temp media is bounded by `API_STREAM_TEMP_MAX_BYTES`
-  before a newly downloaded segment is written to disk
-
-## API Stream Local HTTP Integration Harness v1
-
-Purpose:
-
-- define the smallest realistic integration-test shape for the future real
-  HTTP/HLS loader
-- keep real-loader tests local, deterministic, and controllable
-
-Current planned harness:
-
-- one small local HTTP test server
-- serves HLS fixtures from the checked-in fixture tree
-- entrypoint playlist is `index.m3u8`
-- serves both:
-  - playlist responses
-  - segment responses
-
-Current fixture-serving strategy:
-
-- use checked-in HLS fixture folders as static source material
-- serve one playlist and its referenced `.ts` files through local HTTP instead
-  of direct filesystem loading
-- keep fixture content deterministic so loader behavior, reconnect handling,
-  and slice identity can be asserted cleanly
-
-Current controllable failure plan:
-
-- scripted timeout
-- scripted disconnect
-- scripted `503` response
-- scripted playlist replay of already seen segments
-
-Why this matters:
-
-- the first real-loader integration tests can stay offline and reproducible
-- failure/reconnect behavior can be exercised without unstable external
-  dependencies
-- the test harness mirrors real transport shape while keeping fixture control
-  local
-
-Current implementation note:
-
-- the test suite now includes a small local HTTP harness for:
-  - direct media playlists
-  - master-playlist selection
-  - low-quality but still playable first-variant selection
-  - malformed master-playlist entries that still expose a later valid variant
-  - playlist refresh with newly discovered segments
-  - longer multi-refresh local HLS runs
-  - temporary segment outage handling
-  - retryable playlist failures and reconnect-budget exhaustion
-  - duplicate segment replay during playlist refresh
-  - sliding-window playlist histories
-  - repeated refreshes with no new segments
-  - target-duration drift
-  - media playlists missing optional tags such as `#EXT-X-TARGETDURATION`
-
-Frontend transport note for the current stage:
-
-- the real loader does not require a transport upgrade to exist
-- current frontend polling is still sufficient for bounded live-session
-  snapshots
-- SSE, WebSocket, or FastAPI-style transport upgrades are optional later
-  improvements, not prerequisites for the first real loader
+Local HTTP fixtures keep HTTP/HLS coverage deterministic and offline. Their
+exact test ownership and validation lanes belong in
+[testing-and-validation.md](./testing-and-validation.md).
 
 ## API Stream Failure Semantics v1
 
-Purpose:
-
-- define the intended failure contract for future `api_stream` support before
-  the runtime is implemented
-- keep live-stream behavior explicit instead of letting retry/reconnect rules
-  leak into unrelated layers
-
-Current intended failure classes:
-
-- `temporary failure`
-  - one chunk/window cannot be fetched, decoded, or analyzed
-  - the session remains `running`
-  - no result or alert is emitted for that failed live slice
-  - failure is logged with session and item context
-- `retryable failure`
-  - the upstream stream or playlist refresh fails in a way that may recover
-  - the session remains `running` while reconnect attempts are still allowed
-  - reconnect attempts should be bounded and visible in logs
-- `terminal failure`
-  - the source is invalid, permanently unavailable, or exceeds the reconnect
-    budget
-  - the session transitions to `failed`
-  - final persisted progress must also be `failed`
-
-Reconnect behavior:
-
-- reconnect should only apply to `retryable failure`
-- reconnect should use bounded retries with backoff
-- reconnect should not duplicate already persisted results or alerts
-- once reconnect succeeds, processing resumes from the next not-yet-persisted
-  live slice/window
-- once reconnect budget is exhausted, the failure becomes `terminal`
-
-Current HLS parsing resilience:
-
-- incomplete live refreshes such as a dangling `#EXTINF` without a following
-  segment URI are tolerated and treated as "no new work yet"
-- temporarily malformed live refreshes, such as a non-HLS body returned during
-  a transient upstream glitch, are treated as retryable live noise instead of
-  immediate terminal failure
-- the first runtime also tolerates one common master-playlist quirk by
-  resolving nested master playlists until it reaches a media playlist, up to a
-  small bounded depth
-- malformed numeric playlist tags such as invalid `MEDIA-SEQUENCE`,
-  `TARGETDURATION`, or `EXTINF` values still fail clearly instead of being
-  guessed
-
-Live playlist idle behavior:
-
-- for non-`#EXT-X-ENDLIST` playlists, "keep waiting" currently means:
-  - continue polling while consecutive refreshes with no newly discovered
-    segments stay below `API_STREAM_MAX_IDLE_PLAYLIST_POLLS`
-  - stop the current bounded live run cleanly once that idle poll budget is
-    exhausted
-- `#EXT-X-ENDLIST` remains an explicit stop signal and completes the bounded
-  live run immediately once the visible playlist segments are exhausted,
-  without falling back to idle polling
-- an explicit session cancel remains an immediate stop signal owned by the
-  session runner; the runner stops after the in-flight chunk finishes and
-  persists a `cancelled` snapshot
-- the concrete HTTP/HLS loader also checks for cancel safely during:
-  - idle polling waits
-  - reconnect backoff waits
-  - segment download/read loops
-  - the gap between download completion and temp-file materialization
-- this is intentionally a local-first bounded-live policy, not a claim of
-  permanent endless monitoring yet
-
-Current status expectations:
-
-- `temporary failure`:
-  - session status remains `running`
-  - progress status remains `running`
-- `retryable failure`:
-  - session status remains `running`
-  - progress status remains `running`
-  - reconnect budget decreases
-- `terminal failure`:
-  - session status becomes `failed`
-  - progress status becomes `failed`
-
-Current reconnect budget:
-
-- the runtime policy exposes `max_reconnect_attempts`
-- this is the upper bound for retryable reconnect attempts before the runtime
-  must treat the problem as terminal
-- duplicate persisted results and duplicate alerts are not allowed after
-  reconnect
-
-What is intentionally not introduced yet:
-
-- no extra frontend session status beyond the current `running` / `failed`
-  model
-- no SSE/WebSocket-specific semantics
-- no plugin-specific retry policies
-
-This contract is intentionally lightweight for the current stage, but it gives
-the current `api_stream` runtime a clear failure model without expanding the
-transport surface too early.
-
-## API Stream Reconnect De-Dup Policy v1
-
-Purpose:
-
-- define where replay protection lives before a real upstream reconnect loop
-  exists
-- prevent duplicate persisted results or alerts after chunk replay
-
-Current decided policy:
-
-- reconnect de-dup uses both loader/runtime memory and persisted session state
-- replayed chunks are skipped before they reach persistence
-- the reconnect-safe identity key remains:
-  - `source_group`
-  - `window_index`
-  - `source_name`
-
-Why this matters:
-
-- the first implementation stays simple and local-first
-- duplicate prevention is still explicit and testable
-- later persistent de-dup can be added as an intentional upgrade instead of
-  an accidental coupling to session storage
-
-## API Stream Loader Exception Policy v1
-
-Purpose:
-
-- define exactly which live-loader failures the loader seam absorbs and which
-  ones become session-fatal
-- keep reconnect ownership explicit before the real HTTP/HLS loader exists
-
-Current decided policy:
-
-- the loader seam owns reconnect attempts
-- the session runner does not implement its own reconnect loop for
-  `api_stream`
-- `temporary_failure` is skipped inside the loader seam and the session keeps
-  running
-- `retryable_failure` is handled inside the loader seam while reconnect budget
-  remains
-- `terminal_failure` escapes the loader seam and should fail the session
-  immediately
-
-Current runner behavior:
-
-- if a terminal loader error happens before live slice discovery completes, the
-  runner persists a failed session snapshot and re-raises the error
-- if the loader seam skips temporary or retryable failures, the runner sees
-  only valid `AnalysisSlice` values and keeps existing result/alert semantics
-
-Current implementation note:
-
-- the concrete HTTP/HLS loader retries playlist fetches internally using the
-  configured reconnect budget and backoff
-- an upstream HTTP 404 during playlist refresh is currently treated as
-  reconnect-eligible rather than as an immediate terminal stop
-- when a later playlist refresh succeeds, the loader clears any stale terminal
-  failure reason instead of carrying the old 404 into later healthy snapshots
-- accepted live-slice identity keys are persisted session-side so a replayed
-  segment can be skipped even after reconnect or repeated loader startup
-- if reconnect or playlist sliding means some missed segments are no longer in
-  the playlist window, the loader resumes from the next visible segment and
-  logs the gap instead of failing the whole run
-- segment-download network failures are downgraded to per-segment temporary
-  failures so one bad chunk can be skipped without failing the whole bounded
-  run
-
-Why this matters:
-
-- reconnect logic stays in one place
-- the runner keeps one clear responsibility: lifecycle and persistence
-- failed live startup attempts become visible to the frontend as real failed
-  sessions instead of disappearing before persistence
-
-## API Stream Observability v1
-
-Purpose:
-
-- make live-ingestion decisions inspectable before full remote loading exists
-- reduce silent failures during future retry/reconnect work
-
-Current logging expectations at the loader seam:
-
-- log when live-slice collection starts
-- log selected master-playlist variant when one is chosen
-- log accepted slices with:
-  - `source_group`
-  - `current_item`
-  - `chunk_index`
-- log playlist refresh stats with:
-  - `playlist_refresh_count`
-  - `new_segment_count`
-  - `skipped_replay_count`
-- log temporary failures with:
-  - redacted source URL
-  - current item when known
-  - failure kind
-- log retryable failures with:
-  - reconnect attempt
-  - reconnect budget
-- log reconnect-budget exhaustion as an error
-- log invalid/replayed/malformed slices that are skipped before persistence
-- log live-window advancement when some missed segments are no longer visible
-  after reconnect or playlist sliding
-
-Why this matters:
-
-- future `api_stream` problems will usually be ingestion and retry problems,
-  not detector bugs
-- these logs make it easier to debug live behavior without changing session
-  snapshot semantics
-- resume-gap logs make reconnect edge cases easier to understand when a real
-  live playlist has already moved on
-
-## API Stream Operator Messages v1
-
-Purpose:
-
-- define frontend-safe language for common live-stream failure states
-- keep operator-facing messaging stable before richer live UI states exist
-
-Current intended messages:
-
-- `stream unavailable`
-  - "The selected live stream is unavailable right now."
-- `reconnecting`
-  - "The live stream is temporarily unavailable. Monitoring is reconnecting."
-- `reconnect budget exhausted`
-  - "The live stream could not be reconnected. Monitoring stopped after the retry budget was exhausted."
-- `unsupported source`
-  - "The selected live stream source is not supported by the current monitoring runtime."
-
-Notes:
-
-- the current frontend maps these from bridge-safe error details
-- this keeps the UI understandable without exposing low-level transport
-  language directly to operators
-
-## API Stream Temp-File Lifecycle v1
-
-Purpose:
-
-- define where fetched live chunks should live before HTTP/HLS downloading is
-  implemented
-- make cleanup, failure handling, and disk guardrails explicit
-
-Current decided policy:
-
-- downloaded chunks live under:
-  - `API_STREAM_TEMP_ROOT / <session_id>`
-- temp media is session-scoped so one live session can be cleaned up without
-  touching another
-- temp media is deleted on:
-  - successful completion
-  - explicit cancel
-  - terminal failure
-- the first implementation should respect a shared disk guardrail exposed as
-  `API_STREAM_TEMP_MAX_BYTES`
-
-Why this matters:
-
-- temp media ownership is clear before the loader exists
-- cleanup behavior does not have to be invented during failure handling
-- disk usage gets one named guardrail early instead of growing accidentally
-
-## API Stream Trust Policy v1
-
-Purpose:
-
-- define acceptable remote-source shapes for the current `api_stream` runtime
-- prevent local-first development from expanding into arbitrary remote or
-  internal-network probing
-- keep reconnect and fetch safety limits explicit at the transport boundary
-
-Current allowlist rules:
-
-- allowed URL schemes:
-  - `https`
-  - `http`
-- URLs must include a host
-- URLs must not include embedded credentials
-- obvious local-network targets are rejected by default in local mode:
-  - `localhost`
-  - `localhost.localdomain`
-  - literal loopback or private IP addresses
-
-## API Stream Slice Identity Rules v1
-
-Purpose:
-
-- make live chunks addressable across progress updates, alerts, and reconnects
-- prevent duplicate persistence after upstream replay or reconnect
-- keep rolling rule state tied to one stable live source
-
-Current rules:
-
-- `source_group` must stay stable for the whole live source
-  - today the default stable identity is the validated source URL
-- `window_index` must be monotonic
-  - each next live slice must have a strictly larger index than the previous one
-- `current_item` must be readable and stable
-  - if the upstream loader has no better name yet, a fallback such as
-    `live-chunk-000007` is used
-- persistence should treat the tuple below as the reconnect-safe identity key:
-  - `source_group`
-  - `window_index`
-  - `source_name`
-
-Why this matters:
-
-- stable `source_group` keeps rolling detector/rule state attached to one live
-  stream instead of leaking across sources
-- monotonic chunk indexes make progress and replay handling predictable
-- readable current-item names improve debugging and UI progress clarity
-- a stable identity key is the foundation for "no duplicate results/alerts
-  after reconnect"
-- optional `API_STREAM_ALLOWED_HOSTS` can restrict allowed domains further
-
-Current intended runtime limits:
-
-- `API_STREAM_MAX_RECONNECT_ATTEMPTS`
-  - maximum reconnect attempts before the failure becomes terminal
-- `API_STREAM_RECONNECT_BACKOFF_SEC`
-  - backoff between retryable reconnect attempts
-- `API_STREAM_FETCH_TIMEOUT_SEC`
-  - upper bound for one remote fetch or refresh operation
-- `API_STREAM_MAX_FETCH_BYTES`
-  - upper bound for one fetched playlist or media chunk payload
-- `API_STREAM_TEMP_MAX_BYTES`
-  - upper bound for temp media materialized by live loading
-
-Implementation note:
-
-- host validation intentionally does not perform DNS resolution during input
-  validation
-- this keeps validation deterministic and avoids turning validation itself into
-  a network probe
-
-## API Stream Flow Example v1
-
-Purpose:
-
-- show the intended end-to-end live flow without introducing a second
-  monitoring architecture
-
-Current planned flow:
-
-1. frontend starts an `api_stream` session with a validated remote URL
-2. session runner creates the session and initial pending progress
-3. loader connects to the live source and yields normalized `AnalysisSlice`
-   values
-4. processor runs detectors on each slice
-5. alert rules evaluate detector output
-6. results, alerts, and progress are persisted in the same snapshot model as
-   local sources
-7. frontend polls the same session snapshot contract used by local modes
-
-Why this matters:
-
-- `api_stream` stays a new source mode, not a second architecture
-- detectors, rules, persistence, and frontend snapshot reading keep the same
-  meaning across local and remote inputs
+- `temporary_failure`: one slice is skipped; no result or alert is emitted.
+- `retryable_failure`: reconnect work is bounded by the configured budget and
+  backoff; a recovered playlist continues from visible unseen segments.
+- `terminal_failure`: the runner persists a failed snapshot.
+
+Incomplete transient playlist refreshes are tolerated, while invalid numeric
+playlist data fails clearly. `#EXT-X-ENDLIST`, the idle-poll budget, explicit
+cancellation, and terminal failure stop the bounded run.
+
+## API Stream Replay and Resource Policy v1
+
+The loader owns reconnect attempts. Replayed slices are deduplicated before
+persistence with `(source_group, window_index, source_name)`; the source group
+is the validated URL and indexes are monotonic. Segment-download failures can
+remain temporary while playlist failures consume the reconnect budget.
+
+Temporary media lives under `API_STREAM_TEMP_ROOT / <session_id>` and is
+cleaned on completion, cancellation, and terminal failure. Fetch size and
+timeout, temporary-media size, playlist refreshes, and session runtime are all
+bounded by configuration.
+
+## API Stream Diagnostics and Deferred Evolution
+
+The loader logs redacted source context, slice and playlist counters, replay
+skips, and reconnect exhaustion. Those diagnostics are not a second public
+session payload.
+
+Open-ended monitoring, alternate-variant selection, specialized operator
+messages, and SSE/WebSocket transport are deferred evolution, not current
+contracts. They require an explicit product and runtime change rather than an
+interpretation of this bounded HTTP/HLS behavior.
 
 ## Electron Bridge Contract v1
 
-Purpose:
-
-- define the frontend-facing operations exposed through `window.electionBridge`
-- keep Electron/CLI transport details separate from the meaning of the bridge API
-- make later transport replacement easier without changing frontend behavior
+`window.electionBridge` is the renderer's narrow, typed transport boundary. It
+does not expose raw IPC, backend process control, or filesystem access.
 
 Transport envelope shape:
 
@@ -1592,7 +1109,15 @@ Current bridge error codes:
 - `PLAYBACK_SOURCE_RESOLUTION_FAILED`
 - `INVALID_BRIDGE_RESPONSE`
 
-Current operations:
+The error envelope can also carry sanitized `backend_error_code`,
+`status_reason`, and `status_detail` when the backend supplied them. The
+preload exposes exactly these operations:
+
+- `listDetectors`
+- `startSession`
+- `readSession`
+- `cancelSession`
+- `resolvePlaybackSource`
 
 ### `listDetectors`
 
@@ -1660,7 +1185,6 @@ Response:
 Current bridge normalization:
 
 - malformed responses are rejected as bridge errors
-- hooks no longer validate `startSession` payloads themselves
 - explicit transport failures are raised with `SESSION_START_FAILED`
 
 ### `readSession`
@@ -1708,75 +1232,16 @@ Current bridge normalization:
 - malformed top-level payloads become the stable empty snapshot shape
 - explicit transport failures are raised with `SESSION_READ_FAILED`
 
-This normalization is intentionally compatible with the backend snapshot
-promise above. Storage can move, but the bridge should not need a different
-session-shape contract just because the backend changed from files to
-PostgreSQL.
+The bridge preserves this snapshot shape across the file-backed default and
+deliberately enabled PostgreSQL storage. Storage selection, worker-store
+consistency, bootstrap policy, and rollout readiness belong to
+[session-model.md](./session-model.md) and
+[session-persistence-audit.md](./session-persistence-audit.md). Worker logs,
+temporary media, replay keys, and cancel intent are not public snapshot fields.
 
-Current session-storage boundary:
-
-- `src/session_store.py` owns durable metadata, latest progress, ordered
-  results, snapshot reads, and known-session checks.
-- `src/session_store_runtime.py` and `src/session_store_runtime_config.py`
-  centralize the current file-backed default and rollback-safe runtime
-  selection.
-- `src/session_store_file.py` is the current file-backed implementation.
-- `src/session_store_postgres_config.py` owns the PostgreSQL session env
-  surface:
-  - `ESM_SESSION_STORE_BACKEND`
-  - `ESM_POSTGRES_SESSION_DATABASE_URL`
-  - `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES`
-  - `POSTGRES_SESSION_STORE_REAL_SMOKE`
-- `src/session_store_postgres.py` owns the PostgreSQL bootstrap seam:
-  driver loading, connection creation, schema initialization, the concrete
-  PostgreSQL session-store adapter, and opt-in schema reset helpers for live
-  smoke tests.
-- Default behavior remains intentionally conservative:
-  - `file` stays the active runtime default
-  - invalid or missing backend config falls back to `file`
-  - explicit `postgres` builds the PostgreSQL-backed `SessionStore`
-  - PostgreSQL session storage is available now, but only on deliberate opt-in
-- Bootstrap policy is explicit, not automatic:
-  - session tables do not auto-create by default
-  - app bootstrap may run `CREATE TABLE IF NOT EXISTS` only when
-    `ESM_POSTGRES_SESSION_AUTO_CREATE_TABLES=1`
-  - schema/bootstrap/migration detail is owned by
-    `docs/session-persistence-audit.md`
-  - normal PR and local validation should not require a live PostgreSQL server
-  - `POSTGRES_SESSION_STORE_REAL_SMOKE=1` is reserved for optional live store
-    and runtime smoke lanes
-  - exact live-lane commands and scope belong in
-    `docs/testing-and-validation.md`
-- `src/session_service.py` and the session runner helpers consume that store
-  contract instead of choosing backend details themselves.
-- FastAPI, CLI, and frontend-facing readers depend on snapshot meaning and
-  route behavior, not file names such as `session.json` or `results.jsonl`.
-- Worker storage invariant:
-  - parent process session reads and cancel writes, and detached-worker lifecycle
-    writes, must resolve the same `SessionStore` backend for one session run
-  - this is a behavior rule, not a transport rule; env inheritance, explicit
-    worker env, or another future mechanism are all acceptable if they keep
-    parent and worker on the same backend
-- Worker logs, temp media, and HTTP/HLS replay keys are outside the durable
-  snapshot unless a new public contract is introduced deliberately. Cancel
-  intent is store-backed runtime control and is still not part of the public
-  snapshot.
-
-Current focused validation ownership for this boundary:
-
-- `tests/test_session_store_runtime.py`
-  - runtime backend selection, file fallback, rollback safety, and explicit
-    proof that PostgreSQL is built only on deliberate opt-in
-- `tests/test_session_store_postgres_config.py`
-  - PostgreSQL env parsing, cache behavior, and URL/auto-create validation
-- `tests/test_session_store_postgres.py`
-  - bootstrap/config guards, missing-driver behavior, idempotent schema setup,
-    adapter behavior/parity coverage, and opt-in live PostgreSQL smoke isolation
-- `tests/test_session_store_file.py`
-  - file-backed parity for the active runtime default
-
-Update this contract doc when payload meaning or missing-session behavior
-changes.
+Bridge and persistence behavior are covered by their focused contract and
+parity suites; use [testing-and-validation.md](./testing-and-validation.md) to
+choose the appropriate lane.
 
 ### Session Alert Query Surfaces
 
@@ -2259,7 +1724,7 @@ Request:
 Response:
 
 ```json
-"https://example.com/live/playlist.m3u8"
+"https://example.com/archive/recording.mp4"
 ```
 
 Current bridge normalization:
@@ -2268,6 +1733,10 @@ Current bridge normalization:
 - blank strings normalize to `null`
 - non-empty strings are trimmed before reaching the hooks
 - explicit transport failures are raised with `PLAYBACK_SOURCE_RESOLUTION_FAILED`
+
+For a remote HLS source, Electron may return an opaque `local-media://` proxy
+URL instead of the backend's direct remote URL. This is a renderer transport
+adaptation, not a second source-validation path.
 
 ## Current contract boundaries
 
@@ -2303,13 +1772,8 @@ Why this matters:
 - preserves the debugging value of session id, source kind, detector id, and
   current item
 
-## Expected next evolution
+## Deferred contract evolution
 
-Near-term contract work:
-
-- add explicit `api_stream` contract cases
-- document reconnect and failure-state semantics
-- keep these same contracts stable across future transport changes
-
-That way the transport can change later without redefining the meaning of the
-data.
+New transport capabilities, public stream states, and bridge operations require
+an explicit contract and matching boundary tests. They must not be inferred
+from current loader diagnostics or Electron implementation details.
