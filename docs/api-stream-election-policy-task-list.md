@@ -1,13 +1,16 @@
 # API Stream Election Policy Decisions
 
-This note turns the current `api_stream` inventory and election-profile
-comparison into a concrete decision list for future policy work.
+Role: **deferred policy-planning record**. Status: **non-contractual**.
+
+This note preserves future `api_stream` policy options. Code, tests, and
+[contracts.md](./contracts.md) remain authoritative for implemented behavior.
+Reactivate this record only when a branch deliberately changes idle-exhaustion
+meaning, introduces profile-driven stream policy, or proposes a new lifecycle
+state or reason. It is not a roadmap commitment.
 
 Related notes:
 
 - [api-stream-operational-inventory.md](./api-stream-operational-inventory.md)
-
-This is an internal planning note for maintainers and coding agents.
 
 ## Goal
 
@@ -15,10 +18,10 @@ Decide which parts of the current generic `api_stream` runtime should stay
 generic, which should become profile-driven for election monitoring, and which
 should remain deferred until the system needs more semantic richness.
 
-## Mini Decision Checkpoint
+## Current Context
 
-This checkpoint reflects the current backend code and the focused recovery
-tests added in the same branch.
+This context summarizes the current backend behavior. It does not authorize a
+contract or lifecycle change.
 
 Current decision:
 
@@ -100,11 +103,11 @@ Cons:
 - bigger contract change
 - may be too broad for non-election live streams
 
-### Recommended direction
+### Planning direction
 
-- **current branch outcome:** apply the narrow clarification now by persisting
+- the current implementation persists
   `status_reason = idle_poll_budget_exhausted` while keeping `status = completed`
-- still prefer later profile-aware policy work if different election stream
+- consider later profile-aware policy work only if different election stream
   classes need different idle semantics beyond this clarification
 - avoid a broader generic semantic rewrite until profile work is ready
 
@@ -244,7 +247,7 @@ clarification:
 
 while still avoiding broader reason-taxonomy churn.
 
-## Suggested Execution Order
+## Possible Decision Sequence
 
 ### Phase 1: policy decisions without behavior change
 
@@ -265,7 +268,7 @@ while still avoiding broader reason-taxonomy churn.
 2. only introduce a new stable lifecycle state or reason if existing UX-based
    distinctions are clearly insufficient
 
-## Recommended Default Stance For Now
+## Current Planning Stance
 
 If a new branch starts from these notes today, the safest planning defaults are:
 
@@ -281,7 +284,7 @@ If a new branch starts from these notes today, the safest planning defaults are:
 - richer interrupted/degraded semantics stay deferred until profile-aware UX is
   proven insufficient
 
-## Bottom Line
+## Reactivation Scope
 
 The next election-focused policy work should begin with:
 

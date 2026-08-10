@@ -46,9 +46,10 @@ and links to this owner.
 | [mcp-server.md](./mcp-server.md) | MCP boundary policy | Contributor, maintainer | Active |
 | [detector-validation-ownership.md](./detector-validation-ownership.md), [coverage-evidence.md](./coverage-evidence.md) | Detector validation evidence | Maintainer, detector engineer, AI agent | Active |
 | [detector-lab-analysis.md](./detector-lab-analysis.md), [motion-coherence.md](./motion-coherence.md) | Experimental detector evidence | Detector engineer, AI agent | Active; non-contractual |
-| [dependency-ownership-audit.md](./dependency-ownership-audit.md), [static-analysis-audit.md](./static-analysis-audit.md), [session-persistence-audit.md](./session-persistence-audit.md) | Readiness and ownership evidence | Maintainer, contributor | Active; used at named follow-up gates |
+| [dependency-ownership-audit.md](./dependency-ownership-audit.md), [static-analysis-audit.md](./static-analysis-audit.md) | Dependency and analysis ownership evidence | Maintainer, contributor | Active; used at named follow-up gates |
+| [session-persistence-audit.md](./session-persistence-audit.md) | Persistence readiness and rollout evidence | Maintainer, contributor | Active until a reviewed PostgreSQL default switch or cloud-persistence rollout |
 | [api-stream-operational-inventory.md](./api-stream-operational-inventory.md) | Operational evidence | Maintainer, operator | Deferred |
-| [api-stream-election-policy-task-list.md](./api-stream-election-policy-task-list.md), [stream-profile-product-brainstorm.md](./stream-profile-product-brainstorm.md) | Planning note | Maintainer, product contributor | Deferred |
+| [api-stream-election-policy-task-list.md](./api-stream-election-policy-task-list.md), [stream-profile-product-brainstorm.md](./stream-profile-product-brainstorm.md) | Planning record | Maintainer, product contributor | Deferred; non-contractual |
 
 Deferred and planning documents are discoverable context, not current runtime
 or onboarding policy. Archive or remove a document only after its remaining
