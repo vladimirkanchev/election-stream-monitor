@@ -422,7 +422,9 @@ Current shape:
     "latest_result_detector": "video_blur",
     "latest_result_detectors": ["video_metrics", "video_blur"],
     "alert_count": 2,
-    "last_updated_utc": "2026-04-02 12:34:56"
+    "last_updated_utc": "2026-04-02 12:34:56",
+    "status_reason": "running",
+    "status_detail": null
   },
   "alerts": [],
   "results": [],
@@ -486,24 +488,13 @@ Field relationship rules are stable:
   rows, but they must still preserve the same outer snapshot shape and keep
   `latest_result` aligned with the final valid ordered result row
 
-### State-specific snapshot promise
+### Snapshot meaning handoff
 
-| Session state | Backend promise |
-| --- | --- |
-| Missing session | Route/service layers treat it as missing-session behavior. At the low-level store/helper layer, the stable empty snapshot shape remains: `session = null`, `progress = null`, `alerts = []`, `results = []`, `latest_result = null`. |
-| Running session | `session` is present, `progress` should usually be present, `results` keeps all committed ordered rows so far, `latest_result` matches the last committed result or `null`, and `alerts` is the alert history currently visible through the active alert backend. |
-| Completed session | The snapshot remains readable after work stops. `session.status` and usually `progress.status` are `completed`; ordered `results`, derived `latest_result`, and `alerts` remain available for later reads. |
-| Failed session | The snapshot remains readable after failure. `session.status` and usually `progress.status` are `failed`; `progress.status_reason` stays compact, `progress.status_detail` may carry the more specific cause, and committed `results` / `alerts` remain readable. |
-| Cancelled session | The snapshot remains readable after terminal cancellation. `session.status` and usually `progress.status` are `cancelled`; `progress.status_reason` may explain the terminal settlement, and committed `results` / `alerts` remain readable. |
-| Partially populated session | This is valid during startup, recovery, or tolerant degraded reads. `session` may be present while `progress` is `null`; `alerts` and `results` still stay list-shaped; `latest_result` stays aligned with committed ordered `results`, not inferred from progress fields. |
-
-Practical read-model notes:
-
-- repeated missing-session reads should still produce the same empty snapshot
-  shape
-- tolerant degraded reads may drop malformed progress or result rows, but they
-  should keep `alerts` and `results` list-shaped and `latest_result` aligned
-  with the final valid result row
+The null/list/order rules above define the public shape. The
+[session model](./session-model.md#snapshot-population-rules) owns how that
+shape is interpreted during startup, active work, terminal settlement, and
+tolerant degraded reads. In particular, terminal snapshots stay readable and
+a known session may temporarily have `progress = null`.
 
 Storage-backend freedom is still intentionally preserved:
 
@@ -693,186 +684,45 @@ Partially populated session:
 }
 ```
 
-### Route failures vs session state
+### Lifecycle meaning handoff
 
-The current project intentionally uses two different failure channels:
-
-- immediate request failure
-  - returned as a structured API error payload
-- ongoing or terminal session lifecycle state
-  - returned through the session snapshot
-
-Important snapshot progress fields are:
-
-- `progress.status`
-- `progress.status_reason`
-- `progress.status_detail`
-
-This keeps request-level problems distinct from the state of an already-running
-session.
-
-### Current monitoring lifecycle expectations
-
-For the current branch state, frontend and bridge consumers should assume:
-
-- `status` remains the top-level lifecycle outcome:
-  - `pending`
-  - `running`
-  - `cancelling`
-  - `completed`
-  - `cancelled`
-  - `failed`
-- `status_reason` stays intentionally compact and stable
-- `status_detail` carries the more specific loader/runtime explanation when one
-  is needed
-
-For `api_stream`, the currently important operator-facing distinctions are:
-
-- transient polling/read failures may temporarily surface as reconnecting in
-  the frontend without clearing the last good session snapshot
-- reconnect-budget exhaustion is terminal and should be presented as a failed
-  live run
-- runtime safety limits are terminal and should be presented as a safety stop,
-  not as a source-shape validation problem
-- idle polling exhaustion persists as:
-  - `status = completed`
-  - `status_reason = idle_poll_budget_exhausted`
-  - `status_detail = "Idle poll budget exhausted"`
-- the frontend may still present that idle-completed case with warning-like
-  wording so operators can distinguish it from an ordinary clean completion
-
-The bridge/frontend layer should reflect these meanings, not invent a separate
-degraded-state lifecycle model on its own.
-
-### Current `api_stream` recovery and terminal expectations
-
-For the current bridge/frontend contract:
-
-- transient live polling failures may surface as reconnecting UI messaging
-  while the frontend keeps the last good session snapshot
-- terminal live failures still come through the ordinary session snapshot
-  contract rather than a separate live-only failure channel
-- failed live sessions intentionally keep a compact stable
-  `progress.status_reason = "source_unreachable"` while the more specific
-  runtime cause remains in `progress.status_detail`
-- idle-bounded live completion now persists as:
-  - `progress.status = "completed"`
-  - `progress.status_reason = "idle_poll_budget_exhausted"`
-  - `progress.status_detail = "Idle poll budget exhausted"`
-
-Current frontend operator wording is expected to distinguish:
-
-- reconnecting while recovery is still plausible
-- retry-budget exhaustion as terminal
-- runtime safety stop as terminal
-- unsupported live source as validation/configuration issue
-- completed live run with idle-budget warning as distinct from ordinary local
-  success messaging
-
-This keeps the frontend aligned with the compact backend contract: the UI may
-be more explanatory, but it should not invent a separate live-only lifecycle
-state model.
-
-### Lifecycle edge contract notes
-
-The current lifecycle hardening makes these edge rules explicit:
-
-- terminal session reads remain successful snapshot reads
-  - `completed`, `failed`, and `cancelled` states are returned through the
-    normal session snapshot contract
-- invalid lifecycle actions fail at the request boundary
-  - for example, `cancel-session` against a terminal session returns a
-    structured route failure rather than a synthetic success
-- missing-session route failures stay distinct from snapshot normalization
-  - backend persistence helpers may degrade missing files to a stable empty
-    shape internally
-  - API and bridge layers turn missing-session route lookups into structured
-    failures such as `session_not_found`
-- frontend bridge normalization preserves structured lifecycle failures
-  - typed bridge errors keep `backend_error_code`, `status_reason`, and
-    `status_detail` instead of flattening them into generic failures
-- cancel success still allows `null`
-  - a successful cancel request may return either an updated `SessionSummary`
-    or `null` when no immediate summary payload is available
-
-Frontend lifecycle behavior now also depends on two intentionally stable
-consumer rules:
-
-- polling reads are tolerant of transient failures and keep the last good
-  session state in the UI instead of immediately clearing it
-- duplicate in-flight cancel requests are suppressed so the frontend keeps one
-  active stop request rather than fanning out repeated cancels
-- once the UI has already settled into terminal `completed`, the app suppresses
-  a late extra stop request instead of issuing a cancel action that can no
-  longer change the session outcome
+This contract owns the `status`, `status_reason`, and `status_detail` fields,
+plus structured route and bridge errors. The
+[session model](./session-model.md#session-lifecycle) owns transitions, startup
+tolerance, terminal readability, `api_stream` recovery interpretation, and UI
+handling. Request failures remain distinct from the state of an already-running
+session; see [Route Failures Vs Session State](./session-model.md#route-failures-vs-session-state).
 
 ### Cancellation Contract v1
 
 Purpose:
 
-- define cancellation as cooperative runtime control, not durable session
-  history
-- keep public cancel behavior stable while the storage backend evolves
-- make later PostgreSQL-backed cancellation possible without forcing the worker
-  into heavy database chatter
+- keep the public cancellation request and response stable
+- keep cooperative cancel intent outside durable session history
 
-Current semantics are intentionally split between the public request boundary
-and the low-level runtime-control helper:
+Public boundary rules:
 
-- public cancel request
-  - `cancel-session` for a known non-terminal session is accepted
-  - the immediate response is a transient `cancelling` summary or `null`
-  - the public request path rejects missing sessions and already-terminal
-    sessions as structured failures
-- low-level cancel intent write
-  - the helper records stop intent only
-  - it is idempotent for repeated requests on the same session
-  - it does not own lifecycle validation or missing-session errors
-- low-level cancel intent read
-  - readers need only a boolean answer: cancel requested or not
-  - no marker or no known runtime-control row reads as `false`
-  - worker and loader polling should not need to parse full session snapshots
-- clear/reset behavior
-  - there is no ordinary public "uncancel" operation
-  - for one session run, cancel intent is write-once and remains set until the
-    worker settles the session
-  - reset belongs to test cleanup, fixture setup, or a fresh session id, not to
-    the normal runtime control flow
+- `cancel-session` accepts a known non-terminal session
+- success returns a transient `cancelling` `SessionSummary` or `null`
+- missing and terminal sessions return structured failures
+- bridge errors preserve `backend_error_code`, `status_reason`, and
+  `status_detail`; malformed non-null success payloads are rejected
 
-Current design rule:
+Runtime-control rules:
 
-- keep durable terminal truth in session metadata/progress
-- keep cancel-request state on the same small `SessionStore` contract as runtime control,
-  while leaving it outside the durable snapshot read model
-- route cancel writes and reads through `SessionStore.request_cancel(...)` and
-  `SessionStore.is_cancel_requested(...)`
-- keep the file-backed store as the active default until PostgreSQL is
-  explicitly selected
-- treat cancel intent as bounded durable coordination
-  - durable enough to survive the parent process, detached worker, and short
-    runtime gaps
-  - not durable session history and not part of the public snapshot payload
-- in file mode, preserve the existing `cancel_requested.json` marker shape
-  behind `SessionStore`
-- in PostgreSQL mode, preserve the same semantics with one lightweight
-  current-state record rather than append-only cancel history
-- if a backend-specific reset helper is ever added, keep it test/bootstrap
-  scoped and out of the public API contract
+- `SessionStore.request_cancel(...)` records idempotent stop intent but does not
+  own lifecycle validation
+- `SessionStore.is_cancel_requested(...)` returns a boolean; absent state is
+  `false`
+- cancel intent is write-once for one run, has no public "uncancel" operation,
+  and remains outside the snapshot payload
+- file and PostgreSQL backends preserve these semantics without exposing their
+  marker or table representation
 
-Current coverage emphasis:
-
-- `tests/test_session_store_contract.py`, `tests/test_session_store_file.py`,
-  `tests/test_session_store_postgres.py`, and
-  `tests/test_session_store_parity.py` protect backend-level cancel semantics
-  plus metadata-only snapshots, latest-only progress, append-ordered results,
-  and storage-neutral snapshot parity
-- `tests/test_session_service.py` and
-  `tests/test_session_service_read_cancel.py` protect shared-service allow,
-  reject, and transient-summary behavior
-- `tests/test_api_boundary_sessions_cancel.py`,
-  `tests/test_session_runner_execution*.py`, and
-  `tests/test_stream_loader_http_hls*.py` protect route mapping, worker
-  settlement, and live-loader polling behavior
+The [session model](./session-model.md#lifecycle-truth-table) owns cancellation
+transitions, worker settlement, terminal readability, and frontend duplicate
+request suppression. Store parity, service, API-boundary, runner, loader, and
+bridge tests remain the behavioral evidence for this contract.
 
 ## Result Event v1
 
