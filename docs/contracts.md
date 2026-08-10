@@ -1,74 +1,34 @@
 # Contracts
 
-This document defines the current shared contracts between the Python backend,
-the Electron bridge, and the frontend.
-
-The project is still in an advanced prototype stage, so these contracts are
-kept intentionally compact.
-
-The goal is:
-
-- make important interfaces explicit
-- reduce accidental contract drift
-- prepare later `api_stream` and service/API evolution
-
-Use this doc for stable payload and seam contracts. Do not use it as the main
-architecture narrative, session-semantics guide, migration inventory, or
-validation-command reference; see [architecture.md](./architecture.md),
+This document defines stable shared payloads and boundary behavior between the
+Python backend, Electron bridge, and frontend. It supports the local-first
+prototype by making cross-layer promises explicit without becoming the
+architecture narrative, lifecycle guide, migration inventory, or command
+reference. Use [architecture.md](./architecture.md),
 [session-model.md](./session-model.md),
 [session-persistence-audit.md](./session-persistence-audit.md), and
-[testing-and-validation.md](./testing-and-validation.md).
+[testing-and-validation.md](./testing-and-validation.md) for those owners.
 
 ## At a glance
 
-Use this document when you need to know:
+Use this document for what callers may send, what they receive, and which
+fields remain stable for tests, tools, and UI code.
 
-- what the frontend is allowed to send
-- what the backend promises to return
-- which fields should be treated as stable by tests, tools, and UI code
+| Need | Contract route |
+| --- | --- |
+| HTTP auth, rate limits, request errors, or source input | [FastAPI boundaries](#fastapi-authentication-contract-v1) and [API-stream start](#api-stream-start-session-contract-v1) |
+| Detector catalog or durable runtime rows | [Detector catalog](#detector-catalog-v1), [session snapshot](#session-snapshot-v1), [result event](#result-event-v1), and [alert event](#alert-event-v1) |
+| Playback, live loading, retries, or source trust | [Playback and API-stream contracts](#playback-source-resolution-v1) |
+| Bridge calls and normalized frontend errors | [Electron bridge](#electron-bridge-contract-v1) |
+| Plugin or structured-log safety | [Plugin security](#plugin-security-rules-v1) and [logging redaction](#logging-redaction-policy-v1) |
 
-The closest code-level sources are:
+## Boundary Sources
 
-- [`src/analyzer_contract.py`](../src/analyzer_contract.py)
-- [`src/detectors/registry.py`](../src/detectors/registry.py)
-- [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
-- [`src/source_validation.py`](../src/source_validation.py)
-- [`src/stream_loader.py`](../src/stream_loader.py)
-- [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py)
-- [`src/stream_loader_http_hls.py`](../src/stream_loader_http_hls.py)
-- [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
-- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
-- [`frontend/src/bridge/contractDetectors.ts`](../frontend/src/bridge/contractDetectors.ts)
-- [`frontend/src/bridge/contractSessionSnapshot.ts`](../frontend/src/bridge/contractSessionSnapshot.ts)
-- [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
-- [`frontend/src/types.ts`](../frontend/src/types.ts)
-
-## Current Source Of Truth
-
-For the current project stage:
-
-- backend session snapshot contract:
-  - [`src/session_store.py`](../src/session_store.py)
-  - [`src/session_store_runtime.py`](../src/session_store_runtime.py)
-  - [`src/session_service.py`](../src/session_service.py)
-  - [`src/session_models.py`](../src/session_models.py)
-- frontend bridge normalization source of truth:
-  - [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
-  - [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
-  - [`frontend/src/bridge/contractDetectors.ts`](../frontend/src/bridge/contractDetectors.ts)
-  - [`frontend/src/bridge/contractSessionSnapshot.ts`](../frontend/src/bridge/contractSessionSnapshot.ts)
-  - [`frontend/src/bridge/contractShared.ts`](../frontend/src/bridge/contractShared.ts)
-  - [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
-  - [`frontend/src/types.ts`](../frontend/src/types.ts)
-- FastAPI request/response contract source of truth:
-  - [`src/api/schemas.py`](../src/api/schemas.py)
-  - [`src/api/routers/`](../src/api/routers)
-- detector catalog and detector-result contract source of truth:
-  - [`src/analyzer_contract.py`](../src/analyzer_contract.py)
-  - [`src/detectors/registry.py`](../src/detectors/registry.py)
-  - [`src/processor.py`](../src/processor.py)
-  - [`src/alert_rules.py`](../src/alert_rules.py)
-  - [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
+- detector rows and catalog: [`src/analyzer_contract.py`](../src/analyzer_contract.py), [`src/detectors/registry.py`](../src/detectors/registry.py), [`src/processor.py`](../src/processor.py), and [`src/alert_rules.py`](../src/alert_rules.py)
+- HTTP boundary: [`src/api/schemas.py`](../src/api/schemas.py) and [`src/api/routers/`](../src/api/routers)
+- API-stream boundary: [`src/source_validation.py`](../src/source_validation.py), [`src/stream_loader_contracts.py`](../src/stream_loader_contracts.py), and [`src/stream_loader.py`](../src/stream_loader.py)
+- session snapshot: [`src/session_store.py`](../src/session_store.py), [`src/session_store_runtime.py`](../src/session_store_runtime.py), and [`src/session_models.py`](../src/session_models.py)
+- bridge normalization: [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts), [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts), and [`frontend/src/types.ts`](../frontend/src/types.ts)
 
 Current persistence contract, kept short here:
 
@@ -125,47 +85,11 @@ Current persistence contract, kept short here:
 
 ## Do Not Drift These Together By Accident
 
-When changing one of these, review the others too:
-
-- [`src/analyzer_contract.py`](../src/analyzer_contract.py)
-- [`src/detectors/registry.py`](../src/detectors/registry.py)
-- [`src/processor.py`](../src/processor.py)
-- [`src/alert_rules.py`](../src/alert_rules.py)
-- [`src/api/routers/detectors.py`](../src/api/routers/detectors.py)
-- [`src/api/schemas.py`](../src/api/schemas.py)
-- [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
-- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
-- [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
-- [`frontend/src/types.ts`](../frontend/src/types.ts)
-- [`frontend/src/bridge/contract.testSupport.ts`](../frontend/src/bridge/contract.testSupport.ts)
-- [`docs/session-model.md`](./session-model.md)
-- [`tests/test_api_boundary_contracts.py`](../tests/test_api_boundary_contracts.py)
-- [`tests/test_analyzer_registry.py`](../tests/test_analyzer_registry.py)
-- [`tests/test_processor_routing.py`](../tests/test_processor_routing.py)
-- [`tests/test_processor_context_alerts.py`](../tests/test_processor_context_alerts.py)
-- [`tests/test_processor_failures.py`](../tests/test_processor_failures.py)
-- [`tests/test_alert_rules.py`](../tests/test_alert_rules.py)
-- [`tests/test_session_cli_tooling.py`](../tests/test_session_cli_tooling.py)
-- [`tests/test_export_detector_catalog.py`](../tests/test_export_detector_catalog.py)
-- [`tests/test_api_boundary_sessions_read.py`](../tests/test_api_boundary_sessions_read.py)
-- [`tests/test_api_boundary_sessions_start.py`](../tests/test_api_boundary_sessions_start.py)
-- [`tests/test_api_boundary_sessions_cancel.py`](../tests/test_api_boundary_sessions_cancel.py)
-- [`frontend/src/bridge/contract.success.test.ts`](../frontend/src/bridge/contract.success.test.ts)
-- [`frontend/src/bridge/contract.errors.test.ts`](../frontend/src/bridge/contract.errors.test.ts)
-- [`frontend/src/bridge/contract.session-snapshot.shape.test.ts`](../frontend/src/bridge/contract.session-snapshot.shape.test.ts)
-- [`frontend/src/bridge/contract.session-snapshot.malformed.test.ts`](../frontend/src/bridge/contract.session-snapshot.malformed.test.ts)
-- [`frontend/src/bridge/contract.session-snapshot.collections.test.ts`](../frontend/src/bridge/contract.session-snapshot.collections.test.ts)
-- [`frontend/src/bridge/transport.test.ts`](../frontend/src/bridge/transport.test.ts)
-- [`frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx`](../frontend/src/hooks/useMonitoringSession.lifecycle.test.tsx)
-- [`frontend/src/hooks/useMonitoringSession.apiStream.test.tsx`](../frontend/src/hooks/useMonitoringSession.apiStream.test.tsx)
-- [`frontend/src/hooks/usePlaybackSource.test.tsx`](../frontend/src/hooks/usePlaybackSource.test.tsx)
-- [`frontend/src/components/SessionStatusPanel.test.tsx`](../frontend/src/components/SessionStatusPanel.test.tsx)
-- [`frontend/src/presenters/alertFeed.test.ts`](../frontend/src/presenters/alertFeed.test.ts)
-- [`frontend/src/uiErrors.test.ts`](../frontend/src/uiErrors.test.ts)
-
-For `main` pull requests, the CI drift gate expects contract changes to move
-with nearby tests and the owning docs update rather than landing as silent
-shape changes.
+When a change crosses a contract boundary, review the corresponding source
+group above, the nearest backend or bridge boundary tests, and
+[session-model.md](./session-model.md) when lifecycle meaning changes. The
+protected `main` policy expects contract-sensitive code to move with nearby
+tests and this owning document rather than landing as a silent shape change.
 
 ## FastAPI Authentication Contract v1
 
