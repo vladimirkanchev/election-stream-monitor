@@ -81,11 +81,7 @@ In practice, the flow looks like this:
 4. FastAPI routes session operations into the shared backend services, which
    spawn and track the detached session worker that runs the monitoring flow.
 5. Detectors and alert rules process the media, while local session state and
-   the shared alert backend keep progress, results, and alerts. Session data
-   still defaults to the file-backed store, while alerts stay file-backed by
-   default with PostgreSQL available as an opt-in backend. Session PostgreSQL
-   is also opt-in and currently forward-only rather than a historical
-   migration path.
+   the shared alert backend keep progress, results, and alerts.
 
 FastAPI and MCP are separate entry points over local persisted data. FastAPI
 owns the desktop HTTP path; MCP is the local read-only alert-query adapter
@@ -101,7 +97,7 @@ The diagram below shows the same flow in one picture.
 - **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, and alert/session reads. Its access policy is documented in the [FastAPI boundary guide](./docs/fastapi-boundary.md).
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-query surface; its trust boundary is documented in the [MCP policy](./docs/mcp-server.md).
-- **Local session data and the shared alert backend** persist progress, results, and alerts for the local-first runtime. Session reads and writes now go through the shared session-store contract, but the default backend still writes under `data/sessions/`.
+- **Local session data and the shared alert backend** persist progress, results, and alerts through the shared session-store contract.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation
@@ -141,117 +137,20 @@ details.
 
 ## Developer Harness
 
-The repo now includes a small local command harness in
-[`justfile`](./justfile). Use it as the default entrypoint for the most common
-developer validation loops.
-
-The harness is intentionally small and repo-shaped: it helps local
-development and branch readiness, but it is not a deployment or runtime
-orchestration layer.
-
-Design intent:
-
-- focused lanes own one seam each
-- broader lanes such as `just test-fast` and `just ci-local` compose those
-  focused lanes instead of redefining them
-- the harness stays readable and stable by mirroring the current project
-  structure rather than hiding it
-
-Workflow ownership stays split on purpose:
-
-- [docs/branch-purpose-template.md](./docs/branch-purpose-template.md)
-  - lightweight execution pattern and medium-task checklist
-- [docs/testing-and-validation.md](./docs/testing-and-validation.md)
-  - local lanes, CI shape, and confidence depth
-- [docs/README.md](./docs/README.md)
-  - maintainer routing and docs ownership
-
-Current high-value commands:
-
-- `just env-check`
-  - environment readiness diagnostic after setup or toolchain changes
-- focused lanes first
-  - use `just test-detectors`, `just test-processor`, `just test-alert-rules`,
-    `just test-hls`, or `just test-frontend` when the changed seam is already clear
-- `just test-fast`
-  - best default fast runtime validation lane for everyday backend/frontend work
-- `just ci-local`
-  - best local push-readiness lane after focused checks or `just test-fast`
-- `just docs-check`
-  - docs/workflow consistency and CI-ownership alignment lane
-
-Use the smallest honest lane first. For the full validation map, slow lanes,
-and detector-lab confidence paths, use
-[docs/testing-and-validation.md](./docs/testing-and-validation.md).
-
-Harness layers:
-
-- [`justfile`](./justfile)
-  - daily local validation commands
-- [`pre-commit`](./.pre-commit-config.yaml)
-  - cheap commit-time hygiene only
-- [`.editorconfig`](./.editorconfig)
-  - shared whitespace and indentation defaults
-
-Cheap local guardrails in [`pre-commit`](./.pre-commit-config.yaml):
-
-- Ruff
-- trailing whitespace / EOF fixes
-- YAML / JSON / TOML validation
-- the fixture/environment policy guard
-
-Branch workflow templates:
-- [branch-purpose-template.md](./docs/branch-purpose-template.md)
-- [`.github/pull_request_template.md`](./.github/pull_request_template.md)
-- [merge-readiness-checklist.md](./docs/merge-readiness-checklist.md)
-
-That branch flow keeps three checks explicit:
-
-- what existing test or `docs-check` already proves the change?
-- if the change touches API, CLI, persisted data, or bridge shape, should
-  [docs/contracts.md](./docs/contracts.md) and nearby tests move with it?
-- if `pyproject.toml` or `uv.lock` changed, does that belong to the branch story?
+[`justfile`](./justfile) is the local command entrypoint. Use the smallest
+honest focused lane first, then use `just test-fast` for a broad fast check,
+`just ci-local` before an ordinary push, and `just docs-check` for docs or
+workflow changes. The full command map, slow lanes, and branch workflow live
+in [testing and validation](./docs/testing-and-validation.md) and the
+[maintainer docs index](./docs/README.md).
 
 ## Repo-Local Codex Skills
 
-The repo includes a focused set of repo-local Codex skills under
-[`./.agents/skills/`](./.agents/skills) for repo-aware diagnostics and review.
-
-These are mainly for AI-assisted contributors and debugging workflows. They
-are lightweight text helpers, not a separate plugin framework, and they are
-not required to run the project.
-
-The most common workflow helpers are:
-
-- `task-planning-evaluation`
-  - scales planning depth to the task and reuses the branch template for the
-    execution pattern
-- `test-strategy-review`
-  - chooses the smallest honest validation lane before broader checks
-  - says `manual confidence only for now` when no honest automated lane fits yet
-- `docs-alignment`
-  - routes doc updates to the owning file and flags contract-sensitive changes
-- `branch-pr-readiness`
-  - checks branch drift, commit grouping, merge readiness, and dependency-file fit
-
-These skills help with local planning, validation, docs alignment, and review,
-but they do not replace the project's tests or CI lanes.
-
-Two newer review helpers keep nearby docs work separate on purpose:
-
-- `readme-alignment-review`
-  - root README section fit, stage honesty, and trimming
-- `docs-drift-check`
-  - pre-edit audit of whether docs are really drifting and which file owns the fix
-Their deterministic skill tests protect those boundaries so README fit and
-docs drift do not collapse into one generic docs mode.
-
-The repo also includes narrower helpers for incident explanation, CI failure
-triage, manual validation planning, fixture/environment review, and
-security-surface checks.
-
-For the fuller skill map and maintainer-oriented ownership notes, use
-[docs/README.md](./docs/README.md).
+Repo-local Codex skills provide optional, project-specific help with planning,
+review, validation, and documentation. They do not replace tests or CI. Use
+[AGENTS.md](./AGENTS.md) for the shortest safe route and the
+[skill inventory](./.agents/skills/INVENTORY.md) for the active skill map,
+deferred specialists, and deterministic harness evidence.
 
 ## Running The Project
 
@@ -304,103 +203,51 @@ compatibility.
 
 ## Example Inputs
 
-If you are trying the app for the first time, start with `video_files`.
-Repo-local examples are the most reliable first run.
+Start with `video_files`; checked-in media is the most reliable first run:
 
-Useful repo-local examples:
-
-- `tests/fixtures/media/video_files/`
-- `tests/fixtures/media/video_segments/`
 - `tests/fixtures/media/video_files/clean_baseline_long.mp4`
+- `tests/fixtures/media/video_segments/`
 
-Useful `api_stream` examples:
-
-- `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`
-- `https://devimages-cdn.apple.com/samplecode/avfoundationMedia/AVFoundationQueuePlayer_HLS2/master.m3u8`
-- `https://tungsten.aaplimg.com/VOD/bipbop_adv_fmp4_example/master.m3u8`
-
-Some public streams still reject automated fetching. See
-[Known Limitations](#known-limitations).
+Public `api_stream` sources can reject automated fetching; use the
+[local API-stream validation guide](./docs/api-stream-local-validation.md) for
+repeatable trials.
 
 ## Known Limitations
 
 - Some public `.m3u8` streams still block automated fetching.
 - Playback and monitoring are related but not identical, so one can fail while
   the other keeps running.
-- FastAPI and MCP security are designed for local and demo use, not distributed
-  public deployment; see the [FastAPI boundary guide](./docs/fastapi-boundary.md)
-  and [MCP policy](./docs/mcp-server.md).
-- The desktop workflow is tuned mainly for Ubuntu/Linux.
-- Packaging is still early and closer to a developer-run app than a polished release.
-- Detector coverage is still narrow, with a current focus on black-screen and blur-related issues.
-- PostgreSQL alert storage is opt-in and still requires manual local database setup.
-- The backend remains local-first and single-process in practice.
+- The desktop workflow is tuned mainly for Ubuntu/Linux, and packaging remains
+  developer-oriented.
+- The runtime is local-first and single-process; remote MCP remains out of
+  scope. See the [MCP policy](./docs/mcp-server.md).
 
 ## Tests And Validation
 
-Test coverage is in good shape for the current project stage, including the
-backend, frontend, FastAPI boundary, and Electron runtime. The repo also has
-focused regression coverage across alerts, incident grouping, and key
-FastAPI/MCP boundary behavior.
-
-Quick local confidence check:
-
-```bash
-just test-fast
-```
-
-That fast lane is the best default local confidence pass for everyday backend
-and frontend changes. Use
-[`docs/testing-and-validation.md`](./docs/testing-and-validation.md) for
-focused lanes, slower e2e coverage, snapshot-smoke checks, and live
-validation.
-Use a focused lane first when the changed area is already clear.
-
-Representative media is opt-in local confidence: catalog guards are
-deterministic, while calibration, exact-truth, transport, and soak lanes run
-only when the changed seam needs them. The [testing guide](./docs/testing-and-validation.md)
-owns commands; the [detector-validation ownership guide](./docs/detector-validation-ownership.md)
+Use focused validation when a changed seam is clear; otherwise `just test-fast`
+is the normal broad local confidence check. The
+[testing guide](./docs/testing-and-validation.md) owns focused, slow, E2E, and
+live-validation commands. The [detector-validation ownership guide](./docs/detector-validation-ownership.md)
 owns fixture and truth policy.
-
-For more detail:
-
-- [testing-and-validation.md](./docs/testing-and-validation.md)
-- [api-stream-local-validation.md](./docs/api-stream-local-validation.md)
 
 ## Docs
 
-For the main owner docs, start with
-[docs/README.md](./docs/README.md). The main deep dives are:
-
-If a change affects API, CLI, persisted data, or bridge shape, start with
-[docs/contracts.md](./docs/contracts.md).
-
-- [docs/architecture.md](./docs/architecture.md) for the current system shape
-- [docs/contracts.md](./docs/contracts.md) for backend and frontend API/data rules
-- [docs/session-model.md](./docs/session-model.md) for session lifecycle and local state
-- [docs/fastapi-boundary.md](./docs/fastapi-boundary.md) for FastAPI/MCP boundary and access modes
-- [docs/frontend-architecture.md](./docs/frontend-architecture.md) for frontend and playback
-- [docs/testing-and-validation.md](./docs/testing-and-validation.md) for test scope
+Start with the [maintainer docs index](./docs/README.md). For API, CLI,
+persisted-data, or bridge changes, read [contracts.md](./docs/contracts.md)
+before editing code.
 
 ## Versioning And Releases
 
-- the project is now in an early `0.6.4` stage
-- expect active iteration and improving internal stability rather than strict
-  long-term compatibility
-- release notes live in [release-versioning.md](./docs/release-versioning.md)
-  and [CHANGELOG.md](./CHANGELOG.md)
+The project is in the early `0.6.4` stage: expect active iteration rather than
+long-term compatibility guarantees. Release policy lives in
+[release-versioning.md](./docs/release-versioning.md); released changes live in
+[CHANGELOG.md](./CHANGELOG.md).
 
 ## Data And Outputs
 
-Useful references:
-
-- [tests/fixtures/](./tests/fixtures)
-
-Outputs are still local-first:
-
-- detector metrics: `data/metrics/`
-- per-session metadata, latest progress, and results: `SessionStore` with a file default under `data/sessions/`
-- alerts: file-backed by default, with PostgreSQL available as an opt-in backend
+Local detector metrics are written under `data/metrics/`; test fixtures live
+in [`tests/fixtures/`](./tests/fixtures). The [session model](./docs/session-model.md)
+owns durable session-artifact meaning and storage behavior.
 
 ## Repo Layout
 
@@ -415,49 +262,13 @@ Quick map:
 - `.agents/` — repo-local Codex skills
 - `.github/` — CI and repo automation
 
-## Known Roadmap Areas
-
-Likely next areas of work::
-
-- add more detectors and keep alerts easy to tune
-- improve runtime debugging and status information
-- keep hardening the local Electron + FastAPI app
-- strengthen MCP tools security carefully
-- decide when PostgreSQL-backed alerts should stay opt-in or or become the default
-- implement the session-data PostgreSQL transition
-
-## Feedback Welcome On
-
-The most useful feedback right now is:
-
-- first-run usability and clarity
-- runtime stability, especially which public streams work reliably
-- which detectors or alerts would be most useful next
-- session-data persistence and PostgreSQL migration priorities
-- where MCP or AI help would actually be useful
-
 ## CI
 
-- `.github/workflows/ci.yml`
-- `.github/workflows/weekly-validation.yml`
-
-The main CI workflow is path-aware and runs the fast checks the repo relies on:
-
-- backend tests, packaging smoke, and small backend tooling smoke checks
-- backend lint
-- frontend checks
-- API/data rules, docs, and CI drift checks
-
-It runs on feature-branch pushes and pull requests. Pull requests into `main`
-get stricter checks, while the weekly workflow runs the slower deep checks:
-
-- slow end-to-end media tests and deeper `api_stream` / lifecycle checks
-- weekly live PostgreSQL alert-confidence checks
-- security, dependency, and packaging checks
-- failure-only logs, plus persisted session files for the weekly lifecycle lane
-
-CI also keeps frontend and backend test targeting explicit, which makes
-refactors and split-suite changes safer.
+CI provides path-aware fast feedback for branch and pull-request work, with
+slower media, runtime, PostgreSQL, security, dependency, and packaging
+confidence kept in weekly or advisory lanes. See
+[CI maintainer guidance](./docs/ci-maintainer-guide.md) for gate semantics,
+ownership, and failure artifacts.
 
 ## Security Notes
 
@@ -474,34 +285,12 @@ README: [FastAPI boundary and deployment gates](./docs/fastapi-boundary.md),
 [MCP transport and tool policy](./docs/mcp-server.md), and
 [validation ownership](./docs/testing-and-validation.md).
 
-## Working Style
+## Contributing And Next Steps
 
-This repo leans toward:
-
-- explicit detector and alert-rule registration
-- clear Electron, FastAPI, and MCP boundaries
-- file-backed default persistence with explicit PostgreSQL opt-in backends for
-  sessions and alerts
-- readable code over heavy abstraction
-- promote experiments into production only on purpose
-
-The easiest extension points are:
-
-- add a detector
-- add or update a rule
-- expose it in the frontend detector catalog
-- follow the matching docs and tests
-
-## Contributing
-
-If you want to contribute, that is very welcome.
-
-Useful contributions right now include:
-
-- new detectors and alert rules for real stream problems
-- playback, runtime, and source-handling fixes, especially around difficult public streams
-- MCP boundary improvements and local security hardening
-- session-data persistence and PostgreSQL transition work
-- better docs, tests, and first-run usability
-
-Small focused contributions are especially helpful here.
+Small, focused contributions are welcome. The project favors explicit detector
+and alert-rule registration, clear Electron/FastAPI/MCP boundaries, and
+readable code over heavy abstraction. Useful work includes detector and rule
+extensions, playback and source-handling fixes, runtime diagnostics, local
+security hardening, persistence rollout, and first-run usability. Feedback on
+first-run clarity, stream reliability, useful detector coverage, and future
+MCP or persistence needs is especially valuable.
