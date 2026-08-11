@@ -89,12 +89,12 @@ In practice, the flow looks like this:
    resolution, and alert/session reads.
 4. FastAPI routes session operations into the shared backend services, which
    spawn and track the detached session worker that runs the monitoring flow.
-5. Detectors and alert rules process the media, while local session state and
-   the shared alert backend keep progress, results, and alerts.
+5. The worker processes media through detectors and alert rules, then writes
+   session status, results, and alerts to the configured stores.
 
-FastAPI and MCP are separate entry points over local persisted data. FastAPI
-owns the desktop HTTP path; MCP is the local read-only alert-query adapter
-described in the [MCP policy](./docs/mcp-server.md).
+FastAPI and MCP are separate entry points over the configured persistence
+backends. FastAPI owns the desktop HTTP path; MCP is the local read-only
+alert-query adapter described in the [MCP policy](./docs/mcp-server.md).
 
 The diagram below keeps the root-level view intentionally small. The detailed
 runtime flow and change-placement guidance live in
@@ -106,15 +106,16 @@ runtime flow and change-placement guidance live in
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
 - **FastAPI** owns the local HTTP boundary: session control, source validation,
-  playback resolution, and alert/session reads. In `share` mode, API-key
-  authentication and route-family rate limits protect operational session,
-  playback, and alert routes; exact exceptions are documented in the
+  playback resolution, and session/alert reads. Its local/share security
+  policy is documented in the
   [FastAPI boundary guide](./docs/fastapi-boundary.md).
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-query surface; its trust boundary is documented in the [MCP policy](./docs/mcp-server.md).
 - **The active session and alert stores** persist progress, results, and alerts;
   both are file-backed by default with explicit PostgreSQL opt-in.
-- **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
+- **FastAPI** reads session snapshots and alerts; **MCP** reuses only the
+  read-only alert-query path. Neither creates a separate store or monitoring
+  pipeline.
 
 ## Installation
 
