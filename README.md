@@ -11,8 +11,9 @@ It is an advanced, desktop-oriented prototype for local development, demos,
 and small monitoring runs, not a public Internet service or a finished
 monitoring platform.
 
-**Quick try:** run `npm --prefix frontend run dev`, choose `video_files`, and
-select a local `.mp4`.
+**Quick try:** after completing [Installation](#installation), run
+`npm --prefix frontend run dev`, choose `video_files`, and select a local
+`.mp4`.
 
 For contributor workflow, use [CONTRIBUTING.md](./CONTRIBUTING.md). For
 maintainer and AI-agent routing, use [docs/README.md](./docs/README.md).
