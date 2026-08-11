@@ -39,6 +39,18 @@ Use this document when you need to answer:
 - whether something belongs to transport, session lifecycle, detector logic,
   alert policy, playback, or persistence
 
+### Detailed architecture
+
+The detailed view shows process boundaries, monitoring writes, persisted read
+paths, and the read-only MCP surface. Exact payload shapes and lifecycle
+semantics remain owned by [contracts.md](./contracts.md) and
+[session-model.md](./session-model.md).
+
+![Detailed Election Stream Monitor architecture showing Electron, FastAPI, the detached monitoring worker, persistence, shared alert reads, and read-only MCP](./assets/architecture-detailed.png)
+
+The following focused diagrams provide complementary runtime-flow and
+extension views.
+
 ![Runtime flow](./runtime-flow.svg)
 
 ![Plugin structure](./plugin-structure.svg)
