@@ -15,8 +15,9 @@ monitoring platform.
 `npm --prefix frontend run dev`, choose `video_files`, and select a local
 `.mp4`.
 
-For contributor workflow, use [CONTRIBUTING.md](./CONTRIBUTING.md). For
-maintainer and AI-agent routing, use [docs/README.md](./docs/README.md).
+For contributor workflow, use [CONTRIBUTING.md](./CONTRIBUTING.md). Maintainers
+can use [docs/README.md](./docs/README.md) for document routing; AI-assisted
+changes should start with [AGENTS.md](./AGENTS.md).
 
 ## Current Capabilities
 
@@ -25,6 +26,8 @@ maintainer and AI-agent routing, use [docs/README.md](./docs/README.md).
   direct remote `api_stream` inputs.
 - Two production detectors: `Black Screen` and `Blur Check`, each with an
   explicit default alert rule.
+- Production detection currently uses deterministic media metrics and rules;
+  it does not load a trained machine-learning model.
 - Session metadata, progress, detector results, and alerts persisted locally.
   File-backed storage is the default; PostgreSQL is an explicit opt-in for
   session and alert backends.
@@ -35,6 +38,9 @@ supported local or remote HLS media through Electron, and shows session state
 and alerts.
 
 ![Frontend screenshot](./docs/assets/Frontend.png)
+
+_Example `video_segments` monitoring session. The quick-start path uses
+`video_files` for a simpler first run._
 
 Production detector registration is explicit in
 [`src/detectors/registry.py`](./src/detectors/registry.py). Experimental blur
@@ -90,17 +96,24 @@ FastAPI and MCP are separate entry points over local persisted data. FastAPI
 owns the desktop HTTP path; MCP is the local read-only alert-query adapter
 described in the [MCP policy](./docs/mcp-server.md).
 
-The diagram below shows the same flow in one picture.
+The diagram below keeps the root-level view intentionally small. The detailed
+runtime flow and change-placement guidance live in
+[architecture.md](./docs/architecture.md).
 
-![Architecture outlook](./docs/assets/diagram_final.png)
+![Election Stream Monitor architecture showing the Electron desktop app, local FastAPI boundary, detached monitoring worker, persistence, and read-only MCP](./docs/assets/architecture-overview.png)
 
 ### Who Owns What
 
 - **Electron** owns the desktop shell, runtime startup, UI bridge, local media serving, and the HLS proxy path.
-- **FastAPI** owns the local HTTP boundary: session control, source validation, playback resolution, and alert/session reads. Its access policy is documented in the [FastAPI boundary guide](./docs/fastapi-boundary.md).
+- **FastAPI** owns the local HTTP boundary: session control, source validation,
+  playback resolution, and alert/session reads. In `share` mode, API-key
+  authentication and route-family rate limits protect operational session,
+  playback, and alert routes; exact exceptions are documented in the
+  [FastAPI boundary guide](./docs/fastapi-boundary.md).
 - **Shared backend services and the detached session worker** own session execution, detector/rule processing, and session-state updates behind that HTTP boundary.
 - **MCP** remains a separate local `stdio` read-only alert-query surface; its trust boundary is documented in the [MCP policy](./docs/mcp-server.md).
-- **Local session data and the shared alert backend** persist progress, results, and alerts through the shared session-store contract.
+- **The active session and alert stores** persist progress, results, and alerts;
+  both are file-backed by default with explicit PostgreSQL opt-in.
 - **FastAPI and MCP** read through the same persisted alert/session path, not separate stores or monitoring pipelines.
 
 ## Installation
@@ -113,6 +126,7 @@ You will need:
 - Node.js `22.x` selected from [`.nvmrc`](./.nvmrc)
 - npm, which the frontend installer sets to the declared `11.15.0`
 - `ffmpeg` and `ffprobe` on `PATH`
+- Git and Git LFS for repository history and checked-in media
 - `uv` for the locked contributor and AI-agent setup flow
 - `just` for the repository setup and validation commands
 
@@ -166,6 +180,9 @@ npm --prefix frontend run dev
 Wait for the Electron window, select `video_files`, choose a local `.mp4`, and
 select `Start Monitoring`. Repository examples are listed in
 [Example Inputs](#example-inputs).
+
+A successful first run shows session status and analysis progress in the UI.
+The alert count may remain at zero when the selected media is clean.
 
 Optional configuration is documented in [`.env.example`](./.env.example). The
 application does not load it automatically: source it explicitly or export
@@ -288,6 +305,8 @@ The detailed security model is intentionally maintained outside the root
 README: [FastAPI boundary and deployment gates](./docs/fastapi-boundary.md),
 [MCP transport and tool policy](./docs/mcp-server.md), and
 [validation ownership](./docs/testing-and-validation.md).
+Report suspected vulnerabilities through [SECURITY.md](./SECURITY.md), not a
+public issue containing sensitive exploit details.
 
 ## Contributing And Next Steps
 
@@ -298,3 +317,7 @@ extensions, playback and source-handling fixes, runtime diagnostics, local
 security hardening, persistence rollout, and first-run usability. Feedback on
 first-run clarity, stream reliability, useful detector coverage, and future
 MCP or persistence needs is especially valuable.
+
+## License
+
+Election Stream Monitor is available under the [MIT License](./LICENSE).
