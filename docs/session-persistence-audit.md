@@ -1,7 +1,15 @@
-# Persistence Rollout Audit
+# Persistence Rollout Readiness
 
-This audit captures the current session and alert persistence rollout. Use it
-as the detailed storage inventory, ownership map, and migration reference.
+Role: **readiness and rollout evidence**. Status: **active until a reviewed
+PostgreSQL default switch or cloud-persistence rollout**.
+
+This record owns PostgreSQL rollout readiness, default-switch gates, migration
+and backfill decisions, schema/rollback policy, and
+[credential diagnostics](#credential-diagnostics). It is not an everyday setup
+guide or a replacement for stable runtime contracts. Use
+[testing-and-validation.md](./testing-and-validation.md) for commands,
+[contracts.md](./contracts.md) for public behavior, and
+[session-model.md](./session-model.md) for lifecycle meaning.
 
 Document split:
 
@@ -16,7 +24,7 @@ Document split:
 - keep this file as the detailed persistence owner for rollout readiness,
   schema ownership, rollback, backfill, and migration watchpoints
 
-## Operational Policy Index
+## Current Readiness Index
 
 Use the sections below as the authoritative persistence rollout reference:
 
@@ -38,9 +46,22 @@ Use the sections below as the authoritative persistence rollout reference:
 - [Future Alert Backfill Criteria](#future-alert-backfill-criteria) and the
   schema section define when a separate backfill or migration-tool branch is
   required.
+- [Credential Diagnostics](#credential-diagnostics) defines safe handling of
+  configuration failures and secret-bearing settings.
+- [Migration Boundary Notes](#migration-boundary-notes) and
+  [Migration Watchpoints](#migration-watchpoints) retain implementation
+  evidence for a later migration branch.
 
 Other persistence documents should link here for rollout policy rather than
 copying these rules.
+
+## Reading The Evidence
+
+The readiness vocabulary, evidence baseline, default-switch gates, scorecard,
+and shared blockers are current policy. Later audit observations and migration
+notes preserve implementation evidence and prior decisions; they do not by
+themselves authorize a default change. Confirm affected code and tests before
+using them to extend the rollout.
 
 ## Session / Alert Backend Naming Audit
 

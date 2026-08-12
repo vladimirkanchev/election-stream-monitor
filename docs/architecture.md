@@ -10,6 +10,9 @@ Use this doc for responsibilities and change placement.
 Do not use it as the source of truth for field-level payloads or exact
 persisted-session semantics; see [contracts.md](./contracts.md) and
 [session-model.md](./session-model.md) for those.
+Use [testing-and-validation.md](./testing-and-validation.md) for validation
+commands and [ci-maintainer-guide.md](./ci-maintainer-guide.md) for CI
+enforcement policy.
 
 This is a production-runtime document.
 It intentionally does not describe detector-lab experimental algorithms as if
@@ -23,8 +26,9 @@ workbench, use [detector_lab/README.md](../detector_lab/README.md).
 - backend: local FastAPI boundary plus shared Python session services and a
   detached session worker
 - frontend: React/Electron setup, playback, alert inspection
-- live support: direct `.m3u8` / `.mp4` `api_stream` inputs with backend
-  loading and Electron-side HLS playback proxying
+- live support: bounded HTTP/HLS `.m3u8` analysis with Electron-side HLS
+  playback proxying; direct remote `.mp4` remains a source-validation and
+  playback path, not a remote-analysis loader input
 
 ## Best use of this doc
 
@@ -35,37 +39,23 @@ Use this document when you need to answer:
 - whether something belongs to transport, session lifecycle, detector logic,
   alert policy, playback, or persistence
 
+## Detailed architecture
+
+The detailed view shows process boundaries, monitoring writes, persisted read
+paths, and the read-only MCP surface. Exact payload shapes and lifecycle
+semantics remain owned by [contracts.md](./contracts.md) and
+[session-model.md](./session-model.md).
+
+![Detailed Election Stream Monitor architecture showing Electron, FastAPI, the detached monitoring worker, persistence, shared alert reads, and read-only MCP](./assets/architecture-detailed.png)
+
+[Open the detailed architecture diagram at full size.](./assets/architecture-detailed.png)
+
+The following focused diagrams provide complementary runtime-flow and
+extension views.
+
 ![Runtime flow](./runtime-flow.svg)
 
 ![Plugin structure](./plugin-structure.svg)
-
-## Short version
-
-The project is a local-first modular monolith with explicit detector
-registration, file-backed default persistence, and explicit opt-in PostgreSQL
-backends for both session and alert persistence.
-
-In practice that means:
-
-- one Python backend split into:
-  - a local FastAPI boundary
-  - shared session services
-  - a detached session worker for monitoring runs
-- session and alert persistence resolve to file-backed stores by default;
-  their PostgreSQL stores require explicit backend selection and valid
-  bootstrap configuration
-- one React/Electron frontend
-- explicit detector registration
-- explicit alert rules
-- no dynamic plugin discovery yet
-- explicit bridge contract normalization between Electron and React
-- pre-loader security rules for future plugin manifests
-
-The active flow is no longer just `input -> analyzer -> CSV`.
-
-It is now:
-
-`source -> session -> detector execution -> alert rules -> persistence -> frontend polling`
 
 ## Main runtime flow
 
@@ -113,79 +103,15 @@ It is now:
     as `worker.log`.
 12. The frontend polls the session snapshot and updates playback and alerts.
 
-For the current project stage, both persistence seams remain file-backed by
-default. Explicit PostgreSQL selection never silently falls back after a
-bootstrap failure. The [persistence readiness scorecard](./session-persistence-audit.md#current-persistence-readiness-scorecard)
-owns default-switch evidence, schema ownership, and rollout blockers; commands
-and validation-lane selection live in
-[testing-and-validation.md](./testing-and-validation.md).
+Session and alert persistence are file-backed by default. PostgreSQL requires
+explicit backend selection and never silently replaces a failed bootstrap with
+file storage. The [session persistence audit](./session-persistence-audit.md)
+owns rollout evidence and readiness decisions.
 
-The new MCP surface follows the same adapter pattern:
-
-- [`src/esm_mcp/server.py`](../src/esm_mcp/server.py) is a read-only MCP adapter
-- [`src/session_alert_store.py`](../src/session_alert_store.py) defines the
-  narrow alert persistence interface and now owns the centralized runtime
-  default store selection
-- [`src/session_alert_store_runtime_config.py`](../src/session_alert_store_runtime_config.py)
-  owns the explicit `file` versus `postgres` backend-mode selection for that
-  default store through `ESM_ALERT_STORE_BACKEND`
-- [`src/session_alert_store_postgres.py`](../src/session_alert_store_postgres.py)
-  owns the current PostgreSQL alert-table and index definitions, the small
-  connection/bootstrap path, and the concrete
-  `PostgresSessionAlertStore` second backend over the existing seam
-- [`src/session_alert_store_postgres_config.py`](../src/session_alert_store_postgres_config.py)
-  owns the narrow Postgres alert-store env/config parsing used by that bootstrap path
-- [`src/session_io.py`](../src/session_io.py) still exposes
-  `append_alert(...)` as the compatibility write entrypoint and now delegates
-  that write through the store interface
-- [`src/session_alert_adapter.py`](../src/session_alert_adapter.py) keeps the
-  small shared adapter mechanics reused by FastAPI and MCP
-- [`src/session_alerts.py`](../src/session_alerts.py) owns persisted raw alert
-  query/filter/summary logic and applies those read models over the store
-  interface
-- [`src/session_alert_incidents.py`](../src/session_alert_incidents.py) owns
-  grouped incident timeline and incident-summary read models built on the raw
-  alert service rather than the storage layer directly
-- MCP tools call the shared service directly rather than routing through HTTP
-
-The alert-query slice now has one explicit persistence interface and three read
-models over it:
-
-- raw alert-event list
-- raw numeric alert summary
-- grouped incident timeline and grouped incident summary
-
-Today that means:
-
-- `src/session_io.py::append_alert(...)` is still the compatibility write
-  entrypoint
-- the default alert backend is selected centrally in
-  `src/session_alert_store.py`
-- raw alert readers, grouped incident readers, the session snapshot route, and
-  the CLI all follow that same shared alert backend
-- filtering, summaries, and grouped incident logic still stay in Python above
-  the storage layer
-
-That split kept the current JSONL behavior intact while making the PostgreSQL
-alert store a bounded replacement instead of a larger read-model rewrite.
-
-The current PostgreSQL alert mapping is intentionally column-first rather than
-JSONB-first:
-
-- every current `AlertEventPayload` field maps to its own table column
-- `window_index` and `window_start_sec` stay nullable
-- append-order reads are preserved through `ORDER BY id ASC`
-- filtering and summary behavior still stay above the storage interface
-
-Security ownership is intentionally split by transport. FastAPI owns the HTTP
-route, local/share, bind, authentication, rate-limit, and deployment policy;
-MCP remains a separate local `stdio`, read-only adapter and does not inherit
-FastAPI authentication. The detailed HTTP matrix belongs in
-[fastapi-boundary.md](./fastapi-boundary.md#http-route-security-matrix), while
-the MCP inventory and future transport gate belong in
-[mcp-server.md](./mcp-server.md#current-tool-inventory). Validation commands
-and test ownership remain in
-[testing-and-validation.md](./testing-and-validation.md).
+FastAPI is the desktop application's HTTP boundary. MCP is a separate,
+read-only local `stdio` adapter over shared alert services; it does not inherit
+FastAPI authentication. Detailed HTTP and MCP trust rules belong in
+[fastapi-boundary.md](./fastapi-boundary.md) and [mcp-server.md](./mcp-server.md).
 
 ## Legacy Tooling
 
@@ -237,43 +163,15 @@ Defines:
 - registration metadata
 - analysis slice metadata
 
-Current detector design notes:
+Detectors return typed, backend-owned facts rather than frontend wording or
+alert decisions. The processor serializes flat rows only at persistence and
+event boundaries; alert rules own interpretation, suppression, and re-entry.
 
-- detectors return backend-owned measurement rows, not frontend wording or
-  final alert decisions
-- production detectors now return typed in-memory rows from
-  [`src/analyzer_contract.py`](../src/analyzer_contract.py), while the
-  processor keeps flat dicts only at the persistence and event boundary
-- `video_blur` samples bounded, aspect-preserving grayscale frames instead of
-  forcing every source into one fixed tiny size
-- short local `video_files` windows are sampled more densely than the baseline
-  detector fps so motion-aware blur guards still have enough adjacent frames to
-  work with on one-second slices; the current target is a 5-frame short-window
-  motion trace when the source duration allows it
-- `video_blur` also persists clip-level motion summaries (`motion_mean`,
-  `motion_p90`) so the blur rule can distinguish moving-camera softness from
-  stable blur without mutating the detector-owned blur score
-- effectively black sampled frames are excluded from blur scoring so black
-  failures stay owned by the black-screen detector instead of leaking into blur
-  alerts
-- the blur rule now also requires a short startup warm-up before first entry so
-  early stream frames do not alert before the source has stabilized
-- the blur rule treats moderate motion as an ambiguity zone and high motion as
-  a suppression signal before it emits a blur alert
-
-Current supported runtime quality surface:
-
-- production detector: `video_metrics`
-- production detector: `video_blur`
-- production alert rule: `video_metrics.default_rule`
-- production alert rule: `video_blur.default_rule`
-
-Experimental practical blur or motion-blur policies in `detector_lab/` are not
-part of this supported runtime contract. Use
-[`adding-an-analyzer.md`](./adding-an-analyzer.md) for the production
-promotion rule.
-
-This is the stable contract other layers rely on.
+The supported production surface is `video_metrics` and `video_blur` with
+their explicit default rules. Experimental policies in `detector_lab/` are not
+runtime contracts. Use [adding-an-analyzer.md](./adding-an-analyzer.md) for
+promotion requirements and [detector-validation-ownership.md](./detector-validation-ownership.md)
+for confidence ownership.
 
 ### Detector registry
 
@@ -354,38 +252,12 @@ Responsibilities:
 
 Responsibilities:
 
-- keep `src/session_runner.py` as the orchestration layer:
-  - validate the source
-  - choose local vs `api_stream` execution
-  - coordinate helper modules
-  - reset rule state and perform final runtime cleanup
-- keep pending-session setup and pending-to-running transitions in
-  `src/session_runner_lifecycle.py`
-- keep finite local-loop execution, live `api_stream` execution, detector-bundle
-  invocation, and bundle-event persistence in
-  `src/session_runner_execution.py`
-- keep terminal outcome persistence, api-stream cleanup accounting, and
-  operator-facing terminal logging in `src/session_runner_terminal.py`
-- keep local file discovery, playlist expansion, and video-file slice
-  expansion in `src/session_runner_discovery.py`
-- keep progress/status shaping and operator-facing terminal log context in
-  `src/session_runner_progress.py`
-- persist progress, results, and alerts incrementally while resetting rolling
-  rule state at session boundaries
-- route `api_stream` through the dedicated loader seam instead of treating it
-  like local file discovery
-
-Reading order for this module family:
-
-1. `src/session_runner.py`
-2. `src/session_runner_lifecycle.py`
-3. `src/session_runner_execution.py`
-4. `src/session_runner_terminal.py`
-5. `src/session_runner_discovery.py`
-6. `src/session_runner_progress.py`
-
-That order mirrors the current ownership split and is the shortest path for a
-mid-to-senior contributor who wants to follow one session from start to finish.
+- `src/session_runner.py` coordinates source validation, execution selection,
+  rule-state reset, and final cleanup.
+- Lifecycle, execution, terminal persistence, discovery, and progress remain
+  in the corresponding focused `session_runner_*` modules.
+- The runner persists progress, results, and alerts incrementally and sends
+  `api_stream` work to the dedicated loader rather than local discovery.
 
 ### Session service
 
@@ -421,15 +293,11 @@ request ownership ends and actual session execution begins.
 
 Responsibilities:
 
-- keep the stable, intentionally thin public `api_stream` facade and
-  loader-selection entry point
-- define the shared source/start/playback contract builders and identity helpers
-- keep `src/stream_loader_http_hls.py` as the orchestration shell and runtime-state owner
-- keep `src/stream_loader_http_hls_playlist.py` for playlist-kind detection and HLS playlist parsing helpers
-- keep `src/stream_loader_http_hls_fetch.py` for request building, bounded response reads, and transport-failure mapping
-- keep `src/stream_loader_http_hls_materialize.py` for temp-file writes and temp-storage byte accounting
-- keep `src/stream_loader_http_hls_policy.py` for dedup/replay/window-gap helpers that operate on loader state
-- keep deterministic seam loaders separate from the concrete HTTP/HLS transport
+- `src/stream_loader.py` is the thin public facade and loader selector.
+- Contract builders and identity helpers stay separate from HTTP/HLS transport.
+- Focused HTTP/HLS modules own orchestration, playlist parsing, fetching,
+  materialization, and replay/window policy.
+- Deterministic seam loaders remain separate from the concrete transport.
 
 This keeps live transport behavior explicit and separate from session
 orchestration in the runner.
@@ -474,49 +342,17 @@ The frontend is local-first and talks to Python through Electron.
 
 Important parts:
 
-- [`frontend/electron/main.mjs`](../frontend/electron/main.mjs)
-  - thin Electron composition/wiring entrypoint
-  - owns high-level bootstrap order and app lifecycle hooks
-  - delegates FastAPI startup/readiness and playback transport details to focused helpers
-  - local media serving and remote HLS proxying for playback
-- [`frontend/electron/fastApiStartupOrchestrator.mjs`](../frontend/electron/fastApiStartupOrchestrator.mjs)
-  - composes backend process startup, readiness polling, and runtime policy
-- [`frontend/electron/fastApiProcessManager.mjs`](../frontend/electron/fastApiProcessManager.mjs)
-  - owns FastAPI process spawning, single-start behavior, and shutdown/reset
-- [`frontend/electron/fastApiRuntimePolicy.mjs`](../frontend/electron/fastApiRuntimePolicy.mjs)
-  - owns timeout, readiness, and unavailable-runtime policy decisions
-- [`frontend/electron/fastApiFallback.mjs`](../frontend/electron/fastApiFallback.mjs)
-  - keeps the older fallback seam explicit for unavailable-runtime scenarios
-- [`frontend/electron/bridgeHandlerRegistry.mjs`](../frontend/electron/bridgeHandlerRegistry.mjs)
-  - current IPC channel map and shared runtime-policy/error-envelope wiring
-- [`frontend/electron/bridgeResponses.mjs`](../frontend/electron/bridgeResponses.mjs)
-  - maps FastAPI/runtime failures into stable Electron bridge envelopes
-- [`frontend/electron/fastApiClient.mjs`](../frontend/electron/fastApiClient.mjs)
-  - thin JSON client for FastAPI bridge calls
-- [`frontend/electron/playbackSourcePolicy.mjs`](../frontend/electron/playbackSourcePolicy.mjs)
-  - renderer-safe playback URL adaptation
-- [`frontend/electron/localMediaRequestPolicy.mjs`](../frontend/electron/localMediaRequestPolicy.mjs)
-  - classifies `local-media://` requests before handing them to concrete responders
-- [`frontend/electron/localMediaResponses.mjs`](../frontend/electron/localMediaResponses.mjs)
-  - concrete local-media file/range responses and remote HLS proxy responses
-  - kept separate from `localMediaRequestPolicy.mjs`, which classifies requests
-    before response generation
-- [`frontend/src/hooks/useSetupState.ts`](../frontend/src/hooks/useSetupState.ts)
-  - setup state
-- [`frontend/src/hooks/useMonitoringSession.ts`](../frontend/src/hooks/useMonitoringSession.ts)
-  - session lifecycle
-- [`frontend/src/hooks/usePlaybackSource.ts`](../frontend/src/hooks/usePlaybackSource.ts)
-  - playback source and playback state
-- [`frontend/src/bridge/contract.ts`](../frontend/src/bridge/contract.ts)
-  - stable public bridge-normalization entrypoint
-- [`frontend/src/bridge/contractErrors.ts`](../frontend/src/bridge/contractErrors.ts)
-  - explicit bridge envelopes and typed transport errors
-- [`frontend/src/bridge/contractDetectors.ts`](../frontend/src/bridge/contractDetectors.ts)
-  - detector catalog normalization
-- [`frontend/src/bridge/contractSessionSnapshot.ts`](../frontend/src/bridge/contractSessionSnapshot.ts)
-  - session snapshot normalization
-- [`frontend/src/bridge/transport.ts`](../frontend/src/bridge/transport.ts)
-  - transport selection and demo fallback before normalization
+
+- [`frontend/electron/main.mjs`](../frontend/electron/main.mjs) composes local
+  application lifecycle and delegates backend startup and playback transport.
+- `frontend/electron/fastApi*` modules own process startup, readiness, and
+  unavailable-runtime policy.
+- `frontend/electron/bridge*` modules expose IPC handlers and normalize stable
+  success/error envelopes.
+- Playback policy and local-media responders keep renderer-safe URLs, file
+  responses, and remote HLS proxying outside the renderer.
+- `frontend/src/hooks/` owns setup, session, and playback state; the bridge
+  contract modules normalize transport data before it reaches that state.
 
 This split is important because playback state and backend session state are related, but not the same thing.
 
@@ -529,26 +365,11 @@ If you are deciding where a change belongs:
 - alert thresholds / re-alert semantics / operator wording from detector output
   - `src/alert_rules.py`
 - session lifecycle / completion / cancel / failure behavior
-  - `src/session_runner.py`
-  - `src/session_runner_discovery.py`
-  - `src/session_runner_progress.py`
+  - `src/session_runner.py` and the focused `session_runner_*` modules
 - `api_stream` transport, reconnect, playlist parsing, temp files
-  - `src/stream_loader.py`
-  - `src/stream_loader_contracts.py`
-  - `src/stream_loader_http_hls.py`
-  - `src/stream_loader_http_hls_playlist.py`
-  - `src/stream_loader_http_hls_fetch.py`
-  - `src/stream_loader_http_hls_materialize.py`
-  - `src/stream_loader_http_hls_policy.py`
-  - `src/stream_loader_fakes.py`
+  - `src/stream_loader.py` and focused `stream_loader_*` modules
 - renderer playback routing and HLS proxy behavior
-  - `frontend/electron/main.mjs`
-  - `frontend/electron/fastApiStartupOrchestrator.mjs`
-  - `frontend/electron/fastApiRuntimePolicy.mjs`
-  - `frontend/electron/fastApiProcessManager.mjs`
-  - `frontend/electron/bridgeResponses.mjs`
-  - `frontend/electron/hlsProxy.mjs`
-  - `frontend/src/components/VideoPlayerPanel.tsx`
+  - `frontend/electron/` and `frontend/src/components/VideoPlayerPanel.tsx`
 
 ## Current design decisions
 
@@ -561,18 +382,6 @@ The project currently prefers:
 - composition over heavy OOP
 - explicit trust-boundary validation over permissive source handling
 - one explicit preload bridge surface over ad-hoc renderer capabilities
-
-## Good next architectural moves
-
-Most useful next steps:
-
-- add more detectors through the current registry pattern
-- keep detector output and alert rules separate
-- make rule thresholds easier to tune
-- keep hardening `api_stream` without rewriting the current contracts
-- keep transport swappable without changing the bridge meaning
-
-Dynamic plugin loading should stay postponed until detector count actually makes it necessary.
 
 ## Failure policy
 
@@ -649,29 +458,8 @@ That split is intentional because FastAPI should expose the stable monitoring
 contract, not absorb every desktop/runtime concern that currently exists only
 to support the local Electron app.
 
-If you change FastAPI request/response semantics, review these together:
-
-- `src/api/schemas.py`
-- `frontend/src/bridge/contract.ts`
-- `frontend/src/bridge/contractErrors.ts`
-- `frontend/src/bridge/transport.ts`
-- `frontend/src/types.ts`
-- `frontend/src/bridge/contract.testSupport.ts`
-- `docs/contracts.md`
-- `tests/test_api_boundary_contracts.py`
-- `tests/test_api_boundary_sessions_read.py`
-- `tests/test_api_boundary_sessions_start.py`
-- `tests/test_api_boundary_sessions_cancel.py`
-- `frontend/src/bridge/contract.success.test.ts`
-- `frontend/src/bridge/contract.errors.test.ts`
-- `frontend/src/bridge/contract.session-snapshot.shape.test.ts`
-- `frontend/src/bridge/contract.session-snapshot.malformed.test.ts`
-- `frontend/src/bridge/contract.session-snapshot.collections.test.ts`
-- `frontend/electron/bridgeResponses.test.mjs`
-
-For operator-facing renderer copy and playback-aligned alert visibility, review:
-
-- `frontend/src/components/SessionStatusPanel.tsx`
-- `frontend/src/components/SessionStatusPanel.test.tsx`
-- `frontend/src/presenters/alertFeed.ts`
-- `frontend/src/presenters/alertFeed.test.ts`
+If an API or bridge payload changes, update its schemas, bridge normalizers,
+boundary tests, and [contracts.md](./contracts.md) together. Use
+[testing-and-validation.md](./testing-and-validation.md) to select the
+smallest honest validation lane. Operator-facing session and alert presentation
+belongs in the renderer components and presenters, not the backend boundary.

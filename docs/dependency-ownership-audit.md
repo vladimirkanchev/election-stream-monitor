@@ -1,8 +1,13 @@
 # Dependency Ownership
 
-This document owns Python dependency-source policy and the current consumer
-audit. It distinguishes declared compatibility from an exact resolved
-environment; it does not select package upgrades or security tooling.
+Role: **readiness and ownership evidence**. Status: **active**.
+
+This record owns Python dependency-source policy and the current consumer
+classification. It distinguishes declared compatibility from an exact resolved
+environment; it does not select package upgrades or security tooling. Use
+[testing-and-validation.md](./testing-and-validation.md) for installation and
+validation commands, and [ci-maintainer-guide.md](./ci-maintainer-guide.md)
+for CI enforcement.
 
 ## Ownership Policy
 
@@ -33,7 +38,7 @@ version owner. It composes the focused extras and owns only `pre-commit`.
 | `pandas`, `m3u8` | Stores and playlist collection/loading. | Runtime. | Retain. |
 | `mcp` | Local `esm-mcp` server. | Runtime. | Retain. |
 | `pytest` | `tests/` only. | Test extra. | Removed from base dependencies. |
-| `bandit` | Lint/security workflow only. | Lint extra. | Removed from base dependencies. |
+| `bandit` | Security workflow only. | Security extra. | Removed from base dependencies. |
 | `cffi` | Resolved through `PyNaCl` and MCP's crypto extra; no direct repository import. | Unverified direct declaration. | Retain until its explicit declaration is tested separately. |
 | `pynacl`, `python-ffmpeg` | Direct-only declarations with no repository import. | Unverified direct requirement. | Retain until clean-install and packaging removal checks exist. |
 
@@ -46,7 +51,8 @@ requirements.
 | --- | --- | --- | --- |
 | `detectorlab` | Detector-lab metrics, OpenCV decode, weekly media diagnostics. | Optional feature/tooling. | Appropriate focused extra. |
 | `test` | Pytest, HTTP clients, YAML workflow fixtures. | Test tooling. | Appropriate focused extra. |
-| `lint` | Ruff, Black, Bandit. | Engineering tooling. | Appropriate focused extra. |
+| `lint` | Ruff and Black. | Engineering tooling. | Appropriate focused extra. |
+| `security` | Bandit and `pip-audit`. | Security tooling. | Appropriate focused extra. |
 | `typecheck` | mypy and Pyright. | Engineering tooling. | Appropriate focused extra. |
 | `dev` | Aggregate contributor environment. | Contributor convenience. | Composes focused extras and adds only `pre-commit`. |
 
@@ -57,6 +63,7 @@ requirements.
 | Runtime and packaging smoke | `pip install -e .` | Receives only the declared base package set. |
 | Focused backend CI | `pip install -e .[test,detectorlab]` | Uses focused test and detector-lab extras. |
 | Lint and type CI | `pip install -e .[lint]` or `.[typecheck]` | Uses focused engineering extras. |
+| Security audit | `uv sync --locked --extra security` | Uses the focused scanner extra and locked resolution. |
 | Weekly slow media | `uv sync --locked --extra test --extra detectorlab` | Uses the committed resolution and focused extras. |
 | Full contributor environment | `uv sync --locked --extra dev` or `pip install -e .[dev]` | Composes the focused extras plus `pre-commit`. |
 

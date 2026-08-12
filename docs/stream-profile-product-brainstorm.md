@@ -1,10 +1,13 @@
 # Stream Profile Product Brainstorm
 
-This note captures the recent brainstorming discussion about how the current
-monitoring project could evolve into a more adaptable stream-monitoring product.
+Role: **exploratory product-planning record**. Status: **deferred and
+non-contractual**.
 
-It is written for maintainers, product thinkers, and coding agents. It is not
-end-user documentation.
+This note preserves possible directions for a more adaptable stream-monitoring
+product. Code, tests, and [contracts.md](./contracts.md) remain authoritative;
+this file does not create a roadmap or implementation commitment. Reactivate it
+only after product review selects profile-driven policy or a new supported
+stream class as a concrete project objective.
 
 ## Core Product Direction
 
@@ -254,7 +257,7 @@ not:
 - a rewrite
 - or immediate support for every provider type
 
-## Recommended Next-Branch Direction
+## Possible Future Branch Shape
 
 The suggested next branch theme was:
 
