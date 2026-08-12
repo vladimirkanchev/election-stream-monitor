@@ -51,7 +51,7 @@ async def _app_lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Election Stream Monitor API",
-    version="0.6.4",
+    version="0.6.5",
     lifespan=_app_lifespan,
 )
 

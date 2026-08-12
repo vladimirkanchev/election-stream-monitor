@@ -7,6 +7,23 @@ stage.
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-08-12
+
+Engineering-foundation release.
+
+Highlights:
+
+- development setup, dependency ownership, and environment diagnostics are
+  more reproducible across contributors, AI agents, and CI
+- static analysis, advisory coverage evidence, and focused validation/CI
+  policy make regressions easier to detect and diagnose
+- supply-chain checks, least-privilege workflow controls, and dependency
+  update proposals strengthen the existing local-first delivery workflow
+- repo-local AI harness routing and project documentation are more compact,
+  with updated runtime-boundary diagrams and clearer ownership handoffs
+- file-backed persistence remains the default; PostgreSQL session and alert
+  storage remain explicit opt-in paths
+
 ## [0.6.4] - 2026-07-29
 
 Detector and alert validation confidence release.

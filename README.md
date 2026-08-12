@@ -259,7 +259,7 @@ before editing code.
 
 ## Versioning And Releases
 
-The project is in the early `0.6.4` stage: expect active iteration rather than
+The project is in the early `0.6.5` stage: expect active iteration rather than
 long-term compatibility guarantees. Release policy lives in
 [release-versioning.md](./docs/release-versioning.md); released changes live in
 [CHANGELOG.md](./CHANGELOG.md).
