@@ -2,7 +2,7 @@
 
 This project is still in an active `0.x` stage.
 
-Current public stage: `0.6.4`
+Current public stage: `0.6.5`
 
 ## Release History
 
@@ -34,6 +34,9 @@ Current public stage: `0.6.4`
 - `0.6.4` makes detector and alert validation easier to evolve safely through
   focused suite ownership, fixture/truth governance, real-media confidence,
   missing edge coverage, and explicit validation lanes
+- `0.6.5` strengthens the development and delivery foundation through
+  reproducible setup, static analysis, advisory coverage evidence,
+  supply-chain controls, AI-harness routing, and compact project documentation
 
 ## Current Approach
 
@@ -120,7 +123,8 @@ The current versioning posture matches the actual project state:
 - local-first AI video monitoring system
 - advanced prototype moving toward pre-pilot
 - still hardening operationally before broader pilot-style expectations
-- `0.6.4` keeps the dual-backend stage intact while strengthening detector and
-  alert validation confidence without changing the supported runtime surface
+- `0.6.5` keeps the dual-backend stage intact while strengthening development,
+  validation, security, AI-assisted workflow, and documentation foundations
+  without changing the supported runtime surface
 - both PostgreSQL persistence paths remain explicit opt-in; session historical
   backfill is still a later rollout decision, not part of the current version
