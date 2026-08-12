@@ -102,7 +102,7 @@ jobs:
       # projections. All retained artifacts expire quickly.
       - name: Upload slow e2e failure diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slow-e2e-${{ github.run_id }}
           path: |
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload api_stream deep validation log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-stream-deep-${{ github.run_id }}
           path: ci-artifacts/api-stream-deep.log
@@ -190,7 +190,7 @@ jobs:
 
       - name: Upload lifecycle deep validation log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lifecycle-deep-${{ github.run_id }}
           path: ci-artifacts/lifecycle-deep.log
@@ -198,7 +198,7 @@ jobs:
 
       - name: Upload lifecycle session artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lifecycle-session-artifacts-${{ github.run_id }}
           path: |
@@ -383,7 +383,7 @@ jobs:
 
       - name: Upload live Postgres backend confidence log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: postgres-alert-backend-confidence-${{ github.run_id }}
           path: ci-artifacts/postgres-alert-backend-confidence.log
@@ -446,7 +446,7 @@ jobs:
 
       - name: Upload live Postgres runtime/operator confidence log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: postgres-alert-runtime-operator-confidence-${{ github.run_id }}
           path: ci-artifacts/postgres-alert-runtime-operator-confidence.log
