@@ -30,7 +30,7 @@ dependencies = [
     "python-ffmpeg>=2.0.12",
     "m3u8>=6.0.0",
     "pydantic>=2.13.1",
-    "cffi>=2.0.0",
+    "cffi>=2.1.1",
     "pynacl==1.5.0",
     "mcp==1.27.0",
 ]
