@@ -43,12 +43,12 @@ detectorlab = [
 test = [
     "httpx>=0.28.1",
     "PyYAML>=6.0.3",
-    "pytest>=9.0.2",
+    "pytest>=9.1.1",
     "pytest-cov>=7.0.0",
 ]
 lint = [
-    "black>=26.3.1",
-    "ruff>=0.13.0",
+    "black>=26.5.1",
+    "ruff>=0.16.3",
 ]
 security = [
     "bandit>=1.9.4",
@@ -60,7 +60,7 @@ typecheck = [
 ]
 dev = [
     "election-stream-monitor[detectorlab,lint,security,test,typecheck]",
-    "pre-commit>=4.3.0",
+    "pre-commit>=4.6.2",
 ]
 
 [project.scripts]
